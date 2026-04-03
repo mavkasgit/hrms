@@ -1,0 +1,19 @@
+{
+  "name": "hrms",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "npm run db:up && concurrently --names \"DB,BACKEND,FRONTEND\" -c \"blue,green,yellow\" \"npm run db:logs\" \"npm run backend\" \"npm run frontend\"",
+    "db:up": "docker compose -f infra/docker-compose.dev.yml up -d",
+    "db:logs": "docker compose -f infra/docker-compose.dev.yml logs -f",
+    "db:down": "docker compose -f infra/docker-compose.dev.yml down",
+    "backend": "cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "frontend": "cd frontend && npm install && npm run dev",
+    "migrate": "cd backend && alembic upgrade head",
+    "makemigrate": "cd backend && alembic revision --autogenerate -m"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "concurrently": "^9.1.2"
+  }
+}

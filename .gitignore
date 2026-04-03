@@ -63,6 +63,10 @@ data/
 # Alembic
 alembic/versions/*.pyc
 
+# Playwright
+.playwright/
+.playwright-cli/
+
 # Testing
 .pytest_cache/
 .coverage

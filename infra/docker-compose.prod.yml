@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: hrms-postgres-prod
+    environment:
+      POSTGRES_USER: hrms_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: hrms_prod
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ../data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hrms_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  backend:
+    build: ../backend
+    container_name: hrms-backend-prod
+    volumes:
+      - ../data/orders:/app/data/orders
+      - ../data/templates:/app/data/templates
+      - ../data/personal_files:/app/data/personal
+      - ../logs:/app/logs
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env.prod
+    environment:
+      DATABASE_URL: postgresql+asyncpg://hrms_user:${POSTGRES_PASSWORD}@postgres:5432/hrms_prod
+      ENV: prod
+      SECRET_KEY: ${SECRET_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+
+  frontend:
+    build: ../frontend
+    container_name: hrms-frontend-prod
+    ports:
+      - "5173:80"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+    restart: always
