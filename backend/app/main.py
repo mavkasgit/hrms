@@ -7,7 +7,12 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import async_session
 from app.core.logging import configure_logging, logger
+from app.core.exceptions import HRMSException
+from app.api.exception_handlers import hrms_exception_handler
 from app.api.health import router as health_router
+from app.api.employees import router as employees_router
+from app.api.orders import router as orders_router
+from app.api.templates import router as templates_router
 
 
 @asynccontextmanager
@@ -33,7 +38,12 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
+app.add_exception_handler(HRMSException, hrms_exception_handler)
+
 app.include_router(health_router, prefix="/api")
+app.include_router(employees_router, prefix="/api")
+app.include_router(orders_router, prefix="/api")
+app.include_router(templates_router, prefix="/api")
 
 
 @app.get("/api/health")

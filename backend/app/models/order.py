@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -11,11 +11,15 @@ class Order(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     order_number = Column(String(50), nullable=False)
     order_type = Column(String(50), nullable=False)
-    tab_number = Column(Integer, ForeignKey("employees.tab_number"), nullable=False)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
     order_date = Column(Date, nullable=False)
-    created_date = Column(DateTime(timezone=True), server_default=func.now())
+    created_date = Column(DateTime(timezone=False), server_default=func.now())
     file_path = Column(String(255))
     notes = Column(Text)
+
+    is_deleted = Column(Boolean, default=False, nullable=False, index=True)
+    deleted_at = Column(DateTime(timezone=False))
+    deleted_by = Column(String(100))
 
     employee = relationship("Employee", back_populates="orders")
 

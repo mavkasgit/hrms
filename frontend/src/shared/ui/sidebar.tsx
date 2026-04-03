@@ -5,7 +5,9 @@ import {
   Users,
   FileText,
   CalendarDays,
+  Settings,
   LogIn,
+  Wrench,
 } from "lucide-react"
 
 const navItems = [
@@ -13,6 +15,8 @@ const navItems = [
   { to: "/employees", label: "Сотрудники", icon: Users },
   { to: "/orders", label: "Приказы", icon: FileText },
   { to: "/vacations", label: "Отпуска", icon: CalendarDays },
+  { to: "/settings", label: "Настройки", icon: Settings },
+  { to: "/dev", label: "Dev", icon: Wrench },
 ]
 
 export function Sidebar() {

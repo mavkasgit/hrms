@@ -99,108 +99,191 @@ PERSONAL_FILES_PATH=/app/data/personal
 
 ## Спринт 2 — Сотрудники (CRUD)
 
-### HRMS-006 — Repository: Employee
+### HRMS-004b — Миграция: поля аудита и архивации ✅ ВЫПОЛНЕНО
+**Приоритет:** Высокий  
+**Слой:** Backend / Models
+
+- [x] Добавить поля в `Employee`: `is_archived`, `terminated_date`, `termination_reason`, `archived_by`, `archived_at`, `is_deleted`, `deleted_at`, `deleted_by`
+- [x] Добавить поля во все модели: `is_deleted`, `deleted_at`, `deleted_by`
+- [x] Создать модель `EmployeeAuditLog` (id, tab_number, action, changed_fields JSON, performed_by, performed_at, reason)
+- [x] Убрать `cascade="delete-orphan"` из relationships Employee → Orders/Vacations
+- [x] Создать миграцию `003_add_audit_fields`
+
+---
+
+### HRMS-006 — Repository: Employee ✅ ВЫПОЛНЕНО
 **Приоритет:** Высокий  
 **Слой:** Backend / Repository
 
-Создать `repositories/employee_repository.py`:
-
-- `get_by_tab_number(db, tab_number)` → `Optional[Employee]`
-- `get_all(db, department?, page, per_page, sort_by?, sort_order)` → `(List[Employee], total)`
-- `search(db, q)` → `List[Employee]` (поиск по ФИО с приоритетом, затем по tab_number)
-- `create(db, data)` → `Employee`
-- `update(db, tab_number, data)` → `Employee`
-- `delete(db, tab_number)` → `bool`
-
-> **ЗАПРЕЩЕНО:** бизнес-логика в этом слое.
+- [x] `get_by_tab_number(db, tab_number)` → `Optional[Employee]`
+- [x] `get_all(db, department?, status?, page, per_page, sort_by?, sort_order)` → `(List[Employee], total)`
+- [x] `search(db, q)` → `List[Employee]` (поиск по ФИО с приоритетом, затем по tab_number)
+- [x] `create(db, data)` → `Employee`
+- [x] `update(db, tab_number, data)` → `Employee`
+- [x] `archive(db, tab_number, user_id, reason)` → `Employee`
+- [x] `restore(db, tab_number, user_id)` → `Employee`
+- [x] `soft_delete(db, tab_number, user_id)` → `bool`
+- [x] `hard_delete(db, tab_number)` → `bool`
+- [x] `get_audit_log(db, tab_number)` → `List[EmployeeAuditLog]`
+- [x] `get_departments(db)` → `List[str]`
+- [x] `get_future_vacations(db, tab_number)` → `List[Vacation]`
+- [x] `_add_audit_entry(...)` → `EmployeeAuditLog`
 
 ---
 
-### HRMS-007 — Service: Employee
+### HRMS-007 — Service: Employee ✅ ВЫПОЛНЕНО
 **Приоритет:** Высокий  
 **Слой:** Backend / Service
 
-Создать `services/employee_service.py`:
-
-- `get_all_employees(db, department?, page, per_page, sort_by?, sort_order)` → paginated response
-- `get_by_tab_number(db, tab_number)` → `Employee` или raise `EmployeeNotFoundError`
-- `search_employees(db, q)` → `List[Employee]`
-- `create_employee(db, data: EmployeeCreate)` → `Employee` (проверка уникальности tab_number)
-- `update_employee(db, tab_number, data: EmployeeUpdate)` → `Employee`
-- `delete_employee(db, tab_number, keep_files)` → удалить сотрудника + файлы из `PERSONAL_FILES_PATH/{tab_number}/` (если `keep_files=false`), логировать удаление
-
-> **ЗАПРЕЩЕНО:** прямые вызовы SQLAlchemy.
+- [x] `get_all_employees(db, department?, status?, page, per_page, sort_by?, sort_order)` → paginated response
+- [x] `get_by_tab_number(db, tab_number)` → `Employee` или raise `EmployeeNotFoundError`
+- [x] `search_employees(db, q)` → `List[Employee]`
+- [x] `create_employee(db, data, user_id)` → `Employee` (проверка уникальности tab_number + audit log)
+- [x] `update_employee(db, tab_number, data, user_id)` → `Employee` (с отслеживанием изменений)
+- [x] `archive_employee(db, tab_number, user_id, reason)` → `(Employee, warnings)`
+- [x] `restore_employee(db, tab_number, user_id)` → `Employee`
+- [x] `soft_delete_employee(db, tab_number, user_id)` → `bool`
+- [x] `hard_delete_employee(db, tab_number, user_id)` → `bool`
+- [x] `get_audit_log(db, tab_number)` → `List[EmployeeAuditLog]`
+- [x] `get_archive_warnings(db, tab_number)` → `List[str]`
+- [x] `get_departments(db)` → `List[str]`
 
 ---
 
-### HRMS-008 — API: Employee endpoints
+### HRMS-008 — API: Employee endpoints ✅ ВЫПОЛНЕНО
 **Приоритет:** Высокий  
 **Слой:** Backend / API
 
-Создать `api/employees.py` — все эндпоинты согласно дизайн-документу:
-
-- `GET /api/employees` — список с пагинацией и фильтром по department
-- `GET /api/employees/search?q=` — поиск (мин. 1 символ)
-- `GET /api/employees/{tab_number}` — один сотрудник
-- `POST /api/employees` — создать
-- `PUT /api/employees/{tab_number}` — обновить
-- `DELETE /api/employees/{tab_number}?keep_files=false` — удалить
-
-Настроить DI через `Depends`. Формат ответа списка: `{items, total, page, per_page, total_pages}`.
+- [x] `GET /api/employees` — список с пагинацией, фильтром по department и status
+- [x] `GET /api/employees/search?q=` — поиск (мин. 1 символ)
+- [x] `GET /api/employees/departments` — список подразделений
+- [x] `GET /api/employees/{tab_number}` — один сотрудник
+- [x] `POST /api/employees` — создать
+- [x] `PUT /api/employees/{tab_number}` — обновить
+- [x] `POST /api/employees/{tab_number}/archive` — уволить (с warnings)
+- [x] `POST /api/employees/{tab_number}/restore` — восстановить
+- [x] `GET /api/employees/{tab_number}/audit-log` — история изменений
+- [x] `GET /api/employees/{tab_number}/warnings` — предупреждения перед увольнением
+- [x] `DELETE /api/employees/{tab_number}?hard=false&confirm=false` — soft/hard delete
 
 ---
 
-### HRMS-009 — Pydantic схемы: Employee + валидация дат
+### HRMS-009 — Pydantic схемы: Employee + валидация дат ✅ ВЫПОЛНЕНО
 **Приоритет:** Высокий  
 **Слой:** Backend / Schemas
 
-Создать `schemas/employee.py`:
-
-- `EmployeeCreate`, `EmployeeUpdate`, `EmployeeResponse`
-- Validators:
+- [x] `EmployeeCreate`, `EmployeeUpdate`, `EmployeeResponse`
+- [x] `EmployeeArchive` — схема для увольнения
+- [x] `EmployeeListResponse` — пагинированный ответ
+- [x] `EmployeeAuditLogResponse` — запись аудита
+- [x] `EmployeeWarningsResponse` — предупреждения
+- [x] Validators:
   - `birth_date` — не в будущем, не раньше 1900
   - `hire_date` — не раньше `birth_date + 16 лет`
   - `contract_end` — не раньше `contract_start`
 
 ---
 
-### HRMS-010 — Frontend: сущность Employee
+### HRMS-010 — Frontend: сущность Employee ✅ ВЫПОЛНЕНО
 **Приоритет:** Высокий  
 **Слой:** Frontend / entities
 
-Создать `entities/employee/`:
-
-- `types.ts` — TypeScript типы для Employee
-- `api.ts` — функции вызова API через Axios
-- `useEmployees.ts` — React Query хук для списка
-- `useEmployee.ts` — хук для одного сотрудника
+- [x] `types.ts` — TypeScript типы для Employee, EmployeeAuditLog
+- [x] `api.ts` — функции вызова API через Axios
+- [x] `useEmployees.ts` — React Query хуки (useEmployees, useEmployee, useCreateEmployee, useUpdateEmployee, useArchiveEmployee, useRestoreEmployee, useDeleteEmployee, useEmployeeAuditLog, useDepartments)
 
 ---
 
-### HRMS-011 — Frontend: страница EmployeesPage
+### HRMS-011 — Frontend: страница EmployeesPage ✅ ВЫПОЛНЕНО
 **Приоритет:** Высокий  
 **Слой:** Frontend / pages
 
-- Таблица сотрудников через Shadcn `Table`
-- Фильтр по подразделению
-- Пагинация
-- Loading state: `Skeleton`
-- Error state: `Alert`
-- Empty state: кастомный `EmptyState`
+- [x] Таблица сотрудников через Shadcn `Table`
+- [x] Переключатель статусов: Активные | В архиве | Все | Удалённые
+- [x] Поиск по ФИО / табельному номеру
+- [x] Пагинация
+- [x] Loading state: `Skeleton`
+- [x] Error state: `Alert`
+- [x] Empty state: кастомный `EmptyState`
+- [x] Форма создания/редактирования сотрудника (`features/employee-form`)
+- [x] Диалог увольнения с подтверждением и причиной (`features/employee-archive`)
+- [x] Диалог истории изменений (`features/employee-audit`)
+- [x] Кнопки: редактировать, уволить, восстановить, удалить навсегда
+- [x] Badge для статусов (Активен/В архиве/Удалён)
 
 ---
 
-### HRMS-012 — Обработка ошибок (Backend)
+### HRMS-012 — Обработка ошибок (Backend) ✅ ВЫПОЛНЕНО
 **Приоритет:** Высокий  
 **Слой:** Backend / Core
 
-Создать `core/exceptions.py`:
+- [x] `HRMSException(message, error_code)` — базовый класс
+- [x] `NotFoundError` — базовый для 404
+- [x] `EmployeeNotFoundError`, `OrderNotFoundError`, `VacationNotFoundError`
+- [x] `DuplicateTabNumberError`
+- [x] `EmployeeAlreadyArchivedError`, `EmployeeNotArchivedError`
+- [x] `EmployeeDeletedError`
+- [x] `VacationOverlapError`, `InsufficientVacationDaysError`
+- [x] `EmployeeHasActiveProcessesError` (для предупреждений)
+- [x] Глобальный обработчик → `{detail, error_code, status_code}`
 
-- `HRMSException(message, error_code)` — базовый класс
-- `EmployeeNotFoundError`, `OrderNotFoundError`, `VacationNotFoundError`
-- `DuplicateTabNumberError`, `VacationOverlapError`, `InsufficientVacationDaysError`
+---
 
-Создать `api/exception_handlers.py` — глобальный обработчик → `{detail, error_code, status_code}`.
+### HRMS-012b — Исправление: автоматический commit транзакций БД ✅ ВЫПОЛНЕНО
+**Приоритет:** Высокий  
+**Слой:** Backend / Core
+
+- [x] Добавлен автоматический `await db.commit()` в `get_db()` после успешного выполнения запроса
+- [x] Добавлена обработка ошибок с `await db.rollback()` при исключениях
+- [x] Исправлена критическая проблема где все изменения (create/update/delete) теряли после завершения запроса
+- [x] Протестировано: редактирование, архивирование, восстановление сотрудников теперь сохраняются корректно
+
+---
+
+### HRMS-012c — Исправление: отправка только редактируемых полей в PUT запросе ✅ ВЫПОЛНЕНО
+**Приоритет:** Высокий  
+**Слой:** Frontend / features
+
+- [x] Исправлена форма редактирования сотрудника (`features/employee-form/index.tsx`)
+- [x] Теперь отправляются только поля из интерфейса `EmployeeUpdate` (исключены readonly: id, tab_number, created_at, updated_at, is_archived, is_deleted и т.д.)
+- [x] Добавлено логирование отправляемых данных для отладки
+- [x] Протестировано: изменения сотрудников теперь сохраняются корректно в БД
+
+---
+
+### HRMS-012b — Исправление: автоматический commit транзакций БД ✅ ВЫПОЛНЕНО
+**Приоритет:** Критический  
+**Слой:** Backend / Core
+
+**Проблема:** Функция `get_db()` в `core/database.py` не делала commit транзакций. Все изменения (создание, обновление, удаление сотрудников) терялись после завершения запроса, хотя API возвращал 200 OK.
+
+**Решение:**
+- [x] Добавлен автоматический `await session.commit()` после успешного выполнения запроса
+- [x] Добавлена обработка ошибок с `await session.rollback()` при исключениях
+- [x] Теперь все операции с БД сохраняются корректно
+
+**Тестирование:** Все CRUD операции (создание, редактирование, архивирование, восстановление) работают корректно и данные сохраняются в БД.
+
+---
+
+### HRMS-012c — Исправление: отправка только редактируемых полей в PUT запросе ✅ ВЫПОЛНЕНО
+**Приоритет:** Высокий  
+**Слой:** Frontend / features
+
+**Проблема:** Форма редактирования сотрудника отправляла весь объект `Employee` (включая readonly поля: `id`, `tab_number`, `created_at`, `updated_at`, `is_archived` и т.д.). Хотя бэкенд использовал `model_dump(exclude_unset=True)`, Pydantic считал все поля "set", что приводило к неправильной обработке.
+
+**Решение:**
+- [x] Исправлена функция `handleSubmit` в `frontend/src/features/employee-form/index.tsx`
+- [x] Теперь отправляются только редактируемые поля согласно интерфейсу `EmployeeUpdate`:
+  - `name`, `department`, `position`
+  - `hire_date`, `birth_date`, `gender`
+  - `citizenship`, `residency`, `pensioner`
+  - `payment_form`, `rate`
+  - `contract_start`, `contract_end`
+  - `personal_number`, `insurance_number`, `passport_number`
+- [x] Исключены readonly поля: `id`, `tab_number`, `created_at`, `updated_at`, `is_archived`, `is_deleted` и т.д.
+
+**Тестирование:** Редактирование сотрудников через UI теперь работает корректно, изменения сохраняются в БД и отображаются в таблице.
 
 ---
 
@@ -515,38 +598,41 @@ Middleware для логирования запросов: `method`, `path`, `st
 
 ## Сводная таблица задач
 
-| ID | Задача | Слой | Приоритет | Спринт |
-|----|--------|------|-----------|--------|
-| HRMS-001 | Инициализация монорепо | Infra | Высокий | 1 |
-| HRMS-002 | Docker Compose (dev/test/prod) | Infra | Высокий | 1 |
-| HRMS-003 | FastAPI: инициализация + health check | Backend | Высокий | 1 |
-| HRMS-004 | Модели SQLAlchemy + миграция | Backend | Высокий | 1 |
-| HRMS-005 | Инициализация Frontend | Frontend | Высокий | 1 |
-| HRMS-006 | Repository: Employee | Backend | Высокий | 2 |
-| HRMS-007 | Service: Employee | Backend | Высокий | 2 |
-| HRMS-008 | API: Employee endpoints | Backend | Высокий | 2 |
-| HRMS-009 | Pydantic схемы Employee + валидация дат | Backend | Высокий | 2 |
-| HRMS-010 | Frontend: entities/employee | Frontend | Высокий | 2 |
-| HRMS-011 | Frontend: EmployeesPage | Frontend | Высокий | 2 |
-| HRMS-012 | Обработка ошибок (exceptions) | Backend | Высокий | 2 |
-| HRMS-013 | Repository: Order + OrderSequence | Backend | Высокий | 3 |
-| HRMS-014 | Service: Order + генерация docx | Backend | Высокий | 3 |
-| HRMS-015 | Утилиты: file_helpers | Backend | Средний | 3 |
-| HRMS-016 | API: Order endpoints | Backend | Высокий | 3 |
-| HRMS-017 | API: Templates endpoints | Backend | Средний | 3 |
-| HRMS-018 | Frontend: entities/order + OrdersPage | Frontend | Высокий | 3 |
-| HRMS-019 | Vacation: Repo + Service + API | Backend | Высокий | 4 |
-| HRMS-020 | API: Files (фото + личные дела) | Backend | Средний | 4 |
-| HRMS-021 | Frontend: entities/vacation + VacationsPage | Frontend | Средний | 4 |
-| HRMS-022 | JWT аутентификация (security + get_current_user) | Backend | Высокий | 5 |
-| HRMS-023 | API: Auth + Users | Backend | Высокий | 5 |
-| HRMS-024 | Frontend: аутентификация + LoginPage | Frontend | Высокий | 5 |
-| HRMS-025 | API: Analytics | Backend | Средний | 6 |
-| HRMS-026 | Frontend: DashboardPage | Frontend | Средний | 6 |
-| HRMS-027 | Структурированное логирование (structlog) | Backend | Средний | 6 |
-| HRMS-028 | Проверка целостности при старте | Backend | Средний | 6 |
-| HRMS-029 | API: Maintenance (fix-broken-links) | Backend | Низкий | 6 |
-| HRMS-030 | Frontend: ErrorBoundary + EmptyState | Frontend | Средний | 6 |
-| HRMS-031 | CORS + connection pool | Backend | Высокий | 6 |
-| HRMS-032 | Справочники (References API) | Backend | Низкий | 6 |
-| HRMS-033 | Скрипт резервного копирования | Infra | Низкий | 6 |
+| ID | Задача | Слой | Приоритет | Спринт | Статус |
+|----|--------|------|-----------|--------|--------|
+| HRMS-001 | Инициализация монорепо | Infra | Высокий | 1 | ✅ |
+| HRMS-002 | Docker Compose (dev/test/prod) | Infra | Высокий | 1 | ✅ |
+| HRMS-003 | FastAPI: инициализация + health check | Backend | Высокий | 1 | ✅ |
+| HRMS-004 | Модели SQLAlchemy + миграция | Backend | Высокий | 1 | ✅ |
+| HRMS-004b | Миграция: поля аудита и архивации | Backend/Models | Высокий | 2 | ✅ |
+| HRMS-005 | Инициализация Frontend | Frontend | Высокий | 1 | ✅ |
+| HRMS-006 | Repository: Employee | Backend | Высокий | 2 | ✅ |
+| HRMS-007 | Service: Employee | Backend | Высокий | 2 | ✅ |
+| HRMS-008 | API: Employee endpoints | Backend | Высокий | 2 | ✅ |
+| HRMS-009 | Pydantic схемы Employee + валидация дат | Backend | Высокий | 2 | ✅ |
+| HRMS-010 | Frontend: entities/employee | Frontend | Высокий | 2 | ✅ |
+| HRMS-011 | Frontend: EmployeesPage | Frontend | Высокий | 2 | ✅ |
+| HRMS-012 | Обработка ошибок (exceptions) | Backend | Высокий | 2 | ✅ |
+| HRMS-012b | Исправление: автоматический commit транзакций БД | Backend | Высокий | 2 | ✅ |
+| HRMS-012c | Исправление: отправка только редактируемых полей в PUT | Frontend | Высокий | 2 | ✅ |
+| HRMS-013 | Repository: Order + OrderSequence | Backend | Высокий | 3 | |
+| HRMS-014 | Service: Order + генерация docx | Backend | Высокий | 3 | |
+| HRMS-015 | Утилиты: file_helpers | Backend | Средний | 3 | |
+| HRMS-016 | API: Order endpoints | Backend | Высокий | 3 | |
+| HRMS-017 | API: Templates endpoints | Backend | Средний | 3 | |
+| HRMS-018 | Frontend: entities/order + OrdersPage | Frontend | Высокий | 3 | |
+| HRMS-019 | Vacation: Repo + Service + API | Backend | Высокий | 4 | |
+| HRMS-020 | API: Files (фото + личные дела) | Backend | Средний | 4 | |
+| HRMS-021 | Frontend: entities/vacation + VacationsPage | Frontend | Средний | 4 | |
+| HRMS-022 | JWT аутентификация (security + get_current_user) | Backend | Высокий | 5 | |
+| HRMS-023 | API: Auth + Users | Backend | Высокий | 5 | |
+| HRMS-024 | Frontend: аутентификация + LoginPage | Frontend | Высокий | 5 | |
+| HRMS-025 | API: Analytics | Backend | Средний | 6 | |
+| HRMS-026 | Frontend: DashboardPage | Frontend | Средний | 6 | |
+| HRMS-027 | Структурированное логирование (structlog) | Backend | Средний | 6 | |
+| HRMS-028 | Проверка целостности при старте | Backend | Средний | 6 | |
+| HRMS-029 | API: Maintenance (fix-broken-links) | Backend | Низкий | 6 | |
+| HRMS-030 | Frontend: ErrorBoundary + EmptyState | Frontend | Средний | 6 | |
+| HRMS-031 | CORS + connection pool | Backend | Высокий | 6 | |
+| HRMS-032 | Справочники (References API) | Backend | Низкий | 6 | |
+| HRMS-033 | Скрипт резервного копирования | Infra | Низкий | 6 | |

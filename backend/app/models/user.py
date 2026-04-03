@@ -1,6 +1,6 @@
 from enum import Enum
 
-from sqlalchemy import Column, Integer, String, DateTime, CheckConstraint
+from sqlalchemy import Column, Integer, String, DateTime, CheckConstraint, Boolean
 from sqlalchemy.sql import func
 
 from app.models.base import Base
@@ -27,3 +27,7 @@ class User(Base):
     role = Column(String(50), nullable=False, default=UserRole.HR_SPECIALIST.value)
     full_name = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    is_deleted = Column(Boolean, default=False, nullable=False, index=True)
+    deleted_at = Column(DateTime(timezone=True))
+    deleted_by = Column(String(100))
