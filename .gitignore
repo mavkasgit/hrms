@@ -55,6 +55,7 @@ dist-ssr/
 *.swo
 *~
 .DS_Store
+.qwen
 
 # Docker
 data/

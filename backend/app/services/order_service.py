@@ -101,32 +101,37 @@ class OrderService:
         return order
 
     async def create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
+        if db.in_transaction():
+            return await self._do_create_order(db, data)
         async with db.begin():
-            if data.order_number:
-                order_number = f"{int(data.order_number):02d}"
-            else:
-                year = data.order_date.year
-                order_number = await self.order_repo.get_next_order_number(db, year)
+            return await self._do_create_order(db, data)
 
-            employee = await self.employee_repo.get_by_id(db, data.employee_id)
-            if not employee:
-                raise EmployeeNotFoundError(data.employee_id)
+    async def _do_create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
+        if data.order_number:
+            order_number = f"{int(data.order_number):02d}"
+        else:
+            year = data.order_date.year
+            order_number = await self.order_repo.get_next_order_number(db, year)
 
-            year_dir = Path(settings.ORDERS_PATH) / str(data.order_date.year)
-            year_dir.mkdir(parents=True, exist_ok=True)
+        employee = await self.employee_repo.get_by_id(db, data.employee_id)
+        if not employee:
+            raise EmployeeNotFoundError(data.employee_id)
 
-            file_path = await self._generate_document(order_number, data, employee, year_dir)
+        year_dir = Path(settings.ORDERS_PATH) / str(data.order_date.year)
+        year_dir.mkdir(parents=True, exist_ok=True)
 
-            order = await self.order_repo.create(db, {
-                "order_number": order_number,
-                "order_type": data.order_type,
-                "employee_id": data.employee_id,
-                "order_date": data.order_date,
-                "file_path": file_path,
-                "notes": data.notes,
-            })
+        file_path = await self._generate_document(order_number, data, employee, year_dir)
 
-            return order
+        order = await self.order_repo.create(db, {
+            "order_number": order_number,
+            "order_type": data.order_type,
+            "employee_id": data.employee_id,
+            "order_date": data.order_date,
+            "file_path": file_path,
+            "notes": data.notes,
+        })
+
+        return order
 
     async def _generate_document(
         self,
@@ -404,7 +409,7 @@ class OrderService:
             {"name": "{order_number}", "description": "Номер приказа", "category": "Приказ"},
             {"name": "{order_date}", "description": "Дата приказа (ДД.ММ.ГГГГ)", "category": "Приказ"},
             {"name": "{order_type_lower}", "description": "Тип приказа строчными буквами", "category": "Приказ"},
-            
+
             {"name": "{full_name}", "description": "ФИО полностью", "category": "ФИО"},
             {"name": "{full_name_upper}", "description": "ФИО заглавными буквами", "category": "ФИО"},
             {"name": "{full_name_title}", "description": "ФИО с заглавной буквы", "category": "ФИО"},
@@ -413,12 +418,12 @@ class OrderService:
             {"name": "{short_name}", "description": "Фамилия И.О.", "category": "ФИО"},
             {"name": "{initials_before}", "description": "И.О. Фамилия", "category": "ФИО"},
             {"name": "{last_name_then_initials}", "description": "Фамилия И.О. (без пробела)", "category": "ФИО"},
-            
+
             {"name": "{position}", "description": "Должность (все строчные)", "category": "Работа"},
             {"name": "{position_cap}", "description": "Должность (с заглавной буквы)", "category": "Работа"},
             {"name": "{department}", "description": "Подразделение", "category": "Работа"},
             {"name": "{tab_number}", "description": "Табельный номер", "category": "Работа"},
-            
+
             {"name": "{hire_date}", "description": "Дата приема на работу (из карточки сотрудника)", "category": "Даты"},
             {"name": "{contract_start}", "description": "Дата начала контракта", "category": "Даты"},
             {"name": "{contract_end}", "description": "Дата окончания контракта (вводится вручную)", "category": "Даты"},
@@ -438,6 +443,66 @@ class OrderService:
 
             {"name": "{contract_number}", "description": "Номер контракта", "category": "Прочее"},
         ]
+
+    async def cancel_order(self, db: AsyncSession, order_id: int, user_id: str) -> bool:
+        """Отмена приказа + отмена связанных отпусков."""
+        order = await self.order_repo.get_by_id(db, order_id)
+        if not order:
+            raise OrderNotFoundError(order_id)
+
+        # Отменяем связанные отпуска
+        from app.models.vacation import Vacation
+        from sqlalchemy import select as sa_select
+        vac_result = await db.execute(
+            sa_select(Vacation).where(
+                Vacation.order_id == order_id,
+                Vacation.is_deleted == False,
+                Vacation.is_cancelled == False,
+            )
+        )
+        vacations = list(vac_result.scalars().all())
+        for vac in vacations:
+            vac.is_cancelled = True
+            from datetime import datetime
+            vac.cancelled_at = datetime.now()
+            vac.cancelled_by = user_id
+
+        # Отменяем приказ
+        await self.order_repo.cancel(db, order_id, user_id)
+        await db.commit()
+        return True
+
+    async def hard_delete_order(self, db: AsyncSession, order_id: int) -> bool:
+        """Полное удаление приказа + связанных отпусков."""
+        order = await self.order_repo.get_by_id(db, order_id)
+        if not order:
+            raise OrderNotFoundError(order_id)
+
+        # Удаляем связанные отпуска
+        from app.models.vacation import Vacation
+        from sqlalchemy import select as sa_select
+        vac_result = await db.execute(
+            sa_select(Vacation).where(
+                Vacation.order_id == order_id,
+                Vacation.is_deleted == False,
+            )
+        )
+        vacations = list(vac_result.scalars().all())
+        for vac in vacations:
+            await db.delete(vac)
+
+        # Удаляем файл приказа
+        if order.file_path:
+            import os
+            try:
+                os.remove(order.file_path)
+            except OSError:
+                pass
+
+        # Удаляем приказ
+        await self.order_repo.hard_delete(db, order_id)
+        await db.commit()
+        return True
 
 
 order_service = OrderService()

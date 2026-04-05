@@ -14,6 +14,8 @@ class Employee(Base):
     name = Column(String(255), nullable=False, index=True)
     department = Column(String(100), nullable=False, index=True)
     position = Column(String(100), nullable=False)
+    vacation_days_override = Column(Integer, nullable=True)
+    vacation_days_correction = Column(Integer, nullable=True)
     hire_date = Column(Date)
     birth_date = Column(Date)
     gender = Column(String(1))

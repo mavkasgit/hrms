@@ -10,4 +10,5 @@ from app.models.employee import Employee, EmployeeAuditLog  # noqa: F401, E402
 from app.models.order import Order, OrderSequence  # noqa: F401, E402
 from app.models.vacation import Vacation  # noqa: F401, E402
 from app.models.reference import Reference  # noqa: F401, E402
+from app.models.references import PositionVacationConfig, Holiday  # noqa: F401, E402
 from app.models.user import User, UserRole  # noqa: F401, E402

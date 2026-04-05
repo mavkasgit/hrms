@@ -21,6 +21,10 @@ class Order(Base):
     deleted_at = Column(DateTime(timezone=False))
     deleted_by = Column(String(100))
 
+    is_cancelled = Column(Boolean, default=False, nullable=False, index=True)
+    cancelled_at = Column(DateTime(timezone=False))
+    cancelled_by = Column(String(100))
+
     employee = relationship("Employee", back_populates="orders")
 
 

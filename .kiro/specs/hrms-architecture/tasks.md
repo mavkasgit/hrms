@@ -289,7 +289,7 @@ PERSONAL_FILES_PATH=/app/data/personal
 
 ## Спринт 3 — Приказы
 
-### HRMS-013 — Repository: Order
+### HRMS-013 — Repository: Order ✅ ВЫПОЛНЕНО
 **Приоритет:** Высокий  
 **Слой:** Backend / Repository
 
@@ -304,7 +304,7 @@ PERSONAL_FILES_PATH=/app/data/personal
 
 ---
 
-### HRMS-014 — Service: Order + генерация документов
+### HRMS-014 — Service: Order + генерация документов ✅ ВЫПОЛНЕНО
 **Приоритет:** Высокий  
 **Слой:** Backend / Service
 
@@ -325,7 +325,7 @@ PERSONAL_FILES_PATH=/app/data/personal
 
 ---
 
-### HRMS-015 — Утилита: helper-функции
+### HRMS-015 — Утилита: helper-функции ✅ ВЫПОЛНЕНО
 **Приоритет:** Средний  
 **Слой:** Backend / Utils
 
@@ -337,7 +337,7 @@ PERSONAL_FILES_PATH=/app/data/personal
 
 ---
 
-### HRMS-016 — API: Order endpoints
+### HRMS-016 — API: Order endpoints ✅ ВЫПОЛНЕНО
 **Приоритет:** Высокий  
 **Слой:** Backend / API
 
@@ -358,7 +358,7 @@ PERSONAL_FILES_PATH=/app/data/personal
 
 ---
 
-### HRMS-017 — API: Templates endpoints
+### HRMS-017 — API: Templates endpoints ✅ ВЫПОЛНЕНО
 **Приоритет:** Средний  
 **Слой:** Backend / API
 
@@ -372,7 +372,7 @@ PERSONAL_FILES_PATH=/app/data/personal
 
 ---
 
-### HRMS-018 — Frontend: сущность Order + страница OrdersPage
+### HRMS-018 — Frontend: сущность Order + страница OrdersPage ✅ ВЫПОЛНЕНО
 **Приоритет:** Высокий  
 **Слой:** Frontend
 
@@ -387,26 +387,145 @@ PERSONAL_FILES_PATH=/app/data/personal
 - Форма создания приказа (выбор сотрудника, тип, дата, номер)
 - Автоподстановка следующего номера через `GET /api/orders/next-number`
 - Поле для ручного ввода номера
+- Динамические дополнительные поля в зависимости от типа приказа
+- Боковая панель (300px) с доп. полями (даты, кол-во дней)
 
 ---
 
 ## Спринт 4 — Отпуска и файлы
 
-### HRMS-019 — Repository + Service + API: Vacation
-**Приоритет:** Высокий  
-**Слой:** Backend
+### HRMS-019a — Миграция: vacation_days_override + position_vacation_config + holidays ✅ ВЫПОЛНЕНО
+**Приоритет:** 🔴 Критический
+**Слой:** Backend / Models
 
-`repositories/vacation_repository.py`:
-- CRUD методы, `get_used_days(db, tab_number, year)`
+- [x] Добавить поле `vacation_days_override: Optional[int]` в модель `Employee` — персональный override дней отпуска
+- [x] Добавить поле `vacation_days_correction: Optional[int]` в модель `Employee` — ручная поправка для расчёта остатка
+- [x] Создать модель `PositionVacationConfig`:
+  - `id` (PK), `position` (String, unique), `days` (Integer), `created_at`, `updated_at`
+  - Хранит сколько дней отпуска положено для каждой должности
+- [x] Создать модель `Holiday`:
+  - `id` (PK), `date` (Date, unique), `name` (String), `year` (Integer)
+  - Хранит праздничные дни которые не считаются за дни отпуска
+  - Seed: стандартные праздники (1-8 янв, 7 янв, 8 мар, 1 мая, 9 мая, 3 июля, 7 нояб, 25 дек)
+- [x] Создать объединённую миграцию `003_vacation_management` (включает vacation поля, order_id, is_cancelled, holidays)
 
-`services/vacation_service.py`:
-- `create_vacation` — валидация дат, проверка существования сотрудника, проверка пересечений, проверка лимита дней
-- `calculate_available_days` — пропорциональный расчёт для сотрудников, принятых в середине года (28/12 * месяцы)
-- `get_vacation_stats(db, tab_number)` → `{used_days, available_days, remaining_days}`
+**Логика расчёта доступных дней:**
+```
+доступно = employee.vacation_days_override 
+        или position_vacation_config.days (по должности) 
+        или 28 (дефолт)
+```
 
-`api/vacations.py`:
-- `GET/POST /api/vacations`
-- `GET/PUT/DELETE /api/vacations/{id}`
+**Логика расчёта дней отпуска:**
+```
+дни = (end_date - start_date + 1) - count(holidays between start and end)
+```
+
+---
+
+### HRMS-019b — Утилита: working_days.py ✅ ВЫПОЛНЕНО
+**Приоритет:** 🔴 Критический
+**Слой:** Backend / Utils
+
+Создать `utils/working_days.py`:
+
+- [x] `calculate_vacation_days(start_date, end_date, holidays=[])` → int
+  - Считает календарные дни между датами минус праздники
+  - Пример: 10 дней календарных, 2 праздника внутри = 8 дней отпуска
+- [x] `count_holidays_in_range(start_date, end_date, db)` → int
+  - Запрос к БД для подсчёта праздников в диапазоне
+- [x] `get_holidays_for_year(year, db)` → List[Holiday]
+  - Вернуть все праздники за год
+
+**Правила:**
+- Праздничные дни НЕ считаются за дни отпуска
+- Если отпуск попадает на праздник — этот день вычитается из общего количества
+- Выходные (суббота/воскресенье) считаются за дни отпуска (календарный подход)
+
+---
+
+### HRMS-019c — Repository: Vacation ✅ ВЫПОЛНЕНО
+**Приоритет:** 🔴 Критический
+**Слой:** Backend / Repository
+
+Создать `repositories/vacation_repository.py`:
+
+- [x] `create(db, data)` → `Vacation`
+- [x] `get_by_id(db, id)` → `Optional[Vacation]`
+- [x] `get_all(db, employee_id?, year?, vacation_type?, page, per_page)` → `(List[Vacation], total)`
+- [x] `get_by_employee_id(db, employee_id, year?)` → `List[Vacation]`
+- [x] `update(db, id, data)` → `Vacation`
+- [x] `soft_delete(db, id, user_id)` → bool
+- [x] `hard_delete(db, id)` → bool
+- [x] `get_used_days(db, employee_id, year)` → int
+- [x] `get_vacation_balance(db, employee_id, year)` → dict
+- [x] `get_employees_summary(db, q?, archive_filter?)` → List[Dict] (новый метод для summary-таблицы)
+- [x] `get_employee_vacation_history(db, employee_id)` → Dict (новый метод для истории по годам)
+- [x] `cancel(db, id, user_id)` → bool (отмена отпуска)
+
+---
+
+### HRMS-019d — Service: Vacation
+**Приоритет:** 🔴 Критический  
+**Слой:** Backend / Service
+
+Создать `services/vacation_service.py`:
+
+- `create_vacation(db, data, user_id)` → `Vacation`
+  - Проверить что сотрудник существует
+  - Проверить что end_date >= start_date
+  - Проверить что нет пересечения с другим отпуском ЭТОГО ЖЕ сотрудника
+  - Рассчитать days_count через `calculate_vacation_days()` (календарные - праздники)
+  - Для "Трудового" отпуска — проверить что хватает доступных дней
+  - Для "За свой счет" — без проверки лимита
+  - Создать запись, добавить audit log
+- `update_vacation(db, id, data, user_id)` → `Vacation`
+  - Те же проверки что при создании
+  - Пересчитать days_count если даты изменились
+- `delete_vacation(db, id, user_id, hard=False)` → bool
+- `calculate_available_days(db, employee_id)` → int
+  - Получить доступные дни: override → по должности → 28
+  - Вычесть использованные дни за текущий год
+- `get_vacation_balance(db, employee_id)` → dict
+  - `{available_days, used_days, remaining_days, position, override}`
+- `get_vacation_stats(db, employee_id)` → dict
+  - Детальная статистика по типам и годам
+
+**Валидации:**
+- `start_date` не в прошлом
+- `end_date` >= `start_date`
+- Для "Трудового": `used_days + new_days <= available_days`
+- Пересечение отпусков только у одного сотрудника (не блокировать, но проверять)
+
+---
+
+### HRMS-019e — API: Vacation endpoints
+**Приоритет:** 🔴 Критический  
+**Слой:** Backend / API
+
+Создать `api/vacations.py`:
+
+- `GET /api/vacations?employee_id=&year=&vacation_type=&page=&per_page=` — список с фильтрами
+- `POST /api/vacations` — создать отпуск
+- `GET /api/vacations/{id}` — один отпуск
+- `PUT /api/vacations/{id}` — обновить
+- `DELETE /api/vacations/{id}?hard=false` — удалить
+- `GET /api/vacations/stats?employee_id=` — статистика по сотруднику
+- `GET /api/employees/{id}/vacation-balance` — баланс конкретного сотрудника (доступно/использовано/остаток)
+- `GET /api/references/vacation-days-by-position` — справочник дней по должностям
+- `PATCH /api/references/vacation-days-by-position` — настроить дни для должности (admin)
+- `GET /api/references/holidays?year=` — список праздников
+- `POST /api/references/holidays` — добавить праздник (admin)
+- `DELETE /api/references/holidays/{id}` — удалить праздник (admin)
+
+**Схемы Pydantic:**
+- `VacationCreate`: employee_id, start_date, end_date, vacation_type
+- `VacationUpdate`: start_date?, end_date?, vacation_type?
+- `VacationResponse`: id, employee_id, employee_name, start_date, end_date, vacation_type, days_count, created_at
+- `VacationListResponse`: items, total, page, per_page
+- `VacationBalanceResponse`: available_days, used_days, remaining_days, vacation_type_breakdown
+- `PositionVacationConfigResponse`: position, days
+- `HolidayResponse`: id, date, name, year
 
 ---
 
@@ -429,170 +548,149 @@ PERSONAL_FILES_PATH=/app/data/personal
 
 ---
 
-### HRMS-021 — Frontend: сущность Vacation + страница VacationsPage
-**Приоритет:** Средний  
-**Слой:** Frontend
+### HRMS-021a — Frontend: сущность Vacation
+**Приоритет:** 🔴 Критический  
+**Слой:** Frontend / entities
 
-Создать `entities/vacation/`: `types.ts`, `api.ts`, `useVacations.ts`
+Создать `entities/vacation/`:
 
-Страница `VacationsPage` + `features/vacation-calendar/`:
-- Календарь или таблица отпусков
-- Форма добавления отпуска
-- Отображение статистики: использовано/доступно/остаток
+**types.ts:**
+```typescript
+interface Vacation {
+  id: number
+  employee_id: number
+  employee_name: string
+  start_date: string
+  end_date: string
+  vacation_type: "Трудовой" | "За свой счет"
+  days_count: number
+  created_at: string
+}
 
----
+interface VacationBalance {
+  available_days: number
+  used_days: number
+  remaining_days: number
+  vacation_type_breakdown: Record<string, number>
+}
 
-## Спринт 5 — Аутентификация и пользователи
+interface VacationCreate {
+  employee_id: number
+  start_date: string
+  end_date: string
+  vacation_type: string
+}
 
-### HRMS-022 — Backend: аутентификация JWT
-**Приоритет:** Высокий  
-**Слой:** Backend / Core
+interface PositionVacationConfig {
+  position: string
+  days: number
+}
 
-Создать `core/security.py`:
-- `create_access_token(data, expires_delta?)` — генерация JWT
-- `verify_token(token)` — проверка JWT
-- `hash_password(password)` / `verify_password(plain, hashed)` — через `passlib[bcrypt]`
+interface Holiday {
+  id: number
+  date: string
+  name: string
+  year: number
+}
+```
 
-Создать `core/auth.py` — зависимость `get_current_user`:
-- `ENV=dev` → возвращает фейкового admin без проверки токена
-- `ENV=test/prod` → строгая проверка JWT, `raise 401` при ошибке
+**api.ts:**
+- `getVacations(params)` — список с фильтрами
+- `createVacation(data)` — создать
+- `updateVacation(id, data)` — обновить
+- `deleteVacation(id, hard?)` — удалить
+- `getVacationBalance(employeeId)` — баланс
+- `getPositionVacationConfig()` — справочник дней по должностям
+- `setPositionVacationConfig(position, days)` — настроить
+- `getHolidays(year?)` — праздники
+- `addHoliday(date, name)` — добавить праздник
+- `deleteHoliday(id)` — удалить праздник
 
----
-
-### HRMS-023 — API: Auth + Users
-**Приоритет:** Высокий  
-**Слой:** Backend / API
-
-`api/auth.py`:
-- `POST /api/auth/login` → JWT + user info
-- `POST /api/auth/logout`
-- `GET /api/auth/me`
-
-`api/users.py` (только `admin`):
-- `GET /api/users`
-- `POST /api/users`
-- `PUT /api/users/{user_id}`
-- `DELETE /api/users/{user_id}`
-
----
-
-### HRMS-024 — Frontend: аутентификация
-**Приоритет:** Высокий  
-**Слой:** Frontend
-
-Создать `entities/user/`: `types.ts`, `api.ts`, `useAuth.ts`
-
-Создать `features/auth/`:
-- `LoginPage` — форма входа
-- Хранение JWT токена
-- Добавление `Authorization: Bearer {token}` заголовка в Axios
-- Редирект на `/login` при 401
-- Контекст/хук `useCurrentUser`
-
----
-
-## Спринт 6 — Аналитика, логирование и финализация
-
-### HRMS-025 — API: Analytics
-**Приоритет:** Средний  
-**Слой:** Backend / API
-
-Создать `api/analytics.py`:
-- `GET /api/analytics/dashboard?department=` → total, male/female, by_department, by_position, avg_age, avg_tenure_months, contracts
-- `GET /api/analytics/contracts?months_ahead=3` → список с приоритетами EXPIRED/HIGH/MEDIUM, группировка по месяцам
-- `GET /api/analytics/birthdays?days_ahead=30` → ФИО, дата, days_until, возраст
-- `GET /api/analytics/vacations` → статистика по каждому сотруднику
+**useVacations.ts:**
+- `useVacations(params)` — React Query хук
+- `useVacationBalance(employeeId)` — баланс
+- `useCreateVacation()` — мутация создания
+- `useUpdateVacation()` — мутация обновления
+- `useDeleteVacation()` — мутация удаления
+- `usePositionVacationConfig()` — справочник
+- `useHolidays(year?)` — праздники
 
 ---
 
-### HRMS-026 — Frontend: DashboardPage
-**Приоритет:** Средний  
-**Слой:** Frontend
+### HRMS-021b — Frontend: страница VacationsPage
+**Приоритет:** 🔴 Критический  
+**Слой:** Frontend / pages
 
-Страница `DashboardPage`:
-- Карточки с общей статистикой (total, м/ж, avg_age, avg_tenure)
-- Список контрактов, истекающих в ближайшие 3 месяца (с приоритетами)
-- Список ближайших дней рождений
-- Loading/error/empty states для каждого блока
+Страница `VacationsPage`:
 
----
-
-### HRMS-027 — Структурированное логирование
-**Приоритет:** Средний  
-**Слой:** Backend / Core
-
-Настроить `core/logging.py` через `structlog`:
-- `ENV=dev/test` → ConsoleRenderer
-- `ENV=prod` → JSONRenderer + файл `/app/logs/hrms.log` с ротацией (`RotatingFileHandler`, `LOG_MAX_BYTES=10MB`, `LOG_BACKUP_COUNT=5`)
-
-Middleware для логирования запросов: `method`, `path`, `status_code`, `duration_ms`, `user_id`.
-
-Логировать: создание/обновление/удаление записей, загрузку файлов, ошибки БД.
-
----
-
-### HRMS-028 — Проверка целостности при старте
-**Приоритет:** Средний  
-**Слой:** Backend / Core
-
-Создать `core/startup.py`:
-- `check_file_paths()` — проверить/создать `ORDERS_PATH`, `TEMPLATES_PATH`, `PERSONAL_FILES_PATH`; проверить права на запись; логировать результат
-- `check_broken_file_links()` — найти приказы, у которых `file_path` не существует на диске; логировать предупреждение с количеством
-
-Вызвать в `@app.on_event("startup")`.
+- Таблица отпусков с колонками: Сотрудник, Тип, Начало, Конец, Дней, Дата создания, Действия
+- Фильтры:
+  - По сотруднику (поиск по ФИО)
+  - По году (выпадающий список)
+  - По типу отпуска (Трудовой / За свой счет / Все)
+- Пагинация
+- Loading state: Skeleton
+- Error state: Alert
+- Empty state: EmptyState
+- Кнопка "Добавить отпуск" → открывает диалог
+- Кнопки в строке: редактировать, удалить
+- **Export CSV** — кнопка экспорта текущей таблицы в CSV файл
+- **Карточки статистики** сверху:
+  - Доступно дней (для выбранного сотрудника/года)
+  - Использовано
+  - Остаток
 
 ---
 
-### HRMS-029 — API: Maintenance
-**Приоритет:** Низкий  
-**Слой:** Backend / API
+### HRMS-021c — Frontend: форма создания/редактирования отпуска
+**Приоритет:** 🔴 Критический  
+**Слой:** Frontend / features
 
-Создать `api/maintenance.py`:
-- `POST /api/maintenance/fix-broken-links` (только `admin`) — попытаться найти файл по новому формату имени → обновить `file_path`; иначе удалить запись; вернуть `{fixed, deleted}`
+Создать `features/vacation-form/`:
 
----
-
-### HRMS-030 — Frontend: ErrorBoundary + глобальные UI компоненты
-**Приоритет:** Средний  
-**Слой:** Frontend / shared
-
-Создать:
-- `app/ErrorBoundary.tsx` — `Component` с `getDerivedStateFromError`, отображает `Alert` с ошибкой
-- `shared/ui/EmptyState.tsx` — иконка + заголовок + описание
-- Обернуть все страницы в `ErrorBoundary`
-
----
-
-### HRMS-031 — CORS и безопасность
-**Приоритет:** Высокий  
-**Слой:** Backend / Core
-
-В `main.py`:
-- Настроить `CORSMiddleware`: origins из `VITE_API_URL`, методы `GET/POST/PUT/DELETE/OPTIONS`, заголовки `Content-Type/Authorization`
-- Настроить connection pool: `pool_size=20`, `max_overflow=10`, `pool_pre_ping=True`, `command_timeout=30`
+- Диалог с формой:
+  - Выбор сотрудника (поиск по ФИО, autocomplete)
+  - Тип отпуска (выпадающий список: Трудовой / За свой счет)
+  - Дата начала (DatePicker)
+  - Дата конца (DatePicker)
+  - Автоматический расчёт дней (показывает "X календарных дней, Y праздников = Z дней отпуска")
+- **Баланс сотрудника** — при выборе сотрудника сразу показывать:
+  - `Доступно: 28 дн. | Использовано: 12 дн. | Остаток: 16 дн.`
+  - Если "Трудовой" и дней не хватает — показать предупреждение и заблокировать создание
+- Валидация:
+  - Сотрудник обязателен
+  - Тип отпуска обязателен
+  - Дата начала обязательна, не в прошлом
+  - Дата конца обязательна, >= даты начала
+- При изменении дат — пересчёт дней и обновление баланса
 
 ---
 
-### HRMS-032 — Справочники (References)
-**Приоритет:** Низкий  
-**Слой:** Backend
+### HRMS-021d — Frontend: Сайдбар + роутинг
+**Приоритет:** 🟡 Should  
+**Слой:** Frontend / app
 
-- Repository + Service + API для `Reference`
-- `GET /api/employees/references/departments`
-- `GET /api/employees/references/positions`
+- Добавить пункт "Отпуска" в боковую навигацию (Sidebar)
+- Иконка: `Calendar` из lucide-react
+- Роут: `/vacations` → `VacationsPage`
+- Обновить Layout.tsx
 
 ---
 
-### HRMS-033 — Скрипт резервного копирования
-**Приоритет:** Низкий  
-**Слой:** Infra
+### HRMS-021e — Frontend: страница настройки справочника
+**Приоритет:** 🟢 Nice  
+**Слой:** Frontend / pages
 
-Создать `infra/backup.sh`:
-- `tar -czf` архив `./data/`
-- `pg_dump` с gzip
-- Удаление backup старше 30 дней
-- Инструкция по добавлению в `cron` (запуск в 02:00)
-- Задокументировать процедуру восстановления в `README.md`
+Страница или диалог настройки дней отпуска по должностям:
+
+- Таблица: Должность | Дней отпуска | Действия
+- Кнопка "Добавить должность"
+- Inline редактирование (клик по ячейке → input)
+- Кнопка "Сохранить"
+- Справочник праздников:
+  - Таблица: Дата | Название | Год | Действия
+  - Кнопка "Добавить праздник"
+  - Inline редактирование
 
 ---
 
@@ -615,15 +713,23 @@ Middleware для логирования запросов: `method`, `path`, `st
 | HRMS-012 | Обработка ошибок (exceptions) | Backend | Высокий | 2 | ✅ |
 | HRMS-012b | Исправление: автоматический commit транзакций БД | Backend | Высокий | 2 | ✅ |
 | HRMS-012c | Исправление: отправка только редактируемых полей в PUT | Frontend | Высокий | 2 | ✅ |
-| HRMS-013 | Repository: Order + OrderSequence | Backend | Высокий | 3 | |
-| HRMS-014 | Service: Order + генерация docx | Backend | Высокий | 3 | |
-| HRMS-015 | Утилиты: file_helpers | Backend | Средний | 3 | |
-| HRMS-016 | API: Order endpoints | Backend | Высокий | 3 | |
-| HRMS-017 | API: Templates endpoints | Backend | Средний | 3 | |
-| HRMS-018 | Frontend: entities/order + OrdersPage | Frontend | Высокий | 3 | |
-| HRMS-019 | Vacation: Repo + Service + API | Backend | Высокий | 4 | |
+| HRMS-013 | Repository: Order + OrderSequence | Backend | Высокий | 3 | ✅ |
+| HRMS-014 | Service: Order + генерация docx | Backend | Высокий | 3 | ✅ |
+| HRMS-015 | Утилиты: file_helpers | Backend | Средний | 3 | ✅ |
+| HRMS-016 | API: Order endpoints | Backend | Высокий | 3 | ✅ |
+| HRMS-017 | API: Templates endpoints | Backend | Средний | 3 | ✅ |
+| HRMS-018 | Frontend: entities/order + OrdersPage | Frontend | Высокий | 3 | ✅ |
+| HRMS-019a | Миграция: vacation_days_override + position_vacation_config + holidays | Backend | 🔴 Критический | 4 | |
+| HRMS-019b | Утилита: working_days.py | Backend | 🔴 Критический | 4 | |
+| HRMS-019c | Repository: Vacation | Backend | 🔴 Критический | 4 | |
+| HRMS-019d | Service: Vacation | Backend | 🔴 Критический | 4 | |
+| HRMS-019e | API: Vacation endpoints (12 эндпоинтов) | Backend | 🔴 Критический | 4 | |
 | HRMS-020 | API: Files (фото + личные дела) | Backend | Средний | 4 | |
-| HRMS-021 | Frontend: entities/vacation + VacationsPage | Frontend | Средний | 4 | |
+| HRMS-021a | Frontend: entities/vacation | Frontend | 🔴 Критический | 4 | |
+| HRMS-021b | Frontend: VacationsPage + Export CSV | Frontend | 🔴 Критический | 4 | |
+| HRMS-021c | Frontend: VacationForm с балансом | Frontend | 🔴 Критический | 4 | |
+| HRMS-021d | Frontend: Сайдбар + роутинг | Frontend | 🟡 Should | 4 | |
+| HRMS-021e | Frontend: Страница настройки справочника | Frontend | 🟢 Nice | 4 | |
 | HRMS-022 | JWT аутентификация (security + get_current_user) | Backend | Высокий | 5 | |
 | HRMS-023 | API: Auth + Users | Backend | Высокий | 5 | |
 | HRMS-024 | Frontend: аутентификация + LoginPage | Frontend | Высокий | 5 | |

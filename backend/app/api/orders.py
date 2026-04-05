@@ -233,3 +233,23 @@ async def download_order(
         filename=file_path.name,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+
+@router.put("/{order_id}/cancel")
+async def cancel_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    await order_service.cancel_order(db, order_id, current_user)
+    return {"message": "Приказ отменён"}
+
+
+@router.delete("/{order_id}")
+async def delete_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    await order_service.hard_delete_order(db, order_id)
+    return {"message": "Приказ удалён"}

@@ -21,5 +21,11 @@ class Vacation(Base):
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
     deleted_at = Column(DateTime(timezone=True))
     deleted_by = Column(String(100))
+    comment = Column(String(500), nullable=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+
+    is_cancelled = Column(Boolean, default=False, nullable=False, index=True)
+    cancelled_at = Column(DateTime(timezone=True))
+    cancelled_by = Column(String(100))
 
     employee = relationship("Employee", back_populates="vacations")

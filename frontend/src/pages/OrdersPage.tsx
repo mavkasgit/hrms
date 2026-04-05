@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
-import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye } from "lucide-react"
+import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -8,6 +8,16 @@ import { Badge } from "@/shared/ui/badge"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/alert-dialog"
 import {
   Table,
   TableBody,
@@ -21,6 +31,8 @@ import {
   useOrderYears,
   useOrderTypes,
   useCreateOrder,
+  useCancelOrder,
+  useDeleteOrder,
 } from "@/entities/order/useOrders"
 import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
 import { getExtraFields, calculateDaysBetween, getAutoDaysConfig, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
@@ -70,6 +82,21 @@ export function OrdersPage() {
   const { data: searchResult } = useSearchEmployees(searchQuery)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
   const createMutation = useCreateOrder()
+  const cancelMutation = useCancelOrder()
+  const deleteMutation = useDeleteOrder()
+
+  const [cancelOrderId, setCancelOrderId] = useState<number | null>(null)
+  const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
+
+  const handleCancelOrderConfirm = () => {
+    if (cancelOrderId) cancelMutation.mutate(cancelOrderId)
+    setCancelOrderId(null)
+  }
+
+  const handleDeleteOrderConfirm = () => {
+    if (deleteOrderId) deleteMutation.mutate(deleteOrderId)
+    setDeleteOrderId(null)
+  }
 
   const computedNextNumber = computeNextOrderNumber(data?.items || [], year)
 
@@ -541,6 +568,24 @@ export function OrdersPage() {
                     >
                       <Download className="h-4 w-4" />
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Отменить приказ"
+                      onClick={() => setCancelOrderId(order.id)}
+                      className="text-amber-500 hover:text-amber-700"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Удалить приказ"
+                      onClick={() => setDeleteOrderId(order.id)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -548,6 +593,40 @@ export function OrdersPage() {
           </TableBody>
         </Table>
       )}
+
+      <AlertDialog open={cancelOrderId !== null} onOpenChange={(open) => !open && setCancelOrderId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отменить приказ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Связанные отпуска также будут отменены, дни вернутся в остаток.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={handleCancelOrderConfirm} className="bg-amber-600 hover:bg-amber-700">
+              Отменить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteOrderId !== null} onOpenChange={(open) => !open && setDeleteOrderId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить приказ безвозвратно?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Файл приказа и связанные отпуска будут удалены безвозвратно. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteOrderConfirm} className="bg-red-600 hover:bg-red-700">
+              Удалить навсегда
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
