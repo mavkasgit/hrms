@@ -1,12 +1,12 @@
 import { useState, useRef, KeyboardEvent } from "react"
 import { Input } from "@/shared/ui/input"
 import { Badge } from "@/shared/ui/badge"
+import { Button } from "@/shared/ui/button"
 import { Calendar } from "lucide-react"
 import { DayPicker } from "react-day-picker"
 import { ru } from "date-fns/locale"
 import { format, parse, isValid } from "date-fns"
 import { Popover, PopoverTrigger, PopoverContent } from "@/shared/ui/popover"
-import { Button } from "@/shared/ui/button"
 import "react-day-picker/style.css"
 
 // ─── Variant 1: Native date input with large icon ───

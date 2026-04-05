@@ -217,6 +217,7 @@ async def download_order(
     current_user: str = Depends(_get_current_user_stub),
 ):
     from pathlib import Path
+    from fastapi.responses import FileResponse
     from app.core.exceptions import HRMSException
 
     order = await order_service.get_by_id(db, order_id)

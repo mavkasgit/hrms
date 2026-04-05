@@ -9,6 +9,7 @@ interface DatePickerProps {
   label?: string
   required?: boolean
   className?: string
+  disabled?: boolean
 }
 
 const MONTH_NAMES = [
@@ -32,7 +33,7 @@ function formatDateForStorage(displayDate: string): string {
   return `${year}-${month}-${day}`
 }
 
-export function DatePicker({ value, onChange, label, required = false, className }: DatePickerProps) {
+export function DatePicker({ value, onChange, label, required = false, className, disabled = false }: DatePickerProps) {
   const [showCalendar, setShowCalendar] = useState(false)
   const [currentMonth, setCurrentMonth] = useState(value ? new Date(value + "T00:00:00") : new Date())
   const [inputValue, setInputValue] = useState(formatDateForDisplay(value))
@@ -144,7 +145,7 @@ export function DatePicker({ value, onChange, label, required = false, className
           {required && <span className="text-red-500 ml-0.5">*</span>}
         </label>
       )}
-      <div className="flex items-stretch gap-0 rounded-md border border-input focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+      <div className={cn("flex items-stretch gap-0 rounded-md border border-input focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2", disabled && "opacity-50 pointer-events-none")}>
         <input
           type="text"
           placeholder="ДД.ММ.ГГГГ"
@@ -154,6 +155,7 @@ export function DatePicker({ value, onChange, label, required = false, className
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur() }}
           className="flex h-10 w-full rounded-l-md border-0 bg-background px-3 py-2 text-sm ring-offset-0 placeholder:text-muted-foreground focus-visible:outline-none"
           maxLength={10}
+          disabled={disabled}
         />
         <Button
           type="button"
@@ -161,6 +163,7 @@ export function DatePicker({ value, onChange, label, required = false, className
           size="sm"
           className="h-10 rounded-l-none px-2.5"
           onClick={() => setShowCalendar(!showCalendar)}
+          disabled={disabled}
         >
           <Calendar className="h-4 w-4" />
         </Button>

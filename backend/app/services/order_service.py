@@ -197,17 +197,26 @@ class OrderService:
         order_date = data.order_date
         order_type_lower = data.order_type.lower()
 
-        contract_end = ""
-        if employee.contract_start:
-            from dateutil.relativedelta import relativedelta
-            contract_end = (order_date + relativedelta(years=1)).strftime("%d.%m.%Y")
-        else:
-            contract_end = (order_date + relativedelta(years=1)).strftime("%d.%m.%Y")
-
-        trial_end = (order_date + relativedelta(months=2)).strftime("%d.%m.%Y")
-
         hire_date_str = employee.hire_date.strftime("%d.%m.%Y") if employee.hire_date else ""
         contract_start_str = employee.contract_start.strftime("%d.%m.%Y") if employee.contract_start else ""
+
+        if employee.gender == "М":
+            oznak = "ознакомлен"
+        elif employee.gender == "Ж":
+            oznak = "ознакомлена"
+        else:
+            oznak = "ознакомлен(а)"
+
+        extra = data.extra_fields or {}
+
+        def fmt_extra(key: str) -> str:
+            val = extra.get(key, "")
+            if val and key.endswith("_date") or key in ("hire_order_date", "dismissal_date", "vacation_start", "vacation_end", "sick_leave_start", "sick_leave_end", "transfer_date", "contract_new_end", "contract_end", "trial_end"):
+                try:
+                    return datetime.strptime(str(val), "%Y-%m-%d").strftime("%d.%m.%Y")
+                except ValueError:
+                    return str(val)
+            return str(val) if val != "" else ""
 
         return {
             "{order_number}": order_number,
@@ -221,29 +230,69 @@ class OrderService:
             "{short_name}": short_name,
             "{initials_before}": initials_before,
             "{last_name_then_initials}": last_name_then_initials,
-            "{position}": employee.position or "",
+            "{position}": (employee.position or "").lower() if employee.position else "",
+            "{position_cap}": (employee.position or "").capitalize() if employee.position else "",
             "{department}": employee.department or "",
             "{tab_number}": str(employee.tab_number),
-            "{contract_end}": contract_end,
-            "{trial_end}": trial_end,
+            "{contract_end}": fmt_extra("contract_end"),
+            "{trial_end}": fmt_extra("trial_end"),
             "{contract_number}": "332/1",
             "{hire_date}": hire_date_str,
             "{contract_start}": contract_start_str,
+            "{hire_order_date}": fmt_extra("hire_date"),
+            "{dismissal_date}": fmt_extra("dismissal_date"),
+            "{vacation_start}": fmt_extra("vacation_start"),
+            "{vacation_end}": fmt_extra("vacation_end"),
+            "{vacation_days}": str(extra.get("vacation_days", "")),
+            "{sick_leave_start}": fmt_extra("sick_leave_start"),
+            "{sick_leave_end}": fmt_extra("sick_leave_end"),
+            "{sick_leave_days}": str(extra.get("sick_leave_days", "")),
+            "{transfer_date}": fmt_extra("transfer_date"),
+            "{contract_new_end}": fmt_extra("contract_new_end"),
+            "{oznak_gender}": oznak,
         }
 
     def _replace_placeholders(self, doc: Document, replacements: dict[str, str]):
         for paragraph in doc.paragraphs:
-            for key, value in replacements.items():
-                if key in paragraph.text:
-                    paragraph.text = paragraph.text.replace(key, value)
+            self._replace_in_runs(paragraph.runs, replacements)
 
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
-                        for key, value in replacements.items():
-                            if key in paragraph.text:
-                                paragraph.text = paragraph.text.replace(key, value)
+                        self._replace_in_runs(paragraph.runs, replacements)
+
+        for section in doc.sections:
+            for hdr in [section.header, section.first_page_header, section.even_page_header]:
+                for paragraph in hdr.paragraphs:
+                    self._replace_in_runs(paragraph.runs, replacements)
+                for table in hdr.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            for paragraph in cell.paragraphs:
+                                self._replace_in_runs(paragraph.runs, replacements)
+            
+            for ftr in [section.footer, section.first_page_footer, section.even_page_footer]:
+                for paragraph in ftr.paragraphs:
+                    self._replace_in_runs(paragraph.runs, replacements)
+                for table in ftr.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            for paragraph in cell.paragraphs:
+                                self._replace_in_runs(paragraph.runs, replacements)
+
+    def _replace_in_runs(self, runs: list, replacements: dict[str, str]):
+        if not runs:
+            return
+
+        full_text = "".join(run.text for run in runs if run.text)
+
+        for key, value in replacements.items():
+            full_text = full_text.replace(key, value)
+
+        runs[0].text = full_text
+        for i in range(1, len(runs)):
+            runs[i].text = ""
 
     async def sync_orders(self, db: AsyncSession, year: Optional[int] = None) -> dict:
         years_to_check = [year] if year else await self.order_repo.get_years(db)
@@ -365,15 +414,28 @@ class OrderService:
             {"name": "{initials_before}", "description": "И.О. Фамилия", "category": "ФИО"},
             {"name": "{last_name_then_initials}", "description": "Фамилия И.О. (без пробела)", "category": "ФИО"},
             
-            {"name": "{position}", "description": "Должность", "category": "Работа"},
+            {"name": "{position}", "description": "Должность (все строчные)", "category": "Работа"},
+            {"name": "{position_cap}", "description": "Должность (с заглавной буквы)", "category": "Работа"},
             {"name": "{department}", "description": "Подразделение", "category": "Работа"},
             {"name": "{tab_number}", "description": "Табельный номер", "category": "Работа"},
             
-            {"name": "{hire_date}", "description": "Дата приема на работу", "category": "Даты"},
+            {"name": "{hire_date}", "description": "Дата приема на работу (из карточки сотрудника)", "category": "Даты"},
             {"name": "{contract_start}", "description": "Дата начала контракта", "category": "Даты"},
-            {"name": "{contract_end}", "description": "Дата окончания контракта (+1 год от даты приказа)", "category": "Даты"},
-            {"name": "{trial_end}", "description": "Дата окончания испытательного срока (+2 месяца от даты приказа)", "category": "Даты"},
-            
+            {"name": "{contract_end}", "description": "Дата окончания контракта (вводится вручную)", "category": "Даты"},
+            {"name": "{trial_end}", "description": "Дата окончания испытательного срока (вводится вручную)", "category": "Даты"},
+            {"name": "{hire_order_date}", "description": "Дата приема (для приказа «Прием на работу»)", "category": "Даты"},
+            {"name": "{dismissal_date}", "description": "Дата увольнения (для приказа «Увольнение»)", "category": "Даты"},
+            {"name": "{vacation_start}", "description": "Начало отпуска (для приказов «Отпуск»)", "category": "Даты"},
+            {"name": "{vacation_end}", "description": "Конец отпуска (для приказов «Отпуск»)", "category": "Даты"},
+            {"name": "{vacation_days}", "description": "Кол-во дней отпуска", "category": "Даты"},
+            {"name": "{sick_leave_start}", "description": "Начало больничного", "category": "Даты"},
+            {"name": "{sick_leave_end}", "description": "Конец больничного", "category": "Даты"},
+            {"name": "{sick_leave_days}", "description": "Кол-во дней больничного", "category": "Даты"},
+            {"name": "{transfer_date}", "description": "Дата перевода", "category": "Даты"},
+            {"name": "{contract_new_end}", "description": "Новая дата конца контракта (для «Продление контракта»)", "category": "Даты"},
+
+            {"name": "{oznak_gender}", "description": "Ознакомлен/ознакомлена (по полу сотрудника)", "category": "Прочее"},
+
             {"name": "{contract_number}", "description": "Номер контракта", "category": "Прочее"},
         ]
 

@@ -20,9 +20,10 @@ import {
   useOrders,
   useOrderYears,
   useOrderTypes,
-  useNextOrderNumber,
   useCreateOrder,
 } from "@/entities/order/useOrders"
+import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
+import { getExtraFields, calculateDaysBetween, getAutoDaysConfig, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
 import { useSearchEmployees, useEmployees } from "@/entities/employee/useEmployees"
 import type { Employee } from "@/entities/employee/types"
 import api from "@/shared/api/axios"
@@ -51,6 +52,8 @@ export function OrdersPage() {
   const [orderTypeOpen, setOrderTypeOpen] = useState(false)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
   const [orderNumber, setOrderNumber] = useState("")
+  const [extraFields, setExtraFields] = useState<Record<string, string>>({})
+  const lastChangedRef = useRef<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const orderTypeRef = useRef<HTMLDivElement>(null)
@@ -64,16 +67,60 @@ export function OrdersPage() {
 
   const { data: years } = useOrderYears()
   const { data: types } = useOrderTypes()
-  const { data: nextNumber } = useNextOrderNumber(new Date().getFullYear())
   const { data: searchResult } = useSearchEmployees(searchQuery)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
   const createMutation = useCreateOrder()
 
+  const computedNextNumber = computeNextOrderNumber(data?.items || [], year)
+
   useEffect(() => {
-    if (nextNumber && !orderNumber) {
-      setOrderNumber(nextNumber)
+    if (computedNextNumber && !orderNumber) {
+      setOrderNumber(computedNextNumber)
     }
-  }, [nextNumber])
+  }, [computedNextNumber])
+
+  useEffect(() => {
+    const changed = lastChangedRef.current
+    if (!changed) return
+
+    const configs = [
+      { start: "vacation_start", end: "vacation_end", days: "vacation_days" },
+      { start: "sick_leave_start", end: "sick_leave_end", days: "sick_leave_days" },
+    ]
+
+    for (const cfg of configs) {
+      const s = extraFields[cfg.start] || ""
+      const e = extraFields[cfg.end] || ""
+      const d = extraFields[cfg.days] || ""
+
+      if (changed === cfg.start || changed === cfg.end) {
+        if (s && e) {
+          const days = calculateDaysBetween(cfg.start, cfg.end, extraFields)
+          if (days !== null && String(days) !== d) {
+            setExtraFields((prev) => ({ ...prev, [cfg.days]: String(days) }))
+          }
+        }
+      }
+
+      if (changed === cfg.days) {
+        const daysNum = parseInt(d, 10)
+        if (!isNaN(daysNum) && daysNum > 0) {
+          if (s && !e) {
+            const endDate = calculateEndDate(cfg.start, cfg.days, extraFields)
+            if (endDate) setExtraFields((prev) => ({ ...prev, [cfg.end]: endDate }))
+          } else if (!s && e) {
+            const startDate = calculateStartDate(cfg.end, cfg.days, extraFields)
+            if (startDate) setExtraFields((prev) => ({ ...prev, [cfg.start]: startDate }))
+          } else if (s && e) {
+            const expectedDays = calculateDaysBetween(cfg.start, cfg.end, extraFields)
+            if (expectedDays !== null && expectedDays !== daysNum) {
+              setExtraFields((prev) => ({ ...prev, [cfg.end]: calculateEndDate(cfg.start, cfg.days, extraFields)! }))
+            }
+          }
+        }
+      }
+    }
+  }, [extraFields])
 
   useEffect(() => {
     if (searchResult?.items) {
@@ -149,6 +196,8 @@ export function OrdersPage() {
     setOrderTypeSearch("")
     setOrderDate(new Date().toISOString().split("T")[0])
     setOrderNumber("")
+    setExtraFields({})
+    lastChangedRef.current = null
     setErrors({})
   }
 
@@ -163,12 +212,14 @@ export function OrdersPage() {
 
   const handleSubmit = () => {
     if (!validate()) return
+    const ef = Object.keys(extraFields).length > 0 ? extraFields : undefined
     createMutation.mutate(
       {
         employee_id: selectedEmployee!.id,
         order_type: orderType,
         order_date: orderDate,
         order_number: orderNumber || undefined,
+        extra_fields: ef,
       },
       {
         onSuccess: () => resetForm(),
@@ -176,30 +227,8 @@ export function OrdersPage() {
     )
   }
 
-  const handleDownload = async (orderId: number) => {
-    try {
-      const response = await api.get(`/orders/${orderId}/download`, {
-        responseType: "blob",
-      })
-      const url = window.URL.createObjectURL(new Blob([response.data]))
-      const link = document.createElement("a")
-      link.href = url
-      const contentDisposition = response.headers["content-disposition"]
-      let filename = `order_${orderId}.docx`
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
-        if (match) {
-          filename = decodeURIComponent(match[1].replace(/['"]/g, ""))
-        }
-      }
-      link.setAttribute("download", filename)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
-    } catch {
-      alert("Ошибка при скачивании файла")
-    }
+  const handleDownload = (orderId: number) => {
+    window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
   }
 
   const handlePreview = (orderId: number) => {
@@ -229,149 +258,192 @@ export function OrdersPage() {
         </div>
 
         {!collapsed && (
-          <div className="border-t px-4 py-4">
-            <div className="grid gap-4">
-              <div className="flex gap-4">
-                <div className="w-[29%]" ref={searchRef}>
-                  <label className="text-sm font-medium">Сотрудник *</label>
-                  {selectedEmployee ? (
-                    <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50">
-                      <Check className="h-4 w-4 text-green-600 shrink-0" />
-                      <span className="text-sm flex-1 truncate">
-                        {selectedEmployee.name}
-                        {selectedEmployee.tab_number && (
-                          <span className="text-muted-foreground ml-1">(таб. {selectedEmployee.tab_number})</span>
-                        )}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={clearEmployee}
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
+          <div className="border-t px-4 py-4 relative">
+            <div>
+              <div className="grid gap-4">
+                <div className="flex gap-4">
+                  <div className="w-[29%]" ref={searchRef}>
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">Сотрудник *</label>
                     </div>
-                  ) : (
-                    <div className="relative">
-                      <Input
-                        placeholder="Поиск по ФИО..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onKeyDown={handleEmployeeKeyDown}
-                        onFocus={() => { setSearchOpen(true); if (!searchQuery && allEmployees?.items) setSearchResults(allEmployees.items) }}
-                        className={errors.employee ? "border-red-500" : ""}
-                      />
-                      {searchResults.length > 0 && (
-                        <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
-                          {searchResults.map((emp) => (
-                            <button
-                              key={emp.id}
-                              type="button"
-                              className="w-full text-left px-3 py-2 hover:bg-muted text-sm border-b last:border-b-0"
-                              onClick={() => selectEmployee(emp)}
-                            >
-                              <span className="font-medium">{emp.name}</span>
-                              {emp.tab_number && (
-                                <span className="text-muted-foreground ml-2">таб. {emp.tab_number}</span>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {errors.employee && <p className="text-xs text-red-500 mt-1">{errors.employee}</p>}
-                </div>
-
-                <div className="w-[17%] relative" ref={orderTypeRef}>
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">Тип приказа *</label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-5 px-1.5 text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => navigate("/templates")}
-                      title="Управление шаблонами"
-                    >
-                      <Settings className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                  {orderType ? (
-                    <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50">
-                      <Check className="h-4 w-4 text-green-600 shrink-0" />
-                      <span className="text-sm flex-1">{orderType}</span>
-                      <button
-                        type="button"
-                        onClick={clearOrderType}
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
+                    {selectedEmployee ? (
+                      <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50">
+                        <Check className="h-4 w-4 text-green-600 shrink-0" />
+                        <span className="text-sm flex-1 truncate">
+                          {selectedEmployee.name}
+                          {selectedEmployee.tab_number && (
+                            <span className="text-muted-foreground ml-1">(таб. {selectedEmployee.tab_number})</span>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={clearEmployee}
+                          className="shrink-0 text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
                       <div className="relative">
                         <Input
-                          placeholder="Выберите тип..."
-                          value={orderTypeSearch}
-                          onChange={(e) => {
-                            setOrderTypeSearch(e.target.value)
-                            setOrderTypeOpen(true)
-                          }}
-                          onKeyDown={handleOrderTypeKeyDown}
-                          onFocus={() => setOrderTypeOpen(true)}
-                          className={errors.orderType ? "border-red-500" : ""}
+                          placeholder="Поиск по ФИО..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onKeyDown={handleEmployeeKeyDown}
+                          onFocus={() => { setSearchOpen(true); if (!searchQuery && allEmployees?.items) setSearchResults(allEmployees.items) }}
+                          className={errors.employee ? "border-red-500" : ""}
                         />
-                        {orderTypeOpen && filteredTypes.length > 0 && (
+                        {searchResults.length > 0 && (
                           <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
-                            {filteredTypes.map((t) => (
+                            {searchResults.map((emp) => (
                               <button
-                                key={t}
+                                key={emp.id}
                                 type="button"
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0"
-                                onClick={() => selectOrderType(t)}
+                                className="w-full text-left px-3 py-2 hover:bg-muted text-sm border-b last:border-b-0"
+                                onClick={() => selectEmployee(emp)}
                               >
-                                {t}
+                                <span className="font-medium">{emp.name}</span>
+                                {emp.tab_number && (
+                                  <span className="text-muted-foreground ml-2">таб. {emp.tab_number}</span>
+                                )}
                               </button>
                             ))}
                           </div>
                         )}
                       </div>
-                    </>
-                  )}
-                  {errors.orderType && <p className="text-xs text-red-500 mt-1">{errors.orderType}</p>}
+                    )}
+                    {errors.employee && <p className="text-xs text-red-500 mt-1">{errors.employee}</p>}
+                  </div>
+
+                  <div className="w-[17%] relative" ref={orderTypeRef}>
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium">Тип приказа *</label>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => navigate("/templates")}
+                        title="Управление шаблонами"
+                      >
+                        <Settings className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                    {orderType ? (
+                      <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50">
+                        <Check className="h-4 w-4 text-green-600 shrink-0" />
+                        <span className="text-sm flex-1 truncate">{orderType}</span>
+                        <button
+                          type="button"
+                          onClick={clearOrderType}
+                          className="shrink-0 text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="relative">
+                          <Input
+                            placeholder="Выберите тип..."
+                            value={orderTypeSearch}
+                            onChange={(e) => {
+                              setOrderTypeSearch(e.target.value)
+                              setOrderTypeOpen(true)
+                            }}
+                            onKeyDown={handleOrderTypeKeyDown}
+                            onFocus={() => setOrderTypeOpen(true)}
+                            className={errors.orderType ? "border-red-500" : ""}
+                          />
+                          {orderTypeOpen && filteredTypes.length > 0 && (
+                            <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
+                              {filteredTypes.map((t) => (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0"
+                                  onClick={() => selectOrderType(t)}
+                                >
+                                  {t}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                    {errors.orderType && <p className="text-xs text-red-500 mt-1">{errors.orderType}</p>}
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="w-[130px]">
+                    <DatePicker
+                      label="Дата приказа"
+                      value={orderDate}
+                      onChange={setOrderDate}
+                      required
+                    />
+                    {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
+                  </div>
+
+                  <div className="w-[105px]">
+                    <label className="text-sm font-medium">Номер приказа</label>
+                    <Input
+                      value={orderNumber}
+                      onChange={(e) => setOrderNumber(e.target.value)}
+                      placeholder="Авто"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="flex gap-4">
-                <div className="w-[130px]">
-                  <DatePicker
-                    label="Дата приказа"
-                    value={orderDate}
-                    onChange={setOrderDate}
-                    required
-                  />
-                  {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
-                </div>
-
-                <div className="w-[105px]">
-                  <label className="text-sm font-medium">Номер приказа</label>
-                  <Input
-                    value={orderNumber}
-                    onChange={(e) => setOrderNumber(e.target.value)}
-                    placeholder="Авто"
-                  />
-                </div>
+              <div className="flex gap-2 mt-4">
+                <Button variant="outline" onClick={(e) => { e.stopPropagation(); resetForm(); }} disabled={isPending}>
+                  Очистить
+                </Button>
+                <Button onClick={(e) => { e.stopPropagation(); handleSubmit(); }} disabled={isPending}>
+                  {isPending ? "Создание..." : "Создать"}
+                </Button>
               </div>
             </div>
 
-            <div className="flex gap-2 mt-4">
-              <Button variant="outline" onClick={(e) => { e.stopPropagation(); resetForm(); }} disabled={isPending}>
-                Очистить
-              </Button>
-              <Button onClick={(e) => { e.stopPropagation(); handleSubmit(); }} disabled={isPending}>
-                {isPending ? "Создание..." : "Создать"}
-              </Button>
+            <div className="absolute right-0 top-0 bottom-0 w-[600px] border rounded-lg p-4 bg-muted/20 m-4">
+              <h3 className="text-sm font-semibold mb-3">Дополнительные поля</h3>
+              {getExtraFields(orderType).length === 0 ? (
+                <p className="text-xs text-muted-foreground">Выберите тип приказа</p>
+              ) : (
+                <div className="flex flex-wrap gap-x-3 gap-y-3">
+                  {getExtraFields(orderType).map((field) => (
+                    <div key={field.key}>
+                      {field.type === "date" ? (
+                        <div className="w-[130px]">
+                        <DatePicker
+                          label={field.label}
+                          value={extraFields[field.key] || ""}
+                          onChange={(v) => {
+                            lastChangedRef.current = field.key
+                            setExtraFields((prev) => ({ ...prev, [field.key]: v }))
+                          }}
+                        />
+                        </div>
+                      ) : (
+                        <>
+                          <label className="text-xs font-medium text-muted-foreground">{field.label}</label>
+                          <Input
+                            type="number"
+                            value={extraFields[field.key] || ""}
+                            onChange={(e) => {
+                              lastChangedRef.current = field.key
+                              setExtraFields((prev) => ({ ...prev, [field.key]: e.target.value }))
+                            }}
+                            className="h-10 w-[130px]"
+                          />
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

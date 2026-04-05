@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -12,6 +12,7 @@ class OrderCreate(BaseModel):
     order_date: date
     order_number: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = None
+    extra_fields: Optional[Dict[str, Any]] = None
 
     @field_validator("order_type")
     @classmethod

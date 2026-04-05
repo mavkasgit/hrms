@@ -21,7 +21,7 @@ const navItems = [
 
 export function Sidebar() {
   return (
-    <aside className="w-64 min-h-screen bg-card border-r flex flex-col">
+    <aside className="w-64 h-screen sticky top-0 bg-card border-r flex flex-col shrink-0">
       <div className="p-6">
         <h1 className="text-xl font-bold">HRMS</h1>
         <p className="text-sm text-muted-foreground">Управление персоналом</p>

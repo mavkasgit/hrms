@@ -25,6 +25,7 @@ export interface OrderCreate {
   order_date: string
   order_number?: string | null
   notes?: string | null
+  extra_fields?: Record<string, string | number> | null
 }
 
 export interface TemplateInfo {
