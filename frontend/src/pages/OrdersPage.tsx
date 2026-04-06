@@ -524,7 +524,6 @@ export function OrdersPage() {
               <TableHead>№</TableHead>
               <TableHead>Тип</TableHead>
               <TableHead>Сотрудник</TableHead>
-              <TableHead>Таб. №</TableHead>
               <TableHead>Дата приказа</TableHead>
               <TableHead>Дата создания</TableHead>
               <TableHead className="text-right">Действия</TableHead>
@@ -543,7 +542,6 @@ export function OrdersPage() {
                   </Badge>
                 </TableCell>
                 <TableCell className="font-medium">{order.employee_name || "—"}</TableCell>
-                <TableCell className="font-mono text-sm">{order.tab_number ?? "—"}</TableCell>
                 <TableCell>
                   {order.order_date ? (() => { const d = new Date(order.order_date); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` })() : "—"}
                 </TableCell>

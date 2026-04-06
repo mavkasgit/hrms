@@ -16,8 +16,9 @@ export function computeNextOrderNumber(
 
   if (ordersForYear.length === 0) return "01"
 
-  const maxNum = Math.max(
-    ...ordersForYear.map((o) => parseInt(o.order_number, 10) || 0)
-  )
-  return `${maxNum + 1}`
+  // Берём последний созданный в БД (по ID) + 1
+  const sorted = [...ordersForYear].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))
+
+  const lastNum = parseInt(sorted[0].order_number, 10) || 0
+  return `${lastNum + 1}`
 }

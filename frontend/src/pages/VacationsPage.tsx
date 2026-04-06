@@ -26,7 +26,8 @@ import {
   useUpdateCorrection,
 } from "@/entities/vacation"
 import { useSearchEmployees, useEmployees } from "@/entities/employee/useEmployees"
-import { useNextOrderNumber } from "@/entities/order/useOrders"
+import { useRecentOrders } from "@/entities/order/useOrders"
+import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
 import type { Employee } from "@/entities/employee/types"
 import type { EmployeeVacationSummary } from "@/entities/vacation/types"
 
@@ -276,7 +277,8 @@ export function VacationsPage() {
 
   const { data: searchResult } = useSearchEmployees(searchQuery)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
-  const { data: nextNumber } = useNextOrderNumber(new Date().getFullYear())
+  const { data: recentOrders } = useRecentOrders(100, new Date().getFullYear())
+  const computedNextNumber = computeNextOrderNumber(recentOrders || [], new Date().getFullYear())
   const createMutation = useCreateVacation()
   const deleteMutation = useDeleteVacation()
 
@@ -287,9 +289,9 @@ export function VacationsPage() {
     : null
 
   useEffect(() => {
-    if (nextNumber && !orderNumber) setOrderNumber(nextNumber)
+    if (computedNextNumber && !orderNumber) setOrderNumber(computedNextNumber)
     if (!orderDate) setOrderDate(new Date().toISOString().split("T")[0])
-  }, [nextNumber])
+  }, [computedNextNumber])
 
   useEffect(() => {
     if (searchResult?.items) setSearchResults(searchResult.items)

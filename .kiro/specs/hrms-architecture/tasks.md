@@ -694,6 +694,123 @@ interface Holiday {
 
 ---
 
+---
+
+## Спринт 5 — Дашборд, исправления номеров приказов, DevOps
+
+### HRMS-022a — Backend: AnalyticsService ✅ ВЫПОЛНЕНО
+**Приоритет:** Средний
+**Слой:** Backend / Service
+
+Создать `services/analytics_service.py`:
+
+- [x] `get_dashboard_stats(db, department?)` — общая статистика (total, male_count, female_count, avg_age, avg_tenure)
+- [x] `get_upcoming_birthdays(db, days=30)` — ближайшие дни рождения с сортировкой по близости
+- [x] `get_contract_expiring(db, department?)` — все контракты (просроченные, активные, без даты)
+- [x] `get_department_distribution(db, department?)` — распределение по отделам или должностям
+- [x] Учёт `is_deleted=false`, `is_archived=false` для всех запросов
+- [x] Опциональная фильтрация по department
+
+---
+
+### HRMS-022b — Backend: API /api/analytics ✅ ВЫПОЛНЕНО
+**Приоритет:** Средний
+**Слой:** Backend / API
+
+Создать `api/analytics.py`:
+
+- [x] `GET /api/analytics/dashboard?department=` — общая статистика
+- [x] `GET /api/analytics/birthdays?days=30` — дни рождения
+- [x] `GET /api/analytics/contracts?department=` — все контракты
+- [x] `GET /api/analytics/departments?department=` — распределение
+- [x] Зарегистрировать роутер в `main.py`
+
+---
+
+### HRMS-022c — Frontend: компоненты Dashboard ✅ ВЫПОЛНЕНО
+**Приоритет:** Средний
+**Слой:** Frontend / features
+
+Создать `features/dashboard/`:
+
+**types.ts:**
+- [x] `DashboardStats`, `Birthday`, `ContractExpiring`, `DepartmentCount`
+
+**api.ts:**
+- [x] `fetchDashboardStats()`, `fetchBirthdays()`, `fetchContracts()`, `fetchDepartmentDistribution()`
+
+**components:**
+- [x] `StatCard.tsx` — компактная карточка (p-3, text-xl, иконка)
+- [x] `BirthdaysList.tsx` — список с иконками отделов (Building2/Factory), цветовая маркировка
+- [x] `ContractsTable.tsx` — фильтры 3 мес/Все, тоглы отделов, группировка по месяцам, статусы
+- [x] `DepartmentChart.tsx` — BarChart через recharts
+
+**Добавлен компонент:**
+- [x] `shared/ui/card.tsx` — Card, CardHeader, CardTitle, CardContent, CardFooter
+
+---
+
+### HRMS-022d — Frontend: DashboardPage ✅ ВЫПОЛНЕНО
+**Приоритет:** Средний
+**Слой:** Frontend / pages
+
+- [x] 5 StatCards: всего сотрудников, мужчины, женщины, ср. возраст, ср. стаж
+- [x] BirthdaysList (500px) + ContractsTable (690px) в одной строке
+- [x] DepartmentChart внизу
+- [x] Заглушка выпадающего списка отделов (удалена из-за бага с department/position)
+- [x] Компактные карточки (p-3, text-xl, leading-tight)
+
+---
+
+### HRMS-023 — Исправление: номер приказа из последнего по ID ✅ ВЫПОЛНЕНО
+**Приоритет:** Высокий
+**Слой:** Backend / Repository
+
+**Проблема:** OrderSequence инкрементировал номер при каждом вызове `/orders/next-number`, включая просмотры. Это создавало «улетающие» номера и расхождения с фронтом.
+
+**Решение:**
+- [x] Убран OrderSequence из `get_next_order_number()`
+- [x] Теперь номер = последний приказ по ID (ORDER BY id DESC LIMIT 1) + 1
+- [x] Если заказов нет — возвращается "01"
+- [x] Исключён unused import OrderSequence
+
+---
+
+### HRMS-024 — Исправление: VacationsPage использует computeNextOrderNumber ✅ ВЫПОЛНЕНО
+**Приоритет:** Высокий
+**Слой:** Frontend / pages
+
+**Проблема:** VacationsPage использовала `useNextOrderNumber` (API из OrderSequence), а OrdersPage — `computeNextOrderNumber` (из фактических заказов). Это создавало разные номера.
+
+**Решение:**
+- [x] VacationsPage теперь использует `useRecentOrders` + `computeNextOrderNumber`
+- [x] Оба файла считают номер одинаково: последний по ID + 1
+- [x] `computeNextOrderNumber` изменён на сортировку по ID (а не по дате)
+
+---
+
+### HRMS-025 — Улучшение DevOps ✅ ВЫПОЛНЕНО
+**Приоритет:** Средний
+**Слой:** Infra
+
+- [x] `install:all` — предварительная установка зависимостей фронтенда
+- [x] `concurrently --restart-tries 5 --restart-after 1000` — автоподъём упавших процессов
+- [x] `uvicorn --reload-dir app --reload-include "*.py"` — надёжный hot-reload
+- [x] `frontend: npx vite` — явный запуск без npm install в процессе
+- [x] Добавлен `recharts` в зависимости
+- [x] Добавлен tailwind safelist для цветов отделов
+
+---
+
+### HRMS-026 — Удалена колонка табельного номера из OrdersPage ✅ ВЫПОЛНЕНО
+**Приоритет:** Низкий
+**Слой:** Frontend / pages
+
+- [x] Удалён `<TableHead>Таб. №</TableHead>`
+- [x] Удалён `<TableCell>{order.tab_number}</TableCell>`
+
+---
+
 ## Сводная таблица задач
 
 | ID | Задача | Слой | Приоритет | Спринт | Статус |
@@ -719,26 +836,32 @@ interface Holiday {
 | HRMS-016 | API: Order endpoints | Backend | Высокий | 3 | ✅ |
 | HRMS-017 | API: Templates endpoints | Backend | Средний | 3 | ✅ |
 | HRMS-018 | Frontend: entities/order + OrdersPage | Frontend | Высокий | 3 | ✅ |
-| HRMS-019a | Миграция: vacation_days_override + position_vacation_config + holidays | Backend | 🔴 Критический | 4 | |
-| HRMS-019b | Утилита: working_days.py | Backend | 🔴 Критический | 4 | |
-| HRMS-019c | Repository: Vacation | Backend | 🔴 Критический | 4 | |
-| HRMS-019d | Service: Vacation | Backend | 🔴 Критический | 4 | |
-| HRMS-019e | API: Vacation endpoints (12 эндпоинтов) | Backend | 🔴 Критический | 4 | |
+| HRMS-019a | Миграция: vacation_days_override + position_vacation_config + holidays | Backend | 🔴 Критический | 4 | ✅ |
+| HRMS-019b | Утилита: working_days.py | Backend | 🔴 Критический | 4 | ✅ |
+| HRMS-019c | Repository: Vacation | Backend | 🔴 Критический | 4 | ✅ |
+| HRMS-019d | Service: Vacation | Backend | 🔴 Критический | 4 | ✅ |
+| HRMS-019e | API: Vacation endpoints (12 эндпоинтов) | Backend | 🔴 Критический | 4 | ✅ |
 | HRMS-020 | API: Files (фото + личные дела) | Backend | Средний | 4 | |
-| HRMS-021a | Frontend: entities/vacation | Frontend | 🔴 Критический | 4 | |
-| HRMS-021b | Frontend: VacationsPage + Export CSV | Frontend | 🔴 Критический | 4 | |
-| HRMS-021c | Frontend: VacationForm с балансом | Frontend | 🔴 Критический | 4 | |
-| HRMS-021d | Frontend: Сайдбар + роутинг | Frontend | 🟡 Should | 4 | |
-| HRMS-021e | Frontend: Страница настройки справочника | Frontend | 🟢 Nice | 4 | |
-| HRMS-022 | JWT аутентификация (security + get_current_user) | Backend | Высокий | 5 | |
-| HRMS-023 | API: Auth + Users | Backend | Высокий | 5 | |
-| HRMS-024 | Frontend: аутентификация + LoginPage | Frontend | Высокий | 5 | |
-| HRMS-025 | API: Analytics | Backend | Средний | 6 | |
-| HRMS-026 | Frontend: DashboardPage | Frontend | Средний | 6 | |
-| HRMS-027 | Структурированное логирование (structlog) | Backend | Средний | 6 | |
-| HRMS-028 | Проверка целостности при старте | Backend | Средний | 6 | |
-| HRMS-029 | API: Maintenance (fix-broken-links) | Backend | Низкий | 6 | |
-| HRMS-030 | Frontend: ErrorBoundary + EmptyState | Frontend | Средний | 6 | |
-| HRMS-031 | CORS + connection pool | Backend | Высокий | 6 | |
-| HRMS-032 | Справочники (References API) | Backend | Низкий | 6 | |
-| HRMS-033 | Скрипт резервного копирования | Infra | Низкий | 6 | |
+| HRMS-021a | Frontend: entities/vacation | Frontend | 🔴 Критический | 4 | ✅ |
+| HRMS-021b | Frontend: VacationsPage + Export CSV | Frontend | 🔴 Критический | 4 | ✅ |
+| HRMS-021c | Frontend: VacationForm с балансом | Frontend | 🔴 Критический | 4 | ✅ |
+| HRMS-021d | Frontend: Сайдбар + роутинг | Frontend | 🟡 Should | 4 | ✅ |
+| HRMS-021e | Frontend: Страница настройки справочника | Frontend | 🟢 Nice | 4 | ✅ |
+| HRMS-022a | Dashboard: Backend AnalyticsService | Backend | Средний | 5 | ✅ |
+| HRMS-022b | Dashboard: API /api/analytics (4 эндпоинта) | Backend | Средний | 5 | ✅ |
+| HRMS-022c | Dashboard: Frontend компоненты (StatCard, BirthdaysList, ContractsTable, DepartmentChart) | Frontend | Средний | 5 | ✅ |
+| HRMS-022d | Dashboard: DashboardPage с полным функционалом | Frontend | Средний | 5 | ✅ |
+| HRMS-023 | Исправление: номер приказа из последнего по ID вместо OrderSequence | Backend | Высокий | 5 | ✅ |
+| HRMS-024 | Исправление: VacationsPage использует computeNextOrderNumber | Frontend | Высокий | 5 | ✅ |
+| HRMS-025 | Улучшение DevOps: restart-tries, install:all, hot-reload | Infra | Средний | 5 | ✅ |
+| HRMS-026 | Удалена колонка табельного номера из OrdersPage | Frontend | Низкий | 5 | ✅ |
+| HRMS-027 | JWT аутентификация (security + get_current_user) | Backend | Высокий | 6 | |
+| HRMS-028 | API: Auth + Users | Backend | Высокий | 6 | |
+| HRMS-029 | Frontend: аутентификация + LoginPage | Frontend | Высокий | 6 | |
+| HRMS-030 | Структурированное логирование (structlog) | Backend | Средний | 6 | |
+| HRMS-031 | Проверка целостности при старте | Backend | Средний | 6 | |
+| HRMS-032 | API: Maintenance (fix-broken-links) | Backend | Низкий | 6 | |
+| HRMS-033 | Frontend: ErrorBoundary + EmptyState | Frontend | Средний | 6 | |
+| HRMS-034 | CORS + connection pool | Backend | Высокий | 6 | |
+| HRMS-035 | Справочники (References API) | Backend | Низкий | 6 | |
+| HRMS-036 | Скрипт резервного копирования | Infra | Низкий | 6 | |

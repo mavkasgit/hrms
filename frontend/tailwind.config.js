@@ -49,4 +49,8 @@ export default {
     },
   },
   plugins: [],
+  safelist: [
+    "bg-emerald-100", "text-emerald-600", "border-emerald-600",
+    "bg-sky-100", "text-sky-500", "border-sky-500",
+  ],
 }

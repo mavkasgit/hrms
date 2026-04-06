@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import select, func, and_, extract
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.order import Order, OrderSequence
+from app.models.order import Order
 
 
 class OrderRepository:
@@ -65,19 +65,24 @@ class OrderRepository:
         return list(result.scalars().all())
 
     async def get_next_order_number(self, db: AsyncSession, year: int) -> str:
-        stmt = select(OrderSequence).where(OrderSequence.year == year)
-        result = await db.execute(stmt)
-        sequence = result.scalar_one_or_none()
+        """Берёт номер последнего приказа по дате + 1, а не максимальный."""
+        result = await db.execute(
+            select(Order.order_number)
+            .where(
+                Order.is_deleted == False,
+                Order.is_cancelled == False,
+                extract("year", Order.order_date) == year,
+            )
+            .order_by(Order.id.desc())
+            .limit(1)
+        )
+        last_order = result.scalar_one_or_none()
 
-        if sequence is None:
-            sequence = OrderSequence(year=year, last_number=0)
-            db.add(sequence)
-            await db.flush()
+        if not last_order:
+            return "01"
 
-        sequence.last_number += 1
-        next_number = sequence.last_number
-
-        return f"{next_number:02d}"
+        last_num = int(last_order) if last_order.isdigit() else 0
+        return f"{last_num + 1:02d}"
 
     async def get_years(self, db: AsyncSession) -> list[int]:
         result = await db.execute(
