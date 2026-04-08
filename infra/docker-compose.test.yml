@@ -1,3 +1,5 @@
+name: hrms-test
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -9,27 +11,66 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - ../data/postgres_test:/var/lib/postgresql/data
+      - postgres_test_data:/var/lib/postgresql/data
+      - ../data/db_init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hrms_user"]
+      test: ["CMD-SHELL", "pg_isready -U hrms_user -d hrms_test"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   backend:
-    build: ../backend
+    build: 
+      context: ../backend
+      dockerfile: Dockerfile
     container_name: hrms-backend-test
     volumes:
-      - ../data/orders_test:/app/data/orders
-      - ../data/templates_test:/app/data/templates
-      - ../data/personal_files_test:/app/data/personal
+      - ../backend:/app
+      - ../.env.test:/app/.env.test
+      - orders_test_data:/app/data/orders
+      - templates_test_data:/app/data/templates
+      - personal_files_test_data:/app/data/personal
     ports:
       - "8001:8000"
     env_file:
       - ../.env.test
     environment:
+      ENV_FILE: .env.test
       DATABASE_URL: postgresql+asyncpg://hrms_user:hrms_pass_test@postgres:5432/hrms_test
       ENV: test
     depends_on:
       postgres:
         condition: service_healthy
+    command: >
+      sh -c "pip install -r requirements.txt && 
+             alembic upgrade head &&
+             uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: hrms-frontend-test
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  localtunnel:
+    image: node:20-alpine
+    container_name: hrms-localtunnel
+    network_mode: "service:frontend"
+    depends_on:
+      - frontend
+    command: >
+      sh -c "echo 'Waiting for frontend...' &&
+             until wget -q -O /dev/null http://127.0.0.1:80; do sleep 2; done &&
+             echo 'Starting localtunnel...' &&
+             npx --yes localtunnel --port 80 --subdomain hrms-test-x7k9m2v4 2>&1"
+    restart: unless-stopped
+
+volumes:
+  postgres_test_data:
+  orders_test_data:
+  templates_test_data:
+  personal_files_test_data:

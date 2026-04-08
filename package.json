@@ -11,7 +11,10 @@
     "backend": "cd backend && uvicorn app.main:app --reload --reload-dir app --reload-include \"*.py\" --host 0.0.0.0 --port 8000",
     "frontend": "cd frontend && npx vite --host 0.0.0.0 --port 5173",
     "migrate": "cd backend && alembic upgrade head",
-    "makemigrate": "cd backend && alembic revision --autogenerate -m"
+    "makemigrate": "cd backend && alembic revision --autogenerate -m",
+    "test:env:up": "docker compose -f infra/docker-compose.test.yml up -d --build",
+    "test:env:down": "docker compose -f infra/docker-compose.test.yml down",
+    "test:env:logs": "docker compose -f infra/docker-compose.test.yml logs -f"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

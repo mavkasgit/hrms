@@ -1,4 +1,4 @@
-.PHONY: dev db-up db-down db-logs db-restart db-clean backend-install backend-run frontend-install frontend-run migrate makemigrate install-all
+.PHONY: dev db-up db-down db-logs db-restart db-clean backend-install backend-run frontend-install frontend-run migrate makemigrate install-all test-env-up test-env-down test-env-logs test-env-rebuild
 
 # One-command dev: DB + Backend + Frontend
 dev:
@@ -44,3 +44,26 @@ makemigrate:
 # Install all deps
 install-all: backend-install frontend-install
 	npm install
+
+# Test environment
+test-env-up:
+	@echo "Starting test environment with dev database dump..."
+	@if not exist "data\db_init" mkdir "data\db_init"
+	@docker compose -f infra/docker-compose.dev.yml up -d
+	@echo "Waiting for dev database..."
+	@docker exec hrms-postgres pg_isready -U hrms_user -d hrms_dev || (timeout /t 5 && docker exec hrms-postgres pg_isready -U hrms_user -d hrms_dev)
+	@docker exec hrms-postgres pg_dump -U hrms_user -d hrms_dev --clean --if-exists > data\db_init\01_init.sql
+	@echo "Starting test environment..."
+	@docker compose -f infra/docker-compose.test.yml up -d --build
+	@echo "Test environment ready at:"
+	@echo "  - Frontend: http://localhost:5173"
+	@echo "  - Backend:  http://localhost:8001"
+	@echo "  - DB:       localhost:5433"
+
+test-env-down:
+	docker compose -f infra/docker-compose.test.yml down
+
+test-env-logs:
+	docker compose -f infra/docker-compose.test.yml logs -f
+
+test-env-rebuild: test-env-down test-env-up

@@ -4,6 +4,8 @@ from pydantic_settings import BaseSettings
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+_env_file = os.getenv("ENV_FILE", ".env.dev")
+
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_dev"
     DATABASE_URL_LOCAL: str = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_dev"
@@ -32,7 +34,7 @@ class Settings(BaseSettings):
 
     ALGORITHM: str = "HS256"
 
-    model_config = {"env_file": ".env.dev", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": _env_file, "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()

@@ -385,57 +385,6 @@ export function OrderGeneration({ open, onOpenChange }: OrderGenerationProps) {
                   </div>
                 ))}
               </div>
-                      )
-                    }
-                    if (field.key === end) {
-                      return (
-                        <div key={field.key} className="w-[130px]">
-                          <DatePicker
-                            label={field.label}
-                            value={isAutoEnd ? autoEnd : endVal}
-                            onChange={(v) => setExtraFields((prev) => ({ ...prev, [field.key]: v }))}
-                          />
-                        </div>
-                      )
-                    }
-                    return (
-                      <div key={field.key}>
-                        <label className="text-xs font-medium text-muted-foreground">{field.label}</label>
-                        <Input
-                          type="number"
-                          value={isAutoDays ? autoDays : daysVal}
-                          onChange={(e) => setExtraFields((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                          className="h-10 w-[130px]"
-                        />
-                      </div>
-                    )
-                  }
-
-                  return (
-                    <div key={field.key}>
-                      {field.type === "date" ? (
-                        <div className="w-[130px]">
-                        <DatePicker
-                          label={field.label}
-                          value={extraFields[field.key] || ""}
-                          onChange={(v) => setExtraFields((prev) => ({ ...prev, [field.key]: v }))}
-                        />
-                        </div>
-                      ) : (
-                        <>
-                          <label className="text-xs font-medium text-muted-foreground">{field.label}</label>
-                          <Input
-                            type="number"
-                            value={extraFields[field.key] || ""}
-                            onChange={(e) => setExtraFields((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                            className="h-8 text-sm w-[130px]"
-                          />
-                        </>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
             )}
           </div>
         </div>
