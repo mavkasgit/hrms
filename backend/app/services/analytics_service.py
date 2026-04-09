@@ -9,13 +9,15 @@ from app.models.employee import Employee
 
 class AnalyticsService:
     @staticmethod
-    async def get_dashboard_stats(db: AsyncSession, department: Optional[str] = None) -> dict:
+    async def get_dashboard_stats(db: AsyncSession, department: Optional[str] = None, gender: Optional[str] = None) -> dict:
         conditions = [
             Employee.is_deleted == False,
             Employee.is_archived == False,
         ]
         if department:
             conditions.append(Employee.department == department)
+        if gender:
+            conditions.append(Employee.gender == gender)
 
         where_clause = and_(*conditions)
 
@@ -84,17 +86,21 @@ class AnalyticsService:
         }
 
     @staticmethod
-    async def get_upcoming_birthdays(db: AsyncSession, days: int = 30) -> list[dict]:
+    async def get_upcoming_birthdays(db: AsyncSession, days: int = 30, gender: Optional[str] = None) -> list[dict]:
         today = date.today()
         end_date = today + __import__('datetime').timedelta(days=days)
 
+        conditions = [
+            Employee.is_deleted == False,
+            Employee.is_archived == False,
+            Employee.birth_date.isnot(None),
+        ]
+        if gender:
+            conditions.append(Employee.gender == gender)
+
         # Получаем всех активных сотрудников с датой рождения
         result = await db.execute(
-            select(Employee).where(
-                Employee.is_deleted == False,
-                Employee.is_archived == False,
-                Employee.birth_date.isnot(None),
-            )
+            select(Employee).where(and_(*conditions))
         )
         employees = result.scalars().all()
 
@@ -130,6 +136,7 @@ class AnalyticsService:
     async def get_contract_expiring(
         db: AsyncSession,
         department: Optional[str] = None,
+        gender: Optional[str] = None,
     ) -> list[dict]:
         today = date.today()
 
@@ -139,6 +146,8 @@ class AnalyticsService:
         ]
         if department:
             conditions.append(Employee.department == department)
+        if gender:
+            conditions.append(Employee.gender == gender)
 
         result = await db.execute(
             select(Employee).where(and_(*conditions)).order_by(Employee.contract_end.asc().nullsfirst())
@@ -173,12 +182,15 @@ class AnalyticsService:
     async def get_department_distribution(
         db: AsyncSession,
         department: Optional[str] = None,
+        gender: Optional[str] = None,
     ) -> list[dict]:
         conditions = [
             Employee.is_deleted == False,
             Employee.is_archived == False,
         ]
-        
+        if gender:
+            conditions.append(Employee.gender == gender)
+
         # Если выбран конкретный отдел, группируем по позициям внутри него
         if department:
             conditions.append(Employee.department == department)

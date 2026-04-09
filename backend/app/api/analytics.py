@@ -16,34 +16,38 @@ def _get_current_user_stub() -> str:
 @router.get("/dashboard")
 async def get_dashboard_stats(
     department: Optional[str] = Query(None),
+    gender: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    return await AnalyticsService.get_dashboard_stats(db, department)
+    return await AnalyticsService.get_dashboard_stats(db, department, gender)
 
 
 @router.get("/birthdays")
 async def get_upcoming_birthdays(
     days: int = Query(30, ge=1, le=365),
+    gender: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    return await AnalyticsService.get_upcoming_birthdays(db, days)
+    return await AnalyticsService.get_upcoming_birthdays(db, days, gender)
 
 
 @router.get("/contracts")
 async def get_contract_expiring(
     department: Optional[str] = Query(None),
+    gender: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    return await AnalyticsService.get_contract_expiring(db, department)
+    return await AnalyticsService.get_contract_expiring(db, department, gender)
 
 
 @router.get("/departments")
 async def get_department_distribution(
     department: Optional[str] = Query(None),
+    gender: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    return await AnalyticsService.get_department_distribution(db, department)
+    return await AnalyticsService.get_department_distribution(db, department, gender)
