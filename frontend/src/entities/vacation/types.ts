@@ -62,6 +62,7 @@ export interface EmployeeVacationSummary {
   contract_start: string | null
   vacation_days_override: number | null
   vacation_days_correction: number | null
+  additional_vacation_days: number
   total_used_days: number
   calculated_available: number | null
   remaining_days: number | null
@@ -76,6 +77,7 @@ export interface VacationHistoryItem {
   vacation_type: string
   order_number: string | null
   comment: string | null
+  is_cancelled: boolean
 }
 
 export interface YearGroup {

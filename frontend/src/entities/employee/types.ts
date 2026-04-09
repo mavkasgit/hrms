@@ -17,6 +17,7 @@ export interface Employee {
   personal_number: string | null
   insurance_number: string | null
   passport_number: string | null
+  additional_vacation_days: number
   created_at: string
   updated_at: string | null
   is_archived: boolean
@@ -53,6 +54,7 @@ export interface EmployeeCreate {
   personal_number?: string | null
   insurance_number?: string | null
   passport_number?: string | null
+  additional_vacation_days?: number
 }
 
 export interface EmployeeUpdate {
@@ -72,6 +74,7 @@ export interface EmployeeUpdate {
   personal_number?: string | null
   insurance_number?: string | null
   passport_number?: string | null
+  additional_vacation_days?: number
 }
 
 export interface EmployeeAuditLog {

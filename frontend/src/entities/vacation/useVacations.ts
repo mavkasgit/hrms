@@ -19,6 +19,7 @@ export function useVacationEmployeesSummary(q?: string, filter: string = "active
   return useQuery({
     queryKey: ["vacation-employees-summary", q, filter],
     queryFn: () => api.getVacationEmployeesSummary(q, filter),
+    staleTime: 1000 * 60, // 1 минута
   })
 }
 
@@ -53,12 +54,19 @@ export function useVacationBalance(employeeId: number, year?: number) {
 export function useCreateVacation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data: VacationCreate) => api.createVacation(data),
+    mutationFn: async (data: VacationCreate) => {
+      console.log("[useCreateVacation] mutationFn received:", JSON.stringify(data, null, 2))
+      return api.createVacation(data)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vacations"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-balance"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
+    },
+    onError: (error) => {
+      console.error("[useCreateVacation] error:", error)
     },
   })
 }

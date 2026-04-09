@@ -23,7 +23,9 @@ export async function getVacations(params: {
 }
 
 export async function createVacation(data: VacationCreate): Promise<Vacation> {
+  console.log("[API] Creating vacation with data:", JSON.stringify(data, null, 2))
   const response = await api.post("/vacations", data)
+  console.log("[API] Vacation created, response:", response.data)
   return response.data
 }
 

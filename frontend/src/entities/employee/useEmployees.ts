@@ -5,6 +5,7 @@ import type { EmployeeCreate, EmployeeUpdate, EmployeeStatus } from "./types"
 export function useEmployees(params: {
   q?: string
   department?: string
+  gender?: string
   status?: EmployeeStatus
   page: number
   per_page: number
@@ -48,9 +49,16 @@ export function useUpdateEmployee() {
   return useMutation({
     mutationFn: ({ employeeId, data }: { employeeId: number; data: EmployeeUpdate }) =>
       api.updateEmployee(employeeId, data),
-    onSuccess: (_, { employeeId }) => {
-      queryClient.invalidateQueries({ queryKey: ["employees"] })
-      queryClient.invalidateQueries({ queryKey: ["employee", employeeId] })
+    onSuccess: (_updated, { employeeId }) => {
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({
+        queryKey: ["vacation-employees-summary"],
+        refetchType: "all",
+      })
+      queryClient.invalidateQueries({
+        queryKey: ["vacation-periods"],
+        refetchType: "all",
+      })
     },
   })
 }
