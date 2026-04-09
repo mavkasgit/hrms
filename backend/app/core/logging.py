@@ -1,3 +1,4 @@
+import logging
 import structlog
 from structlog.processors import JSONRenderer, TimeStamper
 
@@ -5,6 +6,10 @@ from app.core.config import settings
 
 
 def configure_logging():
+    # Подавить шумные SQLAlchemy логи
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+
     processors = [
         structlog.stdlib.filter_by_level,
         structlog.stdlib.add_logger_name,

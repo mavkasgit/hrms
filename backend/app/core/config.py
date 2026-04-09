@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     LOG_FILE: str = str(BASE_DIR / "logs" / "hrms.log")
     LOG_MAX_BYTES: int = 10 * 1024 * 1024
     LOG_BACKUP_COUNT: int = 5
+    
+    # SQL logging (set to True to see all SQL queries)
+    SQL_ECHO: bool = False
 
     ALGORITHM: str = "HS256"
 
