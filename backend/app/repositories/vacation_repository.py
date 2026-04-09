@@ -193,7 +193,8 @@ class VacationRepository:
                 "vacation_type_breakdown": {},
             }
 
-        available_days = employee.vacation_days_override if employee.vacation_days_override is not None else 28
+        # Используем новую систему периодов вместо vacation_days_override
+        available_days = 28  # Базовое значение, если нет периодов
         used_days = await self.get_used_days(db, employee_id, year, "Трудовой")
 
         breakdown_result = await db.execute(
@@ -232,7 +233,6 @@ class VacationRepository:
                 Employee.department,
                 Employee.position,
                 Employee.contract_start,
-                Employee.vacation_days_override,
                 Employee.additional_vacation_days,
             )
             .where(Employee.is_deleted == False)
@@ -258,7 +258,6 @@ class VacationRepository:
         for row in rows:
             emp_id = row.id
             contract_start = row.contract_start
-            override = row.vacation_days_override
             additional_days = row.additional_vacation_days
 
             # Считаем все использованные дни:
@@ -289,13 +288,8 @@ class VacationRepository:
             else:
                 calculated_available = None
 
-            # Если есть override — используем его как базу
-            if override is not None:
-                available_days = override
-            elif calculated_available is not None:
-                available_days = calculated_available
-            else:
-                available_days = None
+            # Используем calculated_available как базу
+            available_days = calculated_available
 
             # remaining = available - used
             if available_days is not None:
@@ -310,7 +304,6 @@ class VacationRepository:
                 "department": row.department,
                 "position": row.position,
                 "contract_start": str(contract_start) if contract_start else None,
-                "vacation_days_override": override,
                 "additional_vacation_days": additional_days,
                 "total_used_days": total_used,
                 "calculated_available": calculated_available,
@@ -384,7 +377,8 @@ class VacationRepository:
                         })
 
             # Определяем available дней за год
-            available_days = employee.vacation_days_override if employee.vacation_days_override is not None else 28
+            # Используем новую систему периодов вместо vacation_days_override
+            available_days = 28  # Базовое значение
 
             years.append({
                 "year": year,
@@ -400,7 +394,6 @@ class VacationRepository:
             "employee_id": employee.id,
             "employee_name": employee.name,
             "contract_start": contract_start_str,
-            "vacation_days_correction": employee.vacation_days_correction,
             "years": years,
         }
 

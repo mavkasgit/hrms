@@ -26,8 +26,6 @@ class EmployeeVacationSummary(BaseModel):
     department: str
     position: str
     contract_start: Optional[str]
-    vacation_days_override: Optional[int]
-    vacation_days_correction: Optional[int]
     additional_vacation_days: Optional[int]
     total_used_days: int
     calculated_available: Optional[int]
@@ -56,7 +54,6 @@ class EmployeeVacationHistory(BaseModel):
     employee_id: int
     employee_name: str
     contract_start: Optional[str]
-    vacation_days_correction: Optional[int]
     years: list[YearGroup]
 
 
@@ -81,20 +78,6 @@ async def get_employee_vacation_history(
     current_user: str = Depends(_get_current_user_stub),
 ):
     return await vacation_service.get_employee_vacation_history(db, employee_id)
-
-
-@router.put("/employees/{employee_id}/correction")
-async def update_employee_correction(
-    employee_id: int,
-    correction: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
-):
-    result = await vacation_service.update_employee_correction(db, employee_id, correction)
-    if not result:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="Сотрудник не найден")
-    return {"message": "Поправка обновлена"}
 
 
 @router.get("", response_model=VacationListResponse)

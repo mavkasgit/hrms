@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="bg32" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4F46E5;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <rect width="32" height="32" rx="7" fill="url(#bg32)"/>
+  
+  <!-- Упрощенная иконка для маленького размера -->
+  <circle cx="11.5" cy="10" r="3.2" fill="white"/>
+  <path d="M 7 14.5 Q 7 13.5 8 13.5 L 15 13.5 Q 16 13.5 16 14.5 L 16 20 Q 16 21 15 21 L 8 21 Q 7 21 7 20 Z" fill="white"/>
+  
+  <rect x="17.5" y="7.5" width="10" height="13" rx="1.2" fill="white" opacity="0.97"/>
+  
+  <line x1="19.5" y1="10.5" x2="25.5" y2="10.5" stroke="#4F46E5" stroke-width="0.9" stroke-linecap="round"/>
+  <line x1="19.5" y1="12.5" x2="25.5" y2="12.5" stroke="#4F46E5" stroke-width="0.9" stroke-linecap="round"/>
+  <line x1="19.5" y1="14.5" x2="23.5" y2="14.5" stroke="#4F46E5" stroke-width="0.9" stroke-linecap="round"/>
+  
+  <path d="M 19.5 17 L 20.8 18.3 L 23 16" stroke="#10B981" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

@@ -268,19 +268,5 @@ class VacationService:
     ) -> Dict[str, Any]:
         return await vacation_repository.get_employee_vacation_history(db, employee_id)
 
-    async def update_employee_correction(
-        self, db: AsyncSession, employee_id: int, correction: int
-    ) -> bool:
-        result = await db.execute(
-            select(Employee).where(Employee.id == employee_id)
-        )
-        employee = result.scalar_one_or_none()
-        if not employee:
-            return False
-        employee.vacation_days_correction = correction
-        await db.flush()
-        await db.refresh(employee)
-        return True
-
 
 vacation_service = VacationService()
