@@ -28,7 +28,15 @@ import {
   useRestoreEmployee,
   useDeleteEmployee,
 } from "@/entities/employee/useEmployees"
-import { Archive, Trash2, RotateCcw } from "lucide-react"
+import { Archive, Trash2, RotateCcw, Building } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/ui/select"
+import { useDepartments } from "@/entities/employee/useEmployees"
 
 interface EmployeeFormProps {
   open: boolean
@@ -68,6 +76,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
   const archiveMutation = useArchiveEmployee()
   const restoreMutation = useRestoreEmployee()
   const deleteMutation = useDeleteEmployee()
+  const { data: departments = [] } = useDepartments()
 
   useEffect(() => {
     console.log(`[FORM] Эффект: employee или open изменились`, { employee: employee?.id, open })
@@ -130,6 +139,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
       // Отправляем только редактируемые поля, исключая readonly поля
       const updateData: EmployeeUpdate = {
         name: form.name,
+        tab_number: form.tab_number,
         department: form.department,
         position: form.position,
         hire_date: form.hire_date,
@@ -246,7 +256,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" onOpenAutoFocus={(e) => e.preventDefault()}>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col" onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle>{isEdit ? "Редактировать сотрудника" : "Новый сотрудник"}</DialogTitle>
@@ -258,19 +268,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
           </div>
         </DialogHeader>
 
-        <div className="grid gap-4 py-2">
-          {!isEdit && (
-            <div>
-              <label className="text-sm font-medium">Табельный номер</label>
-              <Input
-                type="number"
-                value={(form as EmployeeCreate).tab_number ?? ""}
-                onChange={(e) => updateField("tab_number", e.target.value ? parseInt(e.target.value) : null)}
-                placeholder="Опционально"
-              />
-            </div>
-          )}
-
+        <div className="grid gap-4 py-2 overflow-y-auto flex-1">
           <div className="grid grid-cols-[1fr_120px_130px] gap-4">
             <div>
               <label className="text-sm font-medium">ФИО *</label>
@@ -283,15 +281,18 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
             <div>
               <label className="text-sm font-medium">Пол</label>
-              <select
+              <Select
                 value={form.gender || ""}
-                onChange={(e) => updateField("gender", e.target.value || null)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                onValueChange={(v) => updateField("gender", v || null)}
               >
-                <option value="">Не указан</option>
-                <option value="М">Мужской</option>
-                <option value="Ж">Женский</option>
-              </select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Не указан" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="М">Мужской</SelectItem>
+                  <SelectItem value="Ж">Женский</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <DatePicker
@@ -302,15 +303,14 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-[100px_1fr_1fr] gap-4">
             <div>
-              <label className="text-sm font-medium">Подразделение *</label>
+              <label className="text-sm font-medium">Таб.№</label>
               <Input
-                value={form.department}
-                onChange={(e) => updateField("department", e.target.value)}
-                className={errors.department ? "border-red-500" : ""}
+                type="number"
+                value={form.tab_number ?? ""}
+                onChange={(e) => updateField("tab_number", e.target.value ? parseInt(e.target.value) : null)}
               />
-              {errors.department && <p className="text-xs text-red-500 mt-1">{errors.department}</p>}
             </div>
             <div>
               <label className="text-sm font-medium">Должность *</label>
@@ -320,6 +320,28 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 className={errors.position ? "border-red-500" : ""}
               />
               {errors.position && <p className="text-xs text-red-500 mt-1">{errors.position}</p>}
+            </div>
+            <div>
+              <label className="text-sm font-medium">Подразделение *</label>
+              <Select
+                value={form.department}
+                onValueChange={(v) => updateField("department", v)}
+              >
+                <SelectTrigger className={errors.department ? "border-red-500" : ""}>
+                  <SelectValue placeholder="Выберите подразделение" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      <div className="flex items-center">
+                        <Building className="h-4 w-4 mr-2" />
+                        {d}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.department && <p className="text-xs text-red-500 mt-1">{errors.department}</p>}
             </div>
           </div>
 
@@ -369,15 +391,18 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
             <div>
               <label className="text-sm font-medium">Форма оплаты</label>
-              <select
+              <Select
                 value={form.payment_form || ""}
-                onChange={(e) => updateField("payment_form", e.target.value || null)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                onValueChange={(v) => updateField("payment_form", v || null)}
               >
-                <option value="">Не указана</option>
-                <option value="Повременная">Повременная</option>
-                <option value="Сдельная">Сдельная</option>
-              </select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Не указана" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Повременная">Повременная</SelectItem>
+                  <SelectItem value="Сдельная">Сдельная</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="text-sm font-medium">Ставка</label>
@@ -433,7 +458,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
           </div>
         </div>
 
-        <div className="border-t pt-2 flex items-center justify-between gap-4">
+        <div className="border-t pt-2 flex items-center justify-between gap-4 shrink-0">
           <div className="flex gap-2">
             {isEdit && employee && !employee.is_deleted && (
               <>
