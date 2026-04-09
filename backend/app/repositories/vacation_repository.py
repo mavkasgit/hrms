@@ -135,7 +135,7 @@ class VacationRepository:
             query = query.where(Vacation.id != exclude_id)
 
         result = await db.execute(query)
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def get_used_days(
         self, db: AsyncSession, employee_id: int, year: int, vacation_type: str = "Трудовой"
@@ -233,7 +233,7 @@ class VacationRepository:
                 Employee.position,
                 Employee.contract_start,
                 Employee.vacation_days_override,
-                Employee.vacation_days_correction,
+                Employee.additional_vacation_days,
             )
             .where(Employee.is_deleted == False)
         )
@@ -258,20 +258,34 @@ class VacationRepository:
         for row in rows:
             emp_id = row.id
             contract_start = row.contract_start
-            correction = row.vacation_days_correction
             override = row.vacation_days_override
+            additional_days = row.additional_vacation_days
 
-            # Считаем все использованные дни за всё время (без отменённых)
+            # Считаем все использованные дни:
+            # 1. Реальные отпуска (из таблицы vacations)
             used_result = await db.execute(
                 select(func.sum(Vacation.days_count))
                 .where(Vacation.employee_id == emp_id, Vacation.is_deleted == False, Vacation.is_cancelled == False)
             )
-            total_used = used_result.scalar() or 0
+            total_used_from_vacations = used_result.scalar() or 0
+            
+            # 2. Дополнительно списанные дни из закрытых периодов (из таблицы vacation_periods)
+            # Берем сумму used_days из всех периодов
+            from app.models.vacation_period import VacationPeriod
+            periods_result = await db.execute(
+                select(func.sum(VacationPeriod.used_days))
+                .where(VacationPeriod.employee_id == emp_id)
+            )
+            total_used_from_periods = periods_result.scalar() or 0
+            
+            # Используем максимум из двух значений (periods включает в себя vacations + закрытые дни)
+            total_used = max(total_used_from_vacations, total_used_from_periods)
 
-            # Рассчитываем доступные дни
+            # Рассчитываем доступные дни (база 28 дней по ТК РФ + доп. дни)
             if contract_start:
                 years_worked = (date.today() - contract_start).days / 365.25
-                calculated_available = int(years_worked * 28)
+                base_days = int(years_worked * 28)
+                calculated_available = base_days + (additional_days or 0)
             else:
                 calculated_available = None
 
@@ -283,9 +297,9 @@ class VacationRepository:
             else:
                 available_days = None
 
-            # remaining = available - correction - used
+            # remaining = available - used
             if available_days is not None:
-                remaining = available_days - (correction or 0) - total_used
+                remaining = available_days - total_used
             else:
                 remaining = None
 
@@ -297,7 +311,7 @@ class VacationRepository:
                 "position": row.position,
                 "contract_start": str(contract_start) if contract_start else None,
                 "vacation_days_override": override,
-                "vacation_days_correction": correction,
+                "additional_vacation_days": additional_days,
                 "total_used_days": total_used,
                 "calculated_available": calculated_available,
                 "remaining_days": remaining,
@@ -327,10 +341,10 @@ class VacationRepository:
 
         current_year = date.today().year
 
-        # Получаем все отпуска сотрудника (без отменённых)
+        # Получаем все отпуска сотрудника (включая отменённые)
         vac_result = await db.execute(
             select(Vacation)
-            .where(Vacation.employee_id == employee_id, Vacation.is_deleted == False, Vacation.is_cancelled == False)
+            .where(Vacation.employee_id == employee_id, Vacation.is_deleted == False)
             .order_by(Vacation.start_date.desc())
         )
         vacations = list(vac_result.scalars().all())
@@ -366,6 +380,7 @@ class VacationRepository:
                             "vacation_type": v.vacation_type,
                             "order_number": order_map.get(v.order_id) if v.order_id else None,
                             "comment": v.comment,
+                            "is_cancelled": v.is_cancelled,
                         })
 
             # Определяем available дней за год

@@ -28,6 +28,7 @@ class EmployeeVacationSummary(BaseModel):
     contract_start: Optional[str]
     vacation_days_override: Optional[int]
     vacation_days_correction: Optional[int]
+    additional_vacation_days: Optional[int]
     total_used_days: int
     calculated_available: Optional[int]
     remaining_days: Optional[int]
@@ -137,10 +138,15 @@ async def create_vacation(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    result = await vacation_service.create_vacation(
-        db, data.model_dump(), current_user
-    )
-    return result
+    try:
+        result = await vacation_service.create_vacation(
+            db, data.model_dump(), current_user
+        )
+        return result
+    except Exception as e:
+        import logging
+        logging.error(f"[create_vacation] ERROR: {e}", exc_info=True)
+        raise
 
 
 @router.get("/balance", response_model=VacationBalanceResponse)

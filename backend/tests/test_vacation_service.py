@@ -117,14 +117,17 @@ class TestCreateVacation:
                 with patch("app.services.vacation_service.references_repository") as mock_ref_repo:
                     mock_ref_repo.get_holidays_for_year = AsyncMock(return_value=[])
 
-                    with pytest.raises(InsufficientVacationDaysError) as exc_info:
-                        await service.create_vacation(mock_db, {
-                            "employee_id": 1,
-                            "start_date": date(2026, 4, 1),
-                            "end_date": date(2026, 4, 10),
-                            "vacation_type": "Трудовой",
-                        }, "admin")
-                    assert "Недостаточно" in str(exc_info.value)
+                    with patch("app.services.vacation_service.vacation_period_service") as mock_vp:
+                        mock_vp.check_balance_before_create = AsyncMock(side_effect=InsufficientVacationDaysError("Недостаточно дней отпуска"))
+
+                        with pytest.raises(InsufficientVacationDaysError) as exc_info:
+                            await service.create_vacation(mock_db, {
+                                "employee_id": 1,
+                                "start_date": date(2026, 4, 1),
+                                "end_date": date(2026, 4, 10),
+                                "vacation_type": "Трудовой",
+                            }, "admin")
+                        assert "Недостаточно" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_no_balance_check_for_unpaid(self, service, mock_db):
@@ -139,6 +142,9 @@ class TestCreateVacation:
 
                 with patch("app.services.vacation_service.references_repository") as mock_ref_repo:
                     mock_ref_repo.get_holidays_for_year = AsyncMock(return_value=[])
+
+                with patch("app.services.vacation_service.vacation_period_service") as mock_vp:
+                    mock_vp.check_balance_before_create = AsyncMock(return_value=None)
 
                     with patch("app.services.vacation_service.order_service") as mock_order_svc:
                         mock_order_svc.create_order = AsyncMock(return_value=self._make_order())
@@ -193,19 +199,22 @@ class TestCreateVacation:
                 with patch("app.services.vacation_service.references_repository") as mock_ref_repo:
                     mock_ref_repo.get_holidays_for_year = AsyncMock(return_value=[])
 
-                    with patch("app.services.vacation_service.order_service") as mock_order_svc:
-                        mock_order_svc.create_order = AsyncMock(return_value=self._make_order())
+                    with patch("app.services.vacation_service.vacation_period_service") as mock_vp:
+                        mock_vp.check_balance_before_create = AsyncMock(return_value=None)
 
-                        await service.create_vacation(mock_db, {
-                            "employee_id": 1,
-                            "start_date": date(2026, 4, 1),
-                            "end_date": date(2026, 4, 10),
-                            "vacation_type": "Трудовой",
-                            "order_date": date(2026, 3, 15),
-                        }, "admin")
+                        with patch("app.services.vacation_service.order_service") as mock_order_svc:
+                            mock_order_svc.create_order = AsyncMock(return_value=self._make_order())
 
-                        call_data = mock_order_svc.create_order.call_args[0][1]
-                        assert call_data.order_date == date(2026, 3, 15)
+                            await service.create_vacation(mock_db, {
+                                "employee_id": 1,
+                                "start_date": date(2026, 4, 1),
+                                "end_date": date(2026, 4, 10),
+                                "vacation_type": "Трудовой",
+                                "order_date": date(2026, 3, 15),
+                            }, "admin")
+
+                            call_data = mock_order_svc.create_order.call_args[0][1]
+                            assert call_data.order_date == date(2026, 3, 15)
 
     @pytest.mark.asyncio
     async def test_order_date_defaults_to_today(self, service, mock_db):
@@ -222,18 +231,21 @@ class TestCreateVacation:
                 with patch("app.services.vacation_service.references_repository") as mock_ref_repo:
                     mock_ref_repo.get_holidays_for_year = AsyncMock(return_value=[])
 
-                    with patch("app.services.vacation_service.order_service") as mock_order_svc:
-                        mock_order_svc.create_order = AsyncMock(return_value=self._make_order())
+                    with patch("app.services.vacation_service.vacation_period_service") as mock_vp:
+                        mock_vp.check_balance_before_create = AsyncMock(return_value=None)
 
-                        await service.create_vacation(mock_db, {
-                            "employee_id": 1,
-                            "start_date": date(2026, 4, 1),
-                            "end_date": date(2026, 4, 10),
-                            "vacation_type": "Трудовой",
-                        }, "admin")
+                        with patch("app.services.vacation_service.order_service") as mock_order_svc:
+                            mock_order_svc.create_order = AsyncMock(return_value=self._make_order())
 
-                        call_data = mock_order_svc.create_order.call_args[0][1]
-                        assert call_data.order_date == date.today()
+                            await service.create_vacation(mock_db, {
+                                "employee_id": 1,
+                                "start_date": date(2026, 4, 1),
+                                "end_date": date(2026, 4, 10),
+                                "vacation_type": "Трудовой",
+                            }, "admin")
+
+                            call_data = mock_order_svc.create_order.call_args[0][1]
+                            assert call_data.order_date == date.today()
 
     @pytest.mark.asyncio
     async def test_commit_called_once(self, service, mock_db):
@@ -250,17 +262,20 @@ class TestCreateVacation:
                 with patch("app.services.vacation_service.references_repository") as mock_ref_repo:
                     mock_ref_repo.get_holidays_for_year = AsyncMock(return_value=[])
 
-                    with patch("app.services.vacation_service.order_service") as mock_order_svc:
-                        mock_order_svc.create_order = AsyncMock(return_value=self._make_order())
+                    with patch("app.services.vacation_service.vacation_period_service") as mock_vp:
+                        mock_vp.check_balance_before_create = AsyncMock(return_value=None)
 
-                        await service.create_vacation(mock_db, {
-                            "employee_id": 1,
-                            "start_date": date(2026, 4, 1),
-                            "end_date": date(2026, 4, 10),
-                            "vacation_type": "Трудовой",
-                        }, "admin")
+                        with patch("app.services.vacation_service.order_service") as mock_order_svc:
+                            mock_order_svc.create_order = AsyncMock(return_value=self._make_order())
 
-                        mock_db.commit.assert_called_once()
+                            await service.create_vacation(mock_db, {
+                                "employee_id": 1,
+                                "start_date": date(2026, 4, 1),
+                                "end_date": date(2026, 4, 10),
+                                "vacation_type": "Трудовой",
+                            }, "admin")
+
+                            mock_db.commit.assert_called_once()
 
 
 class TestUpdateVacation:
@@ -375,6 +390,7 @@ class TestDeleteVacation:
     @pytest.mark.asyncio
     async def test_soft_delete(self, service, mock_db):
         vac = MagicMock()
+        vac.is_cancelled = False
         with patch("app.services.vacation_service.vacation_repository") as mock_repo:
             mock_repo.get_by_id = AsyncMock(return_value=vac)
             mock_repo.soft_delete = AsyncMock(return_value=True)
