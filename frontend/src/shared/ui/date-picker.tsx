@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react"
+import { createPortal } from "react-dom"
 import { Calendar } from "lucide-react"
 import { Button } from "./button"
 import { cn } from "@/shared/utils/cn"
@@ -37,7 +38,9 @@ export function DatePicker({ value, onChange, label, required = false, className
   const [showCalendar, setShowCalendar] = useState(false)
   const [currentMonth, setCurrentMonth] = useState(value ? new Date(value + "T00:00:00") : new Date())
   const [inputValue, setInputValue] = useState(formatDateForDisplay(value))
+  const [calendarPosition, setCalendarPosition] = useState({ top: 0, left: 0, width: 0 })
   const ref = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     setInputValue(formatDateForDisplay(value))
@@ -48,8 +51,25 @@ export function DatePicker({ value, onChange, label, required = false, className
   }, [value])
 
   useEffect(() => {
+    if (showCalendar && ref.current) {
+      const rect = ref.current.getBoundingClientRect()
+      setCalendarPosition({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        width: rect.width
+      })
+    }
+  }, [showCalendar])
+
+  useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      const target = e.target as HTMLElement
+      // Проверяем, не клик ли это по календарю в портале
+      if (target.closest('[data-calendar-portal]')) {
+        return
+      }
+      // Проверяем, не клик ли это по нашему компоненту
+      if (ref.current && !ref.current.contains(target)) {
         setShowCalendar(false)
       }
     }
@@ -158,6 +178,7 @@ export function DatePicker({ value, onChange, label, required = false, className
           disabled={disabled}
         />
         <Button
+          ref={buttonRef}
           type="button"
           variant="ghost"
           size="sm"
@@ -169,16 +190,35 @@ export function DatePicker({ value, onChange, label, required = false, className
         </Button>
       </div>
 
-      {showCalendar && (
-        <div className="absolute z-50 mt-1 w-[260px] border rounded-md bg-popover shadow-md p-3">
+      {showCalendar && createPortal(
+        <div 
+          data-calendar-portal
+          className="fixed z-[99999] w-[260px] border rounded-md bg-popover shadow-lg p-3"
+          style={{
+            top: `${calendarPosition.top}px`,
+            left: `${calendarPosition.left}px`,
+            pointerEvents: 'auto',
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           <div className="flex items-center justify-between mb-2 pb-2 border-b">
-            <button type="button" className="text-primary hover:text-primary/80 text-sm font-medium px-1" onClick={handlePrevMonth}>
+            <button 
+              type="button" 
+              className="text-primary hover:text-primary/80 text-sm font-medium px-1" 
+              onClick={handlePrevMonth}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
               ‹
             </button>
             <span className="text-sm font-semibold">
               {MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}
             </span>
-            <button type="button" className="text-primary hover:text-primary/80 text-sm font-medium px-1" onClick={handleNextMonth}>
+            <button 
+              type="button" 
+              className="text-primary hover:text-primary/80 text-sm font-medium px-1" 
+              onClick={handleNextMonth}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
               ›
             </button>
           </div>
@@ -190,7 +230,8 @@ export function DatePicker({ value, onChange, label, required = false, className
           <div className="grid grid-cols-7 gap-1">
             {renderCalendar()}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
