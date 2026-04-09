@@ -16,6 +16,7 @@ class Employee(Base):
     position = Column(String(100), nullable=False)
     vacation_days_override = Column(Integer, nullable=True)
     vacation_days_correction = Column(Integer, nullable=True)
+    additional_vacation_days = Column(Integer, nullable=False, default=0)
     hire_date = Column(Date)
     birth_date = Column(Date)
     gender = Column(String(1))
@@ -43,6 +44,8 @@ class Employee(Base):
     deleted_by = Column(String(100))
 
     vacations = relationship("Vacation", back_populates="employee")
+    vacation_periods = relationship("VacationPeriod", back_populates="employee", order_by="VacationPeriod.year_number")
+    vacation_plans = relationship("VacationPlan", back_populates="employee")
     orders = relationship("Order", back_populates="employee")
     audit_log = relationship("EmployeeAuditLog", back_populates="employee", order_by="EmployeeAuditLog.performed_at.desc()")
 

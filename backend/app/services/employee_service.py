@@ -12,6 +12,7 @@ from app.core.exceptions import (
 )
 from app.models.employee import Employee
 from app.repositories.employee_repository import EmployeeRepository
+from app.services.vacation_period_service import vacation_period_service
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
 
 repository = EmployeeRepository()
@@ -22,6 +23,7 @@ class EmployeeService:
         self,
         db: AsyncSession,
         department: Optional[str] = None,
+        gender: Optional[str] = None,
         status: str = "active",
         page: int = 1,
         per_page: int = 20,
@@ -31,6 +33,7 @@ class EmployeeService:
         items, total = await repository.get_all(
             db,
             department=department,
+            gender=gender,
             status=status,
             page=page,
             per_page=per_page,
@@ -74,13 +77,22 @@ class EmployeeService:
                 raise DuplicateTabNumberError(data.tab_number)
 
         employee = await repository.create(db, data.model_dump())
-        
+
+        # Создаём все периоды отпусков если есть contract_start
+        if data.contract_start:
+            await vacation_period_service.ensure_periods_for_employee(
+                db,
+                employee_id=employee.id,
+                contract_start=data.contract_start,
+                additional_days=data.additional_vacation_days or 0,
+            )
+
         # Конвертируем даты в строки для JSON
         audit_data = data.model_dump()
         for key, value in audit_data.items():
             if hasattr(value, 'isoformat'):  # Проверяем, является ли значение датой
                 audit_data[key] = value.isoformat()
-        
+
         await repository._add_audit_entry(db, employee.id, "created", user_id, None, audit_data)
         return employee
 
@@ -95,6 +107,12 @@ class EmployeeService:
             old_values[key] = getattr(employee, key)
 
         employee = await repository.update(db, employee_id, update_data)
+
+        # Если изменились additional_vacation_days — обновить все периоды
+        if "additional_vacation_days" in update_data and employee.contract_start:
+            await vacation_period_service.ensure_periods_for_employee(
+                db, employee_id, employee.contract_start, update_data["additional_vacation_days"]
+            )
 
         changed_fields = {}
         for key, new_value in update_data.items():

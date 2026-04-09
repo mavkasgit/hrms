@@ -26,6 +26,7 @@ class EmployeeRepository:
         self,
         db: AsyncSession,
         department: Optional[str] = None,
+        gender: Optional[str] = None,
         status: str = "active",
         page: int = 1,
         per_page: int = 20,
@@ -47,6 +48,9 @@ class EmployeeRepository:
 
         if department:
             conditions.append(Employee.department == department)
+
+        if gender:
+            conditions.append(Employee.gender == gender)
 
         where_clause = and_(*conditions) if conditions else True
 

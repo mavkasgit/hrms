@@ -21,6 +21,7 @@ class EmployeeBase(BaseModel):
     personal_number: Optional[str] = Field(None, max_length=50)
     insurance_number: Optional[str] = Field(None, max_length=50)
     passport_number: Optional[str] = Field(None, max_length=50)
+    additional_vacation_days: int = 0
 
 
 class EmployeeCreate(EmployeeBase):
@@ -49,6 +50,7 @@ class EmployeeCreate(EmployeeBase):
 
 class EmployeeUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
+    tab_number: Optional[int] = None
     department: Optional[str] = Field(None, min_length=1, max_length=100)
     position: Optional[str] = Field(None, min_length=1, max_length=100)
     hire_date: Optional[date] = None
@@ -64,6 +66,7 @@ class EmployeeUpdate(BaseModel):
     personal_number: Optional[str] = Field(None, max_length=50)
     insurance_number: Optional[str] = Field(None, max_length=50)
     passport_number: Optional[str] = Field(None, max_length=50)
+    additional_vacation_days: Optional[int] = None
 
     @field_validator("birth_date")
     @classmethod
@@ -109,6 +112,7 @@ class EmployeeResponse(BaseModel):
     personal_number: Optional[str] = None
     insurance_number: Optional[str] = None
     passport_number: Optional[str] = None
+    additional_vacation_days: int = 0
     created_at: datetime
     updated_at: Optional[datetime] = None
     is_archived: bool

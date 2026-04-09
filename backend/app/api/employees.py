@@ -26,6 +26,7 @@ def _get_current_user_stub() -> str:
 async def list_employees(
     q: Optional[str] = Query(None),
     department: Optional[str] = Query(None),
+    gender: Optional[str] = Query(None),
     status: Optional[str] = Query("active", pattern="^(active|archived|all|deleted)$"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=1000),
@@ -50,6 +51,7 @@ async def list_employees(
     result = await employee_service.get_all_employees(
         db,
         department=department,
+        gender=gender,
         status=status,
         page=page,
         per_page=per_page,
