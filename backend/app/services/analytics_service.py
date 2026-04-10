@@ -9,13 +9,13 @@ from app.models.employee import Employee
 
 class AnalyticsService:
     @staticmethod
-    async def get_dashboard_stats(db: AsyncSession, department: Optional[str] = None, gender: Optional[str] = None) -> dict:
+    async def get_dashboard_stats(db: AsyncSession, department_id: Optional[int] = None, gender: Optional[str] = None) -> dict:
         conditions = [
             Employee.is_deleted == False,
             Employee.is_archived == False,
         ]
-        if department:
-            conditions.append(Employee.department == department)
+        if department_id:
+            conditions.append(Employee.department_id == department_id)
         if gender:
             conditions.append(Employee.gender == gender)
 
@@ -98,14 +98,18 @@ class AnalyticsService:
         if gender:
             conditions.append(Employee.gender == gender)
 
+        from app.models.department import Department
+        
         # Получаем всех активных сотрудников с датой рождения
         result = await db.execute(
-            select(Employee).where(and_(*conditions))
+            select(Employee, Department.name)
+            .join(Department, Employee.department_id == Department.id)
+            .where(and_(*conditions))
         )
-        employees = result.scalars().all()
+        rows = result.all()
 
         birthdays = []
-        for emp in employees:
+        for emp, dept_name in rows:
             if not emp.birth_date:
                 continue
 
@@ -122,7 +126,7 @@ class AnalyticsService:
                 birthdays.append({
                     "id": emp.id,
                     "name": emp.name,
-                    "department": emp.department,
+                    "department": dept_name,
                     "birth_date": emp.birth_date.isoformat(),
                     "age": age,
                     "days_until": days_until,
@@ -135,7 +139,7 @@ class AnalyticsService:
     @staticmethod
     async def get_contract_expiring(
         db: AsyncSession,
-        department: Optional[str] = None,
+        department_id: Optional[int] = None,
         gender: Optional[str] = None,
     ) -> list[dict]:
         today = date.today()
@@ -144,25 +148,32 @@ class AnalyticsService:
             Employee.is_deleted == False,
             Employee.is_archived == False,
         ]
-        if department:
-            conditions.append(Employee.department == department)
+        if department_id:
+            conditions.append(Employee.department_id == department_id)
         if gender:
             conditions.append(Employee.gender == gender)
 
+        from app.models.department import Department
+        from app.models.position import Position
+
         result = await db.execute(
-            select(Employee).where(and_(*conditions)).order_by(Employee.contract_end.asc().nullsfirst())
+            select(Employee, Department.name, Position.name)
+            .join(Department, Employee.department_id == Department.id)
+            .join(Position, Employee.position_id == Position.id)
+            .where(and_(*conditions))
+            .order_by(Employee.contract_end.asc().nullsfirst())
         )
-        employees = result.scalars().all()
+        rows = result.all()
 
         contracts = []
-        for emp in employees:
+        for emp, dept_name, pos_name in rows:
             if emp.contract_end:
                 days_left = (emp.contract_end - today).days
                 contracts.append({
                     "id": emp.id,
                     "name": emp.name,
-                    "department": emp.department,
-                    "position": emp.position,
+                    "department": dept_name,
+                    "position": pos_name,
                     "contract_end": emp.contract_end.isoformat(),
                     "days_left": days_left,
                 })
@@ -170,8 +181,8 @@ class AnalyticsService:
                 contracts.append({
                     "id": emp.id,
                     "name": emp.name,
-                    "department": emp.department,
-                    "position": emp.position,
+                    "department": dept_name,
+                    "position": pos_name,
                     "contract_end": None,
                     "days_left": None,
                 })
@@ -181,9 +192,12 @@ class AnalyticsService:
     @staticmethod
     async def get_department_distribution(
         db: AsyncSession,
-        department: Optional[str] = None,
+        department_id: Optional[int] = None,
         gender: Optional[str] = None,
     ) -> list[dict]:
+        from app.models.department import Department
+        from app.models.position import Position
+
         conditions = [
             Employee.is_deleted == False,
             Employee.is_archived == False,
@@ -192,27 +206,40 @@ class AnalyticsService:
             conditions.append(Employee.gender == gender)
 
         # Если выбран конкретный отдел, группируем по позициям внутри него
-        if department:
-            conditions.append(Employee.department == department)
-            group_by = Employee.position
-            label_field = "position"
-        else:
-            group_by = Employee.department
-            label_field = "department"
-
-        result = await db.execute(
-            select(
-                group_by.label(label_field),
-                func.count(Employee.id).label("count")
+        if department_id:
+            conditions.append(Employee.department_id == department_id)
+            result = await db.execute(
+                select(
+                    Position.name.label("position"),
+                    func.count(Employee.id).label("count")
+                )
+                .join(Position, Employee.position_id == Position.id)
+                .where(and_(*conditions))
+                .group_by(Position.name)
+                .order_by(func.count(Employee.id).desc())
             )
-            .where(and_(*conditions))
-            .group_by(group_by)
-            .order_by(func.count(Employee.id).desc())
-        )
+        else:
+            result = await db.execute(
+                select(
+                    Department.name.label("department"),
+                    func.count(Employee.id).label("count")
+                )
+                .join(Department, Employee.department_id == Department.id)
+                .where(and_(*conditions))
+                .group_by(Department.name)
+                .order_by(func.count(Employee.id).desc())
+            )
         rows = result.all()
 
-        return [
-            {label_field: row[0], "count": row[1]}
-            for row in rows
-            if row[0]
-        ]
+        if department_id:
+            return [
+                {"position": row[0], "count": row[1]}
+                for row in rows
+                if row[0]
+            ]
+        else:
+            return [
+                {"department": row[0], "count": row[1]}
+                for row in rows
+                if row[0]
+            ]

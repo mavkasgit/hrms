@@ -22,7 +22,7 @@ class EmployeeService:
     async def get_all_employees(
         self,
         db: AsyncSession,
-        department: Optional[str] = None,
+        department_id: Optional[int] = None,
         gender: Optional[str] = None,
         status: str = "active",
         page: int = 1,
@@ -32,7 +32,7 @@ class EmployeeService:
     ) -> dict:
         items, total = await repository.get_all(
             db,
-            department=department,
+            department_id=department_id,
             gender=gender,
             status=status,
             page=page,

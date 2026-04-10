@@ -13,7 +13,7 @@ import {
 } from "@/shared/ui/dialog"
 import { useCreateOrder, useOrderTypes, useRecentOrders } from "@/entities/order/useOrders"
 import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
-import { getExtraFields, calculateDaysBetween, getAutoDaysConfig, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
+import { getExtraFields, calculateDaysBetween, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { useSearchEmployees } from "@/entities/employee/useEmployees"
 import type { Employee } from "@/entities/employee/types"
@@ -223,7 +223,7 @@ export function OrderGeneration({ open, onOpenChange }: OrderGenerationProps) {
                     )}
                   </span>
                   <Badge variant="outline" className="shrink-0 text-xs">
-                    {selectedEmployee.department}
+                    Подразделение #{selectedEmployee.department_id}
                   </Badge>
                   <button
                     type="button"

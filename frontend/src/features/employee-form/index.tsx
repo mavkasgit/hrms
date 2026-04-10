@@ -28,7 +28,7 @@ import {
   useRestoreEmployee,
   useDeleteEmployee,
 } from "@/entities/employee/useEmployees"
-import { Archive, Trash2, RotateCcw, Building } from "lucide-react"
+import { Archive, Trash2, RotateCcw, Building, Briefcase } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -36,7 +36,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select"
-import { useDepartments } from "@/entities/employee/useEmployees"
+import { useDepartments } from "@/entities/department"
+import { usePositions } from "@/entities/position"
 
 interface EmployeeFormProps {
   open: boolean
@@ -46,8 +47,8 @@ interface EmployeeFormProps {
 
 const emptyForm: EmployeeCreate = {
   name: "",
-  department: "",
-  position: "",
+  department_id: 1,
+  position_id: 1,
   tab_number: null,
   hire_date: null,
   birth_date: null,
@@ -77,6 +78,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
   const restoreMutation = useRestoreEmployee()
   const deleteMutation = useDeleteEmployee()
   const { data: departments = [] } = useDepartments()
+  const { data: positions = [] } = usePositions()
 
   useEffect(() => {
     console.log(`[FORM] Эффект: employee или open изменились`, { employee: employee?.id, open })
@@ -111,15 +113,12 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
     const newErrors: Record<string, string> = {}
     if (!form.name.trim()) {
       newErrors.name = "ФИО обязательно"
-      console.log(`[FORM] Ошибка: ФИО пусто`)
     }
-    if (!form.department.trim()) {
+    if (!form.department_id) {
       newErrors.department = "Подразделение обязательно"
-      console.log(`[FORM] Ошибка: Подразделение пусто`)
     }
-    if (!form.position.trim()) {
+    if (!form.position_id) {
       newErrors.position = "Должность обязательна"
-      console.log(`[FORM] Ошибка: Должность пуста`)
     }
     setErrors(newErrors)
     const isValid = Object.keys(newErrors).length === 0
@@ -140,8 +139,8 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
       const updateData: EmployeeUpdate = {
         name: form.name,
         tab_number: form.tab_number,
-        department: form.department,
-        position: form.position,
+        department_id: form.department_id,
+        position_id: form.position_id,
         hire_date: form.hire_date,
         birth_date: form.birth_date,
         gender: form.gender,
@@ -314,28 +313,41 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
             <div>
               <label className="text-sm font-medium">Должность *</label>
-              <Input
-                value={form.position}
-                onChange={(e) => updateField("position", e.target.value)}
-                className={errors.position ? "border-red-500" : ""}
-              />
+              <Select
+                value={String(form.position_id)}
+                onValueChange={(v) => updateField("position_id", parseInt(v))}
+              >
+                <SelectTrigger className={errors.position ? "border-red-500" : ""}>
+                  <SelectValue placeholder="Выберите должность" />
+                </SelectTrigger>
+                <SelectContent>
+                  {positions.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      <div className="flex items-center">
+                        <Briefcase className="h-4 w-4 mr-2" />
+                        {p.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {errors.position && <p className="text-xs text-red-500 mt-1">{errors.position}</p>}
             </div>
             <div>
               <label className="text-sm font-medium">Подразделение *</label>
               <Select
-                value={form.department}
-                onValueChange={(v) => updateField("department", v)}
+                value={String(form.department_id)}
+                onValueChange={(v) => updateField("department_id", parseInt(v))}
               >
                 <SelectTrigger className={errors.department ? "border-red-500" : ""}>
                   <SelectValue placeholder="Выберите подразделение" />
                 </SelectTrigger>
                 <SelectContent>
                   {departments.map((d) => (
-                    <SelectItem key={d} value={d}>
+                    <SelectItem key={d.id} value={String(d.id)}>
                       <div className="flex items-center">
                         <Building className="h-4 w-4 mr-2" />
-                        {d}
+                        {d.name}
                       </div>
                     </SelectItem>
                   ))}

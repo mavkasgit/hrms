@@ -1,9 +1,21 @@
+export interface DepartmentInfo {
+  id: number
+  name: string
+}
+
+export interface PositionInfo {
+  id: number
+  name: string
+}
+
 export interface Employee {
   id: number
   tab_number: number | null
   name: string
-  department: string
-  position: string
+  department_id: number
+  position_id: number
+  department?: DepartmentInfo
+  position?: PositionInfo
   hire_date: string | null
   birth_date: string | null
   gender: string | null
@@ -38,8 +50,8 @@ export interface EmployeeListResponse {
 
 export interface EmployeeCreate {
   name: string
-  department: string
-  position: string
+  department_id: number
+  position_id: number
   tab_number?: number | null
   hire_date?: string | null
   birth_date?: string | null
@@ -59,8 +71,9 @@ export interface EmployeeCreate {
 
 export interface EmployeeUpdate {
   name?: string
-  department?: string
-  position?: string
+  tab_number?: number | null
+  department_id?: number
+  position_id?: number
   hire_date?: string | null
   birth_date?: string | null
   gender?: string | null

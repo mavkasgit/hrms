@@ -138,12 +138,21 @@ class VacationPeriodService:
             real_used_days = await self._repo.get_used_days(db, p.id, today)
             manually_closed = used_days > real_used_days
 
-            # Для текущего периода считаем accrued дни пропорционально
+            # Для текущего периода считаем accrued дни помесячно
             # НО только если период не был закрыт вручную
             if p.period_start <= today <= p.period_end and not manually_closed:
-                total_days_in_period = (p.period_end - p.period_start).days + 1
-                days_passed = (today - p.period_start).days + 1
-                accrued = round(total_days_full * days_passed / total_days_in_period)
+                # Считаем accrued дни помесячно: (основные + доп) / 12 * количество_полных_месяцев
+                from dateutil.relativedelta import relativedelta
+                rd = relativedelta(today, p.period_start)
+                months_passed = rd.years * 12 + rd.months
+                # Если прошел хотя бы 1 день текущего месяца, считаем его как полный
+                if rd.days > 0:
+                    months_passed += 1
+                
+                # Ограничиваем максимум 12 месяцами
+                months_passed = min(months_passed, 12)
+                
+                accrued = round(total_days_full / 12 * months_passed)
                 total = accrued
             else:
                 total = total_days_full

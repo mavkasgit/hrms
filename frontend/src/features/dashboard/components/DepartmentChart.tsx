@@ -46,7 +46,7 @@ export function DepartmentChart({ data, isLoading, labelKey }: DepartmentChartPr
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={data}>
+          <BarChart data={data as any[]}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey={label}

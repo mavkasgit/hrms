@@ -20,9 +20,9 @@ class Holiday(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     date = Column(Date, nullable=False, unique=True, index=True)
-    name = Column(String(200), nullable=False)
+    name = Column(String(200))
     year = Column(Integer, nullable=False, index=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_working_day = Column(Boolean, default=False, nullable=False)
 
 
 def get_default_holidays(year: int) -> list[dict]:

@@ -53,7 +53,7 @@ class VacationPlanService:
             summaries.append(VacationPlanSummary(
                 employee_id=emp_id,
                 employee_name=emp.name,
-                department=emp.department,
+                department_id=emp.department_id,
                 months=data["months"],
                 total_days=data["total_days"],
             ))

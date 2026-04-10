@@ -35,10 +35,9 @@ import {
   useDeleteOrder,
 } from "@/entities/order/useOrders"
 import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
-import { getExtraFields, calculateDaysBetween, getAutoDaysConfig, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
+import { getExtraFields, calculateDaysBetween, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
 import { useSearchEmployees, useEmployees } from "@/entities/employee/useEmployees"
 import type { Employee } from "@/entities/employee/types"
-import api from "@/shared/api/axios"
 
 const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
   "Прием на работу": "bg-green-100 text-green-800 border-green-200",

@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class EmployeeBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    department: str = Field(..., min_length=1, max_length=100)
-    position: str = Field(..., min_length=1, max_length=100)
+    department_id: int
+    position_id: int
     hire_date: Optional[date] = None
     birth_date: Optional[date] = None
     gender: Optional[str] = Field(None, max_length=1)
@@ -51,8 +51,8 @@ class EmployeeCreate(EmployeeBase):
 class EmployeeUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     tab_number: Optional[int] = None
-    department: Optional[str] = Field(None, min_length=1, max_length=100)
-    position: Optional[str] = Field(None, min_length=1, max_length=100)
+    department_id: Optional[int] = None
+    position_id: Optional[int] = None
     hire_date: Optional[date] = None
     birth_date: Optional[date] = None
     gender: Optional[str] = Field(None, max_length=1)
@@ -93,12 +93,28 @@ class EmployeeArchive(BaseModel):
     termination_reason: Optional[str] = Field(None, max_length=255)
 
 
+class DepartmentInfo(BaseModel):
+    id: int
+    name: str
+    
+    model_config = {"from_attributes": True}
+
+
+class PositionInfo(BaseModel):
+    id: int
+    name: str
+    
+    model_config = {"from_attributes": True}
+
+
 class EmployeeResponse(BaseModel):
     id: int
     tab_number: Optional[int] = None
     name: str
-    department: str
-    position: str
+    department_id: int
+    position_id: int
+    department: Optional[DepartmentInfo] = None
+    position: Optional[PositionInfo] = None
     hire_date: Optional[date] = None
     birth_date: Optional[date] = None
     gender: Optional[str] = None

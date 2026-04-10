@@ -13,5 +13,7 @@ python-multipart>=0.0.6
 httpx>=0.25.0
 python-dateutil>=2.8.0
 mammoth>=1.6.0
+openpyxl>=3.1.0  # only for tests (creating Excel files)
+python-calamine>=0.1.0  # fast Excel reader (Rust-based)
 pytest>=7.4.0
 pytest-asyncio>=0.21.0

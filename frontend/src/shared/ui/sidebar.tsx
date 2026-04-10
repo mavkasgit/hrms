@@ -5,6 +5,8 @@ import {
   Users,
   FileText,
   CalendarDays,
+  Building2,
+  Stethoscope,
   Settings,
   LogIn,
   Wrench,
@@ -13,8 +15,10 @@ import {
 const navItems = [
   { to: "/", label: "Дашборд", icon: LayoutDashboard },
   { to: "/employees", label: "Сотрудники", icon: Users },
+  { to: "/structure", label: "Структура", icon: Building2 },
   { to: "/orders", label: "Приказы", icon: FileText },
   { to: "/vacations", label: "Отпуска", icon: CalendarDays },
+  { to: "/sick-leaves", label: "Больничные", icon: Stethoscope },
   { to: "/settings", label: "Настройки", icon: Settings },
   { to: "/dev", label: "Dev", icon: Wrench },
 ]

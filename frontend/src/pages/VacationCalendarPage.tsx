@@ -80,7 +80,7 @@ export function VacationCalendarPage() {
       return {
         employee_id: emp.id,
         employee_name: emp.name,
-        department: emp.department,
+        department: "Подр. " + emp.department_id,
         months: {} as Record<number, number | null>,
         total_days: 0,
       }

@@ -18,6 +18,10 @@ from app.api.vacation_periods_api import router as vacation_periods_router
 from app.api.vacation_plans import router as vacation_plans_router
 from app.api.references import router as references_router
 from app.api.analytics import router as analytics_router
+from app.api.departments import router as departments_router
+from app.api.tags import router as tags_router
+from app.api.positions import router as positions_router
+from app.api.import_employees import router as import_router
 
 
 @asynccontextmanager
@@ -54,6 +58,10 @@ app.include_router(vacation_periods_router, prefix="/api")
 app.include_router(vacation_plans_router, prefix="/api")
 app.include_router(references_router, prefix="/api")
 app.include_router(analytics_router, prefix="/api")
+app.include_router(departments_router, prefix="/api")
+app.include_router(tags_router, prefix="/api")
+app.include_router(positions_router, prefix="/api")
+app.include_router(import_router, prefix="/api")
 
 
 @app.get("/api/health")

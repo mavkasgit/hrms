@@ -32,6 +32,6 @@ class VacationPlanResponse(VacationPlanBase):
 class VacationPlanSummary(BaseModel):
     employee_id: int
     employee_name: str
-    department: str
+    department_id: int
     months: dict[int, Optional[float]]  # month -> days
     total_days: float

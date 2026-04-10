@@ -155,8 +155,8 @@ class OrderService:
             doc.add_paragraph(f"Дата: {data.order_date.strftime('%d.%m.%Y')}")
             doc.add_paragraph(f"Сотрудник: {employee.name}")
             doc.add_paragraph(f"Табельный номер: {employee.tab_number}")
-            doc.add_paragraph(f"Подразделение: {employee.department}")
-            doc.add_paragraph(f"Должность: {employee.position}")
+            doc.add_paragraph(f"Подразделение: {employee.department_id}")
+            doc.add_paragraph(f"Должность: {employee.position_id}")
 
         replacements = self._prepare_replacements(order_number, data, employee)
         await asyncio.wait_for(
@@ -235,9 +235,9 @@ class OrderService:
             "{short_name}": short_name,
             "{initials_before}": initials_before,
             "{last_name_then_initials}": last_name_then_initials,
-            "{position}": (employee.position or "").lower() if employee.position else "",
-            "{position_cap}": (employee.position or "").capitalize() if employee.position else "",
-            "{department}": employee.department or "",
+            "{position}": str(employee.position_id) if employee.position_id else "",
+            "{position_cap}": str(employee.position_id) if employee.position_id else "",
+            "{department}": str(employee.department_id) if employee.department_id else "",
             "{tab_number}": str(employee.tab_number),
             "{contract_end}": fmt_extra("contract_end"),
             "{trial_end}": fmt_extra("trial_end"),

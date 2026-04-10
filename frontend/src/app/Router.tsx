@@ -2,8 +2,10 @@ import { createBrowserRouter } from "react-router-dom"
 import { Layout } from "./Layout"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { EmployeesPage } from "@/pages/EmployeesPage"
+import { StructurePage } from "@/pages/StructurePage"
 import { OrdersPage } from "@/pages/OrdersPage"
 import { VacationsPage } from "@/pages/VacationsPage"
+import { SickLeavesPage } from "@/pages/SickLeavesPage"
 import { VacationCalendarPage } from "@/pages/VacationCalendarPage"
 import { TemplatesPage } from "@/pages/TemplatesPage"
 import { SettingsPage } from "@/pages/SettingsPage"
@@ -18,8 +20,10 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "employees", element: <EmployeesPage /> },
+      { path: "structure", element: <StructurePage /> },
       { path: "orders", element: <OrdersPage /> },
       { path: "vacations", element: <VacationsPage /> },
+      { path: "sick-leaves", element: <SickLeavesPage /> },
       { path: "vacation-calendar", element: <VacationCalendarPage /> },
       { path: "templates", element: <TemplatesPage /> },
       { path: "settings", element: <SettingsPage /> },

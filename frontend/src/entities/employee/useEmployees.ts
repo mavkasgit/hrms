@@ -49,7 +49,7 @@ export function useUpdateEmployee() {
   return useMutation({
     mutationFn: ({ employeeId, data }: { employeeId: number; data: EmployeeUpdate }) =>
       api.updateEmployee(employeeId, data),
-    onSuccess: (_updated, { employeeId }) => {
+    onSuccess: (_updated, { employeeId: _empId }) => {
       queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
       queryClient.invalidateQueries({
         queryKey: ["vacation-employees-summary"],

@@ -13,11 +13,6 @@ interface ContractsTableProps {
   isLoading?: boolean
 }
 
-const DEPT_COLORS: Record<string, { bg: string; text: string; border: string; light: string; activeBg: string; activeText: string; activeBorder: string }> = {
-  "Основное": { bg: "bg-emerald-600/70", text: "text-emerald-600", border: "border-emerald-600", light: "bg-emerald-100", activeBg: "bg-emerald-100", activeText: "text-emerald-700", activeBorder: "border-emerald-300" },
-  "Завод КТМ": { bg: "bg-sky-500/70", text: "text-sky-500", border: "border-sky-500", light: "bg-sky-100", activeBg: "bg-sky-100", activeText: "text-sky-700", activeBorder: "border-sky-300" },
-}
-
 const FILTER_OPTIONS = [
   { value: 3, label: "3 мес" },
 ]

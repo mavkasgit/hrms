@@ -12,8 +12,8 @@ class Employee(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     tab_number = Column(Integer, nullable=True, unique=True, index=True)
     name = Column(String(255), nullable=False, index=True)
-    department = Column(String(100), nullable=False, index=True)
-    position = Column(String(100), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False, index=True)
+    position_id = Column(Integer, ForeignKey("positions.id"), nullable=False, index=True)
     additional_vacation_days = Column(Integer, nullable=False, default=0)
     hire_date = Column(Date)
     birth_date = Column(Date)
@@ -46,6 +46,9 @@ class Employee(Base):
     vacation_plans = relationship("VacationPlan", back_populates="employee")
     orders = relationship("Order", back_populates="employee")
     audit_log = relationship("EmployeeAuditLog", back_populates="employee", order_by="EmployeeAuditLog.performed_at.desc()")
+    department = relationship("Department", foreign_keys=[department_id], back_populates="employees")
+    position = relationship("Position", foreign_keys=[position_id], back_populates="employees")
+    tags = relationship("EmployeeTag", back_populates="employee")
 
 
 class EmployeeAuditLog(Base):

@@ -25,7 +25,7 @@ def _get_current_user_stub() -> str:
 @router.get("", response_model=EmployeeListResponse)
 async def list_employees(
     q: Optional[str] = Query(None),
-    department: Optional[str] = Query(None),
+    department_id: Optional[int] = Query(None),
     gender: Optional[str] = Query(None),
     status: Optional[str] = Query("active", pattern="^(active|archived|all|deleted)$"),
     page: int = Query(1, ge=1),
@@ -50,7 +50,7 @@ async def list_employees(
         }
     result = await employee_service.get_all_employees(
         db,
-        department=department,
+        department_id=department_id,
         gender=gender,
         status=status,
         page=page,

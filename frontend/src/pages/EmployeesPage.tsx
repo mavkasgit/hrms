@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { Plus, Search, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Check, X } from "lucide-react"
+import { Plus, Search, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Check, X, Upload } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
@@ -15,6 +15,7 @@ import {
 } from "@/shared/ui/table"
 import { useEmployees, useUpdateEmployee } from "@/entities/employee/useEmployees"
 import { EmployeeForm } from "@/features/employee-form"
+import { ImportEmployeesModal } from "@/features/import-employees/ImportEmployeesModal"
 import type { Employee, EmployeeStatus } from "@/entities/employee/types"
 
 function calculateAge(birthDate: string | null): number | null {
@@ -58,6 +59,7 @@ export function EmployeesPage() {
   const filtersRef = useRef<HTMLDivElement>(null)
 
   const [formOpen, setFormOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
 
   const [editingAddDaysId, setEditingAddDaysId] = useState<number | null>(null)
@@ -131,9 +133,15 @@ export function EmployeesPage() {
         } else if (field === "hire_date") {
           aVal = a.contract_end ?? ""
           bVal = b.contract_end ?? ""
+        } else if (field === "department") {
+          aVal = a.department?.name ?? ""
+          bVal = b.department?.name ?? ""
+        } else if (field === "position") {
+          aVal = a.position?.name ?? ""
+          bVal = b.position?.name ?? ""
         } else {
-          aVal = (a[field] ?? "").toLowerCase()
-          bVal = (b[field] ?? "").toLowerCase()
+          aVal = (a[field as keyof typeof a] ?? "") as string | number
+          bVal = (b[field as keyof typeof b] ?? "") as string | number
         }
         if (aVal < bVal) return order === "asc" ? -1 : 1
         if (aVal > bVal) return order === "asc" ? 1 : -1
@@ -188,10 +196,16 @@ export function EmployeesPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Сотрудники</h1>
-        <Button onClick={() => { setEditingEmployee(null); setFormOpen(true) }}>
-          <Plus className="mr-2 h-4 w-4" />
-          Добавить
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            Импорт
+          </Button>
+          <Button onClick={() => { setEditingEmployee(null); setFormOpen(true) }}>
+            <Plus className="mr-2 h-4 w-4" />
+            Добавить
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -296,8 +310,8 @@ export function EmployeesPage() {
                 >
                   <TableCell className="font-mono text-sm">{emp.tab_number ?? "—"}</TableCell>
                   <TableCell className="font-medium">{emp.name}</TableCell>
-                  <TableCell>{emp.department}</TableCell>
-                  <TableCell>{emp.position}</TableCell>
+                  <TableCell>{emp.department?.name ?? "—"}</TableCell>
+                  <TableCell>{emp.position?.name ?? "—"}</TableCell>
                   <TableCell>{age !== null ? `${age} лет` : "—"}</TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     {editingAddDaysId === emp.id ? (
@@ -356,6 +370,13 @@ export function EmployeesPage() {
         open={formOpen}
         onOpenChange={handleFormClose}
         employee={editingEmployee}
+      />
+      <ImportEmployeesModal
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImportComplete={() => {
+          window.location.reload()
+        }}
       />
     </div>
   )

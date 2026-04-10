@@ -3,6 +3,7 @@ from typing import Optional
 
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.models.employee import Employee, EmployeeAuditLog
 
@@ -12,20 +13,28 @@ class EmployeeRepository:
         conditions = [Employee.id == employee_id]
         if not include_deleted:
             conditions.append(Employee.is_deleted == False)
-        result = await db.execute(select(Employee).where(and_(*conditions)))
+        result = await db.execute(
+            select(Employee)
+            .options(joinedload(Employee.department), joinedload(Employee.position))
+            .where(and_(*conditions))
+        )
         return result.scalar_one_or_none()
 
     async def get_by_tab_number(self, db: AsyncSession, tab_number: int, include_deleted: bool = False) -> Optional[Employee]:
         conditions = [Employee.tab_number == tab_number]
         if not include_deleted:
             conditions.append(Employee.is_deleted == False)
-        result = await db.execute(select(Employee).where(and_(*conditions)))
+        result = await db.execute(
+            select(Employee)
+            .options(joinedload(Employee.department), joinedload(Employee.position))
+            .where(and_(*conditions))
+        )
         return result.scalar_one_or_none()
 
     async def get_all(
         self,
         db: AsyncSession,
-        department: Optional[str] = None,
+        department_id: Optional[int] = None,
         gender: Optional[str] = None,
         status: str = "active",
         page: int = 1,
@@ -46,8 +55,8 @@ class EmployeeRepository:
         elif status == "all":
             pass
 
-        if department:
-            conditions.append(Employee.department == department)
+        if department_id:
+            conditions.append(Employee.department_id == department_id)
 
         if gender:
             conditions.append(Employee.gender == gender)
@@ -63,13 +72,14 @@ class EmployeeRepository:
 
         data_query = (
             select(Employee)
+            .options(joinedload(Employee.department), joinedload(Employee.position))
             .where(where_clause)
             .order_by(order_expr)
             .offset((page - 1) * per_page)
             .limit(per_page)
         )
         result = await db.execute(data_query)
-        items = list(result.scalars().all())
+        items = list(result.unique().scalars().all())
 
         return items, total
 
@@ -78,18 +88,20 @@ class EmployeeRepository:
 
         name_start_result = await db.execute(
             select(Employee)
+            .options(joinedload(Employee.department), joinedload(Employee.position))
             .where(Employee.name.ilike(f"{q}%"), Employee.is_deleted == False)
             .order_by(Employee.name.asc())
         )
-        for emp in name_start_result.scalars().all():
+        for emp in name_start_result.unique().scalars().all():
             results[emp.id] = emp
 
         name_contains_result = await db.execute(
             select(Employee)
+            .options(joinedload(Employee.department), joinedload(Employee.position))
             .where(Employee.name.ilike(f"%{q}%"), Employee.is_deleted == False)
             .order_by(Employee.name.asc())
         )
-        for emp in name_contains_result.scalars().all():
+        for emp in name_contains_result.unique().scalars().all():
             results[emp.id] = emp
 
         if q.isdigit():
@@ -104,7 +116,7 @@ class EmployeeRepository:
         employee = Employee(**data)
         db.add(employee)
         await db.flush()
-        await db.refresh(employee)
+        await db.refresh(employee, ["department", "position"])
         return employee
 
     async def update(self, db: AsyncSession, employee_id: int, data: dict) -> Optional[Employee]:
@@ -115,7 +127,7 @@ class EmployeeRepository:
             if value is not None:
                 setattr(employee, key, value)
         await db.flush()
-        await db.refresh(employee)
+        await db.refresh(employee, ["department", "position"])
         return employee
 
     async def archive(
@@ -134,7 +146,7 @@ class EmployeeRepository:
         employee.archived_by = user_id
         employee.archived_at = datetime.now()
         await db.flush()
-        await db.refresh(employee)
+        await db.refresh(employee, ["department", "position"])
         return employee
 
     async def restore(self, db: AsyncSession, employee_id: int, user_id: str) -> Optional[Employee]:
@@ -147,7 +159,7 @@ class EmployeeRepository:
         employee.archived_by = None
         employee.archived_at = None
         await db.flush()
-        await db.refresh(employee)
+        await db.refresh(employee, ["department", "position"])
         return employee
 
     async def soft_delete(self, db: AsyncSession, employee_id: int, user_id: str) -> bool:
@@ -176,12 +188,12 @@ class EmployeeRepository:
         )
         return list(result.scalars().all())
 
-    async def get_departments(self, db: AsyncSession) -> list[str]:
+    async def get_departments(self, db: AsyncSession) -> list[int]:
         result = await db.execute(
-            select(Employee.department)
+            select(Employee.department_id)
             .where(Employee.is_deleted == False)
             .distinct()
-            .order_by(Employee.department.asc())
+            .order_by(Employee.department_id.asc())
         )
         return [row[0] for row in result.all()]
 
