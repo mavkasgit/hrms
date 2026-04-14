@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import * as api from "./api"
+import { tagApi } from "@/entities/tag/api"
 import type { EmployeeCreate, EmployeeUpdate, EmployeeStatus } from "./types"
 
 export function useEmployees(params: {
@@ -111,5 +112,30 @@ export function useDepartments() {
   return useQuery({
     queryKey: ["departments"],
     queryFn: api.fetchDepartments,
+  })
+}
+
+/* Теги сотрудников */
+export function useAssignTag() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ employeeId, tagId }: { employeeId: number; tagId: number }) =>
+      tagApi.assignTag(employeeId, tagId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employees"] })
+      qc.invalidateQueries({ queryKey: ["tags"] })
+    },
+  })
+}
+
+export function useUnassignTag() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ employeeId, tagId }: { employeeId: number; tagId: number }) =>
+      tagApi.unassignTag(employeeId, tagId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employees"] })
+      qc.invalidateQueries({ queryKey: ["tags"] })
+    },
   })
 }
