@@ -29,8 +29,8 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "DEBUG"
     LOG_FILE: str = str(BASE_DIR / "logs" / "hrms.log")
-    LOG_MAX_BYTES: int = 10 * 1024 * 1024
-    LOG_BACKUP_COUNT: int = 5
+    LOG_MAX_BYTES: int = 50 * 1024 * 1024  # 50 МБ
+    LOG_BACKUP_COUNT: int = 5             # 5 файлов = 250 МБ суммарно
     
     # SQL logging (set to True to see all SQL queries)
     SQL_ECHO: bool = False

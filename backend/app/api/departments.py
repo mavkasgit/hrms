@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload, joinedload
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from app.core.database import get_db
@@ -276,7 +276,7 @@ async def get_department(dept_id: int, db: AsyncSession = Depends(get_db)):
 # ============================================================================
 
 class DepartmentCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, description="Название подразделения")
     short_name: Optional[str] = None
     color: Optional[str] = None
     icon: Optional[str] = None
@@ -286,7 +286,7 @@ class DepartmentCreate(BaseModel):
 
 
 class DepartmentUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1)
     short_name: Optional[str] = None
     color: Optional[str] = None
     icon: Optional[str] = None
@@ -297,9 +297,14 @@ class DepartmentUpdate(BaseModel):
 
 @router.post("", response_model=FlatDepartmentNode)
 async def create_department(
-    data: DepartmentCreate, db: AsyncSession = Depends(get_db)
+    data: DepartmentCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(lambda: "admin"),
 ):
     """Создать подразделение."""
+    from app.core.logging import get_audit_logger
+    audit_logger = get_audit_logger()
+
     dept = Department(
         name=data.name,
         short_name=data.short_name,
@@ -312,6 +317,19 @@ async def create_department(
     db.add(dept)
     await db.flush()
     await db.refresh(dept)
+
+    # Логирование
+    audit_logger.info(
+        f"DEPARTMENT CREATED: id={dept.id}, name={dept.name}",
+        extra={
+            "action": "department_created",
+            "user_id": current_user,
+            "details": {
+                "department_id": dept.id,
+                "department_name": dept.name,
+            },
+        }
+    )
 
     head_name = None
     if dept.head_employee_id:
@@ -337,23 +355,39 @@ async def update_department(
     dept_id: int,
     data: DepartmentUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(lambda: "admin"),
 ):
     """Обновить подразделение."""
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"UPDATE dept {dept_id}: {data.model_dump(exclude_unset=True)}")
+    from app.core.logging import get_audit_logger
+    audit_logger = get_audit_logger()
 
     result = await db.execute(select(Department).where(Department.id == dept_id))
     dept = result.scalar_one_or_none()
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
 
+    old_data = {key: getattr(dept, key) for key in data.model_dump(exclude_unset=True).keys()}
+
     for key, value in data.model_dump(exclude_unset=True).items():
-        logger.info(f"  setattr {key} = {value!r}")
         setattr(dept, key, value)
 
     await db.commit()
     await db.refresh(dept)
+
+    # Логирование
+    audit_logger.info(
+        f"DEPARTMENT UPDATED: id={dept_id}, name={dept.name}, changes={old_data} -> {data.model_dump(exclude_unset=True)}",
+        extra={
+            "action": "department_updated",
+            "user_id": current_user,
+            "details": {
+                "department_id": dept_id,
+                "department_name": dept.name,
+                "old_values": old_data,
+                "new_values": data.model_dump(exclude_unset=True),
+            },
+        }
+    )
 
     head_name = None
     if dept.head_employee_id:
@@ -375,12 +409,21 @@ async def update_department(
 
 
 @router.delete("/{dept_id:int}")
-async def delete_department(dept_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_department(
+    dept_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(lambda: "admin"),
+):
     """Удалить подразделение (если нет сотрудников и связей)."""
+    from app.core.logging import get_audit_logger
+    audit_logger = get_audit_logger()
+
     result = await db.execute(select(Department).where(Department.id == dept_id))
     dept = result.scalar_one_or_none()
     if not dept:
         raise HTTPException(status_code=404, detail="Department not found")
+
+    dept_name = dept.name
 
     # Проверяем сотрудников
     emp_result = await db.execute(
@@ -410,7 +453,21 @@ async def delete_department(dept_id: int, db: AsyncSession = Depends(get_db)):
 
     await db.delete(dept)
     await db.commit()
-    return {"ok": True}
+
+    # Логирование
+    audit_logger.info(
+        f"DEPARTMENT DELETED: id={dept_id}, name={dept_name}",
+        extra={
+            "action": "department_deleted",
+            "user_id": current_user,
+            "details": {
+                "department_id": dept_id,
+                "department_name": dept_name,
+            },
+        }
+    )
+
+    return {"status": "ok", "message": f"Department {dept_name} deleted"}
 
 
 # ============================================================================

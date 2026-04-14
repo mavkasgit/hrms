@@ -1,16 +1,25 @@
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { FileText, Calendar, ArrowRight } from "lucide-react"
+import { FileText, Calendar, ArrowRight, ScrollText } from "lucide-react"
 import { Button } from "@/shared/ui/button"
+import { GlobalAuditLog } from "@/features/global-audit-log"
 
 export function SettingsPage() {
   const navigate = useNavigate()
+  const [auditLogOpen, setAuditLogOpen] = useState(false)
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Настройки</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Настройки</h1>
+        <Button variant="outline" onClick={() => setAuditLogOpen(true)}>
+          <ScrollText className="mr-2 h-4 w-4" />
+          Общий журнал
+        </Button>
+      </div>
 
       <div className="grid gap-4 max-w-2xl">
-        <div 
+        <div
           className="border rounded-lg p-4 hover:bg-accent/50 transition-colors cursor-pointer"
           onClick={() => navigate("/settings/holidays")}
         >
@@ -51,6 +60,8 @@ export function SettingsPage() {
           </div>
         </div>
       </div>
+
+      <GlobalAuditLog open={auditLogOpen} onOpenChange={setAuditLogOpen} />
     </div>
   )
 }

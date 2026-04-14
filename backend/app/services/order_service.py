@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import EmployeeNotFoundError, OrderNotFoundError
+from app.core.logging import get_audit_logger
 from app.models.employee import Employee
 from app.models.order import Order
 from app.repositories.employee_repository import EmployeeRepository
@@ -22,6 +23,8 @@ from app.utils.file_helpers import (
     get_order_type_short,
     get_template_filename,
 )
+
+audit_logger = get_audit_logger()
 
 
 class OrderService:
@@ -130,6 +133,24 @@ class OrderService:
             "file_path": file_path,
             "notes": data.notes,
         })
+
+        # Логирование в общий журнал
+        audit_logger.info(
+            f"ORDER CREATED: id={order.id}, number={order_number}, type={data.order_type}, "
+            f"employee_id={data.employee_id}, employee_name={employee.name}",
+            extra={
+                "employee_id": data.employee_id,
+                "employee_name": employee.name,
+                "action": "order_created",
+                "user_id": "system",
+                "order_id": order.id,
+                "details": {
+                    "order_number": order_number,
+                    "order_type": data.order_type,
+                    "order_date": str(data.order_date),
+                },
+            }
+        )
 
         return order
 
@@ -478,6 +499,8 @@ class OrderService:
         if not order:
             raise OrderNotFoundError(order_id)
 
+        employee = await self.employee_repo.get_by_id(db, order.employee_id)
+
         # Удаляем связанные отпуска
         from app.models.vacation import Vacation
         from sqlalchemy import select as sa_select
@@ -502,6 +525,20 @@ class OrderService:
         # Удаляем приказ
         await self.order_repo.hard_delete(db, order_id)
         await db.commit()
+
+        # Логирование в общий журнал
+        audit_logger.info(
+            f"ORDER DELETED: id={order_id}, number={order.order_number}, type={order.order_type}, "
+            f"employee_id={order.employee_id}, employee_name={employee.name if employee else None}",
+            extra={
+                "employee_id": order.employee_id,
+                "employee_name": employee.name if employee else None,
+                "action": "order_deleted",
+                "user_id": "system",
+                "order_id": order_id,
+            }
+        )
+
         return True
 
 

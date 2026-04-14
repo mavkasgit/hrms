@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react"
-import { ChevronDown, ChevronRight, Trash2, Calendar, Check, X } from "lucide-react"
+import { ChevronDown, ChevronRight, Trash2, Calendar, Check, X, ScrollText } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
@@ -28,6 +28,7 @@ import { useVacationPeriods, useClosePeriod, usePartialClosePeriod } from "@/ent
 import { useSearchEmployees, useEmployees, useUpdateEmployee } from "@/entities/employee/useEmployees"
 import { useRecentOrders } from "@/entities/order/useOrders"
 import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
+import { GlobalAuditLog } from "@/features/global-audit-log"
 import type { Employee } from "@/entities/employee/types"
 
 const VACATION_TYPES = ["Трудовой", "За свой счет"]
@@ -326,6 +327,7 @@ export function VacationsPage() {
   const navigate = useNavigate()
   // --- Form state ---
   const [collapsed, setCollapsed] = useState(false)
+  const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<Employee[]>([])
@@ -564,10 +566,16 @@ export function VacationsPage() {
       
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Отпуска</h1>
-        <Button variant="outline" size="sm" onClick={() => navigate("/vacation-calendar")}>
-          <Calendar className="mr-2 h-4 w-4" />
-          Календарь
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setAuditLogOpen(true)}>
+            <ScrollText className="mr-2 h-4 w-4" />
+            Журнал
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate("/vacation-calendar")}>
+            <Calendar className="mr-2 h-4 w-4" />
+            Календарь
+          </Button>
+        </div>
       </div>
 
 {/* --- Vacation periods block removed --- */}
@@ -942,6 +950,8 @@ export function VacationsPage() {
           </table>
         </div>
       )}
+
+      <GlobalAuditLog open={auditLogOpen} onOpenChange={setAuditLogOpen} initialActionFilter="vacation" />
     </div>
   )
 }

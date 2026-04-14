@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
-import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2 } from "lucide-react"
+import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -8,6 +8,7 @@ import { Badge } from "@/shared/ui/badge"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
+import { GlobalAuditLog } from "@/features/global-audit-log"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,6 +54,7 @@ export function OrdersPage() {
   const navigate = useNavigate()
   const [year, setYear] = useState<number | undefined>(undefined)
   const [collapsed, setCollapsed] = useState(false)
+  const [auditLogOpen, setAuditLogOpen] = useState(false)
 
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
@@ -268,6 +270,10 @@ export function OrdersPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Приказы</h1>
+        <Button variant="outline" size="sm" onClick={() => setAuditLogOpen(true)}>
+          <ScrollText className="mr-2 h-4 w-4" />
+          Журнал
+        </Button>
       </div>
 
       <div className="border rounded-lg bg-card">
@@ -624,6 +630,8 @@ export function OrdersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <GlobalAuditLog open={auditLogOpen} onOpenChange={setAuditLogOpen} initialActionFilter="order" />
     </div>
   )
 }

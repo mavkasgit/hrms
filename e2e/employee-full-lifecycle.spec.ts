@@ -61,33 +61,78 @@ test.describe('Полный цикл сотрудника', () => {
     console.log('[TEST] === ЭТАП 1: Создание сотрудника ===')
     await page.goto('/employees')
     await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(500)
     await expect(page.getByRole('heading', { name: /сотрудники/i, level: 1 })).toBeVisible()
 
+    // Открыть модалку
     await page.getByRole('button', { name: /добавить/i }).click()
-    const createDialog = page.getByRole('dialog')
-    await expect(createDialog).toBeVisible()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
 
+    // Заполняем все поля
     await page.getByRole('textbox').first().fill(empName)
+
+    // Пол
     await page.getByRole('combobox').nth(0).click()
     await page.getByRole('option', { name: 'Мужской' }).click()
+
+    // Дата рождения
     await dateField(page, 0).fill('15.05.1990')
-    await page.getByRole('spinbutton').nth(0).fill('999999')
+
+    // Таб. номер (уникальный)
+    const tabNumber = Math.floor(100000 + Math.random() * 900000)
+    await page.getByRole('spinbutton').nth(0).fill(String(tabNumber))
+
+    // Должность
     await comboboxCreate(page, 'Должность', empPosition)
+
+    // Подразделение
     await comboboxCreate(page, 'Подразделение', empDepartment)
+
+    // Чекбоксы
     await page.getByLabel('Гражданство РБ', { exact: true }).check()
     await page.getByLabel('Резидент РБ', { exact: true }).check()
+
+    // Дата приёма
     await dateField(page, 1).fill('15.01.2024')
+
+    // Форма оплаты
     await page.getByRole('combobox').filter({ hasText: 'Не указана' }).click()
     await page.getByRole('option', { name: 'Повременная' }).click()
+
+    // Ставка
     await page.getByRole('spinbutton').nth(1).fill('25.5')
+
+    // Контракт
     await dateField(page, 2).fill('15.01.2024')
     await dateField(page, 3).fill('14.01.2025')
+
+    // Личный / страховой / паспорт
     await page.getByRole('textbox').nth(5).fill(`ЛН-${u.toUpperCase()}`)
     await fillGridInput(page, 2, `СН-${u.toUpperCase()}`)
     await fillGridInput(page, 3, `AB${Math.floor(1000000 + Math.random() * 9000000)}`)
 
-    await createDialog.getByRole('button', { name: /создать/i }).click()
-    await expect(createDialog).not.toBeVisible({ timeout: 10000 })
+    // Кликаем Создать
+    console.log('[TEST] Кликаем кнопку Создать...')
+    
+    // Слушаем ответ API
+    page.on('response', async (resp) => {
+      if (resp.url().includes('/api/employees') && resp.request().method() === 'POST') {
+        const status = resp.status()
+        const body = await resp.text().catch(() => '')
+        console.log(`[TEST] API Response: ${status} - ${body}`)
+      }
+    })
+    page.on('console', msg => {
+      console.log(`[BROWSER] ${msg.type()}: ${msg.text()}`)
+    })
+
+    await dialog.getByRole('button', { name: /создать/i }).click()
+
+    // Ждём закрытия модалки
+    await expect(dialog).not.toBeVisible({ timeout: 10000 })
+
+    // Сотрудник появился в таблице
     await expect(page.getByText(empName)).toBeVisible({ timeout: 5000 })
     console.log(`[TEST] ✅ Сотрудник "${empName}" создан`)
 

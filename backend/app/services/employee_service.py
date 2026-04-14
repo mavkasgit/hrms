@@ -1,8 +1,10 @@
 from datetime import datetime
 from typing import Optional
+import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_audit_logger
 from app.core.exceptions import (
     DuplicateTabNumberError,
     EmployeeAlreadyArchivedError,
@@ -16,6 +18,7 @@ from app.services.vacation_period_service import vacation_period_service
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
 
 repository = EmployeeRepository()
+audit_logger = get_audit_logger()
 
 
 class EmployeeService:
@@ -104,6 +107,18 @@ class EmployeeService:
                 audit_data[key] = value.isoformat()
 
         await repository._add_audit_entry(db, employee.id, "created", user_id, None, audit_data)
+
+        # Логирование в общий журнал
+        audit_logger.info(
+            f"EMPLOYEE CREATED: id={employee.id}, name={employee.name}, tab_number={employee.tab_number}",
+            extra={
+                "employee_id": employee.id,
+                "employee_name": employee.name,
+                "action": "created",
+                "user_id": user_id,
+                "details": audit_data,
+            }
+        )
         
         # После commit загруем сотрудника заново с joinedload department и position
         employee_with_relations = await repository.get_by_id(db, employee.id)
@@ -147,6 +162,18 @@ class EmployeeService:
         if changed_fields:
             await repository._add_audit_entry(db, employee_id, "updated", user_id, None, changed_fields)
 
+            # Логирование в общий журнал
+            audit_logger.info(
+                f"EMPLOYEE UPDATED: id={employee_id}, name={employee.name}, fields={list(changed_fields.keys())}",
+                extra={
+                    "employee_id": employee_id,
+                    "employee_name": employee.name,
+                    "action": "updated",
+                    "user_id": user_id,
+                    "changed_fields": changed_fields,
+                }
+            )
+
         return employee
 
     async def archive_employee(
@@ -174,6 +201,19 @@ class EmployeeService:
         }
         await repository._add_audit_entry(db, employee_id, "archived", user_id, reason, changed_fields)
 
+        # Логирование в общий журнал
+        audit_logger.info(
+            f"EMPLOYEE ARCHIVED: id={employee_id}, name={employee.name}, reason={reason}",
+            extra={
+                "employee_id": employee_id,
+                "employee_name": employee.name,
+                "action": "archived",
+                "user_id": user_id,
+                "reason": reason,
+                "changed_fields": changed_fields,
+            }
+        )
+
         return employee, warnings
 
     async def restore_employee(self, db: AsyncSession, employee_id: int, user_id: str) -> Employee:
@@ -193,6 +233,18 @@ class EmployeeService:
         }
         await repository._add_audit_entry(db, employee_id, "restored", user_id, None, changed_fields)
 
+        # Логирование в общий журнал
+        audit_logger.info(
+            f"EMPLOYEE RESTORED: id={employee_id}, name={employee.name}",
+            extra={
+                "employee_id": employee_id,
+                "employee_name": employee.name,
+                "action": "restored",
+                "user_id": user_id,
+                "changed_fields": changed_fields,
+            }
+        )
+
         return employee
 
     async def soft_delete_employee(self, db: AsyncSession, employee_id: int, user_id: str) -> bool:
@@ -206,6 +258,18 @@ class EmployeeService:
         await repository.soft_delete(db, employee_id, user_id)
 
         await repository._add_audit_entry(db, employee_id, "deleted", user_id, None, None)
+
+        # Логирование в общий журнал
+        audit_logger.info(
+            f"EMPLOYEE SOFT DELETED: id={employee_id}, name={employee.name}",
+            extra={
+                "employee_id": employee_id,
+                "employee_name": employee.name,
+                "action": "deleted",
+                "user_id": user_id,
+            }
+        )
+
         return True
 
     async def hard_delete_employee(self, db: AsyncSession, employee_id: int, user_id: str) -> bool:
@@ -214,6 +278,16 @@ class EmployeeService:
             raise EmployeeNotFoundError(employee_id)
 
         await repository._add_audit_entry(db, employee_id, "hard_deleted", user_id, None, None)
+
+        # Логирование в общий журнал
+        audit_logger.info(
+            f"EMPLOYEE HARD DELETED: id={employee_id}",
+            extra={
+                "employee_id": employee_id,
+                "action": "hard_deleted",
+                "user_id": user_id,
+            }
+        )
 
         return await repository.hard_delete(db, employee_id)
 

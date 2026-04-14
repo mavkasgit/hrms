@@ -8,6 +8,7 @@ interface DatePickerProps {
   value: string
   onChange: (date: string) => void
   label?: string
+  placeholder?: string
   required?: boolean
   className?: string
   disabled?: boolean
@@ -34,9 +35,15 @@ function formatDateForStorage(displayDate: string): string {
   return `${year}-${month}-${day}`
 }
 
-export function DatePicker({ value, onChange, label, required = false, className, disabled = false }: DatePickerProps) {
+export function DatePicker({ value, onChange, label, placeholder, required = false, className, disabled = false }: DatePickerProps) {
   const [showCalendar, setShowCalendar] = useState(false)
-  const [currentMonth, setCurrentMonth] = useState(value ? new Date(value + "T00:00:00") : new Date())
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    if (value) {
+      const d = new Date(value + "T00:00:00")
+      return isNaN(d.getTime()) ? new Date() : d
+    }
+    return new Date()
+  })
   const [inputValue, setInputValue] = useState(formatDateForDisplay(value))
   const [calendarPosition, setCalendarPosition] = useState({ top: 0, left: 0, width: 0 })
   const ref = useRef<HTMLDivElement>(null)
@@ -47,7 +54,12 @@ export function DatePicker({ value, onChange, label, required = false, className
   }, [value])
 
   useEffect(() => {
-    setCurrentMonth(value ? new Date(value + "T00:00:00") : new Date())
+    if (value) {
+      const d = new Date(value + "T00:00:00")
+      setCurrentMonth(isNaN(d.getTime()) ? new Date() : d)
+    } else {
+      setCurrentMonth(new Date())
+    }
   }, [value])
 
   useEffect(() => {
@@ -124,6 +136,11 @@ export function DatePicker({ value, onChange, label, required = false, className
   }
 
   const renderCalendar = () => {
+    // Защита от NaN
+    if (isNaN(currentMonth.getTime())) {
+      setCurrentMonth(new Date())
+      return null
+    }
     const daysInMonth = getDaysInMonth(currentMonth)
     const firstDay = getFirstDayOfMonth(currentMonth)
     const days: React.ReactNode[] = []
@@ -168,7 +185,7 @@ export function DatePicker({ value, onChange, label, required = false, className
       <div className={cn("flex items-stretch gap-0 rounded-md border border-input focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2", disabled && "opacity-50 pointer-events-none")}>
         <input
           type="text"
-          placeholder="ДД.ММ.ГГГГ"
+          placeholder={placeholder || "ДД.ММ.ГГГГ"}
           value={inputValue}
           onChange={(e) => handleInputChange(e.target.value)}
           onFocus={(e) => e.target.select()}
@@ -191,7 +208,7 @@ export function DatePicker({ value, onChange, label, required = false, className
       </div>
 
       {showCalendar && createPortal(
-        <div 
+        <div
           data-calendar-portal
           className="fixed z-[99999] w-[260px] border rounded-md bg-popover shadow-lg p-3"
           style={{
@@ -202,20 +219,24 @@ export function DatePicker({ value, onChange, label, required = false, className
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-2 pb-2 border-b">
-            <button 
-              type="button" 
-              className="text-primary hover:text-primary/80 text-sm font-medium px-1" 
+            <button
+              type="button"
+              className="text-primary hover:text-primary/80 text-sm font-medium px-1"
               onClick={handlePrevMonth}
               onMouseDown={(e) => e.stopPropagation()}
             >
               ‹
             </button>
             <span className="text-sm font-semibold">
-              {MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+              {(() => {
+                const m = currentMonth.getMonth()
+                const y = currentMonth.getFullYear()
+                return isNaN(m) || isNaN(y) ? new Date().toLocaleDateString("ru-RU", { month: "long", year: "numeric" }) : `${MONTH_NAMES[m]} ${y}`
+              })()}
             </span>
-            <button 
-              type="button" 
-              className="text-primary hover:text-primary/80 text-sm font-medium px-1" 
+            <button
+              type="button"
+              className="text-primary hover:text-primary/80 text-sm font-medium px-1"
               onClick={handleNextMonth}
               onMouseDown={(e) => e.stopPropagation()}
             >

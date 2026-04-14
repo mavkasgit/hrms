@@ -16,8 +16,11 @@ from app.core.exceptions import (
     VacationOverlapError,
     InsufficientVacationDaysError,
 )
+from app.core.logging import get_audit_logger
 from app.models.employee import Employee
 from sqlalchemy import select
+
+audit_logger = get_audit_logger()
 
 
 class VacationService:
@@ -128,6 +131,27 @@ class VacationService:
         await db.commit()
         print(f"[create_vacation] after db.commit")
 
+        # Логирование в общий журнал
+        audit_logger.info(
+            f"VACATION CREATED: id={vacation.id}, employee_id={employee_id}, employee_name={employee.name}, "
+            f"start={start_date}, end={end_date}, type={vacation_type}, days={days_count}, order_id={order.id}",
+            extra={
+                "employee_id": employee_id,
+                "employee_name": employee.name,
+                "action": "vacation_created",
+                "user_id": user_id,
+                "vacation_id": vacation.id,
+                "details": {
+                    "start_date": str(start_date),
+                    "end_date": str(end_date),
+                    "vacation_type": vacation_type,
+                    "days_count": days_count,
+                    "order_id": order.id,
+                    "order_number": order.order_number,
+                },
+            }
+        )
+
         return {
             "id": vacation.id,
             "employee_id": vacation.employee_id,
@@ -187,6 +211,26 @@ class VacationService:
         employee_repo = EmployeeRepository()
         employee = await employee_repo.get_by_id(db, updated.employee_id)
 
+        # Логирование в общий журнал
+        audit_logger.info(
+            f"VACATION UPDATED: id={updated.id}, employee_id={updated.employee_id}, "
+            f"employee_name={employee.name if employee else None}, start={updated.start_date}, "
+            f"end={updated.end_date}, type={updated.vacation_type}, days={updated.days_count}",
+            extra={
+                "employee_id": updated.employee_id,
+                "employee_name": employee.name if employee else None,
+                "action": "vacation_updated",
+                "user_id": user_id,
+                "vacation_id": updated.id,
+                "details": {
+                    "start_date": str(updated.start_date),
+                    "end_date": str(updated.end_date),
+                    "vacation_type": updated.vacation_type,
+                    "days_count": updated.days_count,
+                },
+            }
+        )
+
         return {
             "id": updated.id,
             "employee_id": updated.employee_id,
@@ -204,6 +248,9 @@ class VacationService:
         vacation = await vacation_repository.get_by_id(db, id)
         if not vacation:
             raise VacationNotFoundError(id)
+
+        employee_repo = EmployeeRepository()
+        employee = await employee_repo.get_by_id(db, vacation.employee_id)
 
         order_id = vacation.order_id
 
@@ -232,6 +279,20 @@ class VacationService:
                 pass
 
         await db.commit()
+
+        # Логирование в общий журнал
+        audit_logger.info(
+            f"VACATION DELETED: id={id}, employee_id={vacation.employee_id}, "
+            f"employee_name={employee.name if employee else None}, order_id={order_id}",
+            extra={
+                "employee_id": vacation.employee_id,
+                "employee_name": employee.name if employee else None,
+                "action": "vacation_deleted",
+                "user_id": user_id,
+                "vacation_id": id,
+            }
+        )
+
         return True
 
     async def cancel_vacation(self, db: AsyncSession, id: int, user_id: str) -> bool:

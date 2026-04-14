@@ -110,6 +110,17 @@ async def get_order_log(
     return await order_service.get_recent(db, limit=100)
 
 
+@router.get("/{order_id}", response_model=OrderResponse)
+async def get_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Получить приказ по ID."""
+    order = await order_service.get_by_id(db, order_id)
+    return order
+
+
 @router.get("/settings", response_model=OrderSettingsResponse)
 async def get_order_settings(
     current_user: str = Depends(_get_current_user_stub),

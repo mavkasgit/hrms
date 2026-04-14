@@ -1,14 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.logging import get_audit_logger
 from app.models.position import Position
 from app.models.employee import Employee
 
 router = APIRouter(prefix="/positions", tags=["positions"])
+audit_logger = get_audit_logger()
+
+def _get_current_user_stub() -> str:
+    return "admin"
 
 
 class PositionResponse(BaseModel):
@@ -24,14 +29,14 @@ class PositionResponse(BaseModel):
 
 
 class PositionCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, description="Название должности")
     color: Optional[str] = None
     icon: Optional[str] = None
     sort_order: int = 0
 
 
 class PositionUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1)
     color: Optional[str] = None
     icon: Optional[str] = None
     sort_order: Optional[int] = None
@@ -71,7 +76,9 @@ async def list_positions(db: AsyncSession = Depends(get_db)):
 
 @router.post("", response_model=PositionResponse)
 async def create_position(
-    data: PositionCreate, db: AsyncSession = Depends(get_db)
+    data: PositionCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
 ):
     """Создать должность."""
     pos = Position(
@@ -83,7 +90,20 @@ async def create_position(
     db.add(pos)
     await db.flush()
     await db.refresh(pos)
-    
+
+    # Логирование
+    audit_logger.info(
+        f"POSITION CREATED: id={pos.id}, name={pos.name}",
+        extra={
+            "action": "position_created",
+            "user_id": current_user,
+            "details": {
+                "position_id": pos.id,
+                "position_name": pos.name,
+            },
+        }
+    )
+
     # Считаем сотрудников
     result = await db.execute(
         select(func.count())
@@ -111,6 +131,7 @@ async def update_position(
     pos_id: int,
     data: PositionUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
 ):
     """Обновить должность."""
     result = await db.execute(select(Position).where(Position.id == pos_id))
@@ -118,11 +139,28 @@ async def update_position(
     if not pos:
         raise HTTPException(status_code=404, detail="Position not found")
 
+    old_data = {key: getattr(pos, key) for key in data.model_dump(exclude_unset=True).keys()}
+
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(pos, key, value)
 
     await db.commit()
     await db.refresh(pos)
+
+    # Логирование
+    audit_logger.info(
+        f"POSITION UPDATED: id={pos_id}, name={pos.name}, changes={list(data.model_dump(exclude_unset=True).keys())}",
+        extra={
+            "action": "position_updated",
+            "user_id": current_user,
+            "details": {
+                "position_id": pos_id,
+                "position_name": pos.name,
+                "old_values": old_data,
+                "new_values": data.model_dump(exclude_unset=True),
+            },
+        }
+    )
 
     # Пересчитываем сотрудников
     result = await db.execute(
@@ -147,12 +185,18 @@ async def update_position(
 
 
 @router.delete("/{pos_id}")
-async def delete_position(pos_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_position(
+    pos_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
     """Удалить должность (если нет сотрудников)."""
     result = await db.execute(select(Position).where(Position.id == pos_id))
     pos = result.scalar_one_or_none()
     if not pos:
         raise HTTPException(status_code=404, detail="Position not found")
+
+    pos_name = pos.name
 
     # Проверяем сотрудников
     emp_result = await db.execute(
@@ -168,4 +212,18 @@ async def delete_position(pos_id: int, db: AsyncSession = Depends(get_db)):
 
     await db.delete(pos)
     await db.commit()
-    return {"ok": True}
+
+    # Логирование
+    audit_logger.info(
+        f"POSITION DELETED: id={pos_id}, name={pos_name}",
+        extra={
+            "action": "position_deleted",
+            "user_id": current_user,
+            "details": {
+                "position_id": pos_id,
+                "position_name": pos_name,
+            },
+        }
+    )
+
+    return {"status": "ok", "message": f"Position {pos_name} deleted"}

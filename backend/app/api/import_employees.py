@@ -8,12 +8,14 @@ import io
 import os
 
 from app.core.database import get_db
+from app.core.logging import get_audit_logger
 from app.models.department import Department
 from app.models.position import Position
 from app.models.employee import Employee
 from app.services.vacation_period_service import VacationPeriodService
 
 router = APIRouter(prefix="/import", tags=["import"])
+audit_logger = get_audit_logger()
 
 
 def _get_current_user_stub() -> str:
@@ -498,6 +500,23 @@ async def import_excel_confirm(
     await db.commit()
 
     print(f"[IMPORT] Result: created={created}, updated={updated}, skipped={skipped}, total={total_rows}")
+
+    # Логирование в общий журнал
+    audit_logger.info(
+        f"IMPORT EMPLOYEES: created={created}, updated={updated}, skipped={skipped}, "
+        f"total={total_rows}, file={file.filename}",
+        extra={
+            "action": "import",
+            "user_id": current_user,
+            "details": {
+                "file": file.filename,
+                "created": created,
+                "updated": updated,
+                "skipped": skipped,
+                "total": total_rows,
+            },
+        }
+    )
 
     # Создаём периоды отпусков для всех импортированных сотрудников
     if imported_employees:

@@ -14,6 +14,7 @@ from app.schemas.employee import (
     EmployeeWarningsResponse,
 )
 from app.services.employee_service import employee_service
+from app.services.audit_log_service import read_audit_logs
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
@@ -166,6 +167,24 @@ async def get_employee_audit_log(
 ):
     log = await employee_service.get_audit_log(db, employee_id)
     return log
+
+
+@router.get("/audit-log/all")
+async def get_all_audit_log(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    action: Optional[str] = Query(None),
+    employee_name: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Получить общий журнал действий со всеми сотрудниками."""
+    result = read_audit_logs(
+        limit=limit, offset=offset, action=action,
+        employee_name=employee_name, date_from=date_from, date_to=date_to
+    )
+    return result
 
 
 @router.get("/{employee_id}/warnings", response_model=EmployeeWarningsResponse)
