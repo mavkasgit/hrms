@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -29,6 +29,9 @@ import {
   useDeleteEmployee,
 } from "@/entities/employee/useEmployees"
 import { Archive, Trash2, RotateCcw, Building, Briefcase } from "lucide-react"
+import { useDepartments, useCreateDepartment } from "@/entities/department"
+import { usePositions, useCreatePosition } from "@/entities/position"
+import { ComboboxCreate } from "@/shared/ui/combobox-create"
 import {
   Select,
   SelectContent,
@@ -36,8 +39,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select"
-import { useDepartments } from "@/entities/department"
-import { usePositions } from "@/entities/position"
 
 interface EmployeeFormProps {
   open: boolean
@@ -47,8 +48,8 @@ interface EmployeeFormProps {
 
 const emptyForm: EmployeeCreate = {
   name: "",
-  department_id: 1,
-  position_id: 1,
+  department_id: null as unknown as number,
+  position_id: null as unknown as number,
   tab_number: null,
   hire_date: null,
   birth_date: null,
@@ -77,8 +78,20 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
   const archiveMutation = useArchiveEmployee()
   const restoreMutation = useRestoreEmployee()
   const deleteMutation = useDeleteEmployee()
+  const createDept = useCreateDepartment()
+  const createPos = useCreatePosition()
   const { data: departments = [] } = useDepartments()
   const { data: positions = [] } = usePositions()
+
+  // Приводим к общему виду { id, name }
+  const deptItems = useMemo(
+    () => departments.map((d) => ({ id: d.id, name: d.name })),
+    [departments]
+  )
+  const posItems = useMemo(
+    () => positions.map((p) => ({ id: p.id, name: p.name })),
+    [positions]
+  )
 
   useEffect(() => {
     console.log(`[FORM] Эффект: employee или open изменились`, { employee: employee?.id, open })
@@ -252,6 +265,17 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
 
   const isPending = createMutation.isPending || updateMutation.isPending
 
+  // Создание подразделения / должности «на лету»
+  const handleCreateDepartment = useCallback(async (name: string): Promise<number> => {
+    const newDept = await createDept.mutateAsync({ name, rank: 1 })
+    return newDept.id
+  }, [createDept])
+
+  const handleCreatePosition = useCallback(async (name: string): Promise<number> => {
+    const newPos = await createPos.mutateAsync({ name })
+    return newPos.id
+  }, [createPos])
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -282,7 +306,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
               <label className="text-sm font-medium">Пол</label>
               <Select
                 value={form.gender || ""}
-                onValueChange={(v) => updateField("gender", v || null)}
+                onValueChange={(v: string) => updateField("gender", v || null)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Не указан" />
@@ -313,47 +337,27 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
             <div>
               <label className="text-sm font-medium">Должность *</label>
-              <Select
-                value={String(form.position_id)}
-                onValueChange={(v) => updateField("position_id", parseInt(v))}
-              >
-                <SelectTrigger className={errors.position ? "border-red-500" : ""}>
-                  <SelectValue placeholder="Выберите должность" />
-                </SelectTrigger>
-                <SelectContent>
-                  {positions.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
-                      <div className="flex items-center">
-                        <Briefcase className="h-4 w-4 mr-2" />
-                        {p.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.position && <p className="text-xs text-red-500 mt-1">{errors.position}</p>}
+              <ComboboxCreate
+                value={form.position_id}
+                onChange={(id) => updateField("position_id", id)}
+                items={posItems}
+                onCreate={handleCreatePosition}
+                placeholder="Выберите или создайте"
+                icon={<Briefcase className="h-4 w-4" />}
+                error={errors.position}
+              />
             </div>
             <div>
               <label className="text-sm font-medium">Подразделение *</label>
-              <Select
-                value={String(form.department_id)}
-                onValueChange={(v) => updateField("department_id", parseInt(v))}
-              >
-                <SelectTrigger className={errors.department ? "border-red-500" : ""}>
-                  <SelectValue placeholder="Выберите подразделение" />
-                </SelectTrigger>
-                <SelectContent>
-                  {departments.map((d) => (
-                    <SelectItem key={d.id} value={String(d.id)}>
-                      <div className="flex items-center">
-                        <Building className="h-4 w-4 mr-2" />
-                        {d.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.department && <p className="text-xs text-red-500 mt-1">{errors.department}</p>}
+              <ComboboxCreate
+                value={form.department_id}
+                onChange={(id) => updateField("department_id", id)}
+                items={deptItems}
+                onCreate={handleCreateDepartment}
+                placeholder="Выберите или создайте"
+                icon={<Building className="h-4 w-4" />}
+                error={errors.department}
+              />
             </div>
           </div>
 
