@@ -193,3 +193,4 @@ async def delete_employee(
         await employee_service.hard_delete_employee(db, employee_id, current_user)
     else:
         await employee_service.soft_delete_employee(db, employee_id, current_user)
+    await db.commit()
