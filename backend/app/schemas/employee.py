@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class EmployeeBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    department_id: int
-    position_id: int
+    department_id: Optional[int] = None
+    position_id: Optional[int] = None
     hire_date: Optional[date] = None
     birth_date: Optional[date] = None
     gender: Optional[str] = Field(None, max_length=1)

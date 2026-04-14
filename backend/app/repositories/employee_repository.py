@@ -116,7 +116,7 @@ class EmployeeRepository:
         employee = Employee(**data)
         db.add(employee)
         await db.flush()
-        await db.refresh(employee, ["department", "position"])
+        await db.refresh(employee)
         return employee
 
     async def update(self, db: AsyncSession, employee_id: int, data: dict) -> Optional[Employee]:
@@ -127,7 +127,7 @@ class EmployeeRepository:
             if value is not None:
                 setattr(employee, key, value)
         await db.flush()
-        await db.refresh(employee, ["department", "position"])
+        await db.refresh(employee)
         return employee
 
     async def archive(
@@ -146,7 +146,7 @@ class EmployeeRepository:
         employee.archived_by = user_id
         employee.archived_at = datetime.now()
         await db.flush()
-        await db.refresh(employee, ["department", "position"])
+        await db.refresh(employee)
         return employee
 
     async def restore(self, db: AsyncSession, employee_id: int, user_id: str) -> Optional[Employee]:
@@ -159,7 +159,7 @@ class EmployeeRepository:
         employee.archived_by = None
         employee.archived_at = None
         await db.flush()
-        await db.refresh(employee, ["department", "position"])
+        await db.refresh(employee)
         return employee
 
     async def soft_delete(self, db: AsyncSession, employee_id: int, user_id: str) -> bool:
