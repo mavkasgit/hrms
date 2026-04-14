@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+import traceback
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -48,6 +50,20 @@ app.add_middleware(
 )
 
 app.add_exception_handler(HRMSException, hrms_exception_handler)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Глобальный обработчик исключений - логируем все необработанные ошибки."""
+    error_trace = traceback.format_exc()
+    logger.error(f"Unhandled exception: {exc}\n{error_trace}")
+    print(f"\n=== GLOBAL EXCEPTION HANDLER ===")
+    print(f"Error: {exc}")
+    print(f"Traceback:\n{error_trace}")
+    print(f"===============================\n")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)}
+    )
 
 app.include_router(health_router, prefix="/api")
 app.include_router(employees_router, prefix="/api")

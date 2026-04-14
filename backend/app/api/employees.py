@@ -110,7 +110,16 @@ async def create_employee(
     current_user: str = Depends(_get_current_user_stub),
 ):
     employee = await employee_service.create_employee(db, data, current_user)
-    return employee
+    # После создания перезагружаем с relations для сериализации
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import select
+    from app.models.employee import Employee
+    result = await db.execute(
+        select(Employee)
+        .options(joinedload(Employee.department), joinedload(Employee.position))
+        .where(Employee.id == employee.id)
+    )
+    return result.scalar_one()
 
 
 @router.put("/{employee_id}", response_model=EmployeeResponse)

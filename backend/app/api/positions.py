@@ -81,14 +81,28 @@ async def create_position(
         sort_order=data.sort_order,
     )
     db.add(pos)
-    await db.commit()
+    await db.flush()
     await db.refresh(pos)
+    
+    # Считаем сотрудников
+    result = await db.execute(
+        select(func.count())
+        .select_from(Employee)
+        .where(
+            Employee.position_id == pos.id,
+            Employee.is_deleted == False,
+            Employee.is_archived == False,
+        )
+    )
+    count = result.scalar_one()
+
     return PositionResponse(
         id=pos.id,
         name=pos.name,
         color=pos.color,
         icon=pos.icon,
         sort_order=pos.sort_order,
+        employee_count=count,
     )
 
 

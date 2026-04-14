@@ -68,6 +68,7 @@ alembic/versions/*.pyc
 # Playwright
 .playwright/
 .playwright-cli/
+test-results/
 
 # Testing
 .pytest_cache/

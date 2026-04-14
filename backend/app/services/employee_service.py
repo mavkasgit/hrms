@@ -76,16 +76,26 @@ class EmployeeService:
             if existing:
                 raise DuplicateTabNumberError(data.tab_number)
 
+        print(f"[create_employee] Creating employee with data: {data.model_dump()}")
         employee = await repository.create(db, data.model_dump())
+        print(f"[create_employee] Employee created with id={employee.id}")
 
         # Создаём все периоды отпусков если есть contract_start
         if data.contract_start:
-            await vacation_period_service.ensure_periods_for_employee(
-                db,
-                employee_id=employee.id,
-                contract_start=data.contract_start,
-                additional_days=data.additional_vacation_days or 0,
-            )
+            print(f"[create_employee] Creating vacation periods for employee {employee.id}")
+            try:
+                await vacation_period_service.ensure_periods_for_employee(
+                    db,
+                    employee_id=employee.id,
+                    contract_start=data.contract_start,
+                    additional_days=data.additional_vacation_days or 0,
+                )
+                print(f"[create_employee] Vacation periods created successfully")
+            except Exception as e:
+                print(f"[create_employee] ERROR creating vacation periods: {e}")
+                import traceback
+                traceback.print_exc()
+                # Не фейлим создание сотрудника - просто логируем ошибку
 
         # Конвертируем даты в строки для JSON
         audit_data = data.model_dump()
@@ -94,7 +104,21 @@ class EmployeeService:
                 audit_data[key] = value.isoformat()
 
         await repository._add_audit_entry(db, employee.id, "created", user_id, None, audit_data)
-        return employee
+        
+        # После commit загруем сотрудника заново с joinedload department и position
+        employee_with_relations = await repository.get_by_id(db, employee.id)
+        
+        if not employee_with_relations:
+            from app.core.exceptions import EmployeeNotFoundError
+            raise EmployeeNotFoundError(employee.id)
+        
+        # Принудительно обращаемся к relations чтобы они закешировались
+        _ = employee_with_relations.department
+        _ = employee_with_relations.position
+        
+        print(f"[create_employee] Returning employee with department={employee_with_relations.department}, position={employee_with_relations.position}")
+        
+        return employee_with_relations
 
     async def update_employee(
         self, db: AsyncSession, employee_id: int, data: EmployeeUpdate, user_id: str

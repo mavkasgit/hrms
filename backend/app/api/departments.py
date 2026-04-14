@@ -310,7 +310,7 @@ async def create_department(
         rank=data.rank,
     )
     db.add(dept)
-    await db.commit()
+    await db.flush()
     await db.refresh(dept)
 
     head_name = None

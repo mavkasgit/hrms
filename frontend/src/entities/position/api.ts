@@ -1,7 +1,7 @@
 import axios from "axios"
 import type { Position, PositionCreate, PositionUpdate } from "./types"
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api"
+const API_URL = import.meta.env.VITE_API_URL || "/api"
 
 export const positionApi = {
   async fetchAll(): Promise<Position[]> {
