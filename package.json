@@ -10,7 +10,10 @@
     
     "frontend": "npm --prefix frontend run dev",
     "backend": "cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000",
-    
+
+    "devkill": "npx kill-port 8000 2>nul & npx kill-port 5173 2>nul & echo Killed all dev servers",
+    "devrestart": "npm run devkill && npm run dev",
+
     "db:up": "docker compose -f infra/docker-compose.dev.yml up -d",
     "db:down": "docker compose -f infra/docker-compose.dev.yml down",
     "db:logs": "docker compose -f infra/docker-compose.dev.yml logs -f",

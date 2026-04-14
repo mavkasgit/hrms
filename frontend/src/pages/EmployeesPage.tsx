@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { Plus, Search, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Check, X, Upload } from "lucide-react"
+import { Plus, Search, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/shared/ui/table"
-import { useEmployees, useUpdateEmployee } from "@/entities/employee/useEmployees"
+import { useEmployees } from "@/entities/employee/useEmployees"
 import { EmployeeForm } from "@/features/employee-form"
 import { ImportEmployeesModal } from "@/features/import-employees/ImportEmployeesModal"
 import type { Employee, EmployeeStatus } from "@/entities/employee/types"
@@ -62,10 +62,6 @@ export function EmployeesPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
 
-  const [editingAddDaysId, setEditingAddDaysId] = useState<number | null>(null)
-  const [editingAddDaysValue, setEditingAddDaysValue] = useState("")
-  const updateEmployeeMutation = useUpdateEmployee()
-
   const genderFilter = selectedGenders.size === 1 ? [...selectedGenders][0] : undefined
 
   const { data, isLoading, error } = useEmployees({
@@ -104,6 +100,14 @@ export function EmployeesPage() {
     })
   }
 
+  const resetFilters = () => {
+    setSearchInput("")
+    setQ("")
+    setSelectedGenders(new Set())
+    setSortConfigs([])
+    setStatus("active")
+  }
+
   const handleSort = (field: SortField) => {
     setSortConfigs((prev) => {
       const existing = prev.find((c) => c.field === field)
@@ -115,9 +119,16 @@ export function EmployeesPage() {
 
   const SortIcon = ({ field }: { field: SortField }) => {
     const config = sortConfigs.find((c) => c.field === field)
+    const sortIndex = sortConfigs.findIndex((c) => c.field === field) + 1
+
     if (!config) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />
-    if (config.order === "asc") return <ArrowUp className="h-3 w-3 ml-1" />
-    return <ArrowDown className="h-3 w-3 ml-1" />
+
+    return (
+      <span className="flex items-center ml-1">
+        <span className="text-xs text-muted-foreground mt-0.5">{sortIndex}</span>
+        {config.order === "asc" ? <ArrowUp className="h-3 w-3 ml-0.5" /> : <ArrowDown className="h-3 w-3 ml-0.5" />}
+      </span>
+    )
   }
 
   // Клиентская сортировка
@@ -170,26 +181,6 @@ export function EmployeesPage() {
   const handleFormClose = (open: boolean) => {
     setFormOpen(open)
     if (!open) setEditingEmployee(null)
-  }
-
-  const startEditAddDays = (empId: number, currentValue: number) => {
-    setEditingAddDaysId(empId)
-    setEditingAddDaysValue(String(currentValue))
-  }
-
-  const saveEditAddDays = (empId: number) => {
-    const val = parseInt(editingAddDaysValue, 10)
-    if (!isNaN(val) && val >= 0) {
-      updateEmployeeMutation.mutate({
-        employeeId: empId,
-        data: { additional_vacation_days: val },
-      })
-    }
-    setEditingAddDaysId(null)
-  }
-
-  const cancelEditAddDays = () => {
-    setEditingAddDaysId(null)
   }
 
   return (
@@ -264,6 +255,10 @@ export function EmployeesPage() {
             </div>
           )}
         </div>
+
+        <Button variant="outline" size="sm" onClick={resetFilters}>
+          Очистить
+        </Button>
       </div>
 
       {error && (
@@ -294,7 +289,6 @@ export function EmployeesPage() {
               <SortHeader field="department">Подразделение</SortHeader>
               <SortHeader field="position">Должность</SortHeader>
               <SortHeader field="age">Возраст</SortHeader>
-              <TableHead>Доп. дни</TableHead>
               <SortHeader field="hire_date">Конец контракта</SortHeader>
               <TableHead className="text-right"></TableHead>
             </TableRow>
@@ -313,36 +307,6 @@ export function EmployeesPage() {
                   <TableCell>{emp.department?.name ?? "—"}</TableCell>
                   <TableCell>{emp.position?.name ?? "—"}</TableCell>
                   <TableCell>{age !== null ? `${age} лет` : "—"}</TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    {editingAddDaysId === emp.id ? (
-                      <div className="flex items-center gap-1">
-                        <Input
-                          type="number"
-                          value={editingAddDaysValue}
-                          onChange={(e) => setEditingAddDaysValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") saveEditAddDays(emp.id)
-                            if (e.key === "Escape") cancelEditAddDays()
-                          }}
-                          className="h-7 w-14 text-xs px-1"
-                          autoFocus
-                        />
-                        <button onClick={() => saveEditAddDays(emp.id)} className="text-green-600 hover:text-green-800">
-                          <Check className="h-3.5 w-3.5" />
-                        </button>
-                        <button onClick={cancelEditAddDays} className="text-red-500 hover:text-red-700">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => startEditAddDays(emp.id, emp.additional_vacation_days ?? 0)}
-                        className="text-sm hover:text-blue-600 transition-colors cursor-pointer"
-                      >
-                        {emp.additional_vacation_days ?? 0}
-                      </button>
-                    )}
-                  </TableCell>
                   <TableCell>
                     {emp.contract_end ? new Date(emp.contract_end).toLocaleDateString("ru-RU") : "—"}
                   </TableCell>
