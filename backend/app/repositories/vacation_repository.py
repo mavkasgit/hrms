@@ -255,12 +255,13 @@ class VacationRepository:
 
         for period in periods:
             full_days = period.main_days + period.additional_days
+            used_days = period.used_days or 0
+            
+            # Закрытый период - used >= total или явно сохранённый remaining_days
+            is_closed = used_days >= full_days or period.remaining_days is not None
 
-            period_used_cached = period.used_days or 0
-            manually_set = period_used_cached > 0
-
-            if manually_set:
-                used = period_used_cached
+            if is_closed:
+                used = used_days
                 period_total = full_days
             else:
                 used = await self._get_used_days_for_period(db, period.id)

@@ -37,7 +37,9 @@ class VacationPeriodBalance(BaseModel):
     used_days_auto: int = 0
     used_days_manual: int = 0
     order_ids: Optional[str] = None
+    order_numbers: Optional[str] = None  # Номера приказов для отображения
     remaining_days: int
+    vacations: list[dict] = []  # Отпуска, которые списали дни из этого периода
 
 
 class VacationPeriodAdjust(BaseModel):

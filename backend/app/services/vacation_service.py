@@ -86,6 +86,7 @@ class VacationService:
             employee_id=employee_id,
             order_type=order_type,
             order_date=data.get("order_date") or date.today(),
+            order_number=data.get("order_number"),
             extra_fields={
                 "vacation_start": start_date.isoformat(),
                 "vacation_end": end_date.isoformat(),
@@ -97,8 +98,8 @@ class VacationService:
         # Link order back to vacation
         vacation.order_id = order.id
         
-        # Автосписание дней со старых периодов - передаём order_id для трекинга
-        await auto_use_days(db, employee_id, days_count, order.id)
+        # Автосписание дней со старых периодов - передаём order_id и order_number для трекинга
+        await auto_use_days(db, employee_id, days_count, order.id, order.order_number)
         
         await db.flush()
         await db.commit()

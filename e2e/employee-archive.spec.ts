@@ -1,46 +1,69 @@
-import { test, expect } from '@playwright/test'
-import { EmployeesPage } from './pages/EmployeesPage'
+import { test, expect } from './fixtures/common-fixtures'
 
 /**
  * Тест архивации сотрудника
- * Использует EmployeesPage Page Object
+ * Создаёт тестового сотрудника и архивирует его
  */
 test.describe('Архивация сотрудника', () => {
   test.setTimeout(60000)
 
-  test('архивация активного сотрудника', async ({ page }) => {
-    const employeesPage = new EmployeesPage(page)
-    await employeesPage.goto()
+  test('архивация активного сотрудника', async ({ page, request, apiOps }) => {
+    const u = apiOps.uid()
+    
+    // Создаём тестового сотрудника
+    const dept = await apiOps.createDepartment(`Архив-Отдел-${u}`)
+    const pos = await apiOps.createPosition(`Архив-Должность-${u}`)
+    const emp = await apiOps.createEmployee(dept.id, pos.id, {
+      name: `Архив-Сотрудник-${u}`,
+    })
+    
+    console.log(`[TEST] Создан сотрудник для архивации: "${emp.name}" (id=${emp.id})`)
 
-    // Берём первого активного сотрудника из таблицы
-    const firstRow = employeesPage.rows.first()
-    await expect(firstRow).toBeVisible({ timeout: 10000 })
+    // Переходим на страницу сотрудников
+    await page.goto('/employees')
+    await page.waitForLoadState('networkidle')
+    
+    // Ждём загрузки таблицы
+    const table = page.locator('table')
+    await expect(table).toBeVisible({ timeout: 10000 })    
+    // Находим нашего сотрудника в таблице
+    const employeeRow = page.locator('tbody tr').filter({ hasText: emp.name })
+    await expect(employeeRow).toBeVisible({ timeout: 5000 })
+    
+    console.log(`[TEST] Архивируем сотрудника: "${emp.name}"`)
 
-    // Запоминаем имя сотрудника
-    const empName = await employeesPage.getEmployeeNameByRow(firstRow)
-    console.log(`[TEST] Архивируем сотрудника: "${empName}"`)
-
-    // 1. Архивируем через Page Object
-    await employeesPage.archiveEmployee(empName)
-
-    // 2. Проверяем что сотрудник исчез из active списка
-    await employeesPage.expectEmployeeNotInTable(empName)
-
-    // 3. Переключаемся на "В архиве"
-    await employeesPage.filterByStatus('archived')
+    // 1. Кликаем на строку чтобы открыть форму
+    await employeeRow.click()
     await page.waitForTimeout(500)
+    
+    // Ждём открытия диалога
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible({ timeout: 5000 })
+    
+    // 2. Кликаем кнопку "Уволить" / "Архивировать"
+    const archiveButton = dialog.getByRole('button', { name: /уволить|архивировать/i })
+    await archiveButton.click()
+    await page.waitForTimeout(500)
+    
+    // 3. Подтверждаем в диалоге подтверждения
+    const confirmDialog = page.locator('[role="alertdialog"]').or(page.getByRole('dialog').last())
+    const confirmButton = confirmDialog.getByRole('button', { name: /уволить|архивировать|подтвердить|да/i })
+    await confirmButton.click()
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(1000)
 
-    // 4. Проверяем что сотрудник появился в архиве
-    await employeesPage.expectEmployeeInTable(empName)
+    // 4. Проверяем что сотрудник исчез из active списка
+    await expect(employeeRow).not.toBeVisible({ timeout: 5000 })
+    console.log('[TEST] Сотрудник исчез из активных')
 
-    // 5. Открываем и проверяем бейдж "В архиве"
-    await employeesPage.openEmployee(empName)
-    const archivedDialog = page.getByRole('dialog')
-    await expect(archivedDialog.getByText(/в архиве/i)).toBeVisible()
-    console.log('[TEST] Бейдж "В архиве" подтверждён')
+    // 5. Проверяем через API что сотрудник действительно архивирован
+    const apiResponse = await request.get(`http://localhost:5173/api/employees/${emp.id}`)
+    const archivedEmp = await apiResponse.json()
+    
+    expect(archivedEmp.is_archived).toBe(true)
+    expect(archivedEmp.terminated_date).toBeTruthy()
+    console.log(`[TEST] API подтверждает: is_archived=true, terminated_date=${archivedEmp.terminated_date}`)
 
-    console.log(`[TEST] ✅ Сотрудник "${empName}" успешно архивирован`)
-
-    await page.keyboard.press('Escape')
+    console.log(`[TEST] ✅ Сотрудник "${emp.name}" успешно архивирован`)
   })
 })

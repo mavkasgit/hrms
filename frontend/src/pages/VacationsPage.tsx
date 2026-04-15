@@ -24,7 +24,7 @@ import {
   useVacationEmployeesSummary,
   useEmployeeVacationHistory,
 } from "@/entities/vacation"
-import { useVacationPeriods, useClosePeriod, usePartialClosePeriod } from "@/entities/vacation-period"
+import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, VacationPeriodVacation } from "@/entities/vacation-period"
 import { useSearchEmployees, useEmployees, useUpdateEmployee } from "@/entities/employee/useEmployees"
 import { useRecentOrders } from "@/entities/order/useOrders"
 import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
@@ -36,7 +36,8 @@ const VACATION_TYPES = ["Трудовой", "За свой счет"]
 // Convert ISO date (YYYY-MM-DD) to DD.MM.YYYY
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "—"
-  const parts = dateStr.split("-")
+  const s = dateStr.slice(0, 10) // обрезаем время если есть
+  const parts = s.split("-")
   if (parts.length !== 3) return dateStr
   return `${parts[2]}.${parts[1]}.${parts[0]}`
 }
@@ -98,8 +99,6 @@ function EmployeeHistoryRow({
 
   if (isLoading) return <div className="px-4 py-3"><Skeleton className="h-20 w-full" /></div>
   if (!history || !periods) return <div className="px-4 py-3 text-sm text-muted-foreground">Нет данных</div>
-
-  const allVacations = history.years.flatMap((yg) => yg.vacations)
   
   // Разделяем периоды на открытые и закрытые
   // Сортируем от новых к старым (год по убыванию)
@@ -130,9 +129,7 @@ function EmployeeHistoryRow({
       )}
       
       {displayedPeriods.map((p) => {
-        const periodVacations = allVacations.filter((v) =>
-          v.start_date >= p.period_start && v.start_date <= p.period_end
-        )
+        const periodVacations = p.vacations || []
         const isClosed = p.remaining_days === 0
         const isClosing = closingPeriodId === p.period_id
         const isEnded = new Date(p.period_end) < new Date() // Период уже закончился
@@ -163,7 +160,7 @@ function EmployeeHistoryRow({
                   </span>
                   {p.used_days > 0 && (
                     <span className="text-[9px] text-muted-foreground ml-2">
-                      {p.used_days_auto > 0 && p.order_ids && <span>приказы: {p.used_days_auto} дней, №{p.order_ids}</span>}
+                      {p.used_days_auto > 0 && p.order_numbers && <span>приказы: {p.used_days_auto} дней, №{p.order_numbers}</span>}
                       {p.used_days_manual > 0 && <span> вручную: {p.used_days_manual} дней</span>}
                     </span>
                   )}
@@ -180,7 +177,7 @@ function EmployeeHistoryRow({
                         className="h-6 text-[10px] px-2 whitespace-nowrap"
                         onClick={() => {
                           setPartialClosePeriodId(p.period_id)
-                          setPartialCloseRemaining(String(p.total_days - p.used_days))
+                          setPartialCloseRemaining(String(p.remaining_days))
                         }}
                       >
                         Восстановить период
@@ -256,7 +253,7 @@ function EmployeeHistoryRow({
                     </tr>
                   </thead>
                   <tbody>
-                    {periodVacations.map((v) => (
+                    {periodVacations.map((v: VacationPeriodVacation) => (
                       <tr key={v.id} className={`border-b border-muted/30 ${v.is_cancelled ? "opacity-40" : ""}`}>
                         <td className="px-2 py-1">
                           <Badge variant={v.vacation_type === "Трудовой" ? "default" : "secondary"} className={`text-[10px] px-1 py-0 ${v.is_cancelled ? "line-through" : ""}`}>

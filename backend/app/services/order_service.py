@@ -111,7 +111,7 @@ class OrderService:
 
     async def _do_create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
         if data.order_number:
-            order_number = f"{int(data.order_number):02d}"
+            order_number = data.order_number.strip()
         else:
             year = data.order_date.year
             order_number = await self.order_repo.get_next_order_number(db, year)
@@ -136,7 +136,7 @@ class OrderService:
 
         # Логирование в общий журнал
         audit_logger.info(
-            f"ORDER CREATED: id={order.id}, number={order_number}, type={data.order_type}, "
+            f"ORDER CREATED: number={order_number}, type={data.order_type}, "
             f"employee_id={data.employee_id}, employee_name={employee.name}",
             extra={
                 "employee_id": data.employee_id,

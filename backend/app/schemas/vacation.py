@@ -10,6 +10,7 @@ class VacationCreate(BaseModel):
     end_date: date
     vacation_type: str = Field(..., min_length=1, max_length=50)
     order_date: Optional[date] = None
+    order_number: Optional[str] = Field(None, max_length=50)
     comment: Optional[str] = Field(None, max_length=500)
 
 

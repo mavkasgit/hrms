@@ -85,9 +85,9 @@ class VacationPeriodService:
         years_passed = rd.years
         # Если прошло хотя бы 0 дней следующего года - это уже следующий рабочий год
         if rd.months > 0 or rd.days > 0:
-            current_year_number = years_passed + 1 + 1  # +1 за текущий год
-        else:
             current_year_number = years_passed + 1
+        else:
+            current_year_number = years_passed
 
         # Создаём недостающие периоды
         for yn in range(last_year + 1, current_year_number + 1):
@@ -107,20 +107,13 @@ class VacationPeriodService:
     async def get_balance(
         self, db: AsyncSession, period_id: int
     ) -> VacationPeriodBalance:
-        """Возвращает баланс периода. Если период закрыт вручную - используем period.used_days."""
+        """Возвращает баланс периода."""
         period = await self._repo.get_by_id(db, period_id)
         if not period:
             raise HTTPException(status_code=404, detail="Период отпусков не найден")
 
         total = period.main_days + period.additional_days
-        period_used = period.used_days or 0
-
-        # Если период закрыт вручную (used_days == total) - используем это значение
-        if period_used >= total:
-            used_days = period_used
-        else:
-            # Иначе пересчитываем из таблицы отпусков
-            used_days = await self._repo.get_used_days(db, period_id)
+        used_days = period.used_days or 0
 
         return VacationPeriodBalance(
             period_id=period.id,
@@ -131,16 +124,21 @@ class VacationPeriodService:
             additional_days=period.additional_days,
             total_days=total,
             used_days=used_days,
-            remaining_days=total - used_days,
+            used_days_auto=period.used_days_auto or 0,
+            used_days_manual=period.used_days_manual or 0,
+            order_ids=period.order_ids,
+            order_numbers=period.order_numbers,
+            remaining_days=period.remaining_days if period.remaining_days is not None else total - used_days,
         )
 
     async def get_employee_periods(
         self, db: AsyncSession, employee_id: int
     ) -> list[VacationPeriodBalance]:
         """Все периоды сотрудника с балансом. Сортировка от новых к старым."""
-        # Получаем периоды через новый запрос - без использования кешированных данных
         from sqlalchemy import select, text
         from app.models.vacation_period import VacationPeriod
+        from app.models.vacation import Vacation
+        from app.models.order import Order
         
         # ПОЛУЧИТЬ периоды через параметризованный запрос
         emp_result = await db.execute(
@@ -166,20 +164,12 @@ class VacationPeriodService:
             if p.period_start > today:
                 continue
 
-            # ДИНАМИЧЕСКИЙ расчёт used_days - ВСЕГДА из vacations table
-            used_days = await self._repo.get_all_used_days(db, p.id)
+            # ИСПОЛЬЗУЕМ period.used_days - оно правильно установлено через auto_use_days
+            used_days = p.used_days or 0
             total_days_full = p.main_days + p.additional_days
 
-            # Если период закрыт вручную - используем это значение
-            manually_closed = p.used_days and p.used_days > used_days
-
-            # РАСЧЁТ used_days:
-            # - Если закрыт вручную → используем period.used_days (ручное значение)
-            # - Иначе → используем динамический расчёт из vacations table
-            if manually_closed:
-                display_used_days = p.used_days
-                display_total = total_days_full
-            elif p.period_start <= today <= p.period_end:
+            # РАСЧЁТ display значений для текущего периода (accrued logic)
+            if p.period_start <= today <= p.period_end:
                 # Для текущего периода считаем accrued дни помесячно
                 from dateutil.relativedelta import relativedelta
 
@@ -195,6 +185,41 @@ class VacationPeriodService:
                 display_total = total_days_full
                 display_used_days = used_days
 
+            # Получаем отпуска для этого периода (по order_ids)
+            period_vacations = []
+            if p.order_ids:
+                order_ids_list = [int(x) for x in p.order_ids.split(',') if x]
+                
+                # Получаем номера приказов
+                order_numbers = {}
+                if order_ids_list:
+                    orders_result = await db.execute(
+                        select(Order.id, Order.order_number).where(Order.id.in_(order_ids_list))
+                    )
+                    order_numbers = {row[0]: row[1] for row in orders_result.all()}
+                
+                # Получаем отпуска для каждого приказа
+                for oid in order_ids_list:
+                    vac_result = await db.execute(
+                        select(Vacation).where(
+                            Vacation.order_id == oid,
+                            Vacation.is_deleted == False,
+                            Vacation.is_cancelled == False
+                        )
+                    )
+                    vac = vac_result.scalar_one_or_none()
+                    if vac:
+                        period_vacations.append({
+                            "id": vac.id,
+                            "order_id": oid,
+                            "order_number": order_numbers.get(oid),
+                            "start_date": str(vac.start_date),
+                            "end_date": str(vac.end_date),
+                            "days_count": vac.days_count,
+                            "vacation_type": vac.vacation_type,
+                            "is_cancelled": vac.is_cancelled,
+                        })
+
             result.append(
                 VacationPeriodBalance(
                     period_id=p.id,
@@ -208,7 +233,9 @@ class VacationPeriodService:
                     used_days_auto=p.used_days_auto or 0,
                     used_days_manual=p.used_days_manual or 0,
                     order_ids=p.order_ids,
+                    order_numbers=p.order_numbers,
                     remaining_days=display_total - display_used_days,
+                    vacations=period_vacations,
                 )
             )
         return result
@@ -269,12 +296,13 @@ class VacationPeriodService:
             raise HTTPException(status_code=404, detail="Период отпусков не найден")
 
         total_days = period.main_days + period.additional_days
-        current_used = period.used_days or 0
+        effective_auto = period.used_days_auto or 0
         
-        manual_days = total_days - current_used
-        if manual_days > 0:
-            period.used_days_manual = (period.used_days_manual or 0) + manual_days
-            period.used_days = total_days
+        # Формула: used_manual = (total - 0) - used_auto
+        new_manual = total_days - effective_auto
+        period.used_days_manual = new_manual
+        period.used_days = effective_auto + new_manual
+        period.remaining_days = 0
 
         await db.flush()
         await db.commit()
@@ -292,6 +320,7 @@ class VacationPeriodService:
             used_days_auto=period.used_days_auto or 0,
             used_days_manual=period.used_days_manual or 0,
             order_ids=period.order_ids,
+            order_numbers=period.order_numbers,
             remaining_days=0,
         )
 
@@ -307,20 +336,29 @@ class VacationPeriodService:
             raise HTTPException(status_code=404, detail="Период отпусков не найден")
 
         total_days = period.main_days + period.additional_days
-
+        current_remaining = total_days - (period.used_days or 0)
+        
         # Проверяем что remaining_days не больше total
         if remaining_days > total_days:
             remaining_days = total_days
         if remaining_days < 0:
             remaining_days = 0
 
-        old_used = period.used_days or 0
-        new_used = total_days - remaining_days
-        manual_days = new_used - old_used
+        effective_auto = period.used_days_auto or 0
         
-        if manual_days > 0:
-            period.used_days_manual = (period.used_days_manual or 0) + manual_days
-            period.used_days = new_used
+        # Формула: used_manual = (total - remaining) - used_auto
+        total_used_needed = total_days - remaining_days
+        new_manual = total_used_needed - effective_auto
+        
+        # Если увеличиваем остаток (восстановление) и new_manual < 0 → обнуляем
+        # Нельзя уходить в минус при восстановлении
+        is_restoring = remaining_days > current_remaining
+        if is_restoring and new_manual < 0:
+            new_manual = 0
+        
+        period.used_days_manual = new_manual
+        period.used_days = effective_auto + new_manual
+        period.remaining_days = remaining_days
 
         await db.flush()
         await db.commit()
@@ -338,6 +376,7 @@ class VacationPeriodService:
             used_days_auto=period.used_days_auto or 0,
             used_days_manual=period.used_days_manual or 0,
             order_ids=period.order_ids,
+            order_numbers=period.order_numbers,
             remaining_days=remaining_days,
         )
 
@@ -361,7 +400,7 @@ async def sync_period_used_days(self, db: AsyncSession, employee_id: int) -> Non
     print(f"[sync_period_used_days] committed for employee_id={employee_id}")
 
 
-async def auto_use_days(db: AsyncSession, employee_id: int, days_to_use: int, order_id: int = None) -> None:
+async def auto_use_days(db: AsyncSession, employee_id: int, days_to_use: int, order_id: int = None, order_number: str = None) -> None:
     """Автосписание дней при создании приказа. Списываем со старых периодов первыми."""
     from app.models.vacation_period import VacationPeriod
     from sqlalchemy import select
@@ -388,8 +427,7 @@ async def auto_use_days(db: AsyncSession, employee_id: int, days_to_use: int, or
         if remaining_to_use <= 0:
             break
         
-        total = period.main_days + period.used_days or 0
-        available = total - (p.used_days or 0)
+        total = period.main_days + period.additional_days
         remaining = total - (period.used_days or 0)
         
         if remaining <= 0:
@@ -397,7 +435,7 @@ async def auto_use_days(db: AsyncSession, employee_id: int, days_to_use: int, or
             
         days_to_take = min(remaining, remaining_to_use)
         if days_to_take > 0:
-            await repo.add_used_days(db, period.id, days_to_take, order_id)
+            await repo.add_used_days(db, period.id, days_to_take, order_id, order_number)
             remaining_to_use -= days_to_take
             print(f"[auto_use_days] took {days_to_take} from period {period.year_number}, remain={remaining_to_use}")
     # Removed commit - let the caller handle transaction

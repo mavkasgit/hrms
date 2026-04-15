@@ -49,6 +49,7 @@ async def get_period_breakdown(
     """Детализация списанных дней по периоду."""
     from app.schemas.vacation_period import VacationPeriodBreakdown
     from app.models.vacation_period import VacationPeriod
+    from app.models.order import Order
     from sqlalchemy import select
     
     result = await db.execute(select(VacationPeriod).where(VacationPeriod.id == period_id))
@@ -62,6 +63,14 @@ async def get_period_breakdown(
     if period.order_ids:
         order_ids_list = [int(x) for x in period.order_ids.split(',') if x]
     
+    # Получаем номера приказов
+    order_numbers = {}
+    if order_ids_list:
+        orders_result = await db.execute(
+            select(Order.id, Order.order_number).where(Order.id.in_(order_ids_list))
+        )
+        order_numbers = {row[0]: row[1] for row in orders_result.all()}
+    
     auto_details = []
     for oid in order_ids_list:
         from app.models.vacation import Vacation
@@ -70,7 +79,15 @@ async def get_period_breakdown(
         )
         vac = vac_result.scalar_one_or_none()
         if vac:
-            auto_details.append({"order_id": oid, "days": vac.days_count})
+            auto_details.append({
+                "order_id": oid,
+                "order_number": order_numbers.get(oid),
+                "vacation_id": vac.id,
+                "start_date": str(vac.start_date),
+                "end_date": str(vac.end_date),
+                "days": vac.days_count,
+                "vacation_type": vac.vacation_type,
+            })
     
     return VacationPeriodBreakdown(
         auto=auto_details,

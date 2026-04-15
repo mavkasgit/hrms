@@ -1,3 +1,13 @@
+export interface VacationPeriodVacation {
+  id: number
+  vacation_type: string
+  start_date: string
+  end_date: string
+  days_count: number
+  order_number: string | null
+  is_cancelled: boolean
+}
+
 export interface VacationPeriod {
   period_id: number
   year_number: number
@@ -10,7 +20,9 @@ export interface VacationPeriod {
   used_days_auto: number
   used_days_manual: number
   order_ids: string | null
+  order_numbers: string | null
   remaining_days: number
+  vacations?: VacationPeriodVacation[]
 }
 
 export interface VacationPeriodAdjust {
