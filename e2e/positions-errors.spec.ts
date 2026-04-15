@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test'
 
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
-}
-
+/**
+ * Тесты ошибок должностей
+ * Проверка корректной обработки ошибочных сценариев
+ */
 test.describe('Должности — ошибки', () => {
   test.setTimeout(30000)
 

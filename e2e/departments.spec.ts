@@ -1,26 +1,21 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures/common-fixtures'
 
-/** Уникальный суффикс */
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
-}
-
+/**
+ * Тесты жизненного цикла подразделений
+ * Использует фикстуры с автоматической очисткой
+ */
 test.describe('Подразделения', () => {
   test.setTimeout(60000)
 
-  test('создание → редактирование → удаление', async ({ page, request }) => {
-    const u = uid()
+  test('создание → редактирование → удаление', async ({ page, request, apiOps }) => {
+    const u = apiOps.uid()
     const deptName = `Тест-Отдел-${u}`
 
     console.log(`[TEST] Подразделение: ${deptName}`)
 
     // ========== 1. СОЗДАНИЕ (через API) ==========
     console.log('[TEST] === ЭТАП 1: Создание подразделения ===')
-    const createResp = await request.post('/api/departments', {
-      data: { name: deptName, short_name: `ТО-${u}`, sort_order: 0 }
-    })
-    expect(createResp.status()).toBe(200)
-    const created = await createResp.json()
+    const created = await apiOps.createDepartment(deptName, { short_name: `ТО-${u}` })
     const deptId = created.id
     console.log(`[TEST] ✅ Подразделение "${deptName}" создано (id=${deptId})`)
 
@@ -33,10 +28,8 @@ test.describe('Подразделения', () => {
     expect(updateResp.status()).toBe(200)
     console.log(`[TEST] ✅ Подразделение "${editedName}" сохранено`)
 
-    // ========== 3. УДАЛЕНИЕ (через API) ==========
-    console.log('[TEST] === ЭТАП 3: Удаление подразделения ===')
-    const deleteResp = await request.delete(`/api/departments/${deptId}`)
-    expect(deleteResp.status()).toBe(200)
-    console.log(`[TEST] ✅ Подразделение "${editedName}" удалено`)
+    // ========== 3. УДАЛЕНИЕ (автоматическая очистка в фикстурах) ==========
+    console.log('[TEST] === ЭТАП 3: Удаление подразделения (автоматическое) ===')
+    console.log(`[TEST] ✅ Подразделение "${editedName}" будет удалено автоматически после теста`)
   })
 })

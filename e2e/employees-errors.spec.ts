@@ -1,10 +1,15 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type APIRequestContext } from '@playwright/test'
+
+/**
+ * Тесты ошибок сотрудников
+ * Проверка корректной обработки ошибочных сценариев
+ */
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
 }
 
-async function createEmployee(request) {
+async function createEmployee(request: APIRequestContext) {
   const u = uid()
   const deptResp = await request.post('/api/departments', {
     data: { name: `Err-Отдел-${u}`, sort_order: 0 }

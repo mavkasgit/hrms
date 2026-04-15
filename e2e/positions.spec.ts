@@ -1,26 +1,21 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures/common-fixtures'
 
-/** Уникальный суффикс */
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
-}
-
+/**
+ * Тесты жизненного цикла должностей
+ * Использует фикстуры с автоматической очисткой
+ */
 test.describe('Должности', () => {
   test.setTimeout(60000)
 
-  test('создание → редактирование → удаление', async ({ page, request }) => {
-    const u = uid()
+  test('создание → редактирование → удаление', async ({ page, request, apiOps }) => {
+    const u = apiOps.uid()
     const posName = `Тест-Должность-${u}`
 
     console.log(`[TEST] Должность: ${posName}`)
 
     // ========== 1. СОЗДАНИЕ (через API) ==========
     console.log('[TEST] === ЭТАП 1: Создание должности ===')
-    const createResp = await request.post('/api/positions', {
-      data: { name: posName, sort_order: 0 }
-    })
-    expect(createResp.status()).toBe(200)
-    const created = await createResp.json()
+    const created = await apiOps.createPosition(posName)
     const posId = created.id
     console.log(`[TEST] ✅ Должность "${posName}" создана (id=${posId})`)
 
@@ -33,10 +28,8 @@ test.describe('Должности', () => {
     expect(updateResp.status()).toBe(200)
     console.log(`[TEST] ✅ Должность "${editedName}" сохранена`)
 
-    // ========== 3. УДАЛЕНИЕ (через API) ==========
-    console.log('[TEST] === ЭТАП 3: Удаление должности ===')
-    const deleteResp = await request.delete(`/api/positions/${posId}`)
-    expect(deleteResp.status()).toBe(200)
-    console.log(`[TEST] ✅ Должность "${editedName}" удалена`)
+    // ========== 3. УДАЛЕНИЕ (автоматическая очистка в фикстурах) ==========
+    console.log('[TEST] === ЭТАП 3: Удаление должности (автоматическое) ===')
+    console.log(`[TEST] ✅ Должность "${editedName}" будет удалена автоматически после теста`)
   })
 })

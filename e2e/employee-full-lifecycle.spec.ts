@@ -1,51 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
+import { uid, comboboxCreate, dateField, fillGridInput } from './helpers/employee-helpers'
 
-/** Уникальный суффикс */
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
-}
-
-/** Помощник для создания combobox значений */
-async function comboboxCreate(page: Page, label: string, value: string) {
-  const combo = page.locator(`label:has-text("${label}")`).locator('..').locator('button[role="combobox"]')
-  await combo.waitFor({ state: 'visible', timeout: 3000 })
-  await combo.click()
-
-  const searchInput = page.locator('input[placeholder="Найти или создать..."]').first()
-  await searchInput.waitFor({ state: 'visible', timeout: 3000 })
-  await searchInput.fill(value)
-  await page.waitForTimeout(200)
-
-  const createBtn = page.getByText(`Создать «${value}»`).first()
-  const isCreateVisible = await createBtn.isVisible({ timeout: 1000 }).catch(() => false)
-  if (isCreateVisible) {
-    await createBtn.click()
-    const selectedBtn = page.locator(`label:has-text("${label}")`).locator('..').locator('button').filter({ hasText: value })
-    await selectedBtn.waitFor({ state: 'visible', timeout: 5000 })
-    return
-  }
-
-  const allBtns = page.locator('button').filter({ hasText: new RegExp(`^${value}$`) })
-  const count = await allBtns.count()
-  if (count > 0) {
-    await allBtns.first().click()
-    await page.waitForTimeout(300)
-    return
-  }
-
-  await searchInput.press('Enter')
-  await page.waitForTimeout(300)
-}
-
-function dateField(page: Page, nth: number) {
-  return page.getByRole('textbox', { name: 'ДД.ММ.ГГГГ' }).nth(nth)
-}
-
-async function fillGridInput(page: Page, nthChild: number, value: string) {
-  const input = page.locator(`.grid.grid-cols-3 > div:nth-child(${nthChild}) input`).first()
-  await input.fill(value)
-}
-
+/**
+ * Тест полного жизненного цикла сотрудника
+ * Создание → Архивация → Восстановление → Удаление
+ * Использует общие хелперы для переиспользования кода
+ */
 test.describe('Полный цикл сотрудника', () => {
   test.setTimeout(120000)
 
@@ -114,7 +74,7 @@ test.describe('Полный цикл сотрудника', () => {
 
     // Кликаем Создать
     console.log('[TEST] Кликаем кнопку Создать...')
-    
+
     // Слушаем ответ API
     page.on('response', async (resp) => {
       if (resp.url().includes('/api/employees') && resp.request().method() === 'POST') {

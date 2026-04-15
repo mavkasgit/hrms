@@ -41,7 +41,48 @@ git clone <repository-url>
 cd hrms
 ```
 
-### 2. Запуск через Docker Compose
+### 2. Установка зависимостей
+
+**Шаг 1: Установи необходимое ПО**
+
+Выполни эти команды в cmd (одну за другой):
+
+```cmd
+winget install Python.Python.3.11
+```
+Устанавливает Python 3.11 с pip (менеджер пакетов).
+
+```cmd
+winget install OpenJS.NodeJS
+```
+Устанавливает Node.js с npm (менеджер пакетов для JavaScript).
+
+```cmd
+winget install Docker.DockerDesktop
+```
+Устанавливает Docker Desktop (контейнеризация для БД и сервисов).
+
+⚠️ **После установки Docker Desktop перезагрузи компьютер.**
+
+**Шаг 2: Установи все зависимости проекта**
+
+Выполни в терминале из корня проекта:
+
+```bash
+npx make install-all
+```
+
+Если `make` не установлен, выполни вручную:
+
+```bash
+pip install -r backend/requirements.txt
+cd frontend
+npm install
+cd ..
+npm install
+```
+
+### 3. Запуск через Docker Compose
 
 ```bash
 make up          # Запуск всех сервисов
@@ -55,7 +96,7 @@ make logs        # Просмотр логов
 - PostgreSQL: localhost:5432
 - API Docs: http://localhost:8000/docs
 
-### 3. Локальная разработка (без Docker)
+### 4. Локальная разработка (без Docker)
 
 **Backend:**
 ```bash
@@ -69,7 +110,7 @@ make frontend-install  # Установка зависимостей
 make frontend-run      # Запуск Vite dev server
 ```
 
-### 4. Миграции БД
+### 5. Миграции БД
 
 ```bash
 make migrate           # Применить все миграции

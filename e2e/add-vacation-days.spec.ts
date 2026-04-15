@@ -1,78 +1,76 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '@playwright/test'
+import { VacationsPage } from './pages/VacationsPage'
 
-// Запусти серверы вручную перед тестом:
-// cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000
-// cd frontend && npm run dev
-
+/**
+ * Тест inline-редактирования дополнительных дней отпуска
+ * Использует VacationsPage Page Object и правильные стратегии ожидания
+ */
 test.describe('Sprint 6 — дополнительные дни отпуска', () => {
   test('inline-редактирование доп дней через API', async ({ page }) => {
-    // Переходим на страницу отпусков
-    await page.goto('/vacations');
+    const vacationsPage = new VacationsPage(page)
+    await vacationsPage.goto()
 
-    // Ждём загрузку таблицы
-    await expect(page.getByRole('heading', { name: 'Отпуска' })).toBeVisible();
-    await page.waitForTimeout(2000);
-
-    // Находим первую строку сотрудника (раскрывающаяся)
-    const firstRow = page.locator('tbody tr').first();
-    await expect(firstRow).toBeVisible();
+    // Находим первую строку сотрудника
+    const firstRow = await vacationsPage.getFirstRow()
+    await expect(firstRow).toBeVisible()
 
     // Получаем имя сотрудника
-    const nameCell = firstRow.locator('td').nth(2);
-    const empName = await nameCell.textContent();
-    expect(empName).toBeTruthy();
+    const empName = await vacationsPage.getEmployeeNameByRow(firstRow)
+    expect(empName).toBeTruthy()
+    console.log(`[TEST] Сотрудник: ${empName}`)
 
-    // Находим колонку "Доп. дни" по тексту в заголовке
-    const headers = page.locator('thead th');
-    const addDaysHeaderIndex = await headers.evaluateAll((ths) => {
-      return ths.findIndex(th => th.textContent?.includes('Доп. дни'));
-    });
-    expect(addDaysHeaderIndex).toBeGreaterThan(0);
+    // Получаем индекс колонки "Доп. дни"
+    const addDaysHeaderIndex = await vacationsPage.getAddDaysColumnIndex()
+    expect(addDaysHeaderIndex).toBeGreaterThan(0)
 
     // Получаем ячейку доп дней
-    const addDaysCell = firstRow.locator(`td:nth-child(${addDaysHeaderIndex + 1})`);
+    const addDaysCell = await vacationsPage.getAddDaysCellForRow(firstRow, addDaysHeaderIndex)
 
     // Получаем начальное значение
-    const oldValueText = await addDaysCell.locator('button').textContent();
-    const oldValue = parseInt(oldValueText || '0', 10);
-    console.log(`Начальное значение доп дней: ${oldValue}`);
+    const oldValueText = await addDaysCell.locator('button').textContent()
+    const oldValue = parseInt(oldValueText || '0', 10)
+    console.log(`[TEST] Начальное значение доп дней: ${oldValue}`)
 
-    // Кликаем по кнопке чтобы начать редактирование
-    await addDaysCell.locator('button').click();
+    // Отслеживаем ответ API для подтверждения обновления
+    const responsePromise = page.waitForResponse(async (resp) => {
+      return resp.url().includes('/api/employees') &&
+             resp.request().method() === 'PUT' &&
+             resp.status() === 200
+    })
 
-    // Проверяем что появился input
-    const input = addDaysCell.locator('input');
-    await expect(input).toBeVisible({ timeout: 3000 });
+    // Редактируем значение (старое + 5)
+    const newValue = oldValue + 5
+    await vacationsPage.editAddDays(addDaysCell, newValue)
 
-    // Вводим новое значение (старое + 5)
-    const newValue = String(oldValue + 5);
-    await input.fill(newValue);
-    await input.press('Enter');
+    // Ждём завершения API запроса
+    await responsePromise
+    console.log(`[TEST] API ответ получен`)
 
-    // Ждём рефетч после мутации (invalidateQueries с refetchType: 'all')
-    await page.waitForTimeout(3000);
-
-    // Перезагружаем страницу чтобы убедиться что данные загружаются заново
-    await page.reload({ waitUntil: 'networkidle' });
-    await page.waitForTimeout(1000);
-
-    // Проверяем что значение обновилось — ищем ячейку с нужным текстом
-    const allAddDaysCells = page.locator('tbody tr').first().locator(`td:nth-child(${addDaysHeaderIndex + 1})`);
-    const updatedText = await allAddDaysCells.textContent();
-    console.log(`Текст ячейки после обновления: "${updatedText}"`);
+    // Перезагружаем страницу для получения актуальных данных
+    await page.reload({ waitUntil: 'networkidle' })
 
     // Проверяем через employees API что значение действительно изменилось
-    const apiResponse = await page.request.get('/api/employees?status=active&per_page=1000');
-    const apiData = await apiResponse.json();
-    const employees = apiData.items;
-    
+    const apiResponse = await page.request.get('/api/employees?status=active&per_page=1000')
+    const apiData = await apiResponse.json()
+    const employees = apiData.items
+
     // Находим нашего сотрудника по имени
-    const emp = employees.find((e: any) => e.name === empName);
+    const emp = employees.find((e: any) => e.name === empName)
     if (emp) {
-      console.log(`API: additional_vacation_days = ${emp.additional_vacation_days}`);
+      console.log(`[TEST] API: additional_vacation_days = ${emp.additional_vacation_days}`)
+      expect(emp.additional_vacation_days).toBe(newValue)
     }
 
-    expect(updatedText).toContain(newValue);
-    console.log(`Новое значение доп дней: ${updatedText}`);
-  });
-});
+    // Проверяем что значение обновилось в UI
+    const updatedPage = new VacationsPage(page)
+    await updatedPage.goto()
+
+    const updatedRow = await updatedPage.getFirstRow()
+    const updatedCell = await updatedPage.getAddDaysCellForRow(updatedRow, addDaysHeaderIndex)
+    const updatedText = await updatedCell.textContent()
+    console.log(`[TEST] Текст ячейки после обновления: "${updatedText}"`)
+
+    expect(updatedText).toContain(String(newValue))
+    console.log(`[TEST] ✅ Значение доп дней успешно обновлено до: ${newValue}`)
+  })
+})

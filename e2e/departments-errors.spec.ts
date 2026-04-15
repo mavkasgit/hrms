@@ -1,9 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type APIRequestContext } from '@playwright/test'
 
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
-}
-
+/**
+ * Тесты ошибок подразделений
+ * Проверка корректной обработки ошибочных сценариев
+ */
 test.describe('Подразделения — ошибки', () => {
   test.setTimeout(30000)
 
