@@ -55,12 +55,14 @@ function useDebounce<T>(value: T, delay: number): T {
 interface EmployeeHistoryRowProps {
   employeeId: number
   partialClosePeriodId: number | null
-  setPartialClosePeriodId: (id: number | null) => void
+  setPartialClosePeriodId: (value: number | null) => void
   partialCloseRemaining: string
   setPartialCloseRemaining: (value: string) => void
   handlePartialClosePeriod: () => void
   closePeriodMutation: any
   setSuccessMessage: (msg: string | null) => void
+  closingPeriodId: number | null
+  setClosingPeriodId: (id: number | null) => void
 }
 
 function EmployeeHistoryRow({ 
@@ -71,7 +73,9 @@ function EmployeeHistoryRow({
   setPartialCloseRemaining,
   handlePartialClosePeriod,
   closePeriodMutation,
-  setSuccessMessage
+  setSuccessMessage,
+  closingPeriodId,
+  setClosingPeriodId
 }: EmployeeHistoryRowProps) {
   const { data: history, isLoading } = useEmployeeVacationHistory(employeeId)
   const { data: periods } = useVacationPeriods(employeeId)
@@ -98,9 +102,11 @@ function EmployeeHistoryRow({
   const allVacations = history.years.flatMap((yg) => yg.vacations)
   
   // Разделяем периоды на открытые и закрытые
-  const openPeriods = periods.filter(p => p.remaining_days > 0)
-  const closedPeriods = periods.filter(p => p.remaining_days === 0)
-  const displayedPeriods = showClosedPeriods ? periods : openPeriods
+  // Сортируем от новых к старым (год по убыванию)
+  const sortedPeriods = [...periods].sort((a, b) => b.year_number - a.year_number)
+  const openPeriods = sortedPeriods.filter(p => p.remaining_days > 0)
+  const closedPeriods = sortedPeriods.filter(p => p.remaining_days === 0)
+  const displayedPeriods = showClosedPeriods ? sortedPeriods : openPeriods
 
   return (
     <>
@@ -128,21 +134,24 @@ function EmployeeHistoryRow({
           v.start_date >= p.period_start && v.start_date <= p.period_end
         )
         const isClosed = p.remaining_days === 0
+        const isClosing = closingPeriodId === p.period_id
         const isEnded = new Date(p.period_end) < new Date() // Период уже закончился
         
         return (
-          <div key={p.period_id} className={`flex gap-3 border border-muted/30 rounded overflow-hidden ${isClosed ? 'opacity-60' : ''}`}>
+          <div key={p.period_id} className={`flex gap-3 border border-muted/30 rounded overflow-hidden ${isClosed ? 'opacity-60' : ''} ${isClosing ? 'border-blue-400 bg-blue-50' : ''}`}>
             {/* Левая часть — период */}
-            <div className="w-1/2 min-w-[280px] bg-card p-3 flex items-center gap-3">
+<div className="w-1/2 min-w-[280px] bg-card p-3 flex items-center gap-3">
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1 text-xs">
-                  <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
-                  <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
-                  {isClosed && (
-                    <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>
-                  )}
-                </div>
                 <div className="flex items-center gap-2 text-xs">
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
+                      <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
+                      {isClosed && <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-xs mt-1">
                   <span className="text-muted-foreground">
                     {p.main_days}+{p.additional_days}
                   </span>
@@ -152,6 +161,12 @@ function EmployeeHistoryRow({
                   <span className={`font-semibold ${p.remaining_days < 0 ? "text-red-600" : p.remaining_days < 7 ? "text-amber-600" : "text-green-600"}`}>
                     {p.remaining_days}
                   </span>
+                  {p.used_days > 0 && (
+                    <span className="text-[9px] text-muted-foreground ml-2">
+                      {p.used_days_auto > 0 && p.order_ids && <span>приказы: {p.used_days_auto} дней, №{p.order_ids}</span>}
+                      {p.used_days_manual > 0 && <span> вручную: {p.used_days_manual} дней</span>}
+                    </span>
+                  )}
                 </div>
               </div>
               {/* Кнопки управления периодом - только для завершенных периодов */}
@@ -169,7 +184,7 @@ function EmployeeHistoryRow({
                         }}
                       >
                         Восстановить период
-                      </Button>
+</Button>
                     </div>
                   ) : (
                     <div className="flex gap-1 shrink-0">
@@ -177,16 +192,35 @@ function EmployeeHistoryRow({
                         variant="outline"
                         size="sm"
                         className="h-6 text-[10px] px-2 whitespace-nowrap"
+                        disabled={closingPeriodId === p.period_id}
                         onClick={() => {
+                          setClosingPeriodId(p.period_id)
                           closePeriodMutation.mutate(p.period_id, {
                             onSuccess: () => {
-                              setSuccessMessage("Период полностью закрыт")
-                              setTimeout(() => setSuccessMessage(null), 3000)
+                              // Задержка 1 сек чтобы успеть увидеть анимацию
+                              setTimeout(() => {
+                                setClosingPeriodId(null)
+                                setSuccessMessage("Период полностью закрыт")
+                                setTimeout(() => setSuccessMessage(null), 3000)
+                              }, 1000)
+                            },
+                            onError: () => {
+                              setClosingPeriodId(null)
                             }
                           })
                         }}
                       >
-                        Закрыть период
+                        {closingPeriodId === p.period_id ? (
+                          <span className="flex items-center gap-1">
+                            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            <span>Закрытие...</span>
+                          </span>
+                        ) : (
+                          "Закрыть период"
+                        )}
                       </Button>
                       <Button
                         variant="outline"
@@ -345,6 +379,7 @@ export function VacationsPage() {
   // Period management state
   const [partialClosePeriodId, setPartialClosePeriodId] = useState<number | null>(null)
   const [partialCloseRemaining, setPartialCloseRemaining] = useState("")
+  const [closingPeriodId, setClosingPeriodId] = useState<number | null>(null)
 
   const searchRef = useRef<HTMLDivElement>(null)
   const vacationTypeRef = useRef<HTMLDivElement>(null)
@@ -556,7 +591,7 @@ export function VacationsPage() {
     <div className="space-y-4">
       {/* Success Alert */}
       {successMessage && (
-        <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg flex items-center justify-between">
+        <div className="fixed bottom-4 right-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg flex items-center gap-3 shadow-lg z-50">
           <span className="text-sm font-medium">{successMessage}</span>
           <button onClick={() => setSuccessMessage(null)} className="text-green-600 hover:text-green-800">
             <X className="h-4 w-4" />
@@ -939,6 +974,8 @@ export function VacationsPage() {
                             handlePartialClosePeriod={handlePartialClosePeriod}
                             closePeriodMutation={closePeriodMutation}
                             setSuccessMessage={setSuccessMessage}
+                            closingPeriodId={closingPeriodId}
+                            setClosingPeriodId={setClosingPeriodId}
                           />
                         </td>
                       </tr>

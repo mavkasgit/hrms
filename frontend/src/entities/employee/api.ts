@@ -57,9 +57,12 @@ export async function restoreEmployee(employeeId: number) {
 }
 
 export async function deleteEmployee(employeeId: number, hard = false, confirm = false) {
-  await api.delete(`/employees/${employeeId}`, {
-    params: { hard, confirm },
-  })
+  console.log(`[API] deleteEmployee: id=${employeeId}, hard=${hard}, confirm=${confirm}`)
+  const params: Record<string, string> = {}
+  if (hard === true) params.hard = "true"
+  if (confirm === true) params.confirm = "true"
+  console.log(`[API] deleteEmployee params:`, params)
+  await api.delete(`/employees/${employeeId}`, { params })
 }
 
 export async function fetchEmployeeAuditLog(employeeId: number) {

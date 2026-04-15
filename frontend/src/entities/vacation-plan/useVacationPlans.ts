@@ -12,7 +12,10 @@ export function useVacationPlanSummary(year: number) {
 export function useCreateOrUpdateVacationPlan() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data: VacationPlanCreate) => createOrUpdateVacationPlan(data),
+    mutationFn: async (data: VacationPlanCreate) => {
+      console.log("[useCreateOrUpdateVacationPlan] mutationFn called with:", data)
+      return createOrUpdateVacationPlan(data)
+    },
     onMutate: async (newData) => {
       // Отменяем исходящие запросы чтобы не перезаписать optimistic update
       await queryClient.cancelQueries({ queryKey: ["vacation-plan-summary", newData.year] })
@@ -25,9 +28,8 @@ export function useCreateOrUpdateVacationPlan() {
         if (!old) return old
         return old.map((emp: any) => {
           if (emp.employee_id !== newData.employee_id) return emp
-          const newMonths = { ...emp.months, [newData.month]: newData.days }
-          const newTotal = Object.values(newMonths).reduce((sum: number, v: any) => sum + (v || 0), 0)
-          return { ...emp, months: newMonths, total_days: newTotal }
+          const newMonths = { ...emp.months, [newData.month]: newData.plan_count }
+          return { ...emp, months: newMonths }
         })
       })
 
@@ -40,7 +42,7 @@ export function useCreateOrUpdateVacationPlan() {
       }
     },
     onSettled: (_data, _error, variables) => {
-      // Рефетч после мутации (успешной или нет)
+      console.log("[useCreateOrUpdateVacationPlan] onSettled, invalidating:", variables.year)
       queryClient.invalidateQueries({ queryKey: ["vacation-plan-summary", variables.year] })
     },
   })

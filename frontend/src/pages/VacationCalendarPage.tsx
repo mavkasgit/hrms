@@ -21,9 +21,9 @@ import type { VacationPlanSummary } from "@/entities/vacation-plan/types"
 interface CalendarRow {
   employee_id: number
   employee_name: string
-  department: string
-  months: Record<number, number | null>
-  total_days: number
+  department_id: number
+  months: Record<number, string | null>
+  total_plan_count: string
 }
 
 const MONTHS = [
@@ -39,14 +39,14 @@ function getYearOptions(): number[] {
   return years
 }
 
-function formatDays(days: number | null | undefined): string {
-  if (days === null || days === undefined || days <= 0) return ""
+function formatDays(days: string | null | undefined): string {
+  if (days === null || days === undefined) return ""
   return String(days)
 }
 
-function getCellClasses(days: number | null | undefined): string {
+function getCellClasses(days: string | null | undefined): string {
   const base = "w-[70px] h-8 text-[14px] flex items-center justify-center overflow-hidden truncate transition-colors"
-  if (days !== null && days !== undefined && days > 0) return `${base} bg-sky-100 font-semibold`
+  if (days !== null && days !== undefined) return `${base} bg-sky-100 font-semibold`
   return base
 }
 
@@ -67,6 +67,7 @@ export function VacationCalendarPage() {
 
   // Merge all employees with plan data
   const combinedData: CalendarRow[] = useMemo(() => {
+    console.log("[combinedData] summaries:", JSON.stringify(summaries, null, 2))
     const planMap = new Map<number, VacationPlanSummary>()
     if (summaries) {
       for (const s of summaries) planMap.set(s.employee_id, s)
@@ -80,9 +81,9 @@ export function VacationCalendarPage() {
       return {
         employee_id: emp.id,
         employee_name: emp.name,
-        department: "Подр. " + emp.department_id,
-        months: {} as Record<number, number | null>,
-        total_days: 0,
+        department_id: emp.department_id,
+        months: {} as Record<number, string | null>,
+        total_plan_count: "0",
       }
     })
   }, [summaries, allEmployees])
@@ -91,36 +92,30 @@ export function VacationCalendarPage() {
     if (!search) return combinedData
     const q = search.toLowerCase()
     return combinedData.filter(
-      (s) => s.employee_name.toLowerCase().includes(q) || s.department.toLowerCase().includes(q)
+      (s) => s.employee_name.toLowerCase().includes(q) || s.department_id.toString().includes(q)
     )
   }, [combinedData, search])
 
-  const handleCellClick = (employeeId: number, month: number, currentValue: number | null) => {
+  const handleCellClick = (employeeId: number, month: number, currentValue: string | null) => {
     setEditingCell({ employeeId, month })
     setEditingValue(currentValue !== null ? String(currentValue) : "")
   }
 
   const handleCellSave = () => {
     if (!editingCell) return
-    const raw = editingValue.trim()
-    let days: number
-    if (raw.includes("/")) {
-      const [num, den] = raw.split("/").map(Number)
-      days = isNaN(num) || isNaN(den) || den === 0 ? NaN : num / den
-    } else {
-      days = parseFloat(raw)
-    }
-    if (isNaN(days) || days < 0) {
-      setEditingCell(null)
-      return
-    }
-    createMutation.mutate({ employee_id: editingCell.employeeId, year, month: editingCell.month, days })
+    const raw = editingValue.trim().replace(",", ".")
+    console.log("[handleCellSave] raw:", raw)
+    createMutation.mutate({ employee_id: editingCell.employeeId, year, month: editingCell.month, plan_count: raw })
     setEditingCell(null)
   }
 
   const handleCellKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleCellSave()
     if (e.key === "Escape") setEditingCell(null)
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault()
+      setEditingValue("")
+    }
   }
 
   return (
@@ -187,7 +182,7 @@ export function VacationCalendarPage() {
                 return (
                 <tr key={row.employee_id} className={`${isHovered ? "!bg-zinc-100" : ""}`} onMouseEnter={() => setHoveredRow(row.employee_id)} onMouseLeave={() => setHoveredRow(null)}>
                   <td className={`sticky left-0 py-1.5 px-3 z-10 font-medium border border-zinc-300 ${isHovered ? "!bg-zinc-100" : "bg-background"}`}>{row.employee_name}</td>
-                  <td className="py-1.5 px-2 text-muted-foreground text-xs border border-zinc-300">{row.department}</td>
+                  <td className="py-1.5 px-2 text-muted-foreground text-xs border border-zinc-300">{row.department_id}</td>
                   {MONTHS.map((_, monthIdx) => {
                     const monthNum = monthIdx + 1
                     const value = row.months[monthNum] ?? null
@@ -199,6 +194,7 @@ export function VacationCalendarPage() {
                       >
                         {isEditing ? (
                           <Input
+                            data-testid={`vacation-cell-input-${row.employee_id}-${monthNum}`}
                             value={editingValue}
                             onChange={(e) => setEditingValue(e.target.value)}
                             onKeyDown={handleCellKeyDown}

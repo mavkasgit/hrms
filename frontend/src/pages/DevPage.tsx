@@ -1,7 +1,8 @@
 import { useState, useRef } from "react"
 import { Badge } from "@/shared/ui/badge"
 import { Input } from "@/shared/ui/input"
-import { Plus, Minus } from "lucide-react"
+import { Button } from "@/shared/ui/button"
+import { Plus, Minus, Trash2 } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -202,6 +203,33 @@ export function DevPage() {
   return (
     <div className="space-y-8 p-8 max-w-4xl">
       <h1 className="text-2xl font-bold">Dev: Inline-редактирование (фиксированный размер)</h1>
+      
+      {/* DEV Tools */}
+      <div className="border border-red-200 rounded-lg p-4 bg-red-50">
+        <div className="flex items-center gap-2 mb-4">
+          <Trash2 className="h-5 w-5 text-red-500" />
+          <h3 className="font-semibold text-red-600">Инструменты разработки</h3>
+        </div>
+        <Button 
+          variant="destructive" 
+          onClick={async () => {
+            if (confirm('Очистить ВСЕ данные? Это удалит все отпуска, приказы, периоды и сотрудников!')) {
+              const { default: api } = await import('@/shared/api/axios')
+              try {
+                await api.post('/dev/clear-all')
+                alert('Данные очищены! Обновите страницу.')
+                window.location.reload()
+              } catch (e: any) {
+                alert('Ошибка очистки: ' + (e.message || e))
+              }
+            }
+          }}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Очистить всё
+        </Button>
+      </div>
+
       <p className="text-sm text-muted-foreground">Все варианты: ячейка {CELL.replace("transition-colors", "").trim()} — клик → редактирование → сохранение. Размер не меняется.</p>
 
       <div className="space-y-8">

@@ -1,10 +1,17 @@
 import api from "@/shared/api/axios"
-import type { VacationPeriod, VacationPeriodAdjust } from "./types"
+import type { VacationPeriod, VacationPeriodAdjust, VacationPeriodBreakdown } from "./types"
 
 export async function fetchVacationPeriods(employeeId: number): Promise<VacationPeriod[]> {
   const { data } = await api.get<VacationPeriod[]>("/vacation-periods", {
     params: { employee_id: employeeId },
   })
+  return data
+}
+
+export async function fetchPeriodBreakdown(periodId: number): Promise<VacationPeriodBreakdown> {
+  const { data } = await api.get<VacationPeriodBreakdown>(
+    `/vacation-periods/${periodId}/breakdown`,
+  )
   return data
 }
 

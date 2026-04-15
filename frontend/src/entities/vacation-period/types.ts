@@ -7,9 +7,17 @@ export interface VacationPeriod {
   additional_days: number
   total_days: number
   used_days: number
+  used_days_auto: number
+  used_days_manual: number
+  order_ids: string | null
   remaining_days: number
 }
 
 export interface VacationPeriodAdjust {
   additional_days: number
+}
+
+export interface VacationPeriodBreakdown {
+  auto: { order_id: number; days: number }[]
+  manual_days: number
 }

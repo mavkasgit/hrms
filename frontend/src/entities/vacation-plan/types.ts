@@ -3,7 +3,7 @@ export interface VacationPlan {
   employee_id: number
   year: number
   month: number
-  days: number
+  plan_count: string
   comment: string | null
   created_at: string | null
   updated_at: string | null
@@ -13,19 +13,19 @@ export interface VacationPlanCreate {
   employee_id: number
   year: number
   month: number
-  days: number
+  plan_count: string
   comment?: string
 }
 
 export interface VacationPlanSummary {
   employee_id: number
   employee_name: string
-  department: string
-  months: Record<number, number | null>
-  total_days: number
+  department_id: number
+  months: Record<number, string | null>
+  total_plan_count: string
 }
 
 export interface VacationPlanUpdate {
-  days?: number
+  plan_count?: string
   comment?: string
 }
