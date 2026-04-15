@@ -24,6 +24,7 @@ from app.api.departments import router as departments_router
 from app.api.tags import router as tags_router
 from app.api.positions import router as positions_router
 from app.api.import_employees import router as import_router
+from app.api.dev import router as dev_router
 
 
 @asynccontextmanager
@@ -78,6 +79,7 @@ app.include_router(departments_router, prefix="/api")
 app.include_router(tags_router, prefix="/api")
 app.include_router(positions_router, prefix="/api")
 app.include_router(import_router, prefix="/api")
+app.include_router(dev_router, prefix="/api")
 
 
 @app.get("/api/health")

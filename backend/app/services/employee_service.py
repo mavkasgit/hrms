@@ -79,13 +79,10 @@ class EmployeeService:
             if existing:
                 raise DuplicateTabNumberError(data.tab_number)
 
-        print(f"[create_employee] Creating employee with data: {data.model_dump()}")
         employee = await repository.create(db, data.model_dump())
-        print(f"[create_employee] Employee created with id={employee.id}")
 
         # Создаём все периоды отпусков если есть contract_start
         if data.contract_start:
-            print(f"[create_employee] Creating vacation periods for employee {employee.id}")
             try:
                 await vacation_period_service.ensure_periods_for_employee(
                     db,
@@ -93,11 +90,8 @@ class EmployeeService:
                     contract_start=data.contract_start,
                     additional_days=data.additional_vacation_days or 0,
                 )
-                print(f"[create_employee] Vacation periods created successfully")
-            except Exception as e:
-                print(f"[create_employee] ERROR creating vacation periods: {e}")
-                import traceback
-                traceback.print_exc()
+            except Exception:
+                pass
                 # Не фейлим создание сотрудника - просто логируем ошибку
 
         # Конвертируем даты в строки для JSON
@@ -130,8 +124,6 @@ class EmployeeService:
         # Принудительно обращаемся к relations чтобы они закешировались
         _ = employee_with_relations.department
         _ = employee_with_relations.position
-        
-        print(f"[create_employee] Returning employee with department={employee_with_relations.department}, position={employee_with_relations.position}")
         
         return employee_with_relations
 
@@ -277,6 +269,7 @@ class EmployeeService:
         if not employee:
             raise EmployeeNotFoundError(employee_id)
 
+        # Добавляем audit entry ДО удаления связанных записей
         await repository._add_audit_entry(db, employee_id, "hard_deleted", user_id, None, None)
 
         # Логирование в общий журнал
@@ -288,6 +281,8 @@ class EmployeeService:
                 "user_id": user_id,
             }
         )
+
+        await repository.delete_related_records(db, employee_id)
 
         return await repository.hard_delete(db, employee_id)
 

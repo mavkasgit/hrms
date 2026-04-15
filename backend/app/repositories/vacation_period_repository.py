@@ -18,7 +18,9 @@ class VacationPeriodRepository:
 
     async def get_by_id(self, db: AsyncSession, period_id: int) -> Optional[VacationPeriod]:
         result = await db.execute(
-            select(VacationPeriod).where(VacationPeriod.id == period_id)
+            select(VacationPeriod)
+            .where(VacationPeriod.id == period_id)
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
@@ -26,6 +28,7 @@ class VacationPeriodRepository:
         result = await db.execute(
             select(VacationPeriod)
             .where(VacationPeriod.employee_id == employee_id)
+            .execution_options(populate_existing=True)
             .order_by(VacationPeriod.year_number)
         )
         return list(result.scalars().all())
@@ -57,22 +60,19 @@ class VacationPeriodRepository:
 
     async def get_used_days(self, db: AsyncSession, period_id: int, today: Optional[date] = None) -> int:
         """Считаем использованные дни из таблицы vacations.
-        Для текущего периода — только отпуска до сегодняшней даты.
+        Если today передан — считаем только до этой даты (accrued).
+        Если today=None — считаем все отпуска за период.
         """
         period = await self.get_by_id(db, period_id)
         if not period:
             return 0
 
-        # Если период в прошлом — считаем все отпуска за период
-        # Если период активный (сегодня внутри) — считаем только до сегодня
         if today is None:
             today = date.today()
 
         if today > period.period_end:
-            # Период закончился — считаем все отпуска
             end_date = period.period_end
         else:
-            # Период активен — считаем только до сегодня
             end_date = today
 
         result = await db.execute(
@@ -88,6 +88,25 @@ class VacationPeriodRepository:
         )
         return int(result.scalar() or 0)
 
+    async def get_all_used_days(self, db: AsyncSession, period_id: int) -> int:
+        """Считаем ВСЕ использованные дни из таблицы vacations за период."""
+        from sqlalchemy import select as sa_select
+        period = await self.get_by_id(db, period_id)
+        if not period:
+            return 0
+
+        query = sa_select(func.coalesce(func.sum(Vacation.days_count), 0)).where(
+            and_(
+                Vacation.employee_id == period.employee_id,
+                Vacation.start_date >= period.period_start,
+                Vacation.start_date <= period.period_end,
+                Vacation.is_deleted == False,
+                Vacation.is_cancelled == False,
+            )
+        )
+        result = await db.execute(query)
+        return int(result.scalar() or 0)
+
     async def update_additional_days(self, db: AsyncSession, period_id: int, additional_days: int) -> Optional[VacationPeriod]:
         period = await self.get_by_id(db, period_id)
         if not period:
@@ -97,15 +116,50 @@ class VacationPeriodRepository:
         await db.refresh(period)
         return period
 
-    async def add_used_days(self, db: AsyncSession, period_id: int, days: int) -> None:
-        """Добавить использованные дни к периоду."""
+    async def add_used_days(self, db: AsyncSession, period_id: int, days: int, order_id: int = None) -> None:
+        """Добавить использованные дни к периоду (автосписание при создании приказа)."""
         period = await self.get_by_id(db, period_id)
         if not period:
             print(f"[add_used_days] ERROR: period {period_id} not found")
             return
+        
         old_used = period.used_days or 0
+        old_auto = period.used_days_auto or 0
+        
         period.used_days = old_used + days
-        print(f"[add_used_days] period_id={period_id}, old_used={old_used}, adding={days}, new_used={period.used_days}")
+        period.used_days_auto = old_auto + days
+        
+        if order_id:
+            existing_ids = period.order_ids or ""
+            if existing_ids:
+                period.order_ids = f"{existing_ids},{order_id}"
+            else:
+                period.order_ids = str(order_id)
+        
+        print(f"[add_used_days] period_id={period_id}, old_used={old_used}, adding={days}, new_used={period.used_days}, auto={period.used_days_auto}")
         await db.flush()
         await db.refresh(period)
         print(f"[add_used_days] flushed and refreshed, period.used_days={period.used_days}")
+
+    async def remove_used_days(self, db: AsyncSession, period_id: int, days: int, order_id: int = None) -> None:
+        """Уменьшить использованные дни при удалении отпуска."""
+        period = await self.get_by_id(db, period_id)
+        if not period:
+            print(f"[remove_used_days] ERROR: period {period_id} not found")
+            return
+        
+        old_used = period.used_days or 0
+        period.used_days = max(0, old_used - days)
+        
+        old_auto = period.used_days_auto or 0
+        period.used_days_auto = max(0, old_auto - days)
+        
+        if order_id and period.order_ids:
+            ids = [int(x) for x in period.order_ids.split(',') if x]
+            if order_id in ids:
+                ids.remove(order_id)
+                period.order_ids = ','.join(map(str, ids)) if ids else None
+        
+        print(f"[remove_used_days] period_id={period_id}, removed={days}, new_used={period.used_days}")
+        await db.flush()
+        await db.refresh(period)

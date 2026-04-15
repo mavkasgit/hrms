@@ -17,6 +17,8 @@ class VacationPlanService:
         self, db: AsyncSession, data: dict
     ) -> VacationPlanResponse:
         plan = await self._repo.create_or_update(db, data)
+        if not plan:
+            return None
         return VacationPlanResponse.model_validate(plan)
 
     async def get_by_year(self, db: AsyncSession, year: int) -> list[VacationPlanResponse]:
@@ -31,9 +33,14 @@ class VacationPlanService:
         grouped: dict[int, dict] = {}
         for p in plans:
             if p.employee_id not in grouped:
-                grouped[p.employee_id] = {"employee_id": p.employee_id, "months": {}, "total_days": 0.0}
-            grouped[p.employee_id]["months"][p.month] = p.days
-            grouped[p.employee_id]["total_days"] += p.days
+                grouped[p.employee_id] = {"employee_id": p.employee_id, "months": {}, "total_plan_count": 0.0}
+            # Не добавляем пустые значения в months
+            plan_count_str = p.plan_count.strip() if p.plan_count else ""
+            if plan_count_str:
+                grouped[p.employee_id]["months"][p.month] = p.plan_count
+                # Парсим план_каунт для суммирования
+                plan_value = self._parse_plan_count(p.plan_count)
+                grouped[p.employee_id]["total_plan_count"] += plan_value
 
         # Получаем имена сотрудников
         if grouped:
@@ -50,15 +57,26 @@ class VacationPlanService:
             emp = employees.get(emp_id)
             if not emp:
                 continue
-            summaries.append(VacationPlanSummary(
+            summary = VacationPlanSummary(
                 employee_id=emp_id,
                 employee_name=emp.name,
                 department_id=emp.department_id,
                 months=data["months"],
-                total_days=data["total_days"],
-            ))
+                total_plan_count=str(data["total_plan_count"]),
+            )
+            summaries.append(summary)
 
         return summaries
+
+    def _parse_plan_count(self, plan_count: str) -> float:
+        """Парсит план_каунт в число для суммирования."""
+        plan_count = plan_count.strip()
+        if not plan_count:
+            return 0.0
+        if '/' in plan_count:
+            parts = plan_count.split('/')
+            return float(parts[0]) / float(parts[1])
+        return float(plan_count)
 
     async def delete(self, db: AsyncSession, plan_id: int) -> bool:
         result = await self._repo.delete(db, plan_id)

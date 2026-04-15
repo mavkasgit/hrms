@@ -27,8 +27,6 @@ class VacationService:
     async def create_vacation(
         self, db: AsyncSession, data: dict, user_id: str
     ) -> dict:
-        print(f"[create_vacation] START: employee_id={data.get('employee_id')}, start={data.get('start_date')}, end={data.get('end_date')}, type={data.get('vacation_type')}")
-        
         employee_id = data["employee_id"]
         start_date = data["start_date"]
         end_date = data["end_date"]
@@ -36,55 +34,34 @@ class VacationService:
 
         employee_repo = EmployeeRepository()
         employee = await employee_repo.get_by_id(db, employee_id)
-        print(f"[create_vacation] employee found: {employee is not None}")
         if not employee:
             raise EmployeeNotFoundError(employee_id)
 
         if end_date < start_date:
-            print(f"[create_vacation] WARNING: end_date < start_date: {end_date} < {start_date}")
             raise InsufficientVacationDaysError("Дата конца раньше даты начала")
 
         overlap = await vacation_repository.check_overlap(
             db, employee_id, start_date, end_date
         )
         if overlap:
-            print(f"[create_vacation] WARNING overlap: {overlap}")
             raise VacationOverlapError(
                 f"Пересекается с отпуском с {overlap.start_date} по {overlap.end_date}"
             )
 
         holidays = await references_repository.get_holidays_for_year(db, start_date.year)
-        print(f"[create_vacation] holidays for {start_date.year}: {holidays}")
         if end_date.year != start_date.year:
             holidays += await references_repository.get_holidays_for_year(db, end_date.year)
 
         holidays_count = count_holidays_in_range(holidays, start_date, end_date)
         days_count = calculate_vacation_days(start_date, end_date, holidays_count)
-        print(f"[create_vacation] days_count={days_count}, holidays_count={holidays_count}")
 
         if days_count <= 0:
-            print(f"[create_vacation] WARNING days_count <= 0: {days_count}")
             raise InsufficientVacationDaysError("Нет дней отпуска в выбранном диапазоне")
 
         # Проверяем баланс через систему периодов
-        print(f"[create_vacation] checking balance for employee_id={employee_id}, days_count={days_count}")
-        try:
-            await vacation_period_service.check_balance_before_create(db, employee_id, days_count)
-            print(f"[create_vacation] balance check passed")
-        except Exception as e:
-            print(f"[create_vacation] ERROR balance check failed: {e}")
-            raise
+        await vacation_period_service.check_balance_before_create(db, employee_id, days_count)
         
-        # Списываем дни с периодов (от старого к новому)
-        print(f"[create_vacation] calling auto_use_days for employee_id={employee_id}, days_count={days_count}")
-        try:
-            await auto_use_days(db, employee_id, days_count)
-            print(f"[create_vacation] auto_use_days completed")
-        except Exception as e:
-            print(f"[create_vacation] ERROR auto_use_days failed: {e}")
-            raise
-
-        # Старая проверка баланса удалена - теперь используем систему периодов
+        # Динамический расчёт - не нужно синхронизировать period.used_days
 
         vacation_data = {
             "employee_id": employee_id,
@@ -95,9 +72,7 @@ class VacationService:
             "vacation_year": start_date.year,
             "comment": data.get("comment"),
         }
-        print(f"[create_vacation] before vacation_repository.create with data: {vacation_data}")
         vacation = await vacation_repository.create(db, vacation_data)
-        print(f"[create_vacation] after vacation_repository.create, vacation_id: {vacation.id}")
 
         order_type_map = {
             "Трудовой": "Отпуск трудовой",
@@ -117,19 +92,16 @@ class VacationService:
                 "vacation_days": days_count,
             },
         )
-        print(f"[create_vacation] before order_service.create_order with data: {order_data.model_dump()}")
         order = await order_service.create_order(db, order_data)
-        print(f"[create_vacation] after order_service.create_order, order_id: {order.id}")
 
         # Link order back to vacation
         vacation.order_id = order.id
-        print(f"[create_vacation] before db.flush")
+        
+        # Автосписание дней со старых периодов - передаём order_id для трекинга
+        await auto_use_days(db, employee_id, days_count, order.id)
+        
         await db.flush()
-        print(f"[create_vacation] after db.flush")
-
-        print(f"[create_vacation] before db.commit")
         await db.commit()
-        print(f"[create_vacation] after db.commit")
 
         # Логирование в общий журнал
         audit_logger.info(
@@ -264,6 +236,23 @@ class VacationService:
 
         # Удаляем отпуск
         await vacation_repository.hard_delete(db, id)
+        
+        # Возвращаем списанные дни в периоды
+        if vacation.days_count and vacation.order_id:
+            from app.repositories.vacation_period_repository import VacationPeriodRepository
+            period_repo = VacationPeriodRepository()
+            
+            # Ищем периоды с этим order_id
+            from app.models.vacation_period import VacationPeriod
+            from sqlalchemy import select
+            result = await db.execute(
+                select(VacationPeriod).where(VacationPeriod.employee_id == vacation.employee_id)
+            )
+            all_periods = list(result.scalars().all())
+            
+            for p in all_periods:
+                if p.order_ids and str(vacation.order_id) in p.order_ids:
+                    await period_repo.remove_used_days(db, p.id, vacation.days_count, vacation.order_id)
 
         # Удаляем приказ
         if order_id:
@@ -312,7 +301,7 @@ class VacationService:
         return result
 
     async def get_vacation_balance(
-        self, db: AsyncSession, employee_id: int, year: int
+        self, db: AsyncSession, employee_id: int, year: Optional[int] = None
     ) -> dict:
         return await vacation_repository.get_vacation_balance(db, employee_id, year)
 

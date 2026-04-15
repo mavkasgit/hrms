@@ -11,7 +11,15 @@ class VacationPlanRepository:
         existing = await self.get_by_employee_year_month(
             db, data["employee_id"], data["year"], data["month"]
         )
+        plan_count = data.get("plan_count", "")
+        is_empty = not plan_count or (isinstance(plan_count, str) and not plan_count.strip())
+        
         if existing:
+            if is_empty:
+                existing.plan_count = ""
+                await db.flush()
+                await db.refresh(existing)
+                return existing
             for key, value in data.items():
                 if key not in ("employee_id", "year", "month"):
                     setattr(existing, key, value)
@@ -19,6 +27,8 @@ class VacationPlanRepository:
             await db.refresh(existing)
             return existing
         else:
+            if is_empty:
+                return None
             plan = VacationPlan(**data)
             db.add(plan)
             await db.flush()

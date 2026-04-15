@@ -34,8 +34,20 @@ class VacationPeriodBalance(BaseModel):
     additional_days: int
     total_days: int
     used_days: int
+    used_days_auto: int = 0
+    used_days_manual: int = 0
+    order_ids: Optional[str] = None
     remaining_days: int
 
 
 class VacationPeriodAdjust(BaseModel):
     additional_days: int
+
+
+class VacationPeriodUsedDays(BaseModel):
+    used_days: int
+
+
+class VacationPeriodBreakdown(BaseModel):
+    auto: list[dict] = []
+    manual_days: int = 0

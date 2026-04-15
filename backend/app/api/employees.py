@@ -205,6 +205,7 @@ async def delete_employee(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
+    print(f"[DELETE] employee_id={employee_id}, hard={hard}, confirm={confirm}")
     if hard:
         if not confirm:
             from app.core.exceptions import HRMSException

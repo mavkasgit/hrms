@@ -139,8 +139,6 @@ async def get_vacation_balance(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    if year is None:
-        year = __import__("datetime").date.today().year
     return await vacation_service.get_vacation_balance(db, employee_id, year)
 
 

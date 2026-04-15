@@ -12,7 +12,7 @@ class VacationPlan(Base):
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False, index=True)
     year = Column(Integer, nullable=False, index=True)
     month = Column(Integer, nullable=False)  # 1-12
-    days = Column(Float, nullable=False)  # 1, 0.5, 0.33
+    plan_count = Column(String(50), nullable=False)  # "1", "0.5", "1/3"
     comment = Column(String(200), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

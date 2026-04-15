@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.vacation import Vacation
+from app.models.vacation_period import VacationPeriod
 from app.models.employee import Employee
 from app.models.order import Order
 
@@ -173,13 +174,43 @@ class VacationRepository:
 
         return total_days
 
+    async def _get_used_days_for_period(self, db: AsyncSession, period_id: int) -> int:
+        """Считает использованные дни для конкретного периода из таблицы vacations."""
+        from datetime import date as date_type
+
+        period = await db.get(VacationPeriod, period_id)
+        if not period:
+            return 0
+
+        today = date_type.today()
+
+        if today > period.period_end:
+            end_date = period.period_end
+        else:
+            end_date = today
+
+        result = await db.execute(
+            select(func.sum(Vacation.days_count))
+            .where(
+                Vacation.employee_id == period.employee_id,
+                Vacation.is_deleted == False,
+                Vacation.is_cancelled == False,
+                Vacation.start_date >= period.period_start,
+                Vacation.start_date <= end_date,
+            )
+        )
+        return result.scalar() or 0
+
     async def get_vacation_balance(
-        self, db: AsyncSession, employee_id: int, year: int
+        self, db: AsyncSession, employee_id: int, year: Optional[int] = None
     ) -> dict:
         """
         Возвращает баланс отпусков сотрудника за год.
         {available_days, used_days, remaining_days, vacation_type_breakdown}
         """
+        from app.models.vacation_period import VacationPeriod
+        from datetime import date as date_type
+
         employee_result = await db.execute(
             select(Employee).where(Employee.id == employee_id)
         )
@@ -193,28 +224,81 @@ class VacationRepository:
                 "vacation_type_breakdown": {},
             }
 
-        # Используем новую систему периодов вместо vacation_days_override
-        available_days = 28  # Базовое значение, если нет периодов
-        used_days = await self.get_used_days(db, employee_id, year, "Трудовой")
+        today = date_type.today()
 
-        breakdown_result = await db.execute(
-            select(
-                Vacation.vacation_type,
-                func.sum(Vacation.days_count).label("total_days"),
+        if year is None:
+            periods_result = await db.execute(
+                select(VacationPeriod)
+                .where(
+                    VacationPeriod.employee_id == employee_id,
+                    VacationPeriod.period_start <= today,
+                )
+                .order_by(VacationPeriod.year_number)
             )
-            .where(
-                Vacation.employee_id == employee_id,
-                Vacation.is_deleted == False,
-                func.extract("year", Vacation.start_date) == year,
+        else:
+            year_start = date_type(year, 1, 1)
+            year_end = date_type(year, 12, 31)
+            periods_result = await db.execute(
+                select(VacationPeriod)
+                .where(
+                    VacationPeriod.employee_id == employee_id,
+                    VacationPeriod.period_start >= year_start,
+                    VacationPeriod.period_start <= year_end,
+                )
+                .order_by(VacationPeriod.year_number)
             )
-            .group_by(Vacation.vacation_type)
+
+        periods = periods_result.scalars().all()
+
+        total_available = 0
+        total_used = 0
+
+        for period in periods:
+            full_days = period.main_days + period.additional_days
+
+            period_used_cached = period.used_days or 0
+            manually_set = period_used_cached > 0
+
+            if manually_set:
+                used = period_used_cached
+                period_total = full_days
+            else:
+                used = await self._get_used_days_for_period(db, period.id)
+                if period.period_start <= today <= period.period_end:
+                    from dateutil.relativedelta import relativedelta
+                    rd = relativedelta(today, period.period_start)
+                    months_passed = rd.years * 12 + rd.months
+                    if rd.days > 0:
+                        months_passed += 1
+                    accrued = round(full_days / 12 * months_passed)
+                    period_total = accrued
+                else:
+                    period_total = full_days
+
+            total_available += period_total
+            total_used += used
+
+        breakdown_query = select(
+            Vacation.vacation_type,
+            func.sum(Vacation.days_count).label("total_days"),
+        ).where(
+            Vacation.employee_id == employee_id,
+            Vacation.is_deleted == False,
         )
+
+        if year is not None:
+            breakdown_query = breakdown_query.where(
+                func.extract("year", Vacation.start_date) == year
+            )
+
+        breakdown_query = breakdown_query.group_by(Vacation.vacation_type)
+        breakdown_result = await db.execute(breakdown_query)
         breakdown = {row[0]: row[1] for row in breakdown_result.all()}
 
         return {
-            "available_days": available_days,
-            "used_days": used_days,
-            "remaining_days": available_days - used_days,
+            "available_days": total_available,
+            "used_days": total_used,
+            "remaining_days": total_available - total_used,
             "vacation_type_breakdown": breakdown,
         }
 

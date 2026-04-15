@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Date, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, Date, DateTime, ForeignKey, String
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -15,6 +15,11 @@ class VacationPeriod(Base):
     main_days = Column(Integer, nullable=False, default=24)
     additional_days = Column(Integer, nullable=False, default=0)
     used_days = Column(Integer, nullable=False, default=0)
+    
+    used_days_auto = Column(Integer, nullable=False, default=0)
+    used_days_manual = Column(Integer, nullable=False, default=0)
+    order_ids = Column(String, nullable=True)
+    
     year_number = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

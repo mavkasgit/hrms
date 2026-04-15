@@ -180,6 +180,31 @@ class EmployeeRepository:
         await db.flush()
         return True
 
+    async def delete_related_records(self, db: AsyncSession, employee_id: int) -> None:
+        """Удалить все связанные записи ПЕРЕД удалением сотрудника."""
+        from app.models.employee import EmployeeAuditLog
+        from app.models.vacation import Vacation
+        from app.models.vacation_plan import VacationPlan
+        from app.models.vacation_period import VacationPeriod
+        from app.models.order import Order
+        from sqlalchemy import delete, update
+
+        await db.execute(delete(VacationPeriod).where(VacationPeriod.employee_id == employee_id))
+
+        await db.execute(
+            update(Vacation).where(Vacation.employee_id == employee_id).values(order_id=None)
+        )
+
+        await db.execute(delete(Order).where(Order.employee_id == employee_id))
+
+        await db.execute(delete(VacationPlan).where(VacationPlan.employee_id == employee_id))
+
+        await db.execute(delete(Vacation).where(Vacation.employee_id == employee_id))
+
+        await db.execute(delete(EmployeeAuditLog).where(EmployeeAuditLog.employee_id == employee_id))
+
+        await db.flush()
+
     async def get_audit_log(self, db: AsyncSession, employee_id: int) -> list[EmployeeAuditLog]:
         result = await db.execute(
             select(EmployeeAuditLog)
