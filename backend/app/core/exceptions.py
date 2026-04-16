@@ -66,3 +66,18 @@ class EmployeeHasActiveProcessesError(HRMSException):
         message = "У сотрудника есть активные процессы: " + "; ".join(warnings)
         super().__init__(message, "employee_has_active_processes", status_code=400)
         self.warnings = warnings
+
+
+class SickLeaveNotFoundError(NotFoundError):
+    def __init__(self, sick_leave_id: int):
+        super().__init__(f"Больничный с ID {sick_leave_id} не найден", "sick_leave_not_found")
+
+
+class SickLeaveOverlapError(HRMSException):
+    def __init__(self, message: str = "Периоды больничных пересекаются"):
+        super().__init__(message, "sick_leave_overlap", status_code=409)
+
+
+class InvalidSickLeaveDatesError(HRMSException):
+    def __init__(self, message: str = "Некорректные даты больничного"):
+        super().__init__(message, "invalid_sick_leave_dates", status_code=400)

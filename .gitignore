@@ -1,86 +1,50 @@
-# Repomix output
-repomix-output.xml
-repomix-output.txt
-*.repomix.*
+```
+# TypeScript/JavaScript build artifacts
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Build directories
+build/
+dist/
+target/
+
+# Logs
+*.log
 
 # Environment files
 .env
 .env.local
-.env.dev
-.env.test
-.env.prod
-*.env
+*.env.*
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-venv/
-ENV/
-env/
-.venv
-
-# Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-dist/
-dist-ssr/
-*.local
-*.tsbuildinfo
-
-# IDEs
+# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
+
+# OS files
 .DS_Store
-.qwen
+Thumbs.db
 
-# Docker
-data/
-*.log
-
-# Alembic
-alembic/versions/*.pyc
-
-# Playwright
-.playwright/
-.playwright-cli/
-test-results/
-
-# Testing
-.pytest_cache/
-.coverage
+# Coverage reports
+coverage/
 htmlcov/
-.tox/
-.hypothesis/
+.coverage
 
-# Backup files
-*.backup
-*.bak
-*.tmp
-
-# Seed data (contains sensitive employee information)
-backend/seed_employees.py
+# Python cache
+.mypy_cache/
+.pytest_cache/
+```
