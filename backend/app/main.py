@@ -16,6 +16,7 @@ from app.api.employees import router as employees_router
 from app.api.orders import router as orders_router
 from app.api.templates import router as templates_router
 from app.api.vacations import router as vacations_router
+from app.api.sick_leaves import router as sick_leaves_router
 from app.api.vacation_periods_api import router as vacation_periods_router
 from app.api.vacation_plans import router as vacation_plans_router
 from app.api.references import router as references_router
@@ -71,6 +72,7 @@ app.include_router(employees_router, prefix="/api")
 app.include_router(orders_router, prefix="/api")
 app.include_router(templates_router, prefix="/api")
 app.include_router(vacations_router, prefix="/api")
+app.include_router(sick_leaves_router, prefix="/api")
 app.include_router(vacation_periods_router, prefix="/api")
 app.include_router(vacation_plans_router, prefix="/api")
 app.include_router(references_router, prefix="/api")
