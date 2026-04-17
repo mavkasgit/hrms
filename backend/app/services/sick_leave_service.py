@@ -29,30 +29,28 @@ class SickLeaveService:
     ) -> Dict[str, Any]:
         """
         Создать запись о больничном.
-        
+
         Args:
             db: Сессия базы данных
-            data: Данные для создания (employee_id, start_date, end_date, sick_leave_type, ...)
-            current_user: Текущий пользователь (из зависимости Depends)
-            
+            data: Данные для создания (employee_id, start_date, end_date, comment, ...)
+            current_user: Текущий пользователь
+
         Returns:
             dict: Данные созданного больничного
         """
         employee_id = data["employee_id"]
         start_date = data["start_date"]
         end_date = data["end_date"]
-        sick_leave_type = data["sick_leave_type"]
 
-        # Проверка существования сотрудника
         employee = await self.employee_repo.get_by_id(db, employee_id)
         if not employee:
             raise EmployeeNotFoundError(employee_id)
 
-        # Валидация дат
         if end_date < start_date:
-            raise InvalidSickLeaveDatesError("Дата окончания не может быть раньше даты начала")
+            raise InvalidSickLeaveDatesError(
+                "Дата окончания не может быть раньше даты начала"
+            )
 
-        # Проверка пересечений с активными больничными
         overlap = await self.repo.check_overlap(db, employee_id, start_date, end_date)
         if overlap:
             raise SickLeaveOverlapError(
@@ -60,20 +58,13 @@ class SickLeaveService:
                 f"({overlap.start_date} - {overlap.end_date})"
             )
 
-        # Расчет дней (календарные дни)
         days_count = (end_date - start_date).days + 1
+        user_id = current_user.id if hasattr(current_user, "id") else int(current_user)
 
-        # Получаем ID пользователя из current_user
-        user_id = current_user.id if hasattr(current_user, 'id') else int(current_user)
-
-        # Создание записи
         sick_leave = SickLeave(
             employee_id=employee_id,
             start_date=start_date,
             end_date=end_date,
-            sick_leave_type=sick_leave_type,
-            certificate_number=data.get("certificate_number"),
-            issued_by=data.get("issued_by"),
             comment=data.get("comment"),
             status=SickLeaveStatus.ACTIVE,
             created_at=date.today(),
@@ -82,7 +73,6 @@ class SickLeaveService:
 
         created_sick_leave = await self.repo.create(db, sick_leave)
 
-        # Логирование аудита
         await audit_logger.log(
             db=db,
             action="sick_leave_create",
@@ -92,7 +82,6 @@ class SickLeaveService:
                 "employee_id": employee_id,
                 "start_date": str(start_date),
                 "end_date": str(end_date),
-                "sick_leave_type": sick_leave_type,
                 "days_count": days_count,
             },
             performed_by=str(user_id),
@@ -105,13 +94,13 @@ class SickLeaveService:
     ) -> Dict[str, Any]:
         """
         Обновить запись о больничном.
-        
+
         Args:
             db: Сессия базы данных
             sick_leave_id: ID больничного
             data: Данные для обновления
             current_user: Текущий пользователь
-            
+
         Returns:
             dict: Данные обновленного больничного
         """
@@ -119,17 +108,24 @@ class SickLeaveService:
         if not sick_leave:
             raise SickLeaveNotFoundError(sick_leave_id)
 
-        # Если меняем даты - проверяем валидность и пересечения
         new_start_date = data.get("start_date", sick_leave.start_date)
         new_end_date = data.get("end_date", sick_leave.end_date)
 
         if new_end_date < new_start_date:
-            raise InvalidSickLeaveDatesError("Дата окончания не может быть раньше даты начала")
+            raise InvalidSickLeaveDatesError(
+                "Дата окончания не может быть раньше даты начала"
+            )
 
-        # Проверка пересечений (исключая текущий больничный)
-        if (new_start_date != sick_leave.start_date or new_end_date != sick_leave.end_date):
+        if (
+            new_start_date != sick_leave.start_date
+            or new_end_date != sick_leave.end_date
+        ):
             overlap = await self.repo.check_overlap(
-                db, sick_leave.employee_id, new_start_date, new_end_date, exclude_id=sick_leave_id
+                db,
+                sick_leave.employee_id,
+                new_start_date,
+                new_end_date,
+                exclude_id=sick_leave_id,
             )
             if overlap:
                 raise SickLeaveOverlapError(
@@ -137,18 +133,15 @@ class SickLeaveService:
                     f"({overlap.start_date} - {overlap.end_date})"
                 )
 
-        user_id = current_user.id if hasattr(current_user, 'id') else int(current_user)
+        user_id = current_user.id if hasattr(current_user, "id") else int(current_user)
 
-        # Подготовка данных для обновления
         update_data = {}
-        for field in ["start_date", "end_date", "sick_leave_type", 
-                      "certificate_number", "issued_by", "comment"]:
+        for field in ["start_date", "end_date", "comment"]:
             if field in data and data[field] is not None:
                 update_data[field] = data[field]
 
         updated_sick_leave = await self.repo.update(db, sick_leave, update_data)
 
-        # Логирование аудита
         await audit_logger.log(
             db=db,
             action="sick_leave_update",
@@ -165,12 +158,12 @@ class SickLeaveService:
     ) -> bool:
         """
         Мягко удалить больничный (установить статус DELETED).
-        
+
         Args:
             db: Сессия базы данных
             sick_leave_id: ID больничного
             current_user: Текущий пользователь
-            
+
         Returns:
             bool: True если успешно
         """
@@ -178,11 +171,10 @@ class SickLeaveService:
         if not sick_leave:
             raise SickLeaveNotFoundError(sick_leave_id)
 
-        user_id = current_user.id if hasattr(current_user, 'id') else int(current_user)
+        user_id = current_user.id if hasattr(current_user, "id") else int(current_user)
 
         await self.repo.soft_delete(db, sick_leave, user_id)
 
-        # Логирование аудита
         await audit_logger.log(
             db=db,
             action="sick_leave_delete",
@@ -199,12 +191,12 @@ class SickLeaveService:
     ) -> Dict[str, Any]:
         """
         Отменить больничный.
-        
+
         Args:
             db: Сессия базы данных
             sick_leave_id: ID больничного
             current_user: Текущий пользователь
-            
+
         Returns:
             dict: Данные отмененного больничного
         """
@@ -217,11 +209,10 @@ class SickLeaveService:
                 f"Можно отменить только активный больничный. Текущий статус: {sick_leave.status}"
             )
 
-        user_id = current_user.id if hasattr(current_user, 'id') else int(current_user)
+        user_id = current_user.id if hasattr(current_user, "id") else int(current_user)
 
         await self.repo.cancel(db, sick_leave, user_id)
 
-        # Логирование аудита
         await audit_logger.log(
             db=db,
             action="sick_leave_cancel",
@@ -246,27 +237,23 @@ class SickLeaveService:
     async def get_sick_leaves_list(
         self,
         db: AsyncSession,
-        employee_id: Optional[int] = None,
-        year: Optional[int] = None,
-        sick_leave_type: Optional[str] = None,
+        search_query: Optional[str] = None,
         status: Optional[SickLeaveStatus] = None,
         page: int = 1,
-        per_page: int = 20
+        per_page: int = 50,
     ) -> Dict[str, Any]:
         """
         Получить список больничных с пагинацией.
-        
+
         Returns:
             dict: {"items": [...], "total": int, "page": int, "per_page": int, "pages": int}
         """
         items, total = await self.repo.get_all(
             db=db,
-            employee_id=employee_id,
-            year=year,
-            sick_leave_type=sick_leave_type,
+            search_query=search_query,
             status=status,
             page=page,
-            per_page=per_page
+            per_page=per_page,
         )
 
         pages = (total + per_page - 1) // per_page if total > 0 else 0
@@ -287,22 +274,20 @@ class SickLeaveService:
         self,
         db: AsyncSession,
         search_query: Optional[str] = None,
-        include_archived: bool = False
+        include_archived: bool = False,
     ) -> List[Dict[str, Any]]:
         """Получить сводку по больничным для всех сотрудников."""
         return await self.repo.get_employees_summary(
-            db=db,
-            search_query=search_query,
-            include_archived=include_archived
+            db=db, search_query=search_query, include_archived=include_archived
         )
 
-    async def _build_response(self, db: AsyncSession, sick_leave: SickLeave) -> Dict[str, Any]:
+    async def _build_response(
+        self, db: AsyncSession, sick_leave: SickLeave
+    ) -> Dict[str, Any]:
         """Построить ответ API с данными о больничном."""
-        # Получаем имя сотрудника
         employee = await self.employee_repo.get_by_id(db, sick_leave.employee_id)
         employee_name = employee.name if employee else "Неизвестный сотрудник"
 
-        # Расчет дней
         days_count = (sick_leave.end_date - sick_leave.start_date).days + 1
 
         return {
@@ -311,10 +296,7 @@ class SickLeaveService:
             "employee_name": employee_name,
             "start_date": sick_leave.start_date,
             "end_date": sick_leave.end_date,
-            "sick_leave_type": sick_leave.sick_leave_type,
             "days_count": days_count,
-            "certificate_number": sick_leave.certificate_number,
-            "issued_by": sick_leave.issued_by,
             "status": sick_leave.status,
             "created_by": sick_leave.created_by,
             "created_at": sick_leave.created_at,
@@ -323,5 +305,4 @@ class SickLeaveService:
         }
 
 
-# Singleton instance
 sick_leave_service = SickLeaveService()

@@ -3,9 +3,7 @@ import * as api from "./api"
 import type { SickLeaveCreate, SickLeaveUpdate } from "./types"
 
 export function useSickLeaves(params: {
-  employee_id?: number
-  year?: number
-  sick_leave_type?: string
+  q?: string
   status?: string
   page?: number
   per_page?: number

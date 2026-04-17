@@ -6,10 +6,7 @@ export interface SickLeave {
   employee_name: string;
   start_date: string;
   end_date: string;
-  sick_leave_type: string;
   days_count: number;
-  certificate_number: string | null;
-  issued_by: string | null;
   status: SickLeaveStatus;
   created_by: number;
   created_at: string;
@@ -21,18 +18,12 @@ export interface SickLeaveCreate {
   employee_id: number;
   start_date: string;
   end_date: string;
-  sick_leave_type: string;
-  certificate_number?: string | null;
-  issued_by?: string | null;
   comment?: string | null;
 }
 
 export interface SickLeaveUpdate {
   start_date?: string;
   end_date?: string;
-  sick_leave_type?: string;
-  certificate_number?: string | null;
-  issued_by?: string | null;
   comment?: string | null;
 }
 

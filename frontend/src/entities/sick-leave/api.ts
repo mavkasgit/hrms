@@ -8,9 +8,7 @@ import type {
 } from "./types"
 
 export async function getSickLeaves(params: {
-  employee_id?: number
-  year?: number
-  sick_leave_type?: string
+  q?: string
   status?: string
   page?: number
   per_page?: number

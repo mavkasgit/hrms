@@ -17,3 +17,4 @@ from app.models.user import User, UserRole  # noqa: F401, E402
 from app.models.department import Department, DepartmentRelation, RelationType  # noqa: F401, E402
 from app.models.tag import Tag, EmployeeTag, DepartmentTag  # noqa: F401, E402
 from app.models.position import Position  # noqa: F401, E402
+from app.models.sick_leave import SickLeave, SickLeaveStatus  # noqa: F401, E402

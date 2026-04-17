@@ -1,50 +1,88 @@
-```
-# TypeScript/JavaScript build artifacts
-*.tsbuildinfo
-
-# Dependencies
-node_modules/
-
-# Python artifacts
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Virtual environments
-venv/
-.venv/
-env/
-
-# Build directories
-build/
-dist/
-target/
-
-# Logs
-*.log
+# Repomix output
+repomix-output.xml
+repomix-output.txt
+*.repomix.*
 
 # Environment files
 .env
 .env.local
-*.env.*
+.env.dev
+.env.test
+.env.prod
+*.env
 
-# IDE files
+# Python
+__pycache__/
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+ENV/
+env/
+.venv
+
+# Node
+node_modules/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+dist-ssr/
+*.local
+
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS files
+*~
 .DS_Store
-Thumbs.db
 
-# Coverage reports
-coverage/
-htmlcov/
-.coverage
+# Docker
+data/
+*.log
 
-# Python cache
-.mypy_cache/
+# Alembic
+alembic/versions/*.pyc
+
+# Playwright
+.playwright/
+.playwright-cli/
+playwright-report/
+test-results/
+
+# Testing
 .pytest_cache/
-```
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Backup files
+*.backup
+*.bak
+*.tmp
+
+# AI tools
+.qwen/
+
+# Backend data
+backend/data/
