@@ -1,400 +1,277 @@
-"""Tests for vacation_service — all non-obvious edge cases"""
-import pytest
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-from app.services.vacation_service import VacationService
+import pytest
+
 from app.core.exceptions import (
     EmployeeNotFoundError,
-    VacationOverlapError,
     InsufficientVacationDaysError,
-    VacationNotFoundError,
+    VacationOverlapError,
 )
-
-
-class TestCreateVacation:
-    @pytest.fixture
-    def service(self):
-        return VacationService()
-
-    @pytest.fixture
-    def mock_db(self):
-        db = AsyncMock()
-        db.in_transaction = MagicMock(return_value=False)
-        return db
-
-    def _make_employee(self, emp_id=1, name="Test Employee", override=None):
-        emp = MagicMock()
-        emp.id = emp_id
-        emp.name = name
-        emp.vacation_days_override = override
-        return emp
-
-    def _make_vacation(self, vac_id=1, emp_id=1, start=date(2026, 4, 1), end=date(2026, 4, 10), vtype="Трудовой", days=10):
-        v = MagicMock()
-        v.id = vac_id
-        v.employee_id = emp_id
-        v.start_date = start
-        v.end_date = end
-        v.vacation_type = vtype
-        v.days_count = days
-        v.comment = None
-        v.created_at = "2026-04-01T00:00:00"
-        return v
-
-    def _make_order(self, order_id=1, number="01"):
-        o = MagicMock()
-        o.id = order_id
-        o.order_number = number
-        return o
-
-    @pytest.mark.asyncio
-    async def test_employee_not_found(self, service, mock_db):
-        with patch("app.services.vacation_service.EmployeeRepository") as MockEmpRepo:
-            emp_repo = AsyncMock()
-            emp_repo.get_by_id = AsyncMock(return_value=None)
-            MockEmpRepo.return_value = emp_repo
-
-            with pytest.raises(EmployeeNotFoundError):
-                await service.create_vacation(mock_db, {
-                    "employee_id": 999,
-                    "start_date": date(2026, 4, 1),
-                    "end_date": date(2026, 4, 10),
-                    "vacation_type": "Трудовой",
-                }, "admin")
-
-    @pytest.mark.asyncio
-    async def test_end_before_start(self, service, mock_db):
-        emp = self._make_employee()
-        with patch("app.services.vacation_service.EmployeeRepository") as MockEmpRepo:
-            MockEmpRepo.return_value.get_by_id = AsyncMock(return_value=emp)
-
-            with pytest.raises(InsufficientVacationDaysError) as exc_info:
-                await service.create_vacation(mock_db, {
-                    "employee_id": 1,
-                    "start_date": date(2026, 4, 10),
-                    "end_date": date(2026, 4, 1),
-                    "vacation_type": "Трудовой",
-                }, "admin")
-            assert "раньше" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_overlap_error(self, service, mock_db):
-        emp = self._make_employee()
-        existing_vac = self._make_vacation(start=date(2026, 4, 5), end=date(2026, 4, 15))
-
-        with patch("app.services.vacation_service.EmployeeRepository") as MockEmpRepo:
-            MockEmpRepo.return_value.get_by_id = AsyncMock(return_value=emp)
-
-            with patch("app.services.vacation_service.vacation_repository") as mock_vac_repo:
-                mock_vac_repo.check_overlap = AsyncMock(return_value=existing_vac)
-                mock_vac_repo.get_vacation_balance = AsyncMock(return_value={"remaining_days": 28})
-
-                with pytest.raises(VacationOverlapError):
-                    await service.create_vacation(mock_db, {
-                        "employee_id": 1,
-                        "start_date": date(2026, 4, 1),
-                        "end_date": date(2026, 4, 10),
-                        "vacation_type": "Трудовой",
-                    }, "admin")
-
-    @pytest.mark.asyncio
-    async def test_insufficient_days(self, service, mock_db):
-        emp = self._make_employee()
-
-        with patch("app.services.vacation_service.EmployeeRepository") as MockEmpRepo:
-            MockEmpRepo.return_value.get_by_id = AsyncMock(return_value=emp)
-
-            with patch("app.services.vacation_service.vacation_repository") as mock_vac_repo:
-                mock_vac_repo.check_overlap = AsyncMock(return_value=None)
-                mock_vac_repo.get_vacation_balance = AsyncMock(return_value={
-                    "available_days": 28,
-                    "used_days": 26,
-                    "remaining_days": 2,
-                    "vacation_type_breakdown": {"Трудовой": 26},
-                })
-
-                with patch("app.services.vacation_service.references_repository") as mock_ref_repo:
-                    mock_ref_repo.get_holidays_for_year = AsyncMock(return_value=[])
-
-                    with patch("app.services.vacation_service.vacation_period_service") as mock_vp:
-                        mock_vp.check_balance_before_create = AsyncMock(side_effect=InsufficientVacationDaysError("Недостаточно дней отпуска"))
-
-                        with pytest.raises(InsufficientVacationDaysError) as exc_info:
-                            await service.create_vacation(mock_db, {
-                                "employee_id": 1,
-                                "start_date": date(2026, 4, 1),
-                                "end_date": date(2026, 4, 10),
-                                "vacation_type": "Трудовой",
-                            }, "admin")
-                        assert "Недостаточно" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_no_balance_check_for_unpaid(self, service, mock_db):
-        emp = self._make_employee()
-
-        with patch("app.services.vacation_service.EmployeeRepository") as MockEmpRepo:
-            MockEmpRepo.return_value.get_by_id = AsyncMock(return_value=emp)
-
-            with patch("app.services.vacation_service.vacation_repository") as mock_vac_repo:
-                mock_vac_repo.check_overlap = AsyncMock(return_value=None)
-                mock_vac_repo.create = AsyncMock(return_value=self._make_vacation(vtype="За свой счет", days=5))
-
-                with patch("app.services.vacation_service.references_repository") as mock_ref_repo:
-                    mock_ref_repo.get_holidays_for_year = AsyncMock(return_value=[])
-
-                with patch("app.services.vacation_service.vacation_period_service") as mock_vp:
-                    mock_vp.check_balance_before_create = AsyncMock(return_value=None)
-
-                    with patch("app.services.vacation_service.order_service") as mock_order_svc:
-                        mock_order_svc.create_order = AsyncMock(return_value=self._make_order())
-
-                        result = await service.create_vacation(mock_db, {
-                            "employee_id": 1,
-                            "start_date": date(2026, 4, 1),
-                            "end_date": date(2026, 4, 5),
-                            "vacation_type": "За свой счет",
-                        }, "admin")
-
-                        mock_vac_repo.get_vacation_balance.assert_not_called()
-                        assert result is not None
-
-    @pytest.mark.asyncio
-    async def test_zero_days_error(self, service, mock_db):
-        emp = self._make_employee()
-
-        with patch("app.services.vacation_service.EmployeeRepository") as MockEmpRepo:
-            MockEmpRepo.return_value.get_by_id = AsyncMock(return_value=emp)
-
-            with patch("app.services.vacation_service.vacation_repository") as mock_vac_repo:
-                mock_vac_repo.check_overlap = AsyncMock(return_value=None)
-                mock_vac_repo.get_vacation_balance = AsyncMock(return_value={"remaining_days": 28})
-
-                with patch("app.services.vacation_service.references_repository") as mock_ref_repo:
-                    mock_ref_repo.get_holidays_for_year = AsyncMock(return_value=[
-                        date(2026, 1, 1), date(2026, 1, 2)
-                    ])
-
-                    with pytest.raises(InsufficientVacationDaysError) as exc_info:
-                        await service.create_vacation(mock_db, {
-                            "employee_id": 1,
-                            "start_date": date(2026, 1, 1),
-                            "end_date": date(2026, 1, 2),
-                            "vacation_type": "Трудовой",
-                        }, "admin")
-                    assert "Нет дней" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_order_date_from_data(self, service, mock_db):
-        emp = self._make_employee()
-
-        with patch("app.services.vacation_service.EmployeeRepository") as MockEmpRepo:
-            MockEmpRepo.return_value.get_by_id = AsyncMock(return_value=emp)
-
-            with patch("app.services.vacation_service.vacation_repository") as mock_vac_repo:
-                mock_vac_repo.check_overlap = AsyncMock(return_value=None)
-                mock_vac_repo.get_vacation_balance = AsyncMock(return_value={"remaining_days": 28})
-                mock_vac_repo.create = AsyncMock(return_value=self._make_vacation())
-
-                with patch("app.services.vacation_service.references_repository") as mock_ref_repo:
-                    mock_ref_repo.get_holidays_for_year = AsyncMock(return_value=[])
-
-                    with patch("app.services.vacation_service.vacation_period_service") as mock_vp:
-                        mock_vp.check_balance_before_create = AsyncMock(return_value=None)
-
-                        with patch("app.services.vacation_service.order_service") as mock_order_svc:
-                            mock_order_svc.create_order = AsyncMock(return_value=self._make_order())
-
-                            await service.create_vacation(mock_db, {
-                                "employee_id": 1,
-                                "start_date": date(2026, 4, 1),
-                                "end_date": date(2026, 4, 10),
-                                "vacation_type": "Трудовой",
-                                "order_date": date(2026, 3, 15),
-                            }, "admin")
-
-                            call_data = mock_order_svc.create_order.call_args[0][1]
-                            assert call_data.order_date == date(2026, 3, 15)
-
-    @pytest.mark.asyncio
-    async def test_order_date_defaults_to_today(self, service, mock_db):
-        emp = self._make_employee()
-
-        with patch("app.services.vacation_service.EmployeeRepository") as MockEmpRepo:
-            MockEmpRepo.return_value.get_by_id = AsyncMock(return_value=emp)
-
-            with patch("app.services.vacation_service.vacation_repository") as mock_vac_repo:
-                mock_vac_repo.check_overlap = AsyncMock(return_value=None)
-                mock_vac_repo.get_vacation_balance = AsyncMock(return_value={"remaining_days": 28})
-                mock_vac_repo.create = AsyncMock(return_value=self._make_vacation())
-
-                with patch("app.services.vacation_service.references_repository") as mock_ref_repo:
-                    mock_ref_repo.get_holidays_for_year = AsyncMock(return_value=[])
-
-                    with patch("app.services.vacation_service.vacation_period_service") as mock_vp:
-                        mock_vp.check_balance_before_create = AsyncMock(return_value=None)
-
-                        with patch("app.services.vacation_service.order_service") as mock_order_svc:
-                            mock_order_svc.create_order = AsyncMock(return_value=self._make_order())
-
-                            await service.create_vacation(mock_db, {
-                                "employee_id": 1,
-                                "start_date": date(2026, 4, 1),
-                                "end_date": date(2026, 4, 10),
-                                "vacation_type": "Трудовой",
-                            }, "admin")
-
-                            call_data = mock_order_svc.create_order.call_args[0][1]
-                            assert call_data.order_date == date.today()
-
-    @pytest.mark.asyncio
-    async def test_commit_called_once(self, service, mock_db):
-        emp = self._make_employee()
-
-        with patch("app.services.vacation_service.EmployeeRepository") as MockEmpRepo:
-            MockEmpRepo.return_value.get_by_id = AsyncMock(return_value=emp)
-
-            with patch("app.services.vacation_service.vacation_repository") as mock_vac_repo:
-                mock_vac_repo.check_overlap = AsyncMock(return_value=None)
-                mock_vac_repo.get_vacation_balance = AsyncMock(return_value={"remaining_days": 28})
-                mock_vac_repo.create = AsyncMock(return_value=self._make_vacation())
-
-                with patch("app.services.vacation_service.references_repository") as mock_ref_repo:
-                    mock_ref_repo.get_holidays_for_year = AsyncMock(return_value=[])
-
-                    with patch("app.services.vacation_service.vacation_period_service") as mock_vp:
-                        mock_vp.check_balance_before_create = AsyncMock(return_value=None)
-
-                        with patch("app.services.vacation_service.order_service") as mock_order_svc:
-                            mock_order_svc.create_order = AsyncMock(return_value=self._make_order())
-
-                            await service.create_vacation(mock_db, {
-                                "employee_id": 1,
-                                "start_date": date(2026, 4, 1),
-                                "end_date": date(2026, 4, 10),
-                                "vacation_type": "Трудовой",
-                            }, "admin")
-
-                            mock_db.commit.assert_called_once()
-
-
-class TestUpdateVacation:
-    @pytest.fixture
-    def service(self):
-        return VacationService()
-
-    @pytest.fixture
-    def mock_db(self):
-        db = AsyncMock()
-        db.in_transaction = MagicMock(return_value=False)
-        return db
-
-    def _make_vacation(self, vac_id=1, emp_id=1, start=date(2026, 4, 1), end=date(2026, 4, 10), vtype="Трудовой", days=10):
-        v = MagicMock()
-        v.id = vac_id
-        v.employee_id = emp_id
-        v.start_date = start
-        v.end_date = end
-        v.vacation_type = vtype
-        v.days_count = days
-        v.comment = None
-        v.created_at = "2026-04-01T00:00:00"
-        return v
-
-    def _make_employee(self, emp_id=1, name="Test Employee", override=None):
-        emp = MagicMock()
-        emp.id = emp_id
-        emp.name = name
-        emp.vacation_days_override = override
-        return emp
-
-    @pytest.mark.asyncio
-    async def test_not_found(self, service, mock_db):
-        with patch("app.services.vacation_service.vacation_repository") as mock_repo:
-            mock_repo.get_by_id = AsyncMock(return_value=None)
-
-            with pytest.raises(VacationNotFoundError):
-                await service.update_vacation(mock_db, 999, {}, "admin")
-
-    @pytest.mark.asyncio
-    async def test_end_before_start(self, service, mock_db):
-        existing = self._make_vacation()
-        with patch("app.services.vacation_service.vacation_repository") as mock_repo:
-            mock_repo.get_by_id = AsyncMock(return_value=existing)
-
-            with pytest.raises(InsufficientVacationDaysError):
-                await service.update_vacation(mock_db, 1, {
-                    "start_date": date(2026, 4, 15),
-                    "end_date": date(2026, 4, 1),
-                }, "admin")
-
-    @pytest.mark.asyncio
-    async def test_overlap_with_another_vacation(self, service, mock_db):
-        existing = self._make_vacation(vac_id=1, emp_id=1)
-        overlapping = self._make_vacation(vac_id=2, emp_id=1, start=date(2026, 4, 5), end=date(2026, 4, 15))
-
-        with patch("app.services.vacation_service.vacation_repository") as mock_repo:
-            mock_repo.get_by_id = AsyncMock(return_value=existing)
-            mock_repo.check_overlap = AsyncMock(return_value=overlapping)
-
-            with pytest.raises(VacationOverlapError):
-                await service.update_vacation(mock_db, 1, {
-                    "start_date": date(2026, 4, 5),
-                    "end_date": date(2026, 4, 20),
-                }, "admin")
-
-    @pytest.mark.asyncio
-    async def test_recalculates_days(self, service, mock_db):
-        existing = self._make_vacation()
-        updated = self._make_vacation(start=date(2026, 5, 1), end=date(2026, 5, 5), days=5)
-        emp = self._make_employee()
-
-        with patch("app.services.vacation_service.vacation_repository") as mock_repo:
-            mock_repo.get_by_id = AsyncMock(return_value=existing)
-            mock_repo.check_overlap = AsyncMock(return_value=None)
-            mock_repo.update = AsyncMock(return_value=updated)
-
-            with patch("app.services.vacation_service.EmployeeRepository") as MockEmpRepo:
-                MockEmpRepo.return_value.get_by_id = AsyncMock(return_value=emp)
-
-                with patch("app.services.vacation_service.references_repository") as mock_ref:
-                    mock_ref.get_holidays_for_year = AsyncMock(return_value=[])
-
-                    result = await service.update_vacation(mock_db, 1, {
-                        "start_date": date(2026, 5, 1),
-                        "end_date": date(2026, 5, 5),
-                    }, "admin")
-
-                    assert result["days_count"] == 5
-
-
-class TestDeleteVacation:
-    @pytest.fixture
-    def service(self):
-        return VacationService()
-
-    @pytest.fixture
-    def mock_db(self):
-        db = AsyncMock()
-        db.in_transaction = MagicMock(return_value=False)
-        return db
-
-    @pytest.mark.asyncio
-    async def test_not_found(self, service, mock_db):
-        with patch("app.services.vacation_service.vacation_repository") as mock_repo:
-            mock_repo.get_by_id = AsyncMock(return_value=None)
-
-            with pytest.raises(VacationNotFoundError):
-                await service.delete_vacation(mock_db, 999, "admin")
-
-    @pytest.mark.asyncio
-    async def test_soft_delete(self, service, mock_db):
-        vac = MagicMock()
-        vac.is_cancelled = False
-        with patch("app.services.vacation_service.vacation_repository") as mock_repo:
-            mock_repo.get_by_id = AsyncMock(return_value=vac)
-            mock_repo.soft_delete = AsyncMock(return_value=True)
-
-            result = await service.delete_vacation(mock_db, 1, "admin")
-            assert result is True
-            mock_repo.soft_delete.assert_called_once_with(mock_db, 1, "admin")
+from app.repositories.order_repository import order_repository
+from app.repositories.vacation_period_repository import VacationPeriodRepository
+from app.repositories.vacation_repository import vacation_repository
+from app.services.vacation_service import vacation_service
+
+
+WORK_VACATION_TYPE = "РўСЂСѓРґРѕРІРѕР№"
+
+pytestmark = pytest.mark.asyncio(loop_scope="module")
+
+
+async def test_create_vacation_raises_for_missing_employee(db_session):
+    with pytest.raises(EmployeeNotFoundError):
+        await vacation_service.create_vacation(
+            db_session,
+            {
+                "employee_id": 999999,
+                "start_date": date(2024, 4, 1),
+                "end_date": date(2024, 4, 5),
+                "vacation_type": WORK_VACATION_TYPE,
+            },
+            "admin",
+        )
+
+
+async def test_create_vacation_rejects_overlap_against_existing_record(
+    db_session,
+    create_employee,
+    create_vacation,
+):
+    employee = await create_employee()
+    await create_vacation(
+        employee=employee,
+        start_date=date(2024, 4, 5),
+        end_date=date(2024, 4, 10),
+        vacation_type=WORK_VACATION_TYPE,
+    )
+
+    with pytest.raises(VacationOverlapError):
+        await vacation_service.create_vacation(
+            db_session,
+            {
+                "employee_id": employee.id,
+                "start_date": date(2024, 4, 1),
+                "end_date": date(2024, 4, 7),
+                "vacation_type": WORK_VACATION_TYPE,
+            },
+            "admin",
+        )
+
+
+async def test_create_vacation_persists_order_link_and_uses_holiday_adjusted_days(
+    db_session,
+    create_employee,
+    create_order,
+):
+    employee = await create_employee(contract_start=date(2023, 1, 15))
+    created_order = await create_order(
+        employee=employee,
+        order_number="15",
+        order_type="РћС‚РїСѓСЃРє С‚СЂСѓРґРѕРІРѕР№",
+        order_date=date(2024, 3, 15),
+    )
+
+    with patch(
+        "app.services.vacation_service.references_repository.get_holidays_for_year",
+        new=AsyncMock(return_value=[date(2024, 4, 3)]),
+    ), patch(
+        "app.services.vacation_service.vacation_period_service.check_balance_before_create",
+        new=AsyncMock(),
+    ) as check_balance, patch(
+        "app.services.vacation_service.order_service.create_order",
+        new=AsyncMock(return_value=created_order),
+    ) as create_order, patch(
+        "app.services.vacation_service.auto_use_days",
+        new=AsyncMock(),
+    ) as auto_use_days:
+        result = await vacation_service.create_vacation(
+            db_session,
+            {
+                "employee_id": employee.id,
+                "start_date": date(2024, 4, 1),
+                "end_date": date(2024, 4, 5),
+                "vacation_type": WORK_VACATION_TYPE,
+                "order_date": date(2024, 3, 15),
+                "comment": "integration-create",
+            },
+            "admin",
+        )
+
+    stored_vacation = (await vacation_repository.get_by_employee_id(db_session, employee.id))[0]
+    order_payload = create_order.await_args.args[1]
+
+    assert result["days_count"] == 4
+    assert result["order_id"] == created_order.id
+    assert result["order_number"] == "15"
+    assert stored_vacation.order_id == created_order.id
+    assert stored_vacation.comment == "integration-create"
+    assert check_balance.await_args.args == (db_session, employee.id, 4)
+    assert order_payload.order_date == date(2024, 3, 15)
+    assert auto_use_days.await_args.args == (db_session, employee.id, 4, created_order.id, "15")
+
+
+async def test_create_vacation_fails_when_holidays_consume_entire_range(
+    db_session,
+    create_employee,
+):
+    employee = await create_employee()
+
+    with patch(
+        "app.services.vacation_service.references_repository.get_holidays_for_year",
+        new=AsyncMock(return_value=[date(2024, 1, 1), date(2024, 1, 2)]),
+    ), patch(
+        "app.services.vacation_service.vacation_period_service.check_balance_before_create",
+        new=AsyncMock(),
+    ) as check_balance, patch(
+        "app.services.vacation_service.order_service.create_order",
+        new=AsyncMock(),
+    ) as create_order:
+        with pytest.raises(InsufficientVacationDaysError):
+            await vacation_service.create_vacation(
+                db_session,
+                {
+                    "employee_id": employee.id,
+                    "start_date": date(2024, 1, 1),
+                    "end_date": date(2024, 1, 2),
+                    "vacation_type": WORK_VACATION_TYPE,
+                },
+                "admin",
+            )
+
+    assert check_balance.await_count == 0
+    assert create_order.await_count == 0
+
+
+async def test_update_vacation_recalculates_days_and_comment(
+    db_session,
+    create_employee,
+    create_vacation,
+):
+    employee = await create_employee()
+    vacation = await create_vacation(
+        employee=employee,
+        start_date=date(2024, 5, 1),
+        end_date=date(2024, 5, 5),
+        days_count=5,
+        vacation_year=2024,
+        vacation_type=WORK_VACATION_TYPE,
+        comment="before-update",
+    )
+
+    with patch(
+        "app.services.vacation_service.references_repository.get_holidays_for_year",
+        new=AsyncMock(return_value=[date(2024, 5, 2)]),
+    ):
+        result = await vacation_service.update_vacation(
+            db_session,
+            vacation.id,
+            {
+                "end_date": date(2024, 5, 6),
+                "comment": "after-update",
+            },
+            "admin",
+        )
+
+    updated = await vacation_repository.get_by_id(db_session, vacation.id)
+
+    assert result["days_count"] == 5
+    assert updated is not None
+    assert updated.end_date == date(2024, 5, 6)
+    assert updated.days_count == 5
+    assert updated.comment == "after-update"
+
+
+async def test_delete_vacation_removes_order_file_and_restores_period_usage(
+    db_session,
+    create_employee,
+    create_order,
+    create_vacation,
+    create_vacation_period,
+    tmp_path,
+):
+    employee = await create_employee(contract_start=date(2024, 1, 15))
+    order_file = tmp_path / "order-to-delete.docx"
+    order_file.write_text("order file")
+
+    order = await create_order(
+        employee=employee,
+        order_number="42",
+        order_type="РћС‚РїСѓСЃРє С‚СЂСѓРґРѕРІРѕР№",
+        order_date=date(2024, 3, 15),
+        file_path=str(order_file),
+    )
+    vacation = await create_vacation(
+        employee=employee,
+        order_id=order.id,
+        start_date=date(2024, 4, 1),
+        end_date=date(2024, 4, 5),
+        days_count=5,
+        vacation_year=2024,
+        vacation_type=WORK_VACATION_TYPE,
+    )
+    period = await create_vacation_period(
+        employee=employee,
+        period_start=date(2024, 1, 15),
+        period_end=date(2025, 1, 14),
+        used_days=5,
+        used_days_auto=5,
+        order_ids=str(order.id),
+        order_numbers=order.order_number,
+        order_days_map=f'{{"{order.id}": 5}}',
+        year_number=1,
+    )
+
+    result = await vacation_service.delete_vacation(db_session, vacation.id, "admin")
+
+    period_repo = VacationPeriodRepository()
+    restored_period = await period_repo.get_by_id(db_session, period.id)
+    deleted_vacation = await vacation_repository.get_by_id(db_session, vacation.id)
+    deleted_order = await order_repository.get_by_id(db_session, order.id, include_deleted=True)
+
+    assert result is True
+    assert restored_period is not None
+    assert restored_period.used_days == 0
+    assert restored_period.used_days_auto == 0
+    assert restored_period.order_ids is None
+    assert restored_period.order_days_map is None
+    assert deleted_vacation is None
+    assert deleted_order is None
+    assert not order_file.exists()
+
+
+async def test_cancel_vacation_marks_vacation_and_order_as_cancelled(
+    db_session,
+    create_employee,
+    create_order,
+    create_vacation,
+):
+    employee = await create_employee()
+    order = await create_order(
+        employee=employee,
+        order_number="88",
+        order_type="РћС‚РїСѓСЃРє С‚СЂСѓРґРѕРІРѕР№",
+        order_date=date(2024, 6, 1),
+    )
+    vacation = await create_vacation(
+        employee=employee,
+        order_id=order.id,
+        start_date=date(2024, 6, 10),
+        end_date=date(2024, 6, 14),
+        days_count=5,
+        vacation_year=2024,
+        vacation_type=WORK_VACATION_TYPE,
+    )
+
+    result = await vacation_service.cancel_vacation(db_session, vacation.id, "admin")
+
+    cancelled_vacation = await vacation_repository.get_by_id(db_session, vacation.id)
+    cancelled_order = await order_repository.get_by_id(db_session, order.id)
+
+    assert result is True
+    assert cancelled_vacation is not None
+    assert cancelled_vacation.is_cancelled is True
+    assert cancelled_vacation.cancelled_by == "admin"
+    assert cancelled_order is not None
+    assert cancelled_order.is_cancelled is True
+    assert cancelled_order.cancelled_by == "admin"

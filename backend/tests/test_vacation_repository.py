@@ -1,181 +1,293 @@
-"""Tests for vacation_repository"""
-import pytest
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from dateutil.relativedelta import relativedelta
 
 from app.repositories.vacation_repository import VacationRepository
 
 
-class TestCheckOverlap:
-    """Проверка пересечений отпусков"""
-
-    @pytest.fixture
-    def repo(self):
-        return VacationRepository()
-
-    @pytest.fixture
-    def mock_db(self):
-        return AsyncMock()
-
-    def _make_vacation(self, start, end, emp_id=1, vac_id=1):
-        v = MagicMock()
-        v.id = vac_id
-        v.employee_id = emp_id
-        v.start_date = start
-        v.end_date = end
-        return v
-
-    @pytest.mark.asyncio
-    async def test_no_overlap_same_employee(self, repo, mock_db):
-        """Нет пересечений — другой диапазон"""
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
-
-        result = await repo.check_overlap(mock_db, 1, date(2026, 5, 1), date(2026, 5, 10))
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_overlap_partial(self, repo, mock_db):
-        """Частичное пересечение"""
-        existing = self._make_vacation(date(2026, 4, 20), date(2026, 4, 30))
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=existing)))
-
-        result = await repo.check_overlap(mock_db, 1, date(2026, 4, 25), date(2026, 5, 5))
-        assert result is not None
-        assert result.start_date == date(2026, 4, 20)
-
-    @pytest.mark.asyncio
-    async def test_overlap_fully_inside(self, repo, mock_db):
-        """Новый отпуск полностью внутри существующего"""
-        existing = self._make_vacation(date(2026, 4, 1), date(2026, 4, 30))
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=existing)))
-
-        result = await repo.check_overlap(mock_db, 1, date(2026, 4, 10), date(2026, 4, 15))
-        assert result is not None
-
-    @pytest.mark.asyncio
-    async def test_no_overlap_different_employee(self, repo, mock_db):
-        """Разные сотрудники — нет пересечения"""
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
-
-        result = await repo.check_overlap(mock_db, 2, date(2026, 4, 25), date(2026, 5, 5))
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_exclude_self_on_update(self, repo, mock_db):
-        """При обновлении не должен пересекаться сам с собой"""
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
-
-        result = await repo.check_overlap(mock_db, 1, date(2026, 4, 1), date(2026, 4, 10), exclude_id=5)
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_deleted_vacation_no_overlap(self, repo, mock_db):
-        """Удалённый отпуск не должен конфликтовать"""
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
-
-        result = await repo.check_overlap(mock_db, 1, date(2026, 4, 1), date(2026, 4, 10))
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_adjacent_dates_no_overlap(self, repo, mock_db):
-        """Отпуски встык: конец одного = начало другого — это пересечение по SQL логике"""
-        # SQL: start_date <= end_date AND end_date >= start_date
-        # Если отпуск A: 1-10, отпуск B: 10-20 — они пересекаются (10 <= 10 AND 20 >= 1)
-        existing = self._make_vacation(date(2026, 4, 1), date(2026, 4, 10))
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=existing)))
-
-        result = await repo.check_overlap(mock_db, 1, date(2026, 4, 10), date(2026, 4, 20))
-        assert result is not None
+pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 
-class TestGetUsedDays:
-    """Подсчёт использованных дней"""
+async def test_check_overlap_returns_existing_vacation_for_same_employee(
+    db_session,
+    create_employee,
+    create_vacation,
+):
+    employee = await create_employee()
+    existing = await create_vacation(
+        employee=employee,
+        start_date=date(2026, 4, 1),
+        end_date=date(2026, 4, 10),
+        vacation_type="integration-overlap",
+    )
 
-    @pytest.fixture
-    def repo(self):
-        return VacationRepository()
+    repo = VacationRepository()
+    overlapping = await repo.check_overlap(
+        db_session,
+        employee.id,
+        start_date=date(2026, 4, 10),
+        end_date=date(2026, 4, 20),
+    )
 
-    @pytest.fixture
-    def mock_db(self):
-        return AsyncMock()
-
-    @pytest.mark.asyncio
-    async def test_no_vacations(self, repo, mock_db):
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))))
-
-        result = await repo.get_used_days(mock_db, 1, 2026)
-        assert result == 0
-
-    @pytest.mark.asyncio
-    async def test_counts_calendar_days_not_working_days(self, repo, mock_db):
-        """get_used_days считает календарные дни, а не рабочие — это важно для баланса"""
-        vac = MagicMock()
-        vac.start_date = date(2026, 4, 1)
-        vac.end_date = date(2026, 4, 7)
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[vac])))))
-
-        result = await repo.get_used_days(mock_db, 1, 2026)
-        # 7 дней календарных, не рабочих
-        assert result == 7
+    assert overlapping is not None
+    assert overlapping.id == existing.id
 
 
-class TestGetVacationBalance:
-    """Баланс отпусков"""
+async def test_check_overlap_ignores_deleted_records_and_excluded_id(
+    db_session,
+    create_employee,
+    create_vacation,
+):
+    employee = await create_employee()
+    deleted_vacation = await create_vacation(
+        employee=employee,
+        start_date=date(2026, 4, 1),
+        end_date=date(2026, 4, 10),
+        vacation_type="integration-overlap",
+        is_deleted=True,
+    )
+    active_vacation = await create_vacation(
+        employee=employee,
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 5, 10),
+        vacation_type="integration-overlap",
+    )
 
-    @pytest.fixture
-    def repo(self):
-        return VacationRepository()
+    repo = VacationRepository()
 
-    @pytest.fixture
-    def mock_db(self):
-        return AsyncMock()
+    ignored_deleted = await repo.check_overlap(
+        db_session,
+        employee.id,
+        start_date=date(2026, 4, 5),
+        end_date=date(2026, 4, 7),
+    )
+    ignored_self = await repo.check_overlap(
+        db_session,
+        employee.id,
+        start_date=date(2026, 5, 2),
+        end_date=date(2026, 5, 4),
+        exclude_id=active_vacation.id,
+    )
 
-    @pytest.mark.asyncio
-    async def test_employee_not_found(self, repo, mock_db):
-        mock_db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
+    assert deleted_vacation.is_deleted is True
+    assert ignored_deleted is None
+    assert ignored_self is None
 
-        result = await repo.get_vacation_balance(mock_db, 999, 2026)
-        assert result["available_days"] == 0
-        assert result["used_days"] == 0
-        assert result["remaining_days"] == 0
 
-    @pytest.mark.asyncio
-    async def test_default_28_days(self, repo, mock_db):
-        """По умолчанию 28 дней если нет override"""
-        emp = MagicMock()
-        emp.vacation_days_override = None
-        mock_db.execute = AsyncMock(side_effect=[
-            MagicMock(scalar_one_or_none=MagicMock(return_value=emp)),
-            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
-            MagicMock(all=MagicMock(return_value=[])),
-        ])
+async def test_get_used_days_counts_only_days_inside_requested_year(
+    db_session,
+    create_employee,
+    create_vacation,
+):
+    employee = await create_employee()
+    vacation_type = "integration-used-days"
 
-        result = await repo.get_vacation_balance(mock_db, 1, 2026)
-        assert result["available_days"] == 28
+    await create_vacation(
+        employee=employee,
+        start_date=date(2025, 12, 28),
+        end_date=date(2026, 1, 5),
+        days_count=9,
+        vacation_year=2025,
+        vacation_type=vacation_type,
+    )
+    await create_vacation(
+        employee=employee,
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 3),
+        days_count=3,
+        vacation_year=2026,
+        vacation_type=vacation_type,
+    )
+    await create_vacation(
+        employee=employee,
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 2),
+        days_count=2,
+        vacation_year=2026,
+        vacation_type=vacation_type,
+        is_cancelled=True,
+    )
+    await create_vacation(
+        employee=employee,
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 2),
+        days_count=2,
+        vacation_year=2026,
+        vacation_type=vacation_type,
+        is_deleted=True,
+    )
 
-    @pytest.mark.asyncio
-    async def test_override_zero(self, repo, mock_db):
-        """override = 0 должно дать 0, а не 28"""
-        emp = MagicMock()
-        emp.vacation_days_override = 0
-        mock_db.execute = AsyncMock(side_effect=[
-            MagicMock(scalar_one_or_none=MagicMock(return_value=emp)),
-            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
-            MagicMock(all=MagicMock(return_value=[])),
-        ])
+    repo = VacationRepository()
+    used_days = await repo.get_used_days(db_session, employee.id, 2026, vacation_type=vacation_type)
 
-        result = await repo.get_vacation_balance(mock_db, 1, 2026)
-        assert result["available_days"] == 0
+    assert used_days == 8
 
-    @pytest.mark.asyncio
-    async def test_override_value(self, repo, mock_db):
-        emp = MagicMock()
-        emp.vacation_days_override = 35
-        mock_db.execute = AsyncMock(side_effect=[
-            MagicMock(scalar_one_or_none=MagicMock(return_value=emp)),
-            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
-            MagicMock(all=MagicMock(return_value=[])),
-        ])
 
-        result = await repo.get_vacation_balance(mock_db, 1, 2026)
-        assert result["available_days"] == 35
+async def test_get_vacation_balance_returns_zero_for_missing_employee(db_session):
+    repo = VacationRepository()
+
+    balance = await repo.get_vacation_balance(db_session, employee_id=999999)
+
+    assert balance == {
+        "available_days": 0,
+        "used_days": 0,
+        "remaining_days": 0,
+        "vacation_type_breakdown": {},
+    }
+
+
+async def test_get_vacation_balance_uses_closed_periods_and_type_breakdown(
+    db_session,
+    create_employee,
+    create_vacation,
+    create_vacation_period,
+):
+    employee = await create_employee(contract_start=date(2023, 1, 15))
+
+    await create_vacation_period(
+        employee=employee,
+        period_start=date(2023, 1, 15),
+        period_end=date(2024, 1, 14),
+        main_days=24,
+        additional_days=5,
+        used_days=29,
+        used_days_auto=10,
+        used_days_manual=19,
+        remaining_days=0,
+        year_number=1,
+    )
+    await create_vacation_period(
+        employee=employee,
+        period_start=date(2024, 1, 15),
+        period_end=date(2025, 1, 14),
+        main_days=24,
+        additional_days=0,
+        used_days=14,
+        used_days_auto=8,
+        used_days_manual=6,
+        remaining_days=10,
+        year_number=2,
+    )
+
+    await create_vacation(
+        employee=employee,
+        start_date=date(2024, 6, 1),
+        end_date=date(2024, 6, 10),
+        days_count=10,
+        vacation_year=2024,
+        vacation_type="integration-work",
+    )
+    await create_vacation(
+        employee=employee,
+        start_date=date(2024, 8, 15),
+        end_date=date(2024, 8, 18),
+        days_count=4,
+        vacation_year=2024,
+        vacation_type="integration-extra",
+    )
+    await create_vacation(
+        employee=employee,
+        start_date=date(2024, 9, 1),
+        end_date=date(2024, 9, 2),
+        days_count=2,
+        vacation_year=2024,
+        vacation_type="integration-deleted",
+        is_deleted=True,
+    )
+
+    repo = VacationRepository()
+    balance = await repo.get_vacation_balance(db_session, employee.id)
+
+    assert balance["available_days"] == 53
+    assert balance["used_days"] == 43
+    assert balance["remaining_days"] == 10
+    assert balance["vacation_type_breakdown"] == {
+        "integration-work": 10,
+        "integration-extra": 4,
+    }
+
+
+async def test_get_vacation_balance_accrues_open_current_period(
+    db_session,
+    create_employee,
+    create_vacation,
+    create_vacation_period,
+):
+    today = date.today()
+    period_start = date(today.year, 1, 1)
+    period_end = period_start + relativedelta(years=1) - relativedelta(days=1)
+    vacation_type = "integration-accrual"
+
+    employee = await create_employee(contract_start=period_start)
+    await create_vacation_period(
+        employee=employee,
+        period_start=period_start,
+        period_end=period_end,
+        main_days=24,
+        additional_days=0,
+        used_days=0,
+        remaining_days=None,
+        year_number=1,
+    )
+    await create_vacation(
+        employee=employee,
+        start_date=period_start + relativedelta(months=1),
+        end_date=period_start + relativedelta(months=1, days=2),
+        days_count=3,
+        vacation_year=today.year,
+        vacation_type=vacation_type,
+    )
+
+    months_passed = relativedelta(today, period_start).years * 12 + relativedelta(today, period_start).months
+    if relativedelta(today, period_start).days > 0:
+        months_passed += 1
+    expected_available = round(24 / 12 * months_passed)
+
+    repo = VacationRepository()
+    balance = await repo.get_vacation_balance(db_session, employee.id)
+
+    assert balance["available_days"] == expected_available
+    assert balance["used_days"] == 3
+    assert balance["remaining_days"] == expected_available - 3
+    assert balance["vacation_type_breakdown"] == {vacation_type: 3}
+
+
+async def test_get_employee_vacation_history_splits_cross_year_vacation_and_attaches_order_number(
+    db_session,
+    create_employee,
+    create_order,
+    create_vacation,
+):
+    today = date.today()
+    current_year = today.year
+    previous_year = current_year - 1
+
+    employee = await create_employee(contract_start=date(previous_year, 1, 15))
+    order = await create_order(
+        employee=employee,
+        order_number="42",
+        order_date=date(current_year, 1, 5),
+    )
+    await create_vacation(
+        employee=employee,
+        order_id=order.id,
+        start_date=date(previous_year, 12, 28),
+        end_date=date(current_year, 1, 5),
+        days_count=9,
+        vacation_year=previous_year,
+        vacation_type="integration-history",
+    )
+
+    repo = VacationRepository()
+    history = await repo.get_employee_vacation_history(db_session, employee.id)
+
+    current_year_entry = next(item for item in history["years"] if item["year"] == current_year)
+    previous_year_entry = next(item for item in history["years"] if item["year"] == previous_year)
+
+    assert history["employee_id"] == employee.id
+    assert history["contract_start"] == str(employee.contract_start)
+    assert current_year_entry["used_days"] == 5
+    assert current_year_entry["vacations"][0]["days_count"] == 5
+    assert current_year_entry["vacations"][0]["order_number"] == "42"
+    assert previous_year_entry["used_days"] == 4
