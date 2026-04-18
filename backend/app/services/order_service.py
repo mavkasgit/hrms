@@ -3,37 +3,198 @@ import os
 import re
 from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from docx import Document
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import EmployeeNotFoundError, OrderNotFoundError
+from app.core.exceptions import DuplicateError, EmployeeNotFoundError, HRMSException, OrderNotFoundError
 from app.core.logging import get_audit_logger
 from app.models.employee import Employee
 from app.models.order import Order
+from app.models.order_type import OrderType
 from app.repositories.employee_repository import EmployeeRepository
 from app.repositories.order_repository import OrderRepository
+from app.repositories.order_type_repository import OrderTypeRepository
 from app.schemas.order import OrderCreate
-from app.utils.file_helpers import (
-    ORDER_TYPES,
-    TEMPLATE_MAP,
-    extract_name_parts,
-    get_order_type_short,
-    get_template_filename,
-)
+from app.schemas.order_type import OrderTypeCreate, OrderTypeUpdate
 
 audit_logger = get_audit_logger()
+
+DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
+    {
+        "code": "hire",
+        "name": "Прием на работу",
+        "show_in_orders_page": True,
+        "template_filename": "prikaz_priem.docx",
+        "field_schema": [
+            {"key": "hire_date", "label": "Дата приема", "type": "date", "required": False},
+            {"key": "contract_end", "label": "Конец контракта", "type": "date", "required": False},
+            {"key": "trial_end", "label": "Конец испытательного срока", "type": "date", "required": False},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+    },
+    {
+        "code": "dismissal",
+        "name": "Увольнение",
+        "show_in_orders_page": True,
+        "template_filename": "prikaz_uvolnenie.docx",
+        "field_schema": [
+            {"key": "dismissal_date", "label": "Дата увольнения", "type": "date", "required": False},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+    },
+    {
+        "code": "transfer",
+        "name": "Перевод",
+        "show_in_orders_page": True,
+        "template_filename": "prikaz_perevod.docx",
+        "field_schema": [
+            {"key": "transfer_date", "label": "Дата перевода", "type": "date", "required": False},
+            {"key": "transfer_reason", "label": "Основание", "type": "textarea", "required": False},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+    },
+    {
+        "code": "contract_extension",
+        "name": "Продление контракта",
+        "show_in_orders_page": True,
+        "template_filename": "prikaz_prodlenie_kontrakta.docx",
+        "field_schema": [
+            {"key": "contract_new_end", "label": "Новая дата конца контракта", "type": "date", "required": False},
+            {"key": "trial_end", "label": "Конец испытательного срока", "type": "date", "required": False},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+    },
+    {
+        "code": "vacation_paid",
+        "name": "Отпуск трудовой",
+        "show_in_orders_page": False,
+        "template_filename": "prikaz_otpusk_trudovoy.docx",
+        "field_schema": [
+            {"key": "vacation_start", "label": "Дата начала", "type": "date", "required": True},
+            {"key": "vacation_end", "label": "Дата окончания", "type": "date", "required": True},
+            {"key": "vacation_days", "label": "Количество дней", "type": "number", "required": True},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+    },
+    {
+        "code": "vacation_unpaid",
+        "name": "Отпуск за свой счет",
+        "show_in_orders_page": False,
+        "template_filename": "prikaz_otpusk_svoy_schet.docx",
+        "field_schema": [
+            {"key": "vacation_start", "label": "Дата начала", "type": "date", "required": True},
+            {"key": "vacation_end", "label": "Дата окончания", "type": "date", "required": True},
+            {"key": "vacation_days", "label": "Количество дней", "type": "number", "required": True},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+    },
+]
 
 
 class OrderService:
     def __init__(self):
         self.order_repo = OrderRepository()
+        self.order_type_repo = OrderTypeRepository()
         self.employee_repo = EmployeeRepository()
 
-    def get_order_types(self) -> list[str]:
-        return ORDER_TYPES
+    async def ensure_default_order_types(self, db: AsyncSession) -> list[OrderType]:
+        existing = await self.order_type_repo.list_all(db)
+        existing_by_code = {item.code: item for item in existing}
+        changed = False
+
+        for item in DEFAULT_ORDER_TYPES:
+            current = existing_by_code.get(item["code"])
+            if not current:
+                created = await self.order_type_repo.create(db, item)
+                existing_by_code[created.code] = created
+                changed = True
+                continue
+
+            updates: dict[str, Any] = {}
+            for key in ("name", "show_in_orders_page", "template_filename", "field_schema", "filename_pattern"):
+                if getattr(current, key) != item.get(key):
+                    updates[key] = item.get(key)
+            if updates:
+                await self.order_type_repo.update(db, current, updates)
+                changed = True
+
+        if changed:
+            await db.commit()
+
+        return list(existing_by_code.values())
+
+    async def get_order_types(
+        self,
+        db: AsyncSession,
+        active_only: bool = True,
+        show_in_orders_page: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        await self.ensure_default_order_types(db)
+        items = await self.order_type_repo.list_all(
+            db,
+            active_only=active_only,
+            show_in_orders_page=show_in_orders_page,
+        )
+        return [self._serialize_order_type(item) for item in items]
+
+    async def get_order_type(self, db: AsyncSession, order_type_id: int) -> OrderType:
+        await self.ensure_default_order_types(db)
+        order_type = await self.order_type_repo.get_by_id(db, order_type_id)
+        if not order_type:
+            raise HRMSException("Тип приказа не найден", "order_type_not_found", status_code=404)
+        return order_type
+
+    async def get_order_type_by_code(self, db: AsyncSession, code: str) -> OrderType:
+        await self.ensure_default_order_types(db)
+        order_type = await self.order_type_repo.get_by_code(db, code)
+        if not order_type:
+            raise HRMSException("Тип приказа не найден", "order_type_not_found", status_code=404)
+        return order_type
+
+    async def create_order_type(self, db: AsyncSession, data: OrderTypeCreate) -> dict[str, Any]:
+        await self.ensure_default_order_types(db)
+        if await self.order_type_repo.get_by_code(db, data.code):
+            raise DuplicateError(f"Тип приказа с кодом {data.code} уже существует", "duplicate_order_type_code")
+        if await self.order_type_repo.get_by_name(db, data.name):
+            raise DuplicateError(f"Тип приказа с названием {data.name} уже существует", "duplicate_order_type_name")
+
+        created = await self.order_type_repo.create(db, data.model_dump())
+        await db.commit()
+        return self._serialize_order_type(created)
+
+    async def update_order_type(self, db: AsyncSession, order_type_id: int, data: OrderTypeUpdate) -> dict[str, Any]:
+        order_type = await self.get_order_type(db, order_type_id)
+        payload = data.model_dump(exclude_unset=True)
+
+        new_name = payload.get("name")
+        if new_name and new_name != order_type.name:
+            existing = await self.order_type_repo.get_by_name(db, new_name)
+            if existing and existing.id != order_type.id:
+                raise DuplicateError(f"Тип приказа с названием {new_name} уже существует", "duplicate_order_type_name")
+
+        updated = await self.order_type_repo.update(db, order_type, payload)
+        await db.commit()
+        return self._serialize_order_type(updated)
+
+    async def delete_order_type(self, db: AsyncSession, order_type_id: int) -> None:
+        order_type = await self.get_order_type(db, order_type_id)
+        order_count = await self.order_type_repo.count_orders(db, order_type_id)
+        if order_count > 0:
+            raise HRMSException(
+                "Нельзя удалить тип приказа, который уже используется",
+                "order_type_in_use",
+                status_code=409,
+            )
+
+        template_path = self._get_template_path(order_type)
+        if template_path.exists():
+            template_path.unlink()
+
+        await self.order_type_repo.delete(db, order_type)
+        await db.commit()
 
     async def get_next_number(self, db: AsyncSession, year: Optional[int] = None) -> str:
         y = year or date.today().year
@@ -50,52 +211,27 @@ class OrderService:
         sort_by: Optional[str] = None,
         sort_order: str = "desc",
         year: Optional[int] = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         items, total = await self.order_repo.get_all(
-            db, page=page, per_page=per_page, sort_by=sort_by, sort_order=sort_order, year=year
+            db,
+            page=page,
+            per_page=per_page,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            year=year,
         )
         total_pages = max(1, (total + per_page - 1) // per_page)
-        result_items = []
-        for order in items:
-            employee = await self.employee_repo.get_by_id(db, order.employee_id)
-            result_items.append({
-                "id": order.id,
-                "order_number": order.order_number,
-                "order_type": order.order_type,
-                "employee_id": order.employee_id,
-                "employee_name": employee.name if employee else None,
-                "order_date": order.order_date,
-                "created_date": order.created_date,
-                "file_path": order.file_path,
-                "notes": order.notes,
-            })
         return {
-            "items": result_items,
+            "items": [self._serialize_order(order) for order in items],
             "total": total,
             "page": page,
             "per_page": per_page,
             "total_pages": total_pages,
         }
 
-    async def get_recent(
-        self, db: AsyncSession, limit: int = 10, year: Optional[int] = None
-    ) -> list[dict]:
+    async def get_recent(self, db: AsyncSession, limit: int = 10, year: Optional[int] = None) -> list[dict[str, Any]]:
         items = await self.order_repo.get_recent(db, limit=limit, year=year)
-        result = []
-        for order in items:
-            employee = await self.employee_repo.get_by_id(db, order.employee_id)
-            result.append({
-                "id": order.id,
-                "order_number": order.order_number,
-                "order_type": order.order_type,
-                "employee_id": order.employee_id,
-                "employee_name": employee.name if employee else None,
-                "order_date": order.order_date,
-                "created_date": order.created_date,
-                "file_path": order.file_path,
-                "notes": order.notes,
-            })
-        return result
+        return [self._serialize_order(order) for order in items]
 
     async def get_by_id(self, db: AsyncSession, order_id: int) -> Order:
         order = await self.order_repo.get_by_id(db, order_id)
@@ -104,6 +240,7 @@ class OrderService:
         return order
 
     async def create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
+        await self.ensure_default_order_types(db)
         if db.in_transaction():
             return await self._do_create_order(db, data)
         async with db.begin():
@@ -113,31 +250,39 @@ class OrderService:
         if data.order_number:
             order_number = data.order_number.strip()
         else:
-            year = data.order_date.year
-            order_number = await self.order_repo.get_next_order_number(db, year)
+            order_number = await self.order_repo.get_next_order_number(db, data.order_date.year)
 
         employee = await self.employee_repo.get_by_id(db, data.employee_id)
         if not employee:
             raise EmployeeNotFoundError(data.employee_id)
 
+        if not data.order_type_id:
+            raise HRMSException("Не передан order_type_id", "order_type_not_found", status_code=422)
+
+        order_type = await self.order_type_repo.get_by_id(db, data.order_type_id)
+        if not order_type or not order_type.is_active:
+            raise HRMSException("Активный тип приказа не найден", "order_type_not_found", status_code=404)
+
         year_dir = Path(settings.ORDERS_PATH) / str(data.order_date.year)
         year_dir.mkdir(parents=True, exist_ok=True)
 
-        file_path = await self._generate_document(order_number, data, employee, year_dir)
+        file_path = await self._generate_document(order_number, data, employee, order_type, year_dir)
 
-        order = await self.order_repo.create(db, {
-            "order_number": order_number,
-            "order_type": data.order_type,
-            "employee_id": data.employee_id,
-            "order_date": data.order_date,
-            "file_path": file_path,
-            "notes": data.notes,
-        })
+        order = await self.order_repo.create(
+            db,
+            {
+                "order_number": order_number,
+                "order_type_id": order_type.id,
+                "employee_id": data.employee_id,
+                "order_date": data.order_date,
+                "file_path": file_path,
+                "notes": data.notes,
+                "extra_fields": data.extra_fields,
+            },
+        )
 
-        # Логирование в общий журнал
         audit_logger.info(
-            f"ORDER CREATED: number={order_number}, type={data.order_type}, "
-            f"employee_id={data.employee_id}, employee_name={employee.name}",
+            f"ORDER CREATED: number={order_number}, type={order_type.name}, employee_id={data.employee_id}, employee_name={employee.name}",
             extra={
                 "employee_id": data.employee_id,
                 "employee_name": employee.name,
@@ -146,12 +291,12 @@ class OrderService:
                 "order_id": order.id,
                 "details": {
                     "order_number": order_number,
-                    "order_type": data.order_type,
+                    "order_type_name": order_type.name,
+                    "order_type_code": order_type.code,
                     "order_date": str(data.order_date),
                 },
-            }
+            },
         )
-
         return order
 
     async def _generate_document(
@@ -159,12 +304,12 @@ class OrderService:
         order_number: str,
         data: OrderCreate,
         employee: Employee,
+        order_type: OrderType,
         year_dir: Path,
     ) -> str:
-        template_filename = get_template_filename(data.order_type)
-        template_path = Path(settings.TEMPLATES_PATH) / template_filename if template_filename else None
+        template_path = self._get_template_path(order_type)
 
-        if template_path and template_path.exists():
+        if template_path.exists():
             doc = await asyncio.wait_for(
                 asyncio.to_thread(Document, str(template_path)),
                 timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
@@ -172,263 +317,147 @@ class OrderService:
         else:
             doc = Document()
             doc.add_heading(f"Приказ №{order_number}", level=1)
-            doc.add_paragraph(f"Тип: {data.order_type}")
+            doc.add_paragraph(f"Тип: {order_type.name}")
             doc.add_paragraph(f"Дата: {data.order_date.strftime('%d.%m.%Y')}")
             doc.add_paragraph(f"Сотрудник: {employee.name}")
-            doc.add_paragraph(f"Табельный номер: {employee.tab_number}")
-            doc.add_paragraph(f"Подразделение: {employee.department_id}")
-            doc.add_paragraph(f"Должность: {employee.position_id}")
 
-        replacements = self._prepare_replacements(order_number, data, employee)
+        replacements = self._prepare_replacements(order_number, data, employee, order_type)
         await asyncio.wait_for(
             asyncio.to_thread(self._replace_placeholders, doc, replacements),
             timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
         )
 
-        last_name, initials = extract_name_parts(employee.name)
-        order_type_short = get_order_type_short(data.order_type)
-        day = data.order_date.strftime("%d")
-        month = data.order_date.strftime("%m")
-        filename = f"Приказ_№{order_number}_к_{day}_{month}_{order_type_short}_{last_name}_{initials}.docx"
+        filename = self._build_filename(order_number, order_type, replacements)
         file_path = year_dir / filename
 
         await asyncio.wait_for(
             asyncio.to_thread(doc.save, str(file_path)),
             timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
         )
-
         return str(file_path)
 
     def _prepare_replacements(
-        self, order_number: str, data: OrderCreate, employee: Employee
+        self,
+        order_number: str,
+        data: OrderCreate,
+        employee: Employee,
+        order_type: OrderType,
     ) -> dict[str, str]:
         full_name = employee.name
         name_parts = full_name.split()
         last_name = name_parts[0] if name_parts else "Unknown"
+        first_name = name_parts[1] if len(name_parts) > 1 else ""
+        middle_name = name_parts[2] if len(name_parts) > 2 else ""
+        initials = "_".join([p[0] for p in name_parts[1:]]) if len(name_parts) > 1 else ""
         initials_dots = " ".join([f"{p[0]}." for p in name_parts[1:]]) if len(name_parts) > 1 else ""
-        initials_underscore = "_".join([p[0] for p in name_parts[1:]]) if len(name_parts) > 1 else ""
         initials_nospace = "".join([f"{p[0]}." for p in name_parts[1:]]) if len(name_parts) > 1 else ""
 
-        full_name_upper = full_name.upper()
-        full_name_title = full_name.title()
-        last_name_upper = last_name.upper()
-        rest_parts = name_parts[1:]
-        rest_title = " ".join([p.capitalize() for p in rest_parts]) if rest_parts else ""
-        full_name_last_caps = f"{last_name_upper} {rest_title}".strip()
+        position_name = str(employee.position.name if employee.position else "")
+        position_cap = position_name.capitalize() if position_name else ""
 
-        short_name = f"{last_name} {initials_dots}".strip()
-        initials_before = f"{initials_dots} {last_name}".strip()
-        last_name_then_initials = f"{last_name} {initials_nospace}".strip()
+        # Gender-aware acknowledgment
+        oznak = "Ознакомлена" if employee.gender == "female" else "Ознакомлен"
 
-        order_date = data.order_date
-        order_type_lower = data.order_type.lower()
-
-        hire_date_str = employee.hire_date.strftime("%d.%m.%Y") if employee.hire_date else ""
-        contract_start_str = employee.contract_start.strftime("%d.%m.%Y") if employee.contract_start else ""
-
-        if employee.gender == "М":
-            oznak = "ознакомлен"
-        elif employee.gender == "Ж":
-            oznak = "ознакомлена"
-        else:
-            oznak = "ознакомлен(а)"
-
-        extra = data.extra_fields or {}
-
-        def fmt_extra(key: str) -> str:
-            val = extra.get(key, "")
-            if val and key.endswith("_date") or key in ("hire_order_date", "dismissal_date", "vacation_start", "vacation_end", "sick_leave_start", "sick_leave_end", "transfer_date", "contract_new_end", "contract_end", "trial_end"):
-                try:
-                    return datetime.strptime(str(val), "%Y-%m-%d").strftime("%d.%m.%Y")
-                except ValueError:
-                    return str(val)
-            return str(val) if val != "" else ""
-
-        return {
+        replacements = {
             "{order_number}": order_number,
-            "{order_date}": order_date.strftime("%d.%m.%Y"),
-            "{order_type_lower}": order_type_lower,
+            "{order_date}": data.order_date.strftime("%d.%m.%Y"),
+            "{order_type_name}": order_type.name,
+            "{order_type_code}": order_type.code,
+            "{order_type_lower}": order_type.name.lower(),
             "{full_name}": full_name,
-            "{full_name_upper}": full_name_upper,
-            "{full_name_title}": full_name_title,
-            "{full_name_last_caps}": full_name_last_caps,
-            "{last_name_upper}": last_name_upper,
-            "{short_name}": short_name,
-            "{initials_before}": initials_before,
-            "{last_name_then_initials}": last_name_then_initials,
-            "{position}": str(employee.position_id) if employee.position_id else "",
-            "{position_cap}": str(employee.position_id) if employee.position_id else "",
-            "{department}": str(employee.department_id) if employee.department_id else "",
-            "{tab_number}": str(employee.tab_number),
-            "{contract_end}": fmt_extra("contract_end"),
-            "{trial_end}": fmt_extra("trial_end"),
-            "{contract_number}": "332/1",
-            "{hire_date}": hire_date_str,
-            "{contract_start}": contract_start_str,
-            "{hire_order_date}": fmt_extra("hire_date"),
-            "{dismissal_date}": fmt_extra("dismissal_date"),
-            "{vacation_start}": fmt_extra("vacation_start"),
-            "{vacation_end}": fmt_extra("vacation_end"),
-            "{vacation_days}": str(extra.get("vacation_days", "")),
-            "{sick_leave_start}": fmt_extra("sick_leave_start"),
-            "{sick_leave_end}": fmt_extra("sick_leave_end"),
-            "{sick_leave_days}": str(extra.get("sick_leave_days", "")),
-            "{transfer_date}": fmt_extra("transfer_date"),
-            "{contract_new_end}": fmt_extra("contract_new_end"),
+            "{full_name_upper}": full_name.upper(),
+            "{full_name_title}": full_name.title(),
+            "{full_name_last_caps}": f"{last_name.upper()} {first_name} {middle_name}".strip(),
+            "{last_name_upper}": last_name.upper(),
+            "{short_name}": f"{last_name} {initials_dots}".strip(),
+            "{initials_before}": f"{initials_dots} {last_name}".strip(),
+            "{last_name_then_initials}": f"{last_name} {initials_nospace}".strip(),
+            "{last_name}": last_name,
+            "{initials}": initials,
+            "{tab_number}": str(employee.tab_number or ""),
+            "{department}": str(employee.department.name if employee.department else ""),
+            "{position}": position_name.lower(),
+            "{position_cap}": position_cap,
+            "{hire_date}": employee.hire_date.strftime("%d.%m.%Y") if employee.hire_date else "",
+            "{contract_start}": employee.contract_start.strftime("%d.%m.%Y") if employee.contract_start else "",
+            "{hire_order_date}": employee.hire_date.strftime("%d.%m.%Y") if employee.hire_date else "",
             "{oznak_gender}": oznak,
+            "{notes}": data.notes or "",
         }
 
-    def _replace_placeholders(self, doc: Document, replacements: dict[str, str]):
+        for key, value in (data.extra_fields or {}).items():
+            replacements[f"{{{key}}}"] = self._format_placeholder_value(value)
+
+        return replacements
+
+    def _replace_placeholders(self, doc: Document, replacements: dict[str, str]) -> None:
         for paragraph in doc.paragraphs:
             self._replace_in_runs(paragraph.runs, replacements)
-
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
                         self._replace_in_runs(paragraph.runs, replacements)
 
-        for section in doc.sections:
-            for hdr in [section.header, section.first_page_header, section.even_page_header]:
-                for paragraph in hdr.paragraphs:
-                    self._replace_in_runs(paragraph.runs, replacements)
-                for table in hdr.tables:
-                    for row in table.rows:
-                        for cell in row.cells:
-                            for paragraph in cell.paragraphs:
-                                self._replace_in_runs(paragraph.runs, replacements)
-            
-            for ftr in [section.footer, section.first_page_footer, section.even_page_footer]:
-                for paragraph in ftr.paragraphs:
-                    self._replace_in_runs(paragraph.runs, replacements)
-                for table in ftr.tables:
-                    for row in table.rows:
-                        for cell in row.cells:
-                            for paragraph in cell.paragraphs:
-                                self._replace_in_runs(paragraph.runs, replacements)
-
-    def _replace_in_runs(self, runs: list, replacements: dict[str, str]):
+    def _replace_in_runs(self, runs: list[Any], replacements: dict[str, str]) -> None:
         if not runs:
             return
-
         full_text = "".join(run.text for run in runs if run.text)
-
         for key, value in replacements.items():
             full_text = full_text.replace(key, value)
-
         runs[0].text = full_text
         for i in range(1, len(runs)):
             runs[i].text = ""
 
-    async def sync_orders(self, db: AsyncSession, year: Optional[int] = None) -> dict:
+    async def sync_orders(self, db: AsyncSession, year: Optional[int] = None) -> dict[str, Any]:
         years_to_check = [year] if year else await self.order_repo.get_years(db)
         if not years_to_check:
             return {"message": "Нет данных для синхронизации", "deleted": 0, "added": 0}
 
         deleted = 0
-        added = 0
-
         for y in years_to_check:
             year_dir = Path(settings.ORDERS_PATH) / str(y)
             if not year_dir.exists():
                 continue
 
-            files_on_disk = set()
-            for f in year_dir.iterdir():
-                if f.is_file() and f.suffix == ".docx":
-                    files_on_disk.add(f.name)
-
+            files_on_disk = {f.name for f in year_dir.iterdir() if f.is_file() and f.suffix == ".docx"}
             orders_in_db = await self.order_repo.get_all(db, page=1, per_page=10000, year=y)
             db_files = {Path(o.file_path).name for o in orders_in_db[0] if o.file_path}
-
-            orphan_files = files_on_disk - db_files
-            for filename in orphan_files:
-                match = re.match(
-                    r"Приказ_№(\d+)_к_(\d+)_(\d+)_(.+?)_(.+?)_(.+?)\.docx",
-                    filename,
-                )
-                if match:
-                    order_number = match.group(1)
-                    order_date_str = f"{match.group(3)}.{match.group(2)}.{y}"
-                    order_type_raw = match.group(4)
-                    last_name = match.group(5)
-                    initials = match.group(6)
-
-                    order_type = None
-                    for ot, short in {
-                        "Прием на работу": "прием",
-                        "Увольнение": "увольнение",
-                        "Отпуск трудовой": "отпуск",
-                        "Отпуск за свой счет": "отпуск_бс",
-                        "Больничный": "больничный",
-                        "Перевод": "перевод",
-                        "Продление контракта": "продление",
-                    }.items():
-                        if short == order_type_raw:
-                            order_type = ot
-                            break
-
-                    if order_type:
-                        try:
-                            order_date = datetime.strptime(order_date_str, "%d.%m.%Y").date()
-                        except ValueError:
-                            continue
-
-                        search_q = f"{last_name}"
-                        employees = await self.employee_repo.search(db, search_q)
-                        if employees:
-                            emp = employees[0]
-                            file_path = str(year_dir / filename)
-                            await self.order_repo.create(db, {
-                                "order_number": order_number,
-                                "order_type": order_type,
-                                "employee_id": emp.id,
-                                "order_date": order_date,
-                                "file_path": file_path,
-                                "notes": "Добавлено при синхронизации",
-                            })
-                            added += 1
-
             missing_files = db_files - files_on_disk
             for order in orders_in_db[0]:
                 if order.file_path and Path(order.file_path).name in missing_files:
                     await self.order_repo.soft_delete(db, order.id, "sync")
                     deleted += 1
 
-        return {
-            "message": f"Синхронизация завершена: добавлено {added}, удалено {deleted}",
-            "deleted": deleted,
-            "added": added,
-        }
+        await db.commit()
+        return {"message": f"Синхронизация завершена: удалено {deleted}, добавление новых файлов отключено", "deleted": deleted, "added": 0}
 
-    def get_template_info(self, order_type: str) -> dict:
-        filename = get_template_filename(order_type)
-        if not filename:
-            return {"name": "", "order_type": order_type, "exists": False}
+    async def upload_template(self, db: AsyncSession, order_type_id: int, filename: str, content: bytes) -> dict[str, Any]:
+        order_type = await self.get_order_type(db, order_type_id)
+        safe_filename = self._normalize_template_filename(filename, order_type.code)
+        template_path = Path(settings.TEMPLATES_PATH) / safe_filename
+        template_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(template_path, "wb") as file_obj:
+            file_obj.write(content)
+        await self.order_type_repo.update(db, order_type, {"template_filename": safe_filename})
+        await db.commit()
+        return self._serialize_order_type(order_type)
 
-        file_path = Path(settings.TEMPLATES_PATH) / filename
-        info = {
-            "name": filename,
-            "order_type": order_type,
-            "exists": file_path.exists(),
-        }
-        if file_path.exists():
-            stat = file_path.stat()
-            info["file_size"] = stat.st_size
-            info["last_modified"] = datetime.fromtimestamp(stat.st_mtime).isoformat()
-        return info
+    async def delete_template(self, db: AsyncSession, order_type_id: int) -> None:
+        order_type = await self.get_order_type(db, order_type_id)
+        template_path = self._get_template_path(order_type)
+        if template_path.exists():
+            template_path.unlink()
+        await self.order_type_repo.update(db, order_type, {"template_filename": None})
+        await db.commit()
 
-    def list_all_templates(self) -> list[dict]:
-        result = []
-        for order_type in ORDER_TYPES:
-            result.append(self.get_template_info(order_type))
-        return result
-
-    def get_template_variables(self) -> list[dict]:
+    def get_template_variables(self) -> list[dict[str, str]]:
         """Возвращает список всех доступных переменных для шаблонов с описаниями"""
         return [
             {"name": "{order_number}", "description": "Номер приказа", "category": "Приказ"},
             {"name": "{order_date}", "description": "Дата приказа (ДД.ММ.ГГГГ)", "category": "Приказ"},
+            {"name": "{order_type_name}", "description": "Название типа приказа", "category": "Приказ"},
+            {"name": "{order_type_code}", "description": "Код типа приказа", "category": "Приказ"},
             {"name": "{order_type_lower}", "description": "Тип приказа строчными буквами", "category": "Приказ"},
 
             {"name": "{full_name}", "description": "ФИО полностью", "category": "ФИО"},
@@ -461,85 +490,110 @@ class OrderService:
             {"name": "{contract_new_end}", "description": "Новая дата конца контракта (для «Продление контракта»)", "category": "Даты"},
 
             {"name": "{oznak_gender}", "description": "Ознакомлен/ознакомлена (по полу сотрудника)", "category": "Прочее"},
+            {"name": "{notes}", "description": "Комментарий к приказу", "category": "Прочее"},
 
-            {"name": "{contract_number}", "description": "Номер контракта", "category": "Прочее"},
+            {"name": "{<key из field_schema>}", "description": "Любое дополнительное поле типа приказа", "category": "Поля типа"},
         ]
 
     async def cancel_order(self, db: AsyncSession, order_id: int, user_id: str) -> bool:
-        """Отмена приказа + отмена связанных отпусков."""
         order = await self.order_repo.get_by_id(db, order_id)
         if not order:
             raise OrderNotFoundError(order_id)
-
-        # Отменяем связанные отпуска
-        from app.models.vacation import Vacation
-        from sqlalchemy import select as sa_select
-        vac_result = await db.execute(
-            sa_select(Vacation).where(
-                Vacation.order_id == order_id,
-                Vacation.is_deleted == False,
-                Vacation.is_cancelled == False,
-            )
-        )
-        vacations = list(vac_result.scalars().all())
-        for vac in vacations:
-            vac.is_cancelled = True
-            from datetime import datetime
-            vac.cancelled_at = datetime.now()
-            vac.cancelled_by = user_id
-
-        # Отменяем приказ
         await self.order_repo.cancel(db, order_id, user_id)
         await db.commit()
         return True
 
     async def hard_delete_order(self, db: AsyncSession, order_id: int) -> bool:
-        """Полное удаление приказа + связанных отпусков."""
         order = await self.order_repo.get_by_id(db, order_id)
         if not order:
             raise OrderNotFoundError(order_id)
 
         employee = await self.employee_repo.get_by_id(db, order.employee_id)
-
-        # Удаляем связанные отпуска
-        from app.models.vacation import Vacation
-        from sqlalchemy import select as sa_select
-        vac_result = await db.execute(
-            sa_select(Vacation).where(
-                Vacation.order_id == order_id,
-                Vacation.is_deleted == False,
-            )
-        )
-        vacations = list(vac_result.scalars().all())
-        for vac in vacations:
-            await db.delete(vac)
-
-        # Удаляем файл приказа
         if order.file_path:
-            import os
             try:
                 os.remove(order.file_path)
             except OSError:
                 pass
 
-        # Удаляем приказ
         await self.order_repo.hard_delete(db, order_id)
         await db.commit()
 
-        # Логирование в общий журнал
         audit_logger.info(
-            f"ORDER DELETED: id={order_id}, number={order.order_number}, type={order.order_type}, "
-            f"employee_id={order.employee_id}, employee_name={employee.name if employee else None}",
-            extra={
-                "employee_id": order.employee_id,
-                "employee_name": employee.name if employee else None,
-                "action": "order_deleted",
-                "user_id": "system",
-                "order_id": order_id,
-            }
+            f"ORDER DELETED: id={order_id}, number={order.order_number}, type={order.order_type.name if order.order_type else ''}, employee_id={order.employee_id}, employee_name={employee.name if employee else None}",
+            extra={"employee_id": order.employee_id, "employee_name": employee.name if employee else None, "action": "order_deleted", "user_id": "system", "order_id": order_id},
         )
-
         return True
+
+    def _serialize_order(self, order: Order) -> dict[str, Any]:
+        employee_name = order.employee.name if getattr(order, "employee", None) else None
+        order_type_name = order.order_type.name if getattr(order, "order_type", None) else ""
+        order_type_code = order.order_type.code if getattr(order, "order_type", None) else ""
+        return {
+            "id": order.id,
+            "order_number": order.order_number,
+            "order_type_id": order.order_type_id,
+            "order_type_name": order_type_name,
+            "order_type_code": order_type_code,
+            "employee_id": order.employee_id,
+            "employee_name": employee_name,
+            "order_date": order.order_date,
+            "created_date": order.created_date,
+            "file_path": order.file_path,
+            "notes": order.notes,
+            "extra_fields": order.extra_fields or {},
+        }
+
+    def _serialize_order_type(self, order_type: OrderType) -> dict[str, Any]:
+        template_path = self._get_template_path(order_type)
+        result = {
+            "id": order_type.id,
+            "code": order_type.code,
+            "name": order_type.name,
+            "is_active": order_type.is_active,
+            "show_in_orders_page": order_type.show_in_orders_page,
+            "template_filename": order_type.template_filename,
+            "field_schema": order_type.field_schema or [],
+            "filename_pattern": order_type.filename_pattern,
+            "template_exists": template_path.exists(),
+            "created_at": order_type.created_at,
+            "updated_at": order_type.updated_at,
+        }
+        if template_path.exists():
+            stat = template_path.stat()
+            result["file_size"] = stat.st_size
+            result["last_modified"] = datetime.fromtimestamp(stat.st_mtime).isoformat()
+        else:
+            result["file_size"] = None
+            result["last_modified"] = None
+        return result
+
+    def _get_template_path(self, order_type: OrderType) -> Path:
+        if not order_type.template_filename:
+            return Path(settings.TEMPLATES_PATH) / "__missing__.docx"
+        return Path(settings.TEMPLATES_PATH) / order_type.template_filename
+
+    def _normalize_template_filename(self, original_filename: str, code: str) -> str:
+        ext = Path(original_filename).suffix or ".docx"
+        return f"order_type_{code}{ext.lower()}"
+
+    def _build_filename(self, order_number: str, order_type: OrderType, replacements: dict[str, str]) -> str:
+        pattern = order_type.filename_pattern or "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx"
+        filename = pattern
+        for key, value in replacements.items():
+            filename = filename.replace(key, value)
+        if not filename.lower().endswith(".docx"):
+            filename = f"{filename}.docx"
+        sanitized = re.sub(r'[<>:"/\\\\|?*]+', "_", filename).strip()
+        return sanitized or f"order_{order_number}.docx"
+
+    def _format_placeholder_value(self, value: Any) -> str:
+        if isinstance(value, str):
+            try:
+                parsed = datetime.strptime(value, "%Y-%m-%d")
+                return parsed.strftime("%d.%m.%Y")
+            except ValueError:
+                return value
+        return str(value)
 
 
 order_service = OrderService()

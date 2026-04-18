@@ -14,7 +14,7 @@ from app.api.exception_handlers import hrms_exception_handler
 from app.api.health import router as health_router
 from app.api.employees import router as employees_router
 from app.api.orders import router as orders_router
-from app.api.templates import router as templates_router
+from app.api.order_types import router as order_types_router
 from app.api.vacations import router as vacations_router
 from app.api.sick_leaves import router as sick_leaves_router
 from app.api.vacation_periods_api import router as vacation_periods_router
@@ -70,7 +70,7 @@ async def global_exception_handler(request, exc):
 app.include_router(health_router, prefix="/api")
 app.include_router(employees_router, prefix="/api")
 app.include_router(orders_router, prefix="/api")
-app.include_router(templates_router, prefix="/api")
+app.include_router(order_types_router, prefix="/api")
 app.include_router(vacations_router, prefix="/api")
 app.include_router(sick_leaves_router, prefix="/api")
 app.include_router(vacation_periods_router, prefix="/api")

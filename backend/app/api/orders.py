@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -5,6 +6,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.exceptions import HRMSException
 from app.schemas.order import (
     OrderCreate,
     OrderListResponse,
@@ -13,6 +15,7 @@ from app.schemas.order import (
     OrderSettingsUpdate,
     OrderSyncResponse,
 )
+from app.schemas.order_type import OrderTypeListResponse
 from app.services.order_service import order_service
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -22,19 +25,19 @@ def _get_current_user_stub() -> str:
     return "admin"
 
 
-@router.get("/types")
+@router.get("/types", response_model=OrderTypeListResponse)
 async def get_order_types(
+    active_only: bool = Query(True),
+    db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    return {"types": order_service.get_order_types()}
-
-
-@router.get("/template/{order_type}")
-async def get_template_info(
-    order_type: str,
-    current_user: str = Depends(_get_current_user_stub),
-):
-    return order_service.get_template_info(order_type)
+    return {
+        "items": await order_service.get_order_types(
+            db,
+            active_only=active_only,
+            show_in_orders_page=True,
+        )
+    }
 
 
 @router.get("/next-number")
@@ -54,18 +57,7 @@ async def create_order(
     current_user: str = Depends(_get_current_user_stub),
 ):
     order = await order_service.create_order(db, data)
-    employee = await order_service.employee_repo.get_by_id(db, order.employee_id)
-    return {
-        "id": order.id,
-        "order_number": order.order_number,
-        "order_type": order.order_type,
-        "employee_id": order.employee_id,
-        "employee_name": employee.name if employee else None,
-        "order_date": order.order_date,
-        "created_date": order.created_date,
-        "file_path": order.file_path,
-        "notes": order.notes,
-    }
+    return order_service._serialize_order(order)
 
 
 @router.get("/recent")
@@ -116,9 +108,8 @@ async def get_order(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    """Получить приказ по ID."""
     order = await order_service.get_by_id(db, order_id)
-    return order
+    return order_service._serialize_order(order)
 
 
 @router.get("/settings", response_model=OrderSettingsResponse)
@@ -126,6 +117,7 @@ async def get_order_settings(
     current_user: str = Depends(_get_current_user_stub),
 ):
     from app.core.config import settings
+
     return {
         "orders_path": settings.ORDERS_PATH,
         "templates_path": settings.TEMPLATES_PATH,
@@ -138,6 +130,7 @@ async def update_order_settings(
     current_user: str = Depends(_get_current_user_stub),
 ):
     from app.core.config import settings
+
     if data.orders_path:
         settings.ORDERS_PATH = data.orders_path
     if data.templates_path:
@@ -163,9 +156,6 @@ async def preview_order(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    from pathlib import Path
-    from app.core.exceptions import HRMSException
-
     order = await order_service.get_by_id(db, order_id)
     if not order.file_path:
         raise HRMSException("Файл приказа не найден", "order_file_not_found", status_code=404)
@@ -176,11 +166,11 @@ async def preview_order(
 
     try:
         import mammoth
+
         with open(file_path, "rb") as docx_file:
             result = mammoth.convert_to_html(docx_file)
             html_content = result.value
-        
-        # Wrap in a styled HTML page
+
         full_html = f"""
         <!DOCTYPE html>
         <html>
@@ -200,13 +190,6 @@ async def preview_order(
                     padding: 40px;
                     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
                 }}
-                h1, h2, h3 {{
-                    color: #333;
-                }}
-                p {{
-                    line-height: 1.6;
-                    color: #444;
-                }}
             </style>
         </head>
         <body>
@@ -217,8 +200,8 @@ async def preview_order(
         </html>
         """
         return HTMLResponse(content=full_html)
-    except Exception as e:
-        raise HRMSException(f"Ошибка при конвертации: {str(e)}", "conversion_error", status_code=500)
+    except Exception as exc:
+        raise HRMSException(f"Ошибка при конвертации: {str(exc)}", "conversion_error", status_code=500)
 
 
 @router.get("/{order_id}/download")
@@ -227,10 +210,6 @@ async def download_order(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    from pathlib import Path
-    from fastapi.responses import FileResponse
-    from app.core.exceptions import HRMSException
-
     order = await order_service.get_by_id(db, order_id)
     if not order.file_path:
         raise HRMSException("Файл приказа не найден", "order_file_not_found", status_code=404)
@@ -253,7 +232,7 @@ async def cancel_order(
     current_user: str = Depends(_get_current_user_stub),
 ):
     await order_service.cancel_order(db, order_id, current_user)
-    return {"message": "Приказ отменён"}
+    return {"message": "Приказ отменен"}
 
 
 @router.delete("/{order_id}")
@@ -263,4 +242,4 @@ async def delete_order(
     current_user: str = Depends(_get_current_user_stub),
 ):
     await order_service.hard_delete_order(db, order_id)
-    return {"message": "Приказ удалён"}
+    return {"message": "Приказ удален"}

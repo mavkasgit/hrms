@@ -1,10 +1,17 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.employee import Employee
-from app.schemas.vacation_period import VacationPeriodResponse, VacationPeriodBalance, VacationPeriodAdjust, VacationPeriodUsedDays, VacationPeriodBreakdown
+from app.models.vacation import Vacation
+from app.models.vacation_period import VacationPeriod
+from app.schemas.vacation_period import (
+    VacationPeriodAdjust,
+    VacationPeriodBalance,
+    VacationPeriodBreakdown,
+    VacationPeriodUsedDays,
+)
 from app.services.vacation_period_service import vacation_period_service
 
 router = APIRouter(prefix="/vacation-periods", tags=["vacation-periods"])
@@ -20,12 +27,14 @@ async def list_vacation_periods(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    """Список периодов сотрудника с балансом каждого. Авто-создание недостающих."""
     result = await db.execute(select(Employee).where(Employee.id == employee_id))
-    emp = result.scalar_one_or_none()
-    if emp and emp.contract_start:
+    employee = result.scalar_one_or_none()
+    if employee and employee.contract_start:
         await vacation_period_service.ensure_periods_for_employee(
-            db, employee_id, emp.contract_start, emp.additional_vacation_days
+            db,
+            employee_id,
+            employee.contract_start,
+            employee.additional_vacation_days,
         )
     return await vacation_period_service.get_employee_periods(db, employee_id)
 
@@ -36,62 +45,42 @@ async def get_period_balance(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    """Баланс конкретного периода."""
     return await vacation_period_service.get_balance(db, period_id)
 
 
-@router.get("/{period_id}/breakdown")
+@router.get("/{period_id}/breakdown", response_model=VacationPeriodBreakdown)
 async def get_period_breakdown(
     period_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    """Детализация списанных дней по периоду."""
-    from app.schemas.vacation_period import VacationPeriodBreakdown
-    from app.models.vacation_period import VacationPeriod
-    from app.models.order import Order
-    from sqlalchemy import select
-    
     result = await db.execute(select(VacationPeriod).where(VacationPeriod.id == period_id))
     period = result.scalar_one_or_none()
-    
     if not period:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Период не найден")
-    
-    order_ids_list = []
-    if period.order_ids:
-        order_ids_list = [int(x) for x in period.order_ids.split(',') if x]
-    
-    # Получаем номера приказов
-    order_numbers = {}
-    if order_ids_list:
-        orders_result = await db.execute(
-            select(Order.id, Order.order_number).where(Order.id.in_(order_ids_list))
+
+    vac_result = await db.execute(
+        select(Vacation).where(
+            Vacation.employee_id == period.employee_id,
+            Vacation.start_date >= period.period_start,
+            Vacation.start_date <= period.period_end,
+            Vacation.is_deleted == False,
         )
-        order_numbers = {row[0]: row[1] for row in orders_result.all()}
-    
-    auto_details = []
-    for oid in order_ids_list:
-        from app.models.vacation import Vacation
-        vac_result = await db.execute(
-            select(Vacation).where(Vacation.order_id == oid, Vacation.is_deleted == False)
-        )
-        vac = vac_result.scalar_one_or_none()
-        if vac:
-            auto_details.append({
-                "order_id": oid,
-                "order_number": order_numbers.get(oid),
-                "vacation_id": vac.id,
-                "start_date": str(vac.start_date),
-                "end_date": str(vac.end_date),
-                "days": vac.days_count,
-                "vacation_type": vac.vacation_type,
-            })
-    
+    )
+
     return VacationPeriodBreakdown(
-        auto=auto_details,
-        manual_days=period.used_days_manual or 0
+        auto=[
+            {
+                "vacation_id": vacation.id,
+                "start_date": str(vacation.start_date),
+                "end_date": str(vacation.end_date),
+                "days": vacation.days_count,
+                "vacation_type": vacation.vacation_type,
+                "comment": vacation.comment,
+            }
+            for vacation in vac_result.scalars().all()
+        ],
+        manual_days=period.used_days_manual or 0,
     )
 
 
@@ -102,7 +91,6 @@ async def adjust_period_additional_days(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    """Обновить additional_days для периода."""
     return await vacation_period_service.adjust_additional_days(db, period_id, data.additional_days)
 
 
@@ -113,17 +101,18 @@ async def set_period_used_days(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    """Установить used_days напрямую (для overclose сценария)."""
     from app.repositories.vacation_period_repository import VacationPeriodRepository
+
     repo = VacationPeriodRepository()
     period = await repo.get_by_id(db, period_id)
     if not period:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Период отпусков не найден")
+
     period.used_days = data.used_days
     await db.flush()
     await db.commit()
     await db.refresh(period)
+
     total = period.main_days + period.additional_days
     return VacationPeriodBalance(
         period_id=period.id,
@@ -134,7 +123,12 @@ async def set_period_used_days(
         additional_days=period.additional_days,
         total_days=total,
         used_days=period.used_days,
+        used_days_auto=period.used_days_auto or 0,
+        used_days_manual=period.used_days_manual or 0,
+        order_ids=period.order_ids,
+        order_numbers=period.order_numbers,
         remaining_days=total - period.used_days,
+        vacations=[],
     )
 
 
@@ -144,7 +138,6 @@ async def close_period(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    """Закрыть период полностью - списать все оставшиеся дни."""
     return await vacation_period_service.close_period(db, period_id)
 
 
@@ -155,6 +148,5 @@ async def partial_close_period(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    """Частично закрыть период - оставить указанное количество дней."""
     remaining_days = data.get("remaining_days", 0)
     return await vacation_period_service.partial_close_period(db, period_id, remaining_days)

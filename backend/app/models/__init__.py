@@ -8,6 +8,7 @@ class Base(DeclarativeBase):
 # Import all models so Alembic can discover them
 from app.models.employee import Employee, EmployeeAuditLog  # noqa: F401, E402
 from app.models.order import Order, OrderSequence  # noqa: F401, E402
+from app.models.order_type import OrderType  # noqa: F401, E402
 from app.models.vacation import Vacation  # noqa: F401, E402
 from app.models.vacation_period import VacationPeriod  # noqa: F401, E402
 from app.models.vacation_plan import VacationPlan  # noqa: F401, E402

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, ForeignKey, Boolean
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -29,3 +29,4 @@ class Vacation(Base):
     cancelled_by = Column(String(100))
 
     employee = relationship("Employee", back_populates="vacations")
+    order = relationship("Order")

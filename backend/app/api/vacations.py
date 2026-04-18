@@ -41,6 +41,7 @@ class VacationHistoryItem(BaseModel):
     vacation_type: str
     order_number: Optional[str]
     comment: Optional[str]
+    is_cancelled: bool
 
 
 class YearGroup(BaseModel):
@@ -106,6 +107,8 @@ async def get_vacations(
                 "days_count": v.days_count,
                 "comment": v.comment,
                 "created_at": str(v.created_at) if v.created_at else None,
+                "order_id": v.order_id,
+                "order_number": v.order.order_number if getattr(v, "order", None) else None,
             }
             for v in items
         ],
@@ -162,6 +165,8 @@ async def get_vacation(
         "days_count": vacation.days_count,
         "comment": vacation.comment,
         "created_at": str(vacation.created_at) if vacation.created_at else None,
+        "order_id": vacation.order_id,
+        "order_number": vacation.order.order_number if getattr(vacation, "order", None) else None,
     }
 
 

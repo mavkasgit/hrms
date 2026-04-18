@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select, func, and_, extract
+from sqlalchemy import and_, extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.order import Order
 
@@ -20,7 +21,7 @@ class OrderRepository:
         conditions = [Order.is_deleted == False, Order.is_cancelled == False]
 
         if year:
-            conditions.append(extract("year", Order.created_date) == year)
+            conditions.append(extract("year", Order.order_date) == year)
 
         where_clause = and_(*conditions) if conditions else True
 
@@ -33,6 +34,7 @@ class OrderRepository:
 
         data_query = (
             select(Order)
+            .options(selectinload(Order.employee), selectinload(Order.order_type))
             .where(where_clause)
             .order_by(order_expr)
             .offset((page - 1) * per_page)
@@ -52,12 +54,13 @@ class OrderRepository:
         conditions = [Order.is_deleted == False, Order.is_cancelled == False]
 
         if year:
-            conditions.append(extract("year", Order.created_date) == year)
+            conditions.append(extract("year", Order.order_date) == year)
 
         where_clause = and_(*conditions) if conditions else True
 
         result = await db.execute(
             select(Order)
+            .options(selectinload(Order.employee), selectinload(Order.order_type))
             .where(where_clause)
             .order_by(Order.created_date.desc())
             .limit(limit)
@@ -86,10 +89,10 @@ class OrderRepository:
 
     async def get_years(self, db: AsyncSession) -> list[int]:
         result = await db.execute(
-            select(extract("year", Order.created_date).label("yr"))
+            select(extract("year", Order.order_date).label("yr"))
             .where(Order.is_deleted == False)
             .distinct()
-            .order_by(func.extract("year", Order.created_date).desc())
+            .order_by(func.extract("year", Order.order_date).desc())
         )
         return [int(row[0]) for row in result.all() if row[0]]
 
@@ -98,7 +101,8 @@ class OrderRepository:
         db.add(order)
         await db.flush()
         await db.refresh(order)
-        return order
+        hydrated = await self.get_by_id(db, order.id, include_deleted=True)
+        return hydrated or order
 
     async def soft_delete(self, db: AsyncSession, order_id: int, user_id: str) -> bool:
         order = await self.get_by_id(db, order_id)
@@ -134,7 +138,11 @@ class OrderRepository:
         conditions = [Order.id == order_id]
         if not include_deleted:
             conditions.append(Order.is_deleted == False)
-        result = await db.execute(select(Order).where(and_(*conditions)))
+        result = await db.execute(
+            select(Order)
+            .options(selectinload(Order.employee), selectinload(Order.order_type))
+            .where(and_(*conditions))
+        )
         return result.scalar_one_or_none()
 
     async def get_cancelled_orders(self, db: AsyncSession, page: int = 1, per_page: int = 20) -> tuple[list[Order], int]:

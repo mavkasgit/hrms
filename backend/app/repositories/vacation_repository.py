@@ -8,7 +8,6 @@ from sqlalchemy.orm import selectinload
 from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
 from app.models.employee import Employee
-from app.models.order import Order
 
 
 class VacationRepository:
@@ -22,7 +21,7 @@ class VacationRepository:
     async def get_by_id(self, db: AsyncSession, id: int) -> Optional[Vacation]:
         result = await db.execute(
             select(Vacation)
-            .options(selectinload(Vacation.employee))
+            .options(selectinload(Vacation.employee), selectinload(Vacation.order))
             .where(Vacation.id == id, Vacation.is_deleted == False)
         )
         return result.scalar_one_or_none()
@@ -38,7 +37,7 @@ class VacationRepository:
     ) -> tuple[list[Vacation], int]:
         query = (
             select(Vacation)
-            .options(selectinload(Vacation.employee))
+            .options(selectinload(Vacation.employee), selectinload(Vacation.order))
             .where(Vacation.is_deleted == False)
         )
 
@@ -65,6 +64,7 @@ class VacationRepository:
     ) -> list[Vacation]:
         query = (
             select(Vacation)
+            .options(selectinload(Vacation.order))
             .where(Vacation.employee_id == employee_id, Vacation.is_deleted == False)
             .order_by(Vacation.start_date.desc())
         )
@@ -489,20 +489,13 @@ class VacationRepository:
         # Получаем все отпуска сотрудника (включая отменённые)
         vac_result = await db.execute(
             select(Vacation)
+            .options(selectinload(Vacation.order))
             .where(Vacation.employee_id == employee_id, Vacation.is_deleted == False)
             .order_by(Vacation.start_date.desc())
         )
         vacations = list(vac_result.scalars().all())
 
         # Получаем номера приказов
-        order_ids = [v.order_id for v in vacations if v.order_id is not None]
-        order_map: dict[int, str] = {}
-        if order_ids:
-            order_result = await db.execute(
-                select(Order.id, Order.order_number).where(Order.id.in_(order_ids))
-            )
-            order_map = {row[0]: row[1] for row in order_result.all()}
-
         years = []
         for year in range(current_year, start_year - 1, -1):
             year_vacations = []
@@ -523,7 +516,7 @@ class VacationRepository:
                             "end_date": str(v.end_date),
                             "days_count": days_in_year if v.start_date.year != year else v.days_count,
                             "vacation_type": v.vacation_type,
-                            "order_number": order_map.get(v.order_id) if v.order_id else None,
+                            "order_number": v.order.order_number if getattr(v, "order", None) else None,
                             "comment": v.comment,
                             "is_cancelled": v.is_cancelled,
                         })
