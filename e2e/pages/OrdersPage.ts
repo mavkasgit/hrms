@@ -1,5 +1,5 @@
 import { Page, Locator, expect } from '@playwright/test'
-import type { OrderFormData, OrderType, OrderExtraFields } from '../types'
+import type { OrderFormData, OrderTypeName, OrderExtraFields } from '../types'
 
 /**
  * Page Object для страницы приказов
@@ -67,7 +67,7 @@ export class OrdersPage {
     }
   }
 
-  async selectOrderType(type: OrderType) {
+  async selectOrderType(type: OrderTypeName) {
     await this.orderTypeCombobox.click()
     await this.page.getByRole('option', { name: type }).click()
     await this.page.waitForTimeout(300)
@@ -294,7 +294,7 @@ export class OrdersPage {
     await expect(this.rows).toHaveCount(count, { timeout: 5000 })
   }
 
-  async expectOrderTypeForRow(row: Locator, expectedType: OrderType) {
+  async expectOrderTypeForRow(row: Locator, expectedType: OrderTypeName) {
     const actualType = await this.getOrderTypeForRow(row)
     expect(actualType).toContain(expectedType)
   }

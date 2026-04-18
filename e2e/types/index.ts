@@ -1,10 +1,9 @@
 /**
- * TypeScript типы для всех сущностей HRMS
- * Используются в Page Objects, фикстурах и тестах
+ * TypeScript типы для e2e HRMS.
  */
 
 // ============================================================================
-// СОТРУДНИКИ
+// EMPLOYEES
 // ============================================================================
 
 export type Gender = 'М' | 'Ж'
@@ -67,7 +66,7 @@ export interface EmployeeFormData {
 }
 
 // ============================================================================
-// ПОДРАЗДЕЛЕНИЯ
+// DEPARTMENTS
 // ============================================================================
 
 export interface Department {
@@ -92,7 +91,7 @@ export interface DepartmentFormData {
 }
 
 // ============================================================================
-// ДОЛЖНОСТИ
+// POSITIONS
 // ============================================================================
 
 export interface Position {
@@ -112,10 +111,10 @@ export interface PositionFormData {
 }
 
 // ============================================================================
-// ПРИКАЗЫ
+// ORDERS
 // ============================================================================
 
-export type OrderType =
+export type OrderTypeName =
   | 'Прием на работу'
   | 'Увольнение'
   | 'Отпуск трудовой'
@@ -124,24 +123,34 @@ export type OrderType =
   | 'Перевод'
   | 'Продление контракта'
 
+export type OrderTypeCode =
+  | 'hire'
+  | 'dismissal'
+  | 'transfer'
+  | 'contract_extension'
+  | 'vacation_paid'
+  | 'vacation_unpaid'
+
+export interface OrderTypeRecord {
+  id: number
+  code: OrderTypeCode | string
+  name: OrderTypeName | string
+  is_active: boolean
+  show_in_orders_page: boolean
+  template_filename?: string | null
+  field_schema?: Array<{ key: string; label: string; type: string; required: boolean }>
+}
+
 export interface OrderExtraFields {
-  // Прием на работу
   hire_date?: string
   contract_end?: string
   probation_end?: string
-
-  // Увольнение
   termination_date?: string
-
-  // Отпуск/Больничный
   vacation_start?: string
   vacation_end?: string
   vacation_days?: number
-
-  // Перевод
   transfer_date?: string
-
-  // Продление контракта
+  transfer_reason?: string
   new_contract_end?: string
   new_probation_end?: string
 }
@@ -149,26 +158,30 @@ export interface OrderExtraFields {
 export interface Order {
   id: number
   order_number: string
+  order_type_id: number
+  order_type_name: string
+  order_type_code: string
   employee_id: number
   employee_name: string
-  order_type: OrderType
   order_date: string
   extra_fields: OrderExtraFields
-  created_at: string
+  created_date?: string
   file_url?: string
+  file_path?: string
 }
 
 export interface OrderFormData {
   employee_id: number
   employee_name?: string
-  order_type: OrderType
+  order_type_id?: number
+  order_type?: OrderTypeName
   order_date: string
   order_number?: string
   extra_fields: OrderExtraFields
 }
 
 // ============================================================================
-// ОТПУСКА
+// VACATIONS
 // ============================================================================
 
 export type VacationType = 'Трудовой' | 'За свой счет'
@@ -195,7 +208,7 @@ export interface VacationFormData {
 }
 
 // ============================================================================
-// ПЕРИОДЫ ОТПУСКОВ
+// VACATION PERIODS
 // ============================================================================
 
 export interface VacationPeriod {
@@ -220,7 +233,7 @@ export interface VacationBalance {
 }
 
 // ============================================================================
-// ПРАЗДНИКИ
+// HOLIDAYS
 // ============================================================================
 
 export interface Holiday {
@@ -238,7 +251,7 @@ export interface HolidayFormData {
 }
 
 // ============================================================================
-// ТЕГИ
+// TAGS
 // ============================================================================
 
 export type TagCategory = 'department' | 'position' | 'employee'
@@ -258,11 +271,11 @@ export interface TagFormData {
 }
 
 // ============================================================================
-// ШАБЛОНЫ ПРИКАЗОВ
+// TEMPLATES
 // ============================================================================
 
 export interface Template {
-  order_type: OrderType
+  order_type: OrderTypeName
   has_template: boolean
   file_size?: number
   last_modified?: string
@@ -297,7 +310,7 @@ export interface ExpiringContract {
 }
 
 // ============================================================================
-// ОБЩИЕ ТИПЫ
+// COMMON
 // ============================================================================
 
 export interface ApiListResponse<T> {

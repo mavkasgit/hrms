@@ -1,10 +1,5 @@
 import { test as base, expect } from '@playwright/test'
-import type { DepartmentData, PositionData, EmployeeData, VacationData, OrderData } from '../types'
-
-/**
- * Общие фикстуры для lifecycle тестов
- * Автоматическая очистка данных после каждого теста
- */
+import type { OrderTypeRecord } from '../types'
 
 export type DepartmentData = {
   id: number
@@ -49,7 +44,9 @@ export type VacationData = {
 export type OrderData = {
   id: number
   employee_id: number
-  order_type: string
+  order_type_id: number
+  order_type_name: string
+  order_type_code: string
   order_date: string
   order_number?: string
   extra_fields?: Record<string, any>
@@ -57,12 +54,38 @@ export type OrderData = {
 
 const API_BASE = 'http://127.0.0.1:8000'
 
-/** Генератор уникального суффикса */
 export function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
 }
 
-/** Создание подразделения */
+async function getOrderTypes(request: any): Promise<OrderTypeRecord[]> {
+  const resp = await request.get(`${API_BASE}/api/order-types`)
+  expect(resp.status()).toBe(200)
+  const data = await resp.json()
+  return data.items || []
+}
+
+async function getOrderTypeId(
+  request: any,
+  params: { code?: string; name?: string; visibleOnly?: boolean }
+): Promise<number> {
+  const types = await getOrderTypes(request)
+  const found = types.find((item) => {
+    if (params.visibleOnly && !item.show_in_orders_page) {
+      return false
+    }
+    if (params.code) {
+      return item.code === params.code
+    }
+    if (params.name) {
+      return item.name === params.name
+    }
+    return false
+  })
+  expect(found, `Order type not found: ${params.code ?? params.name}`).toBeTruthy()
+  return found!.id
+}
+
 async function createDepartment(
   request: any,
   name: string,
@@ -75,7 +98,6 @@ async function createDepartment(
   return resp.json()
 }
 
-/** Создание должности */
 async function createPosition(
   request: any,
   name: string,
@@ -88,7 +110,6 @@ async function createPosition(
   return resp.json()
 }
 
-/** Создание сотрудника */
 async function createEmployee(
   request: any,
   departmentId: number,
@@ -118,7 +139,6 @@ async function createEmployee(
   return resp.json()
 }
 
-/** Создание отпуска */
 async function createVacation(
   request: any,
   employeeId: number,
@@ -138,72 +158,59 @@ async function createVacation(
   return resp.json()
 }
 
-/** Создание приказа */
 async function createOrder(
   request: any,
   employeeId: number,
   overrides: Record<string, any> = {}
 ): Promise<OrderData> {
+  const defaultOrderTypeId = await getOrderTypeId(request, { code: 'transfer', visibleOnly: true })
   const orderData = {
     employee_id: employeeId,
-    order_type: 'Отпуск трудовой',
+    order_type_id: defaultOrderTypeId,
     order_date: '2024-06-15',
     ...overrides,
   }
 
   const resp = await request.post(`${API_BASE}/api/orders`, { data: orderData })
+  console.log('[DEBUG] Order create status:', resp.status())
+  console.log('[DEBUG] Order create body:', await resp.text())
   expect([200, 201]).toContain(resp.status())
   return resp.json()
 }
 
-/** Удаление подразделения */
 async function deleteDepartment(request: any, id: number): Promise<void> {
   const resp = await request.delete(`${API_BASE}/api/departments/${id}`)
   expect([200, 204]).toContain(resp.status())
 }
 
-/** Удаление должности */
 async function deletePosition(request: any, id: number): Promise<void> {
   const resp = await request.delete(`${API_BASE}/api/positions/${id}`)
   expect([200, 204]).toContain(resp.status())
 }
 
-/** Удаление сотрудника (hard delete) */
 async function deleteEmployee(request: any, id: number): Promise<void> {
-  // Сначала удаляем все vacation_plans сотрудника
   const plansResp = await request.get(`${API_BASE}/api/vacation-plans?employee_id=${id}`)
   if (plansResp.status() === 200) {
     const plans = await plansResp.json()
-    console.log(`[deleteEmployee] Найдено ${plans.length} vacation_plans для сотрудника ${id}`)
     for (const plan of plans) {
-      console.log(`[deleteEmployee] Удаляем vacation_plan ${plan.id} (месяц ${plan.month})...`)
-      const deleteResp = await request.delete(`${API_BASE}/api/vacation-plans/${plan.id}`)
-      if (deleteResp.status() === 200 || deleteResp.status() === 204) {
-        console.log(`[deleteEmployee] vacation_plan ${plan.id} удалён`)
-      } else {
-        console.error(`[deleteEmployee] Не удалось удалить vacation_plan ${plan.id}: ${deleteResp.status()}`)
-      }
+      await request.delete(`${API_BASE}/api/vacation-plans/${plan.id}`)
     }
   }
-  // Теперь удаляем сотрудника с параметром confirm=true
-  console.log(`[deleteEmployee] Удаляем сотрудника ${id}...`)
+
   const resp = await request.delete(`${API_BASE}/api/employees/${id}?hard=true&confirm=true`)
   expect([200, 204]).toContain(resp.status())
 }
 
-/** Удаление отпуска */
 async function deleteVacation(request: any, id: number): Promise<void> {
   const resp = await request.delete(`${API_BASE}/api/vacations/${id}`)
   expect([200, 204]).toContain(resp.status())
 }
 
-/** Удаление приказа */
 async function deleteOrder(request: any, id: number): Promise<void> {
   const resp = await request.delete(`${API_BASE}/api/orders/${id}?hard=true&confirm=true`)
   expect([200, 204]).toContain(resp.status())
 }
 
-/** Типы для трекинга созданных ресурсов */
 type CreatedResources = {
   departments: number[]
   positions: number[]
@@ -212,7 +219,6 @@ type CreatedResources = {
   orders: number[]
 }
 
-/** Расширение тестов с общими фикстурами */
 type CommonFixtures = {
   apiOps: {
     uid: () => string
@@ -221,6 +227,7 @@ type CommonFixtures = {
     createEmployee: (deptId: number, posId: number, overrides?: Record<string, any>) => Promise<EmployeeData>
     createVacation: (empId: number, overrides?: Record<string, any>) => Promise<VacationData>
     createOrder: (empId: number, overrides?: Record<string, any>) => Promise<OrderData>
+    getOrderTypeId: (params: { code?: string; name?: string; visibleOnly?: boolean }) => Promise<number>
   }
 }
 
@@ -261,48 +268,26 @@ export const test = base.extend<CommonFixtures>({
         resources.orders.push(order.id)
         return order
       },
+      getOrderTypeId: async (params: { code?: string; name?: string; visibleOnly?: boolean }) => {
+        return getOrderTypeId(request, params)
+      },
     })
 
-    // Cleanup: удаляем ресурсы в обратном порядке
-    console.log('[CLEANUP] Начинаем очистку...')
-    
     for (const orderId of resources.orders) {
-      console.log(`[CLEANUP] Удаляем приказ ${orderId}...`)
-      await deleteOrder(request, orderId).catch((err) => {
-        console.error(`[CLEANUP] Ошибка при удалении приказа ${orderId}:`, err.message)
-      })
-      console.log(`[CLEANUP] Приказ ${orderId} удалён`)
+      await deleteOrder(request, orderId).catch(() => {})
     }
     for (const vacationId of resources.vacations) {
-      console.log(`[CLEANUP] Удаляем отпуск ${vacationId}...`)
-      await deleteVacation(request, vacationId).catch((err) => {
-        console.error(`[CLEANUP] Ошибка при удалении отпуска ${vacationId}:`, err.message)
-      })
-      console.log(`[CLEANUP] Отпуск ${vacationId} удалён`)
+      await deleteVacation(request, vacationId).catch(() => {})
     }
     for (const empId of resources.employees) {
-      console.log(`[CLEANUP] Удаляем сотрудника ${empId}...`)
-      await deleteEmployee(request, empId).catch((err) => {
-        console.error(`[CLEANUP] Ошибка при удалении сотрудника ${empId}:`, err.message)
-      })
-      console.log(`[CLEANUP] Сотрудник ${empId} удалён`)
+      await deleteEmployee(request, empId).catch(() => {})
     }
     for (const posId of resources.positions) {
-      console.log(`[CLEANUP] Удаляем должность ${posId}...`)
-      await deletePosition(request, posId).catch((err) => {
-        console.error(`[CLEANUP] Ошибка при удалении должности ${posId}:`, err.message)
-      })
-      console.log(`[CLEANUP] Должность ${posId} удалена`)
+      await deletePosition(request, posId).catch(() => {})
     }
     for (const deptId of resources.departments) {
-      console.log(`[CLEANUP] Удаляем отдел ${deptId}...`)
-      await deleteDepartment(request, deptId).catch((err) => {
-        console.error(`[CLEANUP] Ошибка при удалении отдела ${deptId}:`, err.message)
-      })
-      console.log(`[CLEANUP] Отдел ${deptId} удалён`)
+      await deleteDepartment(request, deptId).catch(() => {})
     }
-    
-    console.log('[CLEANUP] Очистка завершена!')
   }
 })
 

@@ -1,4 +1,4 @@
-import type { OrderType, OrderExtraFields } from '../types'
+import type { OrderTypeName, OrderExtraFields } from '../types'
 
 /**
  * Хелперы для работы с приказами
@@ -13,7 +13,7 @@ export function uid(): string {
 /** Тестовые данные для разных типов приказов */
 export type OrderTestData = {
   employee_name: string
-  order_type: OrderType
+  order_type: OrderTypeName
   order_date: string
   extra_fields: OrderExtraFields
 }
@@ -112,7 +112,7 @@ export function makeContractExtensionOrderData(employeeName: string): OrderTestD
 }
 
 /** Карта соответствия типа приказа к названиям полей UI */
-export const ORDER_FIELD_LABELS: Record<OrderType, Record<string, string>> = {
+export const ORDER_FIELD_LABELS: Record<OrderTypeName, Record<string, string>> = {
   'Прием на работу': {
     hire_date: 'Дата приема',
     contract_end: 'Конец контракта',
@@ -146,6 +146,6 @@ export const ORDER_FIELD_LABELS: Record<OrderType, Record<string, string>> = {
 }
 
 /** Получение названий полей для типа приказа */
-export function getOrderFieldLabels(orderType: OrderType): Record<string, string> {
+export function getOrderFieldLabels(orderType: OrderTypeName): Record<string, string> {
   return ORDER_FIELD_LABELS[orderType] || {}
 }

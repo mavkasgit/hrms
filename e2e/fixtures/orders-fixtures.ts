@@ -1,19 +1,40 @@
 import { test as base, expect } from '@playwright/test'
-import type { Order, OrderFormData, OrderExtraFields, OrderType } from '../types'
-
-/**
- * Фикстуры для приказов с автоматической очисткой
- * Включают методы создания, отмены, удаления приказов разных типов
- */
+import type { Order, OrderExtraFields, OrderTypeRecord } from '../types'
 
 const API_BASE = 'http://127.0.0.1:8000'
 
-/** Генератор уникачного суффикса */
 export function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
 }
 
-/** Создание сотрудника для приказов */
+async function getOrderTypes(request: any): Promise<OrderTypeRecord[]> {
+  const resp = await request.get(`${API_BASE}/api/order-types`)
+  expect(resp.status()).toBe(200)
+  const data = await resp.json()
+  return data.items || []
+}
+
+async function getOrderTypeId(
+  request: any,
+  params: { code?: string; name?: string; visibleOnly?: boolean }
+): Promise<number> {
+  const types = await getOrderTypes(request)
+  const found = types.find((item) => {
+    if (params.visibleOnly && !item.show_in_orders_page) {
+      return false
+    }
+    if (params.code) {
+      return item.code === params.code
+    }
+    if (params.name) {
+      return item.name === params.name
+    }
+    return false
+  })
+  expect(found, `Order type not found: ${params.code ?? params.name}`).toBeTruthy()
+  return found!.id
+}
+
 async function createEmployeeForOrder(request: any, overrides: Record<string, any> = {}) {
   const u = uid()
   const deptResp = await request.post(`${API_BASE}/api/departments`, {
@@ -48,20 +69,30 @@ async function createEmployeeForOrder(request: any, overrides: Record<string, an
   return empResp.json()
 }
 
-/** Создание приказа */
 async function createOrder(
   request: any,
   employeeId: number,
   data: {
-    order_type: OrderType
+    order_type_id?: number
+    order_type_code?: string
+    order_type_name?: string
     order_date: string
     order_number?: string
     extra_fields?: OrderExtraFields
   }
 ): Promise<Order> {
+  let orderTypeId = data.order_type_id
+  if (!orderTypeId) {
+    orderTypeId = await getOrderTypeId(request, {
+      code: data.order_type_code,
+      name: data.order_type_name,
+      visibleOnly: true,
+    })
+  }
+
   const orderData = {
     employee_id: employeeId,
-    order_type: data.order_type,
+    order_type_id: orderTypeId,
     order_date: data.order_date,
     extra_fields: data.extra_fields || {},
   }
@@ -71,19 +102,16 @@ async function createOrder(
   return resp.json()
 }
 
-/** Отмена приказа */
 async function cancelOrder(request: any, orderId: number): Promise<void> {
   const resp = await request.put(`${API_BASE}/api/orders/${orderId}/cancel`)
   expect([200, 204]).toContain(resp.status())
 }
 
-/** Удаление приказа */
 async function deleteOrder(request: any, orderId: number): Promise<void> {
   const resp = await request.delete(`${API_BASE}/api/orders/${orderId}?hard=true&confirm=true`)
   expect([200, 204]).toContain(resp.status())
 }
 
-/** Получение списка приказов */
 async function getOrders(request: any, filters: Record<string, any> = {}): Promise<Order[]> {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(filters)) {
@@ -95,34 +123,40 @@ async function getOrders(request: any, filters: Record<string, any> = {}): Promi
   return data.items || []
 }
 
-/** Получение приказов по типу */
-async function getOrdersByType(request: any, orderType: OrderType): Promise<Order[]> {
+async function getOrdersByType(request: any, orderTypeName: string): Promise<Order[]> {
   const orders = await getOrders(request)
-  return orders.filter(o => o.order_type === orderType)
+  return orders.filter((o) => o.order_type_name === orderTypeName)
 }
 
-/** Удаление сотрудника (hard) */
 async function deleteEmployee(request: any, employeeId: number): Promise<void> {
-  const resp = await request.delete(`${API_BASE}/api/employees/${employeeId}?hard=true`)
+  const resp = await request.delete(`${API_BASE}/api/employees/${employeeId}?hard=true&confirm=true`)
   expect([200, 204]).toContain(resp.status())
 }
 
-/** Типы для трекинга созданных ресурсов */
 type CreatedResources = {
   employees: number[]
   orders: number[]
 }
 
-/** Расширение тестов с фикстурами для приказов */
 type OrdersFixtures = {
   ordersApi: {
     uid: () => string
     createEmployee: (overrides?: Record<string, any>) => Promise<any>
-    createOrder: (employeeId: number, data: { order_type: OrderType; order_date: string; extra_fields?: OrderExtraFields }) => Promise<Order>
+    createOrder: (
+      employeeId: number,
+      data: {
+        order_type_id?: number
+        order_type_code?: string
+        order_type_name?: string
+        order_date: string
+        extra_fields?: OrderExtraFields
+      }
+    ) => Promise<Order>
     cancelOrder: (orderId: number) => Promise<void>
     deleteOrder: (orderId: number) => Promise<void>
     getOrders: (filters?: Record<string, any>) => Promise<Order[]>
-    getOrdersByType: (orderType: OrderType) => Promise<Order[]>
+    getOrdersByType: (orderTypeName: string) => Promise<Order[]>
+    getOrderTypeId: (params: { code?: string; name?: string; visibleOnly?: boolean }) => Promise<number>
     cleanup: () => Promise<void>
   }
 }
@@ -141,7 +175,7 @@ export const test = base.extend<OrdersFixtures>({
         resources.employees.push(emp.id)
         return emp
       },
-      createOrder: async (employeeId: number, data: { order_type: OrderType; order_date: string; extra_fields?: OrderExtraFields }) => {
+      createOrder: async (employeeId, data) => {
         const order = await createOrder(request, employeeId, data)
         resources.orders.push(order.id)
         return order
@@ -155,11 +189,13 @@ export const test = base.extend<OrdersFixtures>({
       getOrders: async (filters?: Record<string, any>) => {
         return getOrders(request, filters)
       },
-      getOrdersByType: async (orderType: OrderType) => {
-        return getOrdersByType(request, orderType)
+      getOrdersByType: async (orderTypeName: string) => {
+        return getOrdersByType(request, orderTypeName)
+      },
+      getOrderTypeId: async (params: { code?: string; name?: string; visibleOnly?: boolean }) => {
+        return getOrderTypeId(request, params)
       },
       cleanup: async () => {
-        // Удаление в обратном порядке
         for (const orderId of resources.orders) {
           await deleteOrder(request, orderId).catch(() => {})
         }
@@ -169,7 +205,6 @@ export const test = base.extend<OrdersFixtures>({
       },
     })
 
-    // Автоматический cleanup после каждого теста
     for (const orderId of resources.orders) {
       await deleteOrder(request, orderId).catch(() => {})
     }

@@ -16,10 +16,10 @@ from app.models.base import Base
 from app.models.department import Department
 from app.models.employee import Employee
 from app.models.order import Order
+from app.models.order_type import OrderType
 from app.models.position import Position
 from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
-
 
 DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_test"
 
@@ -29,9 +29,7 @@ def _quote_ident(value: str) -> str:
 
 
 def _build_truncate_sql() -> str:
-    table_names = ", ".join(
-        _quote_ident(table_name) for table_name in sorted(Base.metadata.tables.keys())
-    )
+    table_names = ", ".join(_quote_ident(table_name) for table_name in sorted(Base.metadata.tables.keys()))
     return f"TRUNCATE {table_names} RESTART IDENTITY CASCADE"
 
 
@@ -167,22 +165,47 @@ def create_employee(
 
 
 @pytest.fixture
+def create_order_type(db_session: AsyncSession) -> Callable[..., OrderType]:
+    async def _create(**overrides) -> OrderType:
+        order_type = OrderType(
+            code=overrides.pop("code", f"order_type_{uuid.uuid4().hex[:8]}"),
+            name=overrides.pop("name", f"Тип приказа {uuid.uuid4().hex[:6]}"),
+            is_active=overrides.pop("is_active", True),
+            template_filename=overrides.pop("template_filename", None),
+            field_schema=overrides.pop("field_schema", []),
+            filename_pattern=overrides.pop("filename_pattern", None),
+            **overrides,
+        )
+        db_session.add(order_type)
+        await db_session.flush()
+        await db_session.refresh(order_type)
+        return order_type
+
+    return _create
+
+
+@pytest.fixture
 def create_order(
     db_session: AsyncSession,
     create_employee: Callable[..., Employee],
+    create_order_type: Callable[..., OrderType],
 ) -> Callable[..., Order]:
     async def _create(**overrides) -> Order:
         employee = overrides.pop("employee", None)
+        order_type = overrides.pop("order_type_obj", None)
         if employee is None and "employee_id" not in overrides:
             employee = await create_employee()
+        if order_type is None and "order_type_id" not in overrides:
+            order_type = await create_order_type()
 
         order = Order(
             order_number=overrides.pop("order_number", f"{int(uuid.uuid4().int % 90) + 10}"),
-            order_type=overrides.pop("order_type", "Отпуск трудовой"),
+            order_type_id=overrides.pop("order_type_id", order_type.id if order_type else None),
             employee_id=overrides.pop("employee_id", employee.id if employee else None),
             order_date=overrides.pop("order_date", date(2026, 4, 1)),
             file_path=overrides.pop("file_path", None),
             notes=overrides.pop("notes", None),
+            extra_fields=overrides.pop("extra_fields", None),
             **overrides,
         )
         db_session.add(order)
@@ -210,7 +233,6 @@ def create_vacation(
             vacation_type=overrides.pop("vacation_type", "Трудовой"),
             days_count=overrides.pop("days_count", 10),
             vacation_year=overrides.pop("vacation_year", 2026),
-            order_id=overrides.pop("order_id", None),
             comment=overrides.pop("comment", None),
             **overrides,
         )

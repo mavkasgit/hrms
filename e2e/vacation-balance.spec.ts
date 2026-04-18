@@ -19,7 +19,7 @@ test.describe('Vacation Balance API tests', () => {
     const empResp = await request.post(`${API_BASE}/api/employees`, {
       data: {
         name: `Employee-${uid}`,
-        gender: 'M',
+        gender: 'М',
         birth_date: '1990-05-15',
         tab_number: Math.floor(200000 + Math.random() * 800000),
         department_id: dept.id,
@@ -30,7 +30,7 @@ test.describe('Vacation Balance API tests', () => {
         citizenship: true,
         residency: true,
         rate: 25.5,
-        payment_form: 'Time-based',
+        payment_form: 'Повременная',
       }
     })
     const emp = await empResp.json()
@@ -66,7 +66,7 @@ test.describe('Vacation Balance API tests', () => {
     const empResp = await request.post(`${API_BASE}/api/employees`, {
       data: {
         name: `Employee-${uid}`,
-        gender: 'M',
+        gender: 'М',
         birth_date: '1990-05-15',
         tab_number: Math.floor(200000 + Math.random() * 800000),
         department_id: dept.id,
@@ -77,7 +77,7 @@ test.describe('Vacation Balance API tests', () => {
         citizenship: true,
         residency: true,
         rate: 25.5,
-        payment_form: 'Time-based',
+        payment_form: 'Повременная',
       }
     })
     const emp = await empResp.json()
@@ -94,7 +94,7 @@ test.describe('Vacation Balance API tests', () => {
         employee_id: emp.id,
         start_date: '2024-06-01',
         end_date: '2024-06-03',
-        vacation_type: 'Labor',
+        vacation_type: 'Трудовой',
         order_date: '2024-05-25',
       }
     })
@@ -150,7 +150,7 @@ test.describe('Vacation Balance API tests', () => {
     const empResp = await request.post(`${API_BASE}/api/employees`, {
       data: {
         name: `Employee-${uid}`,
-        gender: 'M',
+        gender: 'М',
         birth_date: '1990-05-15',
         tab_number: Math.floor(200000 + Math.random() * 800000),
         department_id: dept.id,
@@ -161,7 +161,7 @@ test.describe('Vacation Balance API tests', () => {
         citizenship: true,
         residency: true,
         rate: 25.5,
-        payment_form: 'Time-based',
+        payment_form: 'Повременная',
         additional_vacation_days: 5,
       }
     })
@@ -204,7 +204,7 @@ test.describe('Vacation Balance API tests', () => {
     const empResp = await request.post(`${API_BASE}/api/employees`, {
       data: {
         name: `Employee-${uid}`,
-        gender: 'M',
+        gender: 'М',
         birth_date: '1990-05-15',
         tab_number: Math.floor(200000 + Math.random() * 800000),
         department_id: dept.id,
@@ -215,7 +215,7 @@ test.describe('Vacation Balance API tests', () => {
         citizenship: true,
         residency: true,
         rate: 25.5,
-        payment_form: 'Time-based',
+        payment_form: 'Повременная',
       }
     })
     const emp = await empResp.json()
@@ -259,7 +259,7 @@ test.describe('Vacation Balance API tests', () => {
     const empResp = await request.post(`${API_BASE}/api/employees`, {
       data: {
         name: `Employee-${uid}`,
-        gender: 'M',
+        gender: 'М',
         birth_date: '1990-05-15',
         tab_number: Math.floor(200000 + Math.random() * 800000),
         department_id: dept.id,
@@ -270,7 +270,7 @@ test.describe('Vacation Balance API tests', () => {
         citizenship: true,
         residency: true,
         rate: 25.5,
-        payment_form: 'Time-based',
+        payment_form: 'Повременная',
       }
     })
     const emp = await empResp.json()
@@ -314,7 +314,7 @@ test.describe('Vacation Balance API tests', () => {
     const empResp = await request.post(`${API_BASE}/api/employees`, {
       data: {
         name: `Employee-${uid}`,
-        gender: 'M',
+        gender: 'М',
         birth_date: '1990-05-15',
         tab_number: Math.floor(200000 + Math.random() * 800000),
         department_id: dept.id,
@@ -325,7 +325,7 @@ test.describe('Vacation Balance API tests', () => {
         citizenship: true,
         residency: true,
         rate: 25.5,
-        payment_form: 'Time-based',
+        payment_form: 'Повременная',
       }
     })
     const emp = await empResp.json()
@@ -366,7 +366,7 @@ test.describe('Vacation Balance API tests', () => {
     const empResp = await request.post(`${API_BASE}/api/employees`, {
       data: {
         name: `Employee-${uid}`,
-        gender: 'M',
+        gender: 'М',
         birth_date: '1990-05-15',
         tab_number: Math.floor(200000 + Math.random() * 800000),
         department_id: dept.id,
@@ -377,7 +377,7 @@ test.describe('Vacation Balance API tests', () => {
         citizenship: true,
         residency: true,
         rate: 25.5,
-        payment_form: 'Time-based',
+        payment_form: 'Повременная',
         additional_vacation_days: 7,
       }
     })
@@ -417,7 +417,7 @@ test.describe('Vacation Balance API tests', () => {
     const empResp = await request.post(`${API_BASE}/api/employees`, {
       data: {
         name: `Employee-${uid}`,
-        gender: 'M',
+        gender: 'М',
         birth_date: '1990-05-15',
         tab_number: Math.floor(200000 + Math.random() * 800000),
         department_id: dept.id,
@@ -428,7 +428,7 @@ test.describe('Vacation Balance API tests', () => {
         citizenship: true,
         residency: true,
         rate: 25.5,
-        payment_form: 'Time-based',
+        payment_form: 'Повременная',
         additional_vacation_days: 3,
       }
     })
@@ -453,7 +453,7 @@ test.describe('Vacation Balance API tests', () => {
         employee_id: emp.id,
         start_date: '2024-06-01',
         end_date: '2024-06-05',
-        vacation_type: 'Labor',
+        vacation_type: 'Трудовой',
         order_date: '2024-05-25',
       }
     })
@@ -491,7 +491,7 @@ test.describe('Vacation Balance API tests', () => {
     const empResp = await request.post(`${API_BASE}/api/employees`, {
       data: {
         name: `Employee-${uid}`,
-        gender: 'M',
+        gender: 'М',
         birth_date: '1990-05-15',
         tab_number: Math.floor(200000 + Math.random() * 800000),
         department_id: dept.id,
@@ -502,7 +502,7 @@ test.describe('Vacation Balance API tests', () => {
         citizenship: true,
         residency: true,
         rate: 25.5,
-        payment_form: 'Time-based',
+        payment_form: 'Повременная',
       }
     })
     const emp = await empResp.json()
@@ -515,7 +515,7 @@ test.describe('Vacation Balance API tests', () => {
         employee_id: emp.id,
         start_date: '2024-06-01',
         end_date: '2024-06-10',
-        vacation_type: 'Labor',
+        vacation_type: 'Трудовой',
         order_date: '2024-05-25',
       }
     })
@@ -567,7 +567,7 @@ test.describe('Vacation Balance API tests', () => {
     const empResp = await request.post(`${API_BASE}/api/employees`, {
       data: {
         name: `Employee-${uid}`,
-        gender: 'M',
+        gender: 'М',
         birth_date: '1990-05-15',
         tab_number: Math.floor(200000 + Math.random() * 800000),
         department_id: dept.id,
@@ -578,7 +578,7 @@ test.describe('Vacation Balance API tests', () => {
         citizenship: true,
         residency: true,
         rate: 25.5,
-        payment_form: 'Time-based',
+        payment_form: 'Повременная',
       }
     })
     const emp = await empResp.json()
@@ -591,7 +591,7 @@ test.describe('Vacation Balance API tests', () => {
         employee_id: emp.id,
         start_date: '2024-06-01',
         end_date: '2024-06-02',
-        vacation_type: 'Labor',
+        vacation_type: 'Трудовой',
         order_date: '2024-05-25',
       }
     })

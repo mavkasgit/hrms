@@ -1,7 +1,6 @@
 import { test as base, expect } from '@playwright/test'
 import { VacationsPage } from '../pages/VacationsPage'
 
-// Types for test data
 export type EmployeeData = {
   id: number
   name: string
@@ -42,7 +41,6 @@ export type VacationPeriodData = {
 
 const API_BASE = 'http://127.0.0.1:8000'
 
-// Helper functions for API operations
 async function createDepartment(request: any, name: string): Promise<any> {
   const resp = await request.post(`${API_BASE}/api/departments`, {
     data: { name, sort_order: 0 }
@@ -121,7 +119,7 @@ async function updateEmployee(request: any, employeeId: number, data: Record<str
 
 async function deleteVacation(request: any, vacationId: number): Promise<void> {
   const resp = await request.delete(`${API_BASE}/api/vacations/${vacationId}`)
-  expect(resp.status()).toBe(200)
+  expect([200, 204]).toContain(resp.status())
 }
 
 async function getPeriods(request: any, employeeId: number): Promise<VacationPeriodData[]> {
@@ -169,18 +167,9 @@ async function cleanupEmployee(request: any, employeeId: number): Promise<void> 
     await request.delete(`${API_BASE}/api/vacations/${vac.id}`)
   }
 
-  const orderResp = await request.get(`${API_BASE}/api/orders`, {
-    params: { employee_id: employeeId, per_page: 1000 }
-  })
-  const orders = (await orderResp.json()).items || []
-  for (const order of orders) {
-    await request.delete(`${API_BASE}/api/orders/${order.id}?hard=true&confirm=true`)
-  }
-
-  await request.delete(`${API_BASE}/api/employees/${employeeId}?hard=true`)
+  await request.delete(`${API_BASE}/api/employees/${employeeId}?hard=true&confirm=true`)
 }
 
-// Extend Playwright's test with custom fixtures
 type VacationsFixtures = {
   vacationsPage: VacationsPage
   apiOps: {
