@@ -1,14 +1,43 @@
+export interface OrderTypeFieldSchema {
+  key: string
+  label: string
+  type: "text" | "date" | "number" | "textarea"
+  required: boolean
+}
+
+export interface OrderType {
+  id: number
+  code: string
+  name: string
+  is_active: boolean
+  show_in_orders_page: boolean
+  template_filename: string | null
+  field_schema: OrderTypeFieldSchema[]
+  filename_pattern: string | null
+  template_exists: boolean
+  file_size: number | null
+  last_modified: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface OrderTypeListResponse {
+  items: OrderType[]
+}
+
 export interface Order {
   id: number
   order_number: string
-  order_type: string
+  order_type_id: number
+  order_type_name: string
+  order_type_code: string
   employee_id: number
   employee_name: string | null
-  tab_number: number | null
   order_date: string
   created_date: string | null
   file_path: string | null
   notes: string | null
+  extra_fields: Record<string, string | number>
 }
 
 export interface OrderListResponse {
@@ -21,23 +50,39 @@ export interface OrderListResponse {
 
 export interface OrderCreate {
   employee_id: number
-  order_type: string
+  order_type_id: number
   order_date: string
   order_number?: string | null
   notes?: string | null
   extra_fields?: Record<string, string | number> | null
 }
 
-export interface TemplateInfo {
+export interface OrderTypeCreate {
+  code: string
   name: string
-  order_type: string
-  exists: boolean
-  file_size: number | null
-  last_modified: string | null
+  is_active?: boolean
+  show_in_orders_page?: boolean
+  template_filename?: string | null
+  field_schema?: OrderTypeFieldSchema[]
+  filename_pattern?: string | null
 }
 
-export interface TemplateListResponse {
-  templates: TemplateInfo[]
+export interface OrderTypeUpdate {
+  name?: string
+  is_active?: boolean
+  show_in_orders_page?: boolean
+  field_schema?: OrderTypeFieldSchema[]
+  filename_pattern?: string | null
+}
+
+export interface TemplateVariable {
+  name: string
+  description: string
+  category: string
+}
+
+export interface TemplateVariablesResponse {
+  variables: TemplateVariable[]
 }
 
 export interface OrderSettings {

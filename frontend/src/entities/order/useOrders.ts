@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as api from "./api"
-import type { OrderCreate } from "./types"
+import type { OrderCreate, OrderTypeCreate, OrderTypeUpdate } from "./types"
 
 export function useOrders(params: {
   page: number
@@ -29,10 +29,24 @@ export function useOrderYears() {
   })
 }
 
-export function useOrderTypes() {
+export function useOrderTypes(activeOnly = true) {
   return useQuery({
-    queryKey: ["order-types"],
-    queryFn: api.fetchOrderTypes,
+    queryKey: ["order-types", activeOnly],
+    queryFn: () => api.fetchOrderTypes(activeOnly),
+  })
+}
+
+export function useAllOrderTypes() {
+  return useQuery({
+    queryKey: ["order-types-all"],
+    queryFn: api.fetchAllOrderTypes,
+  })
+}
+
+export function useTemplateVariables() {
+  return useQuery({
+    queryKey: ["order-type-variables"],
+    queryFn: api.fetchTemplateVariables,
   })
 }
 
@@ -55,20 +69,48 @@ export function useCreateOrder() {
   })
 }
 
-export function useTemplates() {
-  return useQuery({
-    queryKey: ["templates"],
-    queryFn: api.fetchTemplates,
+export function useCreateOrderType() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: OrderTypeCreate) => api.createOrderType(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["order-types-all"] })
+      queryClient.invalidateQueries({ queryKey: ["order-types"] })
+    },
+  })
+}
+
+export function useUpdateOrderType() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ orderTypeId, payload }: { orderTypeId: number; payload: OrderTypeUpdate }) =>
+      api.updateOrderType(orderTypeId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["order-types-all"] })
+      queryClient.invalidateQueries({ queryKey: ["order-types"] })
+    },
+  })
+}
+
+export function useDeleteOrderType() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (orderTypeId: number) => api.deleteOrderType(orderTypeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["order-types-all"] })
+      queryClient.invalidateQueries({ queryKey: ["order-types"] })
+    },
   })
 }
 
 export function useUploadTemplate() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ orderType, file }: { orderType: string; file: File }) =>
-      api.uploadTemplate(orderType, file),
+    mutationFn: ({ orderTypeId, file }: { orderTypeId: number; file: File }) =>
+      api.uploadTemplate(orderTypeId, file),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["templates"] })
+      queryClient.invalidateQueries({ queryKey: ["order-types-all"] })
+      queryClient.invalidateQueries({ queryKey: ["order-types"] })
     },
   })
 }
@@ -76,9 +118,10 @@ export function useUploadTemplate() {
 export function useDeleteTemplate() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (orderType: string) => api.deleteTemplate(orderType),
+    mutationFn: (orderTypeId: number) => api.deleteTemplate(orderTypeId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["templates"] })
+      queryClient.invalidateQueries({ queryKey: ["order-types-all"] })
+      queryClient.invalidateQueries({ queryKey: ["order-types"] })
     },
   })
 }

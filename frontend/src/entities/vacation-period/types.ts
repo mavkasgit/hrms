@@ -4,7 +4,9 @@ export interface VacationPeriodVacation {
   start_date: string
   end_date: string
   days_count: number
-  order_number: string | null
+  order_id?: number | null
+  order_number?: string | null
+  comment?: string | null
   is_cancelled: boolean
 }
 

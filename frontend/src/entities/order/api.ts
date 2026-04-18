@@ -1,11 +1,15 @@
 import api from "@/shared/api/axios"
 import type {
   Order,
-  OrderListResponse,
   OrderCreate,
-  TemplateListResponse,
+  OrderListResponse,
   OrderSettings,
   OrderSyncResponse,
+  OrderType,
+  OrderTypeCreate,
+  OrderTypeListResponse,
+  OrderTypeUpdate,
+  TemplateVariablesResponse,
 } from "./types"
 
 export async function fetchOrders(params: {
@@ -29,9 +33,36 @@ export async function fetchOrderYears() {
   return data.years
 }
 
-export async function fetchOrderTypes() {
-  const { data } = await api.get<{ types: string[] }>("/orders/types")
-  return data.types
+export async function fetchOrderTypes(activeOnly = true) {
+  const { data } = await api.get<OrderTypeListResponse>("/orders/types", {
+    params: { active_only: activeOnly },
+  })
+  return data.items
+}
+
+export async function fetchAllOrderTypes() {
+  const { data } = await api.get<OrderTypeListResponse>("/order-types")
+  return data.items
+}
+
+export async function createOrderType(payload: OrderTypeCreate) {
+  const { data } = await api.post<OrderType>("/order-types", payload)
+  return data
+}
+
+export async function updateOrderType(orderTypeId: number, payload: OrderTypeUpdate) {
+  const { data } = await api.put<OrderType>(`/order-types/${orderTypeId}`, payload)
+  return data
+}
+
+export async function deleteOrderType(orderTypeId: number) {
+  const { data } = await api.delete(`/order-types/${orderTypeId}`)
+  return data
+}
+
+export async function fetchTemplateVariables() {
+  const { data } = await api.get<TemplateVariablesResponse>("/order-types/variables")
+  return data.variables
 }
 
 export async function fetchNextOrderNumber(year?: number) {
@@ -53,29 +84,24 @@ export async function downloadOrder(orderId: number) {
   return response
 }
 
-export async function fetchTemplates() {
-  const { data } = await api.get<TemplateListResponse>("/templates")
-  return data.templates
-}
-
-export async function downloadTemplate(orderType: string) {
-  const response = await api.get(`/templates/${orderType}`, {
+export async function downloadTemplate(orderTypeId: number) {
+  const response = await api.get(`/order-types/${orderTypeId}/template`, {
     responseType: "blob",
   })
   return response
 }
 
-export async function uploadTemplate(orderType: string, file: File) {
+export async function uploadTemplate(orderTypeId: number, file: File) {
   const formData = new FormData()
   formData.append("file", file)
-  const { data } = await api.post(`/templates/${orderType}`, formData, {
+  const { data } = await api.post(`/order-types/${orderTypeId}/template`, formData, {
     headers: { "Content-Type": "multipart/form-data" },
   })
   return data
 }
 
-export async function deleteTemplate(orderType: string) {
-  const { data } = await api.delete(`/templates/${orderType}`)
+export async function deleteTemplate(orderTypeId: number) {
+  const { data } = await api.delete(`/order-types/${orderTypeId}/template`)
   return data
 }
 
