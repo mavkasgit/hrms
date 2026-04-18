@@ -36,9 +36,11 @@ import {
   useDeleteOrder,
 } from "@/entities/order/useOrders"
 import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
-import { getExtraFields, calculateDaysBetween, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
+import { OrderNumberField } from "@/features/OrderNumberField"
+import { calculateDaysBetween, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
 import { useSearchEmployees, useEmployees } from "@/entities/employee/useEmployees"
 import type { Employee } from "@/entities/employee/types"
+import type { OrderType } from "@/entities/order/types"
 
 const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
   "Прием на работу": "bg-green-100 text-green-800 border-green-200",
@@ -60,7 +62,7 @@ export function OrdersPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<Employee[]>([])
   const [searchOpen, setSearchOpen] = useState(false)
-  const [orderType, setOrderType] = useState("")
+  const [selectedOrderTypeId, setSelectedOrderTypeId] = useState<number | null>(null)
   const [orderTypeSearch, setOrderTypeSearch] = useState("")
   const [orderTypeOpen, setOrderTypeOpen] = useState(false)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
@@ -79,7 +81,7 @@ export function OrdersPage() {
   })
 
   const { data: years } = useOrderYears()
-  const { data: types } = useOrderTypes()
+  const { data: orderTypes = [] } = useOrderTypes(true)
   const { data: searchResult } = useSearchEmployees(searchQuery)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
   const createMutation = useCreateOrder()
@@ -88,6 +90,8 @@ export function OrdersPage() {
 
   const [cancelOrderId, setCancelOrderId] = useState<number | null>(null)
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
+
+  const selectedOrderType = orderTypes.find(item => item.id === selectedOrderTypeId) ?? null
 
   const handleCancelOrderConfirm = () => {
     if (cancelOrderId) cancelMutation.mutate(cancelOrderId)
@@ -99,7 +103,7 @@ export function OrdersPage() {
     setDeleteOrderId(null)
   }
 
-  const computedNextNumber = computeNextOrderNumber(data?.items || [], year)
+  const computedNextNumber = computeNextOrderNumber(data?.items || [])
 
   useEffect(() => {
     if (computedNextNumber && !orderNumber) {
@@ -176,8 +180,8 @@ export function OrdersPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  const filteredTypes = (types || []).filter((t) =>
-    t.toLowerCase().includes(orderTypeSearch.toLowerCase())
+  const filteredTypes = orderTypes.filter((t) =>
+    t.name.toLowerCase().includes(orderTypeSearch.toLowerCase())
   )
 
   const selectEmployee = (emp: Employee) => {
@@ -187,10 +191,11 @@ export function OrdersPage() {
     setSearchOpen(false)
   }
 
-  const selectOrderType = (type: string) => {
-    setOrderType(type)
-    setOrderTypeSearch(type)
+  const selectOrderType = (type: OrderType) => {
+    setSelectedOrderTypeId(type.id)
+    setOrderTypeSearch(type.name)
     setOrderTypeOpen(false)
+    setExtraFields({})
   }
 
   const clearEmployee = () => {
@@ -199,8 +204,9 @@ export function OrdersPage() {
   }
 
   const clearOrderType = () => {
-    setOrderType("")
+    setSelectedOrderTypeId(null)
     setOrderTypeSearch("")
+    setExtraFields({})
   }
 
   const handleEmployeeKeyDown = (e: React.KeyboardEvent) => {
@@ -220,7 +226,7 @@ export function OrdersPage() {
   const resetForm = () => {
     setSelectedEmployee(null)
     setSearchQuery("")
-    setOrderType("")
+    setSelectedOrderTypeId(null)
     setOrderTypeSearch("")
     setOrderDate(new Date().toISOString().split("T")[0])
     setOrderNumber("")
@@ -232,8 +238,9 @@ export function OrdersPage() {
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
     if (!selectedEmployee) newErrors.employee = "Выберите сотрудника"
-    if (!orderType) newErrors.orderType = "Выберите тип приказа"
+    if (!selectedOrderTypeId) newErrors.orderType = "Выберите тип приказа"
     if (!orderDate) newErrors.orderDate = "Укажите дату приказа"
+    if (!orderNumber) newErrors.orderNumber = "Укажите номер приказа"
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -244,7 +251,7 @@ export function OrdersPage() {
     createMutation.mutate(
       {
         employee_id: selectedEmployee!.id,
-        order_type: orderType,
+        order_type_id: selectedOrderTypeId!,
         order_date: orderDate,
         order_number: orderNumber || undefined,
         extra_fields: ef,
@@ -270,10 +277,16 @@ export function OrdersPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Приказы</h1>
-        <Button variant="outline" size="sm" onClick={() => setAuditLogOpen(true)}>
-          <ScrollText className="mr-2 h-4 w-4" />
-          Журнал
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate("/templates")}>
+            <Settings className="mr-2 h-4 w-4" />
+            Типы и шаблоны
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setAuditLogOpen(true)}>
+            <ScrollText className="mr-2 h-4 w-4" />
+            Журнал
+          </Button>
+        </div>
       </div>
 
       <div className="border rounded-lg bg-card">
@@ -350,20 +363,11 @@ export function OrdersPage() {
                   <div className="w-[17%] relative" ref={orderTypeRef}>
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium">Тип приказа *</label>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-5 px-1.5 text-xs text-muted-foreground hover:text-foreground"
-                        onClick={() => navigate("/templates")}
-                        title="Управление шаблонами"
-                      >
-                        <Settings className="h-3.5 w-3.5" />
-                      </Button>
                     </div>
-                    {orderType ? (
+                    {selectedOrderType ? (
                       <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50">
                         <Check className="h-4 w-4 text-green-600 shrink-0" />
-                        <span className="text-sm flex-1 truncate">{orderType}</span>
+                        <span className="text-sm flex-1 truncate">{selectedOrderType.name}</span>
                         <button
                           type="button"
                           onClick={clearOrderType}
@@ -390,12 +394,12 @@ export function OrdersPage() {
                             <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
                               {filteredTypes.map((t) => (
                                 <button
-                                  key={t}
+                                  key={t.id}
                                   type="button"
                                   className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0"
                                   onClick={() => selectOrderType(t)}
                                 >
-                                  {t}
+                                  {t.name}
                                 </button>
                               ))}
                             </div>
@@ -418,14 +422,7 @@ export function OrdersPage() {
                     {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                   </div>
 
-                  <div className="w-[105px]">
-                    <label className="text-sm font-medium">Номер приказа</label>
-                    <Input
-                      value={orderNumber}
-                      onChange={(e) => setOrderNumber(e.target.value)}
-                      placeholder="Авто"
-                    />
-                  </div>
+                  <OrderNumberField value={orderNumber} onChange={setOrderNumber} required error={errors.orderNumber} />
                 </div>
               </div>
 
@@ -441,11 +438,11 @@ export function OrdersPage() {
 
             <div className="absolute right-0 top-0 bottom-0 w-[600px] border rounded-lg p-4 bg-muted/20 m-4">
               <h3 className="text-sm font-semibold mb-3">Дополнительные поля</h3>
-              {getExtraFields(orderType).length === 0 ? (
+              {!selectedOrderType?.field_schema?.length ? (
                 <p className="text-xs text-muted-foreground">Выберите тип приказа</p>
               ) : (
                 <div className="flex flex-wrap gap-x-3 gap-y-3">
-                  {getExtraFields(orderType).map((field) => (
+                  {selectedOrderType.field_schema.map((field) => (
                     <div key={field.key}>
                       {field.type === "date" ? (
                         <div className="w-[130px]">
@@ -541,9 +538,9 @@ export function OrdersPage() {
                 <TableCell>
                   <Badge
                     variant="outline"
-                    className={ORDER_TYPE_BADGE_COLORS[order.order_type] || ""}
+                    className={ORDER_TYPE_BADGE_COLORS[order.order_type_name] || ""}
                   >
-                    {order.order_type}
+                    {order.order_type_name}
                   </Badge>
                 </TableCell>
                 <TableCell className="font-medium">{order.employee_name || "—"}</TableCell>

@@ -64,6 +64,7 @@ export function useCreateVacation() {
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"] })
     },
     onError: (error) => {
       console.error("[useCreateVacation] error:", error)

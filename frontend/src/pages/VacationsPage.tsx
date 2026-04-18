@@ -26,8 +26,7 @@ import {
 } from "@/entities/vacation"
 import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, VacationPeriodVacation } from "@/entities/vacation-period"
 import { useSearchEmployees, useEmployees, useUpdateEmployee } from "@/entities/employee/useEmployees"
-import { useRecentOrders } from "@/entities/order/useOrders"
-import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
+import { OrderNumberField } from "@/features/OrderNumberField"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 import type { Employee } from "@/entities/employee/types"
 
@@ -160,7 +159,7 @@ function EmployeeHistoryRow({
                   </span>
                   {p.used_days > 0 && (
                     <span className="text-[9px] text-muted-foreground ml-2">
-                      {p.used_days_auto > 0 && p.order_numbers && <span>приказы: {p.used_days_auto} дней, №{p.order_numbers}</span>}
+                      {p.used_days_auto > 0 && <span>автосписание: {p.used_days_auto} дней</span>}
                       {p.used_days_manual > 0 && <span> вручную: {p.used_days_manual} дней</span>}
                     </span>
                   )}
@@ -249,6 +248,7 @@ function EmployeeHistoryRow({
                       <th className="text-left px-2 py-1 font-medium">Конец</th>
                       <th className="text-left px-2 py-1 font-medium">Дней</th>
                       <th className="text-left px-2 py-1 font-medium">Приказ</th>
+                      <th className="text-left px-2 py-1 font-medium">Комментарий</th>
                       <th className="w-[44px]"></th>
                     </tr>
                   </thead>
@@ -263,7 +263,8 @@ function EmployeeHistoryRow({
                         <td className="px-2 py-1">{formatDate(v.start_date)}</td>
                         <td className="px-2 py-1">{formatDate(v.end_date)}</td>
                         <td className="px-2 py-1">{v.days_count}</td>
-                        <td className="px-2 py-1 text-muted-foreground text-[10px]">{v.order_number ? `№${v.order_number}` : "—"}</td>
+                        <td className="px-2 py-1 font-mono text-[10px]">{v.order_number || "—"}</td>
+                        <td className="px-2 py-1 text-muted-foreground text-[10px]">{v.comment || "—"}</td>
                         <td className="px-1 py-1">
                           <div className="flex gap-0.5">
                             {!v.is_cancelled && (
@@ -292,7 +293,7 @@ function EmployeeHistoryRow({
         <AlertDialogHeader>
           <AlertDialogTitle>Отменить отпуск?</AlertDialogTitle>
           <AlertDialogDescription>
-            Дни будут возвращены в остаток. Связанный приказ также будет отменён.
+            Дни будут возвращены в остаток.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -309,7 +310,7 @@ function EmployeeHistoryRow({
         <AlertDialogHeader>
           <AlertDialogTitle>Удалить отпуск безвозвратно?</AlertDialogTitle>
           <AlertDialogDescription>
-            Отпуск, приказ и файл приказа будут удалены безвозвратно. Это действие нельзя отменить.
+            Отпуск будет удален безвозвратно. Это действие нельзя отменить.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -368,8 +369,8 @@ export function VacationsPage() {
   const [vacationTypeOpen, setVacationTypeOpen] = useState(false)
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
-  const [orderDate, setOrderDate] = useState("")
   const [orderNumber, setOrderNumber] = useState("")
+  const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   
@@ -383,8 +384,6 @@ export function VacationsPage() {
 
   const { data: searchResult } = useSearchEmployees(searchQuery)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
-  const { data: recentOrders } = useRecentOrders(100, new Date().getFullYear())
-  const computedNextNumber = computeNextOrderNumber(recentOrders || [], new Date().getFullYear())
   const createMutation = useCreateVacation()
 
   // Получаем остаток дней выбранного сотрудника из summary
@@ -392,11 +391,6 @@ export function VacationsPage() {
   const selectedEmployeeSummary = selectedEmployee
     ? employeesSummary?.find((e) => e.id === selectedEmployee.id)
     : null
-
-  useEffect(() => {
-    if (computedNextNumber && !orderNumber) setOrderNumber(computedNextNumber)
-    if (!orderDate) setOrderDate(new Date().toISOString().split("T")[0])
-  }, [computedNextNumber])
 
   useEffect(() => {
     if (searchResult?.items) setSearchResults(searchResult.items)
@@ -473,8 +467,8 @@ export function VacationsPage() {
     setVacationTypeSearch("")
     setStartDate("")
     setEndDate("")
-    setOrderDate(new Date().toISOString().split("T")[0])
     setOrderNumber("")
+    setOrderDate(new Date().toISOString().split("T")[0])
     setErrors({})
   }
 
@@ -485,6 +479,8 @@ export function VacationsPage() {
     if (!startDate) newErrors.startDate = "Укажите дату начала"
     if (!endDate) newErrors.endDate = "Укажите дату конца"
     if (startDate && endDate && endDate < startDate) newErrors.endDate = "Дата конца раньше даты начала"
+    if (!orderDate) newErrors.orderDate = "Укажите дату приказа"
+    if (!orderNumber) newErrors.orderNumber = "Укажите номер приказа"
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -503,6 +499,8 @@ export function VacationsPage() {
       start_date: startDate,
       end_date: endDate,
       vacation_type: vacationType,
+      order_date: orderDate,
+      order_number: orderNumber || undefined,
     }
     console.log("[VacationsPage] handleSubmit payload:", JSON.stringify(payload, null, 2))
     
@@ -763,7 +761,12 @@ export function VacationsPage() {
                 </div>
               </div>
 
-              <div className="flex gap-4">
+              <div className="flex gap-4 items-end">
+                <div className="w-[130px]">
+                  <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                  {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
+                </div>
+                <OrderNumberField value={orderNumber} onChange={setOrderNumber} required error={errors.orderNumber} />
                 <div className="w-[130px]">
                   <DatePicker label="Дата начала *" value={startDate} onChange={setStartDate} />
                   {errors.startDate && <p className="text-xs text-red-500 mt-1">{errors.startDate}</p>}
@@ -771,13 +774,6 @@ export function VacationsPage() {
                 <div className="w-[130px]">
                   <DatePicker label="Дата конца *" value={endDate} onChange={setEndDate} />
                   {errors.endDate && <p className="text-xs text-red-500 mt-1">{errors.endDate}</p>}
-                </div>
-                <div className="w-[130px]">
-                  <DatePicker label="Дата приказа" value={orderDate} onChange={setOrderDate} />
-                </div>
-                <div className="w-[105px]">
-                  <label className="text-sm font-medium">Номер приказа</label>
-                  <Input value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} placeholder="Авто" />
                 </div>
                 {startDate && endDate && (
                   <div className="w-[130px]">
