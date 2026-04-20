@@ -1,7 +1,12 @@
-import { test, expect } from './fixtures/vacations-fixtures'
-import type { VacationPeriodData, BalanceData } from './fixtures/vacations-fixtures'
+import { test, expect } from './fixtures'
+import type { VacationPeriodData, BalanceData } from './types'
+import {
+  expectBalanceInvariant,
+  expectNonNegativeAvailable,
+  expectPeriodInvariant,
+} from './helpers/vacation-invariants'
 
-const API_BASE = 'http://127.0.0.1:8000'
+const API_BASE = ''
 
 test.describe('Vacation Balance API tests', () => {
   test.setTimeout(180000)
@@ -44,6 +49,8 @@ test.describe('Vacation Balance API tests', () => {
     expect(balance.available_days).toBeGreaterThan(0)
     expect(balance.used_days).toBe(0)
     expect(balance.remaining_days).toBe(balance.available_days)
+    expectBalanceInvariant(balance)
+    expectNonNegativeAvailable(balance)
 
     const balance2024 = await request.get(`${API_BASE}/api/vacations/balance`, {
       params: { employee_id: emp.id, year: 2024 }
@@ -108,6 +115,7 @@ test.describe('Vacation Balance API tests', () => {
     console.log(`[${uid}] Period after vacation: used=${periodYear1.used_days}`)
 
     expect(periodYear1.used_days).toBe(3)
+    expectPeriodInvariant(periodYear1)
 
     const balanceAfter = await request.get(`${API_BASE}/api/vacations/balance`, {
       params: { employee_id: emp.id }
@@ -116,6 +124,7 @@ test.describe('Vacation Balance API tests', () => {
 
     expect(balanceAfter.used_days).toBe(3)
     expect(balanceAfter.remaining_days).toBe(balanceAfter.available_days - 3)
+    expectBalanceInvariant(balanceAfter)
 
     await request.delete(`${API_BASE}/api/vacations/${vac.id}`)
     console.log(`[${uid}] Vacation deleted`)
@@ -126,6 +135,7 @@ test.describe('Vacation Balance API tests', () => {
     const periodYear1Restored = periodsRestored.find((p: VacationPeriodData) => p.year_number === 1)
     console.log(`[${uid}] Period after deletion: used=${periodYear1Restored.used_days}`)
     expect(periodYear1Restored.used_days).toBe(0)
+    expectPeriodInvariant(periodYear1Restored)
 
     const balanceRestored = await request.get(`${API_BASE}/api/vacations/balance`, {
       params: { employee_id: emp.id }
@@ -134,6 +144,7 @@ test.describe('Vacation Balance API tests', () => {
 
     expect(balanceRestored.used_days).toBe(0)
     expect(balanceRestored.remaining_days).toBe(balanceRestored.available_days)
+    expectBalanceInvariant(balanceRestored)
 
     console.log(`[${uid}] === Done ===`)
   })

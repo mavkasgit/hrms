@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/common-fixtures'
+import { test, expect } from './fixtures'
 
 /**
  * Тест inline-редактирования дополнительных дней отпуска
@@ -69,7 +69,6 @@ test.describe('Sprint 6 — дополнительные дни отпуска',
     
     // Кликаем на кнопку редактирования
     await addDaysCell.locator('button').click()
-    await page.waitForTimeout(300)
     
     // Находим input и вводим новое значение
     const input = addDaysCell.locator('input')
@@ -82,11 +81,9 @@ test.describe('Sprint 6 — дополнительные дни отпуска',
     // Ждём завершения API запроса
     await responsePromise
     console.log(`[TEST] API ответ получен`)
-    
-    await page.waitForTimeout(1000)
 
     // Проверяем через API что значение действительно изменилось
-    const apiResponse = await request.get(`http://localhost:5173/api/employees/${emp.id}`)
+    const apiResponse = await request.get(`/api/employees/${emp.id}`)
     const updatedEmp = await apiResponse.json()
     
     console.log(`[TEST] API: additional_vacation_days = ${updatedEmp.additional_vacation_days}`)

@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/common-fixtures'
+import { test, expect } from './fixtures'
 
 /**
  * Тесты жизненного цикла должностей

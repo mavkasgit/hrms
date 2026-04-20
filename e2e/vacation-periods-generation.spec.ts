@@ -1,5 +1,6 @@
-import { test, expect } from './fixtures/vacations-fixtures'
-import type { VacationPeriodData } from './fixtures/vacations-fixtures'
+import { test, expect } from './fixtures'
+import type { VacationPeriodData } from './types'
+import { expectPeriodInvariant } from './helpers/vacation-invariants'
 
 test.describe('Генерация отпускных периодов', () => {
   test.setTimeout(120000)
@@ -21,6 +22,7 @@ test.describe('Генерация отпускных периодов', () => {
         expect(p.year_number).toBeGreaterThanOrEqual(1)
         expect(p.main_days).toBe(24)
         expect(p.total_days).toBeGreaterThanOrEqual(0)
+        expectPeriodInvariant(p)
       }
     })
 
@@ -73,7 +75,7 @@ test.describe('Генерация отпускных периодов', () => {
         expect(p.main_days).toBe(24)
         expect(p.additional_days).toBe(0)
         expect(p.used_days).toBe(0)
-        expect(p.remaining_days).toBe(p.total_days - p.used_days)
+        expectPeriodInvariant(p)
       }
     })
 
@@ -106,7 +108,7 @@ test.describe('Генерация отпускных периодов', () => {
         const expectedAccrued = Math.round(24 / 12 * monthsPassed)
         console.log(`[T4] Текущий период: год ${currentPeriod.year_number}, period_start=${currentPeriod.period_start}, monthsPassed=${monthsPassed}, expectedAccrued=${expectedAccrued}, actual_total=${currentPeriod.total_days}`)
         expect(currentPeriod.total_days).toBe(expectedAccrued)
-        expect(currentPeriod.remaining_days).toBe(currentPeriod.total_days - currentPeriod.used_days)
+        expectPeriodInvariant(currentPeriod)
       } else {
         console.log('[T4] Текущий период не найден (сотрудник создан в будущем?)')
       }
@@ -161,7 +163,7 @@ test.describe('Генерация отпускных периодов', () => {
       console.log(`[T6] После adjust: additional=${adjusted.additional_days}, total=${adjusted.total_days}, remaining=${adjusted.remaining_days}`)
       expect(adjusted.additional_days).toBe(10)
       expect(adjusted.total_days).toBe(24 + 10)
-      expect(adjusted.remaining_days).toBe(adjusted.total_days - adjusted.used_days)
+      expectPeriodInvariant(adjusted)
     })
 
     await test.step('Баланс периода через GET /{id}/balance подтверждает', async () => {
@@ -301,7 +303,7 @@ test.describe('Генерация отпускных периодов', () => {
       const finalPeriods = await apiOps.getPeriods(emp.id)
       for (const p of finalPeriods) {
         console.log(`[T10]   Год ${p.year_number}: used=${p.used_days}, remaining=${p.remaining_days}, total=${p.total_days}`)
-        expect(p.remaining_days).toBeGreaterThanOrEqual(0)
+        expectPeriodInvariant(p)
       }
     })
 

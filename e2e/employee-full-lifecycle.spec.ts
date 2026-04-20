@@ -22,7 +22,6 @@ test.describe('Полный цикл сотрудника', () => {
     console.log('[TEST] === ЭТАП 1: Создание сотрудника ===')
     await page.goto('/employees')
     await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(500)
     await expect(page.getByRole('heading', { name: /сотрудники/i, level: 1 })).toBeVisible()
 
     // Открыть модалку
@@ -113,7 +112,6 @@ test.describe('Полный цикл сотрудника', () => {
 
     await page.getByRole('button', { name: 'Фильтры' }).click()
     await page.getByText('В архиве').click()
-    await page.waitForTimeout(500)
     await expect(page.locator('table tbody').getByText(empName)).toBeVisible({ timeout: 5000 })
     console.log(`[TEST] ✅ Сотрудник "${empName}" архивирован`)
 
@@ -130,7 +128,6 @@ test.describe('Полный цикл сотрудника', () => {
 
     await page.getByRole('button', { name: 'Фильтры' }).click()
     await page.getByText('Активные').click()
-    await page.waitForTimeout(500)
     await expect(page.locator('table tbody').getByText(empName)).toBeVisible({ timeout: 5000 })
     console.log(`[TEST] ✅ Сотрудник "${empName}" восстановлен`)
 

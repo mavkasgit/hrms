@@ -1,10 +1,10 @@
-import { test, expect } from './fixtures/orders-fixtures'
+import { test, expect } from './fixtures'
 
 test.describe('Приказы — ошибки', () => {
   test.setTimeout(30000)
 
-  test('создание с несуществующим сотрудником — 404', async ({ request, ordersApi }) => {
-    const orderTypeId = await ordersApi.getOrderTypeId({ code: 'transfer', visibleOnly: true })
+  test('создание с несуществующим сотрудником — 404', async ({ request, apiOps }) => {
+    const orderTypeId = await apiOps.getOrderTypeId({ code: 'transfer', visibleOnly: true })
 
     const resp = await request.post('/api/orders', {
       data: {

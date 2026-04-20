@@ -374,14 +374,18 @@ export function EntityDialog({
     }
   }
 
+  const getFieldId = (key: string) => `entity-dialog-field-${key}`
+
   const renderField = (key: string, field: EntityDialogField, val: unknown, compact = false) => {
     const hasError = !!errors[key]
 
     const inputClasses = hasError ? "border-destructive focus-visible:ring-destructive" : ""
+    const inputId = getFieldId(key)
 
     if (field.type === "text") {
       return (
         <Input
+          id={inputId}
           value={val as string}
           placeholder={field.placeholder ?? ""}
           className={inputClasses}
@@ -395,6 +399,7 @@ export function EntityDialog({
       const min = field.min ?? 0
       return (
         <Input
+          id={inputId}
           type="number"
           value={val as number}
           className={inputClasses}
@@ -475,7 +480,7 @@ export function EntityDialog({
               const hasError = !!errors[gk]
               return (
                 <div key={gk} className="flex-1">
-                  <label className="text-sm font-medium">{gf.label}</label>
+                  <label htmlFor={getFieldId(gk)} className="text-sm font-medium">{gf.label}</label>
                   <div className="mt-1">
                     {renderField(gk, gf, gv, true)}
                   </div>
@@ -492,7 +497,7 @@ export function EntityDialog({
         result.push(
           <div key={key}>
             {!(field.type === "icon" && hasIconColorPair) && (
-              <label className="text-sm font-medium">{field.label}</label>
+              <label htmlFor={getFieldId(key)} className="text-sm font-medium">{field.label}</label>
             )}
             <div className="mt-1">
               {renderField(key, field, val)}

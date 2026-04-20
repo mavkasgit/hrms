@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/common-fixtures'
+import { test, expect } from './fixtures'
 
 /**
  * Тест архивации сотрудника
@@ -34,7 +34,6 @@ test.describe('Архивация сотрудника', () => {
 
     // 1. Кликаем на строку чтобы открыть форму
     await employeeRow.click()
-    await page.waitForTimeout(500)
     
     // Ждём открытия диалога
     const dialog = page.getByRole('dialog')
@@ -43,21 +42,20 @@ test.describe('Архивация сотрудника', () => {
     // 2. Кликаем кнопку "Уволить" / "Архивировать"
     const archiveButton = dialog.getByRole('button', { name: /уволить|архивировать/i })
     await archiveButton.click()
-    await page.waitForTimeout(500)
     
     // 3. Подтверждаем в диалоге подтверждения
     const confirmDialog = page.locator('[role="alertdialog"]').or(page.getByRole('dialog').last())
+    await expect(confirmDialog).toBeVisible({ timeout: 5000 })
     const confirmButton = confirmDialog.getByRole('button', { name: /уволить|архивировать|подтвердить|да/i })
     await confirmButton.click()
     await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(1000)
 
     // 4. Проверяем что сотрудник исчез из active списка
     await expect(employeeRow).not.toBeVisible({ timeout: 5000 })
     console.log('[TEST] Сотрудник исчез из активных')
 
     // 5. Проверяем через API что сотрудник действительно архивирован
-    const apiResponse = await request.get(`http://localhost:5173/api/employees/${emp.id}`)
+    const apiResponse = await request.get(`/api/employees/${emp.id}`)
     const archivedEmp = await apiResponse.json()
     
     expect(archivedEmp.is_archived).toBe(true)

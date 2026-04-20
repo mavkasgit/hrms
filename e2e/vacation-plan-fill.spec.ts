@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/common-fixtures'
+import { test, expect } from './fixtures'
 
 /**
  * Тест заполнения плана отпусков с дробными значениями
@@ -8,6 +8,14 @@ test.describe('План отпусков - дробные значения', () 
   test.setTimeout(180000)
 
   test('запись дробного значения и значения меньше 1', async ({ page, request, apiOps }) => {
+    const waitForPlanMutation = () => page.waitForResponse((resp) => {
+      const method = resp.request().method()
+      return resp.url().includes('/api/vacation-plans')
+        && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+        && resp.status() >= 200
+        && resp.status() < 500
+    })
+
     const u = apiOps.uid()
     const testYear = new Date().getFullYear()
 
@@ -31,8 +39,8 @@ test.describe('План отпусков - дробные значения', () 
     // Выбираем год
     const yearTrigger = page.locator('[role="combobox"]').first()
     await yearTrigger.click()
-    await page.waitForTimeout(300)
     const yearOption = page.getByRole('option', { name: String(testYear) })
+    await expect(yearOption).toBeVisible({ timeout: 5000 })
     await yearOption.click()
     console.log(`[TEST] Год выбран: ${testYear}`)
     
@@ -53,11 +61,12 @@ test.describe('План отпусков - дробные значения', () 
     const inputJan = cellJan.locator('input').first()
     await expect(inputJan).toBeVisible({ timeout: 5000 })
     await inputJan.fill('0.5')
+    const janMutation = waitForPlanMutation()
     await inputJan.press('Enter')
-    
+    await janMutation
+
     await expect(inputJan).not.toBeVisible({ timeout: 5000 })
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(1000)
+    await expect(cellJan).toContainText('0.5', { timeout: 5000 })
     
     const cellValueJan = await cellJan.textContent()
     console.log(`[TEST] Январь: "${cellValueJan}"`)
@@ -71,11 +80,12 @@ test.describe('План отпусков - дробные значения', () 
     const inputFeb = cellFeb.locator('input').first()
     await expect(inputFeb).toBeVisible({ timeout: 5000 })
     await inputFeb.fill('0.33')
+    const febMutation = waitForPlanMutation()
     await inputFeb.press('Enter')
-    
+    await febMutation
+
     await expect(inputFeb).not.toBeVisible({ timeout: 5000 })
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(1000)
+    await expect(cellFeb).toContainText('0.33', { timeout: 5000 })
     
     const cellValueFeb = await cellFeb.textContent()
     console.log(`[TEST] Февраль: "${cellValueFeb}"`)
@@ -89,11 +99,12 @@ test.describe('План отпусков - дробные значения', () 
     const inputMar = cellMar.locator('input').first()
     await expect(inputMar).toBeVisible({ timeout: 5000 })
     await inputMar.fill('1/3')
+    const marMutation = waitForPlanMutation()
     await inputMar.press('Enter')
-    
+    await marMutation
+
     await expect(inputMar).not.toBeVisible({ timeout: 5000 })
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(1000)
+    await expect(cellMar).toContainText('1/3', { timeout: 5000 })
     
     const cellValueMar = await cellMar.textContent()
     console.log(`[TEST] Март: "${cellValueMar}"`)
@@ -109,11 +120,12 @@ test.describe('План отпусков - дробные значения', () 
     
     // Очищаем значение - выделяем весь текст и удаляем
     await inputClear.clear()
+    const clearMutation = waitForPlanMutation()
     await inputClear.press('Enter')
-    
+    await clearMutation
+
     await expect(inputClear).not.toBeVisible({ timeout: 5000 })
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(1000)
+    await expect(cellToClear).toHaveText(/^[\s—]*$/, { timeout: 5000 })
     
     // Проверяем что ячейка пустая или содержит прочерк
     const clearedValue = await cellToClear.textContent()

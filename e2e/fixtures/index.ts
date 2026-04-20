@@ -348,8 +348,8 @@ type ApiOperations = {
   deletePosition: (id: number) => Promise<void>
   // Employees
   createEmployee: (
-    deptId: number,
-    posId: number,
+    deptIdOrOverrides: number | Record<string, unknown>,
+    posIdOrOverrides?: number | Record<string, unknown>,
     overrides?: Record<string, unknown>
   ) => Promise<Employee>
   getEmployee: (id: number) => Promise<Employee>
@@ -363,6 +363,8 @@ type ApiOperations = {
   deleteVacation: (id: number) => Promise<void>
   getVacationBalance: (empId: number) => Promise<VacationBalance>
   getVacationPeriods: (empId: number) => Promise<VacationPeriod[]>
+  getBalance: (empId: number) => Promise<VacationBalance>
+  getPeriods: (empId: number) => Promise<VacationPeriod[]>
   getPeriodBalance: (periodId: number) => Promise<VacationPeriod>
   closePeriod: (periodId: number) => Promise<VacationPeriod>
   partialClosePeriod: (periodId: number, remainingDays: number) => Promise<VacationPeriod>
@@ -390,6 +392,7 @@ type ApiOperations = {
   getOrders: (filters?: Record<string, unknown>) => Promise<Order[]>
   // Cleanup
   cleanup: () => Promise<void>
+  cleanupEmployee: (id: number) => Promise<void>
 }
 
 type CommonFixtures = {
@@ -435,11 +438,31 @@ export const test = base.extend<CommonFixtures>({
 
       // Employees
       createEmployee: async (
-        deptId: number,
-        posId: number,
+        deptIdOrOverrides: number | Record<string, unknown>,
+        posIdOrOverrides?: number | Record<string, unknown>,
         overrides?: Record<string, unknown>
       ) => {
-        const emp = await apiCreateEmployee(request, deptId, posId, overrides)
+        let deptId: number
+        let posId: number
+        let employeeOverrides: Record<string, unknown> | undefined
+
+        if (typeof deptIdOrOverrides === 'number') {
+          deptId = deptIdOrOverrides
+          posId = posIdOrOverrides as number
+          employeeOverrides = overrides
+        } else {
+          const autoOverrides = deptIdOrOverrides
+          const autoUid = uid()
+          const dept = await apiCreateDepartment(request, `Fixture-Dept-${autoUid}`)
+          const pos = await apiCreatePosition(request, `Fixture-Pos-${autoUid}`)
+          resources.departments.push(dept.id)
+          resources.positions.push(pos.id)
+          deptId = dept.id
+          posId = pos.id
+          employeeOverrides = autoOverrides
+        }
+
+        const emp = await apiCreateEmployee(request, deptId, posId, employeeOverrides)
         resources.employees.push(emp.id)
         return emp
       },
@@ -464,6 +487,8 @@ export const test = base.extend<CommonFixtures>({
       },
       getVacationBalance: async (empId: number) => apiGetVacationBalance(request, empId),
       getVacationPeriods: async (empId: number) => apiGetVacationPeriods(request, empId),
+      getBalance: async (empId: number) => apiGetVacationBalance(request, empId),
+      getPeriods: async (empId: number) => apiGetVacationPeriods(request, empId),
       getPeriodBalance: async (periodId: number) => apiGetPeriodBalance(request, periodId),
       closePeriod: async (periodId: number) => apiClosePeriod(request, periodId),
       partialClosePeriod: async (periodId: number, remainingDays: number) =>
@@ -521,6 +546,9 @@ export const test = base.extend<CommonFixtures>({
           await apiDeleteDepartment(request, deptId).catch(() => {})
         }
         resources.departments = []
+      },
+      cleanupEmployee: async (id: number) => {
+        await apiDeleteEmployee(request, id).catch(() => {})
       },
     }
 

@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/common-fixtures'
+import { test, expect } from './fixtures'
 
 test.describe('Отпуска', () => {
   test.setTimeout(120000)

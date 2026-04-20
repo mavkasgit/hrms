@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/employees-fixtures'
+import { test, expect } from './fixtures'
 import { EmployeesPage } from './pages/EmployeesPage'
 
 /**
@@ -8,9 +8,9 @@ import { EmployeesPage } from './pages/EmployeesPage'
 test.describe('Удаление сотрудника (soft delete)', () => {
   test.setTimeout(60000)
 
-  test('мягкое удаление активного сотрудника', async ({ page, employeesApi }) => {
+  test('мягкое удаление активного сотрудника', async ({ page, apiOps }) => {
     // 1. Создаём нового сотрудника специально для этого теста
-    const employee = await employeesApi.createEmployee()
+    const employee = await apiOps.createEmployee({})
     const empName = employee.name
     const employeeId = employee.id
     console.log(`[TEST] Создан тестовый сотрудник: "${empName}" (id=${employeeId})`)
@@ -40,6 +40,6 @@ test.describe('Удаление сотрудника (soft delete)', () => {
     console.log(`[TEST] ✅ Сотрудник "${empName}" успешно удалён (soft delete)`)
 
     // Очистка: hard delete для чистоты
-    await employeesApi.deleteEmployee(employeeId).catch(() => {})
+    await apiOps.deleteEmployee(employeeId).catch(() => {})
   })
 })
