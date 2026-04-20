@@ -1,62 +1,18 @@
 import { type Page } from '@playwright/test'
-import type { EmployeeTestData } from '../types'
+import { uid, makeEmployeeData } from './test-utils'
 
 /**
  * Общие хелперы для тестов сотрудников
  * Переиспользуются между employee-create, employee-full-lifecycle и другими
+ * 
+ * Утилиты uid() и makeEmployeeData() импортируются из test-utils.ts
+ * для избежания дублирования кода
  */
 
-export type { EmployeeTestData } from '../types'
+export { uid, makeEmployeeData } from './test-utils'
 
-/** Уникальный суффикс для каждого запуска */
-export function uid(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
-}
-
-/** Данные сотрудника */
-export type EmployeeTestData = {
-  name: string
-  position: string
-  department: string
-  gender: string
-  birth_date: string
-  hire_date: string
-  contract_start: string
-  contract_end: string
-  tab_number: number
-  rate: number
-  personal_number: string
-  insurance_number: string
-  passport_number: string
-  citizenship: boolean
-  residency: boolean
-  pensioner: boolean
-  payment_form: string
-}
-
-/** Генерация тестовых данных сотрудника */
-export function makeEmployeeData(): EmployeeTestData {
-  const u = uid()
-  return {
-    name: `Тест-Сотрудник-${u}`,
-    position: `Тест-Должность-${u}`,
-    department: `Тест-Отдел-${u}`,
-    gender: 'М',
-    birth_date: '15.05.1990',
-    hire_date: '15.01.2024',
-    contract_start: '15.01.2024',
-    contract_end: '14.01.2025',
-    tab_number: Math.floor(100000 + Math.random() * 900000),
-    rate: 25.5,
-    personal_number: `ЛН-${u.toUpperCase()}`,
-    insurance_number: `СН-${u.toUpperCase()}`,
-    passport_number: `AB${Math.floor(1000000 + Math.random() * 9000000)}`,
-    citizenship: true,
-    residency: true,
-    pensioner: false,
-    payment_form: 'Повременная',
-  }
-}
+/** Тип данных сотрудника для тестов (legacy, для обратной совместимости) */
+export type EmployeeTestData = ReturnType<typeof makeEmployeeData>
 
 /**
  * Работа с combobox - создание или выбор значения

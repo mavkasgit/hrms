@@ -92,11 +92,8 @@ test.describe('Sprint 6 — дополнительные дни отпуска',
     console.log(`[TEST] API: additional_vacation_days = ${updatedEmp.additional_vacation_days}`)
     expect(updatedEmp.additional_vacation_days).toBe(newValue)
 
-    // Проверяем что значение обновилось в UI
-    const updatedText = await addDaysCell.textContent()
-    console.log(`[TEST] Текст ячейки после обновления: "${updatedText}"`)
-
-    expect(updatedText).toContain(String(newValue))
+    // Проверяем что значение обновилось в UI (с ожиданием)
+    await expect(addDaysCell).toHaveText(String(newValue), { timeout: 5000 })
     console.log(`[TEST] ✅ Значение доп дней успешно обновлено: ${oldValue} → ${newValue}`)
   })
 })

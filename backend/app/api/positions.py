@@ -227,3 +227,21 @@ async def delete_position(
     )
 
     return {"status": "ok", "message": f"Position {pos_name} deleted"}
+
+
+@router.get("/{pos_id}/usage")
+async def get_position_usage(pos_id: int, db: AsyncSession = Depends(get_db)):
+    """Получить количество сотрудников с данной должностью перед удалением."""
+    result = await db.execute(select(Position).where(Position.id == pos_id))
+    pos = result.scalar_one_or_none()
+    if not pos:
+        raise HTTPException(status_code=404, detail="Position not found")
+
+    emp_result = await db.execute(
+        select(func.count())
+        .select_from(Employee)
+        .where(Employee.position_id == pos_id, Employee.is_deleted == False)
+    )
+    emp_count = emp_result.scalar_one()
+
+    return {"employee_count": emp_count}

@@ -1,16 +1,7 @@
 import { useState } from "react"
 import { Button } from "@/shared/ui/button"
-import { Input } from "@/shared/ui/input"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/dialog"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,7 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
-import { Plus, Pencil, Trash2, Tag as TagIcon } from "lucide-react"
+import { Plus, Tag as TagIcon } from "lucide-react"
 import {
   useTags,
   useCreateTag,
@@ -29,11 +20,17 @@ import {
   useDeleteTag,
   type Tag,
 } from "@/entities/tag"
+import { EntityDialog, type EntityDialogField } from "./shared/EntityDialog"
 
-const COLOR_PRESETS = [
-  "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899",
-  "#06B6D4", "#84CC16", "#F97316", "#6B7280", "#1D4ED8", "#065F46",
-]
+const TAG_FIELDS: Record<string, EntityDialogField> = {
+  name: { type: "text", label: "Название", required: true, placeholder: "Новый тег" },
+  category: { type: "text", label: "Категория", placeholder: "Новая категория", rowGroup: "meta" },
+  color: { type: "color", label: "Цвет", rowGroup: "meta" },
+}
+
+import axios from "axios"
+
+const API_URL = import.meta.env.VITE_API_URL || "/api"
 
 /* ───────── Группировка ───────── */
 
@@ -52,18 +49,17 @@ function groupByCategory(tags: Tag[]): Record<string, Tag[]> {
 function TagChip({
   tag,
   onEdit,
-  onDelete,
 }: {
   tag: Tag
   onEdit: (tag: Tag) => void
-  onDelete: (tag: Tag) => void
 }) {
   const color = tag.color ?? "#94a3b8"
 
   return (
     <div
-      className="group/tag flex items-center gap-1.5 px-2.5 py-1.5 border rounded-md hover:bg-accent/50 transition-colors"
+      className="group/tag flex items-center gap-1.5 px-2.5 py-1.5 border rounded-md hover:bg-accent/50 transition-colors cursor-pointer"
       style={{ borderColor: color + "60", backgroundColor: color + "08" }}
+      onClick={() => onEdit(tag)}
     >
       <div
         className="h-2 w-2 rounded-full flex-shrink-0"
@@ -75,20 +71,6 @@ function TagChip({
           {tag.employee_count}
         </Badge>
       )}
-      <div className="hidden group-hover/tag:flex gap-0.5 flex-shrink-0">
-        <button
-          className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:bg-accent"
-          onClick={() => onEdit(tag)}
-        >
-          <Pencil className="h-3 w-3" />
-        </button>
-        <button
-          className="h-5 w-5 flex items-center justify-center rounded text-destructive/60 hover:text-destructive hover:bg-accent"
-          onClick={() => onDelete(tag)}
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
-      </div>
     </div>
   )
 }
@@ -131,18 +113,22 @@ export function TagsPanel() {
   const deleteTag = useDeleteTag()
 
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
+  const [dialogMode, setDialogMode] = useState<"add" | "edit">("add")
+  const [editingTag, setEditingTag] = useState<Tag | null>(null)
   const [tagName, setTagName] = useState("")
   const [tagCategory, setTagCategory] = useState("")
   const [tagColor, setTagColor] = useState("")
 
-  const [deleteTarget, setDeleteTarget] = useState<{
+  const [deleteConfirm, setDeleteConfirm] = useState<{
     id: number
     name: string
+    employeeCount: number
+    departmentCount: number
   } | null>(null)
 
   const openAdd = () => {
-    setEditingId(null)
+    setDialogMode("add")
+    setEditingTag(null)
     setTagName("")
     setTagCategory("")
     setTagColor("")
@@ -150,38 +136,40 @@ export function TagsPanel() {
   }
 
   const openEdit = (tag: Tag) => {
-    setEditingId(tag.id)
+    setDialogMode("edit")
+    setEditingTag(tag)
     setTagName(tag.name)
     setTagCategory(tag.category ?? "")
     setTagColor(tag.color ?? "")
     setDialogOpen(true)
   }
 
-  const handleSave = () => {
-    if (!tagName.trim()) return
-    if (editingId) {
-      updateTag.mutate({
-        id: editingId,
-        data: {
-          name: tagName.trim(),
-          category: tagCategory.trim() || undefined,
-          color: tagColor.trim() || undefined,
-        },
-      })
-    } else {
-      createTag.mutate({
-        name: tagName.trim(),
-        category: tagCategory.trim() || undefined,
-        color: tagColor.trim() || undefined,
-      })
+  const handleDeleteRequest = async () => {
+    if (editingTag) {
+      try {
+        const { data } = await axios.get(`${API_URL}/tags/${editingTag.id}/usage`)
+        setDeleteConfirm({
+          id: editingTag.id,
+          name: editingTag.name,
+          employeeCount: data.employee_count,
+          departmentCount: data.department_count,
+        })
+      } catch {
+        setDeleteConfirm({
+          id: editingTag.id,
+          name: editingTag.name,
+          employeeCount: 0,
+          departmentCount: 0,
+        })
+      }
     }
-    setDialogOpen(false)
   }
 
-  const handleDelete = () => {
-    if (deleteTarget) {
-      deleteTag.mutate(deleteTarget.id)
-      setDeleteTarget(null)
+  const handleDeleteConfirm = () => {
+    if (deleteConfirm) {
+      deleteTag.mutate(deleteConfirm.id)
+      setDeleteConfirm(null)
+      setDialogOpen(false)
     }
   }
 
@@ -236,7 +224,6 @@ export function TagsPanel() {
                     key={tag.id}
                     tag={tag}
                     onEdit={openEdit}
-                    onDelete={(t) => setDeleteTarget({ id: t.id, name: t.name })}
                   />
                 ))}
               </div>
@@ -246,98 +233,64 @@ export function TagsPanel() {
       </div>
 
       {/* Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>
-              {editingId ? "Редактировать тег" : "Новый тег"}
-            </DialogTitle>
-            <DialogDescription>
-              {editingId
-                ? "Измените название, категорию и цвет"
-                : "Создайте тег для группировки"}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm font-medium">Название</label>
-              <Input
-                value={tagName}
-                onChange={(e) => setTagName(e.target.value)}
-                placeholder="Python"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Категория</label>
-              <Input
-                value={tagCategory}
-                onChange={(e) => setTagCategory(e.target.value)}
-                placeholder="Навыки, Роли..."
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Цвет</label>
-              <div className="mt-1.5 space-y-3">
-                <div className="grid grid-cols-6 gap-1.5">
-                  {COLOR_PRESETS.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      className="h-6 w-6 rounded-full cursor-pointer transition-all ring-2 ring-transparent hover:ring-foreground/30"
-                      style={{
-                        backgroundColor: color,
-                        boxShadow:
-                          tagColor === color
-                            ? `0 0 0 2px var(--background), 0 0 0 4px ${color}`
-                            : undefined,
-                      }}
-                      onClick={() => setTagColor(color)}
-                    />
-                  ))}
-                </div>
-                <div className="flex gap-2 items-center">
-                  <Input
-                    value={tagColor}
-                    onChange={(e) => setTagColor(e.target.value)}
-                    placeholder="#3B82F6"
-                    className="max-w-[140px] text-xs"
-                  />
-                  {tagColor && /^#[0-9A-Fa-f]{6}$/.test(tagColor) && (
-                    <div
-                      className="h-6 w-6 rounded border flex-shrink-0"
-                      style={{ backgroundColor: tagColor }}
-                    />
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Отмена
-            </Button>
-            <Button onClick={handleSave}>
-              {editingId ? "Сохранить" : "Создать"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EntityDialog
+        fields={TAG_FIELDS}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        mode={dialogMode}
+        initialValues={{
+          name: tagName,
+          category: tagCategory,
+          color: tagColor,
+        }}
+        onSave={(v) => {
+          const data = {
+            name: String(v.name).trim(),
+            category: v.category ? String(v.category).trim() || undefined : undefined,
+            color: v.color ? String(v.color) : undefined,
+          }
+          if (dialogMode === "edit" && editingTag) {
+            updateTag.mutate({ id: editingTag.id, data })
+          } else {
+            createTag.mutate(data)
+          }
+          setDialogOpen(false)
+        }}
+        addTitle="Новый тег"
+        editTitle="Редактировать тег"
+        addDescription="Создайте тег для группировки"
+        editDescription="Измените название, категорию и цвет"
+        addLabel="Создать"
+        saveLabel="Сохранить"
+        onDelete={handleDeleteRequest}
+      />
 
-      {/* Delete */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить тег?</AlertDialogTitle>
             <AlertDialogDescription>
-              <span className="font-medium">{deleteTarget?.name}</span> будет удалён у всех сотрудников и подразделений.
+              <span className="font-medium">{deleteConfirm?.name}</span> будет удалён.
+              {deleteConfirm && (deleteConfirm.employeeCount > 0 || deleteConfirm.departmentCount > 0) && (
+                <div className="mt-2 text-sm">
+                  Тег используется:
+                  {deleteConfirm.employeeCount > 0 && (
+                    <span> у <strong>{deleteConfirm.employeeCount}</strong> сотрудник{deleteConfirm.employeeCount === 1 ? "а" : deleteConfirm.employeeCount < 5 ? "ов" : "ов"}</span>
+                  )}
+                  {deleteConfirm.employeeCount > 0 && deleteConfirm.departmentCount > 0 && <span>, </span>}
+                  {deleteConfirm.departmentCount > 0 && (
+                    <span>в <strong>{deleteConfirm.departmentCount}</strong> подразделени{deleteConfirm.departmentCount === 1 ? "и" : deleteConfirm.departmentCount < 5 ? "ях" : "ях"}</span>
+                  )}
+                  .
+                </div>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDelete}
+              onClick={handleDeleteConfirm}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Удалить

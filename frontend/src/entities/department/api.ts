@@ -91,4 +91,9 @@ export const departmentApi = {
     const { data } = await axios.get<TagRef[]>(`${API_URL}/departments/${deptId}/tags`)
     return data
   },
+
+  async getUsage(id: number): Promise<{ employee_count: number; links_count: number; tags_count: number }> {
+    const { data } = await axios.get<{ employee_count: number; links_count: number; tags_count: number }>(`${API_URL}/departments/${id}/usage`)
+    return data
+  },
 }

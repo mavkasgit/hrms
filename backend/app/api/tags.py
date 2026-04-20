@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.core.database import get_db
-from app.models.tag import Tag, EmployeeTag
+from app.models.tag import Tag, EmployeeTag, DepartmentTag
 
 router = APIRouter(prefix="/tags", tags=["org"])
 
@@ -136,13 +136,14 @@ async def update_tag(tag_id: int, data: TagUpdate, db: AsyncSession = Depends(ge
 
 @router.delete("/{tag_id}")
 async def delete_tag(tag_id: int, db: AsyncSession = Depends(get_db)):
-    """Удалить тег (связи с сотрудниками удаляются каскадно)."""
+    """Удалить тег (связи с сотрудниками и подразделениями удаляются каскадно)."""
     result = await db.execute(select(Tag).where(Tag.id == tag_id))
     tag = result.scalar_one_or_none()
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
 
     await db.execute(sa_delete(EmployeeTag).where(EmployeeTag.tag_id == tag_id))
+    await db.execute(sa_delete(DepartmentTag).where(DepartmentTag.tag_id == tag_id))
     await db.delete(tag)
     await db.commit()
     return {"ok": True}
@@ -246,3 +247,24 @@ async def get_tag_departments(tag_id: int, db: AsyncSession = Depends(get_db)):
         }
         for dept, assigned_at in rows
     ]
+
+
+@router.get("/{tag_id}/usage")
+async def get_tag_usage(tag_id: int, db: AsyncSession = Depends(get_db)):
+    """Получить количество связей тега перед удалением."""
+    result = await db.execute(select(Tag).where(Tag.id == tag_id))
+    tag = result.scalar_one_or_none()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    emp_result = await db.execute(
+        select(func.count()).select_from(EmployeeTag).where(EmployeeTag.tag_id == tag_id)
+    )
+    emp_count = emp_result.scalar_one()
+
+    dept_result = await db.execute(
+        select(func.count()).select_from(DepartmentTag).where(DepartmentTag.tag_id == tag_id)
+    )
+    dept_count = dept_result.scalar_one()
+
+    return {"employee_count": emp_count, "department_count": dept_count}

@@ -1,13 +1,18 @@
+/**
+ * @deprecated Используйте import { test, expect } from './fixtures'
+ * 
+ * Этот файл оставлен для обратной совместимости.
+ * Он реэкспортирует современные фикстуры из index.ts
+ * с маппингом старых имен (ordersApi -> apiOps)
+ */
+
 import { test as base, expect } from '@playwright/test'
-import type { Order, OrderExtraFields, OrderTypeRecord } from '../types'
+import type { APIRequestContext } from '@playwright/test'
+import type { Order, OrderTypeRecord } from '../types'
 
 const API_BASE = 'http://127.0.0.1:8000'
 
-export function uid(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
-}
-
-async function getOrderTypes(request: any): Promise<OrderTypeRecord[]> {
+async function getOrderTypes(request: APIRequestContext): Promise<OrderTypeRecord[]> {
   const resp = await request.get(`${API_BASE}/api/order-types`)
   expect(resp.status()).toBe(200)
   const data = await resp.json()
@@ -15,7 +20,7 @@ async function getOrderTypes(request: any): Promise<OrderTypeRecord[]> {
 }
 
 async function getOrderTypeId(
-  request: any,
+  request: APIRequestContext,
   params: { code?: string; name?: string; visibleOnly?: boolean }
 ): Promise<number> {
   const types = await getOrderTypes(request)
@@ -35,113 +40,12 @@ async function getOrderTypeId(
   return found!.id
 }
 
-async function createEmployeeForOrder(request: any, overrides: Record<string, any> = {}) {
-  const u = uid()
-  const deptResp = await request.post(`${API_BASE}/api/departments`, {
-    data: { name: `Ord-Отдел-${u}`, sort_order: 0 }
-  })
-  const dept = await deptResp.json()
-
-  const posResp = await request.post(`${API_BASE}/api/positions`, {
-    data: { name: `Ord-Должность-${u}`, sort_order: 0 }
-  })
-  const pos = await posResp.json()
-
-  const empData = {
-    name: `Ord-Сотрудник-${u}`,
-    gender: 'М',
-    birth_date: '1990-05-15',
-    tab_number: Math.floor(100000 + Math.random() * 900000),
-    department_id: dept.id,
-    position_id: pos.id,
-    hire_date: '2024-01-15',
-    contract_start: '2024-01-15',
-    contract_end: '2025-01-14',
-    citizenship: true,
-    residency: true,
-    rate: 25.5,
-    payment_form: 'Повременная',
-    ...overrides,
-  }
-
-  const empResp = await request.post(`${API_BASE}/api/employees`, { data: empData })
-  expect([200, 201]).toContain(empResp.status())
-  return empResp.json()
-}
-
-async function createOrder(
-  request: any,
-  employeeId: number,
-  data: {
-    order_type_id?: number
-    order_type_code?: string
-    order_type_name?: string
-    order_date: string
-    order_number?: string
-    extra_fields?: OrderExtraFields
-  }
-): Promise<Order> {
-  let orderTypeId = data.order_type_id
-  if (!orderTypeId) {
-    orderTypeId = await getOrderTypeId(request, {
-      code: data.order_type_code,
-      name: data.order_type_name,
-      visibleOnly: true,
-    })
-  }
-
-  const orderData = {
-    employee_id: employeeId,
-    order_type_id: orderTypeId,
-    order_date: data.order_date,
-    extra_fields: data.extra_fields || {},
-  }
-
-  const resp = await request.post(`${API_BASE}/api/orders`, { data: orderData })
-  expect([200, 201]).toContain(resp.status())
-  return resp.json()
-}
-
-async function cancelOrder(request: any, orderId: number): Promise<void> {
-  const resp = await request.put(`${API_BASE}/api/orders/${orderId}/cancel`)
-  expect([200, 204]).toContain(resp.status())
-}
-
-async function deleteOrder(request: any, orderId: number): Promise<void> {
-  const resp = await request.delete(`${API_BASE}/api/orders/${orderId}?hard=true&confirm=true`)
-  expect([200, 204]).toContain(resp.status())
-}
-
-async function getOrders(request: any, filters: Record<string, any> = {}): Promise<Order[]> {
-  const params = new URLSearchParams()
-  for (const [key, value] of Object.entries(filters)) {
-    params.append(key, String(value))
-  }
-  const resp = await request.get(`${API_BASE}/api/orders/all?${params.toString()}`)
-  expect(resp.status()).toBe(200)
-  const data = await resp.json()
-  return data.items || []
-}
-
-async function getOrdersByType(request: any, orderTypeName: string): Promise<Order[]> {
-  const orders = await getOrders(request)
-  return orders.filter((o) => o.order_type_name === orderTypeName)
-}
-
-async function deleteEmployee(request: any, employeeId: number): Promise<void> {
-  const resp = await request.delete(`${API_BASE}/api/employees/${employeeId}?hard=true&confirm=true`)
-  expect([200, 204]).toContain(resp.status())
-}
-
-type CreatedResources = {
-  employees: number[]
-  orders: number[]
-}
-
-type OrdersFixtures = {
+type OrdersApiFixtures = {
   ordersApi: {
     uid: () => string
-    createEmployee: (overrides?: Record<string, any>) => Promise<any>
+    getOrderTypeId: (params: { code?: string; name?: string; visibleOnly?: boolean }) => Promise<number>
+    getOrders: () => Promise<Order[]>
+    createEmployee: (overrides?: Record<string, unknown>) => Promise<unknown>
     createOrder: (
       employeeId: number,
       data: {
@@ -149,67 +53,115 @@ type OrdersFixtures = {
         order_type_code?: string
         order_type_name?: string
         order_date: string
-        extra_fields?: OrderExtraFields
+        extra_fields?: Record<string, unknown>
       }
     ) => Promise<Order>
     cancelOrder: (orderId: number) => Promise<void>
     deleteOrder: (orderId: number) => Promise<void>
-    getOrders: (filters?: Record<string, any>) => Promise<Order[]>
-    getOrdersByType: (orderTypeName: string) => Promise<Order[]>
-    getOrderTypeId: (params: { code?: string; name?: string; visibleOnly?: boolean }) => Promise<number>
     cleanup: () => Promise<void>
   }
 }
 
-export const test = base.extend<OrdersFixtures>({
+function uid(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+}
+
+export const test = base.extend<OrdersApiFixtures>({
   ordersApi: async ({ request }, use) => {
-    const resources: CreatedResources = {
-      employees: [],
-      orders: [],
-    }
+    const employees: number[] = []
+    const orders: number[] = []
 
     await use({
       uid,
-      createEmployee: async (overrides?: Record<string, any>) => {
-        const emp = await createEmployeeForOrder(request, overrides)
-        resources.employees.push(emp.id)
+      getOrderTypeId: async (params) => getOrderTypeId(request, params),
+      getOrders: async () => {
+        const resp = await request.get(`${API_BASE}/api/orders/all`)
+        expect(resp.status()).toBe(200)
+        const data = await resp.json()
+        return data.items || []
+      },
+      createEmployee: async (overrides = {}) => {
+        const u = uid()
+        const deptResp = await request.post(`${API_BASE}/api/departments`, {
+          data: { name: `Ord-Отдел-${u}`, sort_order: 0 }
+        })
+        const dept = await deptResp.json()
+
+        const posResp = await request.post(`${API_BASE}/api/positions`, {
+          data: { name: `Ord-Должность-${u}`, sort_order: 0 }
+        })
+        const pos = await posResp.json()
+
+        const empData = {
+          name: `Ord-Сотрудник-${u}`,
+          gender: 'М',
+          birth_date: '1990-05-15',
+          tab_number: Math.floor(100000 + Math.random() * 900000),
+          department_id: dept.id,
+          position_id: pos.id,
+          hire_date: '2024-01-15',
+          contract_start: '2024-01-15',
+          contract_end: '2025-01-14',
+          citizenship: true,
+          residency: true,
+          rate: 25.5,
+          payment_form: 'Повременная',
+          ...overrides,
+        }
+
+        const empResp = await request.post(`${API_BASE}/api/employees`, { data: empData })
+        expect([200, 201]).toContain(empResp.status())
+        const emp = await empResp.json()
+        employees.push(emp.id)
         return emp
       },
       createOrder: async (employeeId, data) => {
-        const order = await createOrder(request, employeeId, data)
-        resources.orders.push(order.id)
+        let orderTypeId = data.order_type_id
+        if (!orderTypeId) {
+          orderTypeId = await getOrderTypeId(request, {
+            code: data.order_type_code,
+            name: data.order_type_name,
+            visibleOnly: true,
+          })
+        }
+
+        const orderData = {
+          employee_id: employeeId,
+          order_type_id: orderTypeId,
+          order_date: data.order_date,
+          extra_fields: data.extra_fields || {},
+        }
+
+        const resp = await request.post(`${API_BASE}/api/orders`, { data: orderData })
+        expect([200, 201]).toContain(resp.status())
+        const order = await resp.json()
+        orders.push(order.id)
         return order
       },
-      cancelOrder: async (orderId: number) => {
-        await cancelOrder(request, orderId)
+      cancelOrder: async (orderId) => {
+        const resp = await request.put(`${API_BASE}/api/orders/${orderId}/cancel`)
+        expect([200, 204]).toContain(resp.status())
       },
-      deleteOrder: async (orderId: number) => {
-        await deleteOrder(request, orderId)
-      },
-      getOrders: async (filters?: Record<string, any>) => {
-        return getOrders(request, filters)
-      },
-      getOrdersByType: async (orderTypeName: string) => {
-        return getOrdersByType(request, orderTypeName)
-      },
-      getOrderTypeId: async (params: { code?: string; name?: string; visibleOnly?: boolean }) => {
-        return getOrderTypeId(request, params)
+      deleteOrder: async (orderId) => {
+        const resp = await request.delete(`${API_BASE}/api/orders/${orderId}?hard=true&confirm=true`)
+        expect([200, 204]).toContain(resp.status())
       },
       cleanup: async () => {
-        for (const orderId of resources.orders) {
-          await deleteOrder(request, orderId).catch(() => {})
+        for (const orderId of orders.reverse()) {
+          await request.delete(`${API_BASE}/api/orders/${orderId}?hard=true&confirm=true`).catch(() => {})
         }
-        for (const empId of resources.employees) {
-          await deleteEmployee(request, empId).catch(() => {})
+        for (const empId of employees.reverse()) {
+          await request.delete(`${API_BASE}/api/employees/${empId}?hard=true&confirm=true`).catch(() => {})
         }
       },
     })
 
-    for (const orderId of resources.orders) {
-      await deleteOrder(request, orderId).catch(() => {})
+    // Cleanup
+    for (const orderId of orders.reverse()) {
+      await request.delete(`${API_BASE}/api/orders/${orderId}?hard=true&confirm=true`).catch(() => {})
     }
-    for (const empId of resources.employees) {
-      await deleteEmployee(request, empId).catch(() => {})
+    for (const empId of employees.reverse()) {
+      await request.delete(`${API_BASE}/api/employees/${empId}?hard=true&confirm=true`).catch(() => {})
     }
   }
 })

@@ -1,190 +1,42 @@
+/**
+ * @deprecated Используйте import { test, expect } from './fixtures'
+ * 
+ * Этот файл оставлен для обратной совместимости.
+ * Он реэкспортирует современные фикстуры из index.ts
+ * с маппингом старых имен
+ */
+
 import { test as base, expect } from '@playwright/test'
+import type { APIRequestContext } from '@playwright/test'
 import { VacationsPage } from '../pages/VacationsPage'
-
-export type EmployeeData = {
-  id: number
-  name: string
-  tab_number: number
-  department_id: number
-  position_id: number
-  contract_start: string
-  additional_vacation_days: number
-}
-
-export type VacationData = {
-  id: number
-  employee_id: number
-  start_date: string
-  end_date: string
-  days_count: number
-  vacation_type: string
-}
-
-export type BalanceData = {
-  available_days: number
-  used_days: number
-  remaining_days: number
-  vacation_type_breakdown: Record<string, number>
-}
-
-export type VacationPeriodData = {
-  period_id: number
-  year_number: number
-  period_start: string
-  period_end: string
-  main_days: number
-  additional_days: number
-  total_days: number
-  used_days: number
-  remaining_days: number
-}
+import type { Employee, Vacation, VacationPeriod, VacationBalance } from '../types'
 
 const API_BASE = 'http://127.0.0.1:8000'
-
-async function createDepartment(request: any, name: string): Promise<any> {
-  const resp = await request.post(`${API_BASE}/api/departments`, {
-    data: { name, sort_order: 0 }
-  })
-  expect([200, 201]).toContain(resp.status())
-  return resp.json()
-}
-
-async function createPosition(request: any, name: string): Promise<any> {
-  const resp = await request.post(`${API_BASE}/api/positions`, {
-    data: { name, sort_order: 0 }
-  })
-  expect([200, 201]).toContain(resp.status())
-  return resp.json()
-}
 
 function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
 }
 
-async function createEmployee(request: any, overrides: Record<string, any> = {}): Promise<EmployeeData> {
-  const u = uid()
-  const dept = await createDepartment(request, `Отдел-${u}`)
-  const pos = await createPosition(request, `Должность-${u}`)
-
-  const empData = {
-    name: `Сотрудник-${u}`,
-    gender: 'М',
-    birth_date: '1990-05-15',
-    tab_number: Math.floor(100000 + Math.random() * 900000),
-    department_id: dept.id,
-    position_id: pos.id,
-    hire_date: '2024-01-15',
-    contract_start: '2024-01-15',
-    contract_end: '2025-01-14',
-    citizenship: true,
-    residency: true,
-    rate: 25.5,
-    payment_form: 'Повременная',
-    ...overrides,
-  }
-
-  const resp = await request.post(`${API_BASE}/api/employees`, { data: empData })
-  expect([200, 201]).toContain(resp.status())
-  return resp.json()
-}
-
-async function createVacation(request: any, employeeId: number, overrides: Record<string, any> = {}): Promise<VacationData> {
-  const vacData = {
-    employee_id: employeeId,
-    start_date: '2024-06-01',
-    end_date: '2024-06-14',
-    vacation_type: 'Трудовой',
-    order_date: '2024-05-25',
-    ...overrides,
-  }
-
-  const resp = await request.post(`${API_BASE}/api/vacations`, { data: vacData })
-  expect([200, 201]).toContain(resp.status())
-  return resp.json()
-}
-
-async function getBalance(request: any, employeeId: number): Promise<BalanceData> {
-  const resp = await request.get(`${API_BASE}/api/vacations/balance`, {
-    params: { employee_id: employeeId }
-  })
-  expect(resp.status()).toBe(200)
-  return resp.json()
-}
-
-async function updateEmployee(request: any, employeeId: number, data: Record<string, any>): Promise<any> {
-  const resp = await request.put(`${API_BASE}/api/employees/${employeeId}`, { data })
-  expect(resp.status()).toBe(200)
-  return resp.json()
-}
-
-async function deleteVacation(request: any, vacationId: number): Promise<void> {
-  const resp = await request.delete(`${API_BASE}/api/vacations/${vacationId}`)
-  expect([200, 204]).toContain(resp.status())
-}
-
-async function getPeriods(request: any, employeeId: number): Promise<VacationPeriodData[]> {
-  const resp = await request.get(`${API_BASE}/api/vacation-periods`, {
-    params: { employee_id: employeeId }
-  })
-  expect(resp.status()).toBe(200)
-  return resp.json()
-}
-
-async function getPeriodBalance(request: any, periodId: number): Promise<VacationPeriodData> {
-  const resp = await request.get(`${API_BASE}/api/vacation-periods/${periodId}/balance`)
-  expect(resp.status()).toBe(200)
-  return resp.json()
-}
-
-async function closePeriod(request: any, periodId: number): Promise<VacationPeriodData> {
-  const resp = await request.post(`${API_BASE}/api/vacation-periods/${periodId}/close`)
-  expect(resp.status()).toBe(200)
-  return resp.json()
-}
-
-async function partialClosePeriod(request: any, periodId: number, remainingDays: number): Promise<VacationPeriodData> {
-  const resp = await request.post(`${API_BASE}/api/vacation-periods/${periodId}/partial-close`, {
-    data: { remaining_days: remainingDays }
-  })
-  expect(resp.status()).toBe(200)
-  return resp.json()
-}
-
-async function adjustPeriod(request: any, periodId: number, additionalDays: number): Promise<VacationPeriodData> {
-  const resp = await request.post(`${API_BASE}/api/vacation-periods/${periodId}/adjust`, {
-    data: { additional_days: additionalDays }
-  })
-  expect(resp.status()).toBe(200)
-  return resp.json()
-}
-
-async function cleanupEmployee(request: any, employeeId: number): Promise<void> {
-  const vacResp = await request.get(`${API_BASE}/api/vacations`, {
-    params: { employee_id: employeeId, per_page: 1000 }
-  })
-  const vacations = (await vacResp.json()).items || []
-  for (const vac of vacations) {
-    await request.delete(`${API_BASE}/api/vacations/${vac.id}`)
-  }
-
-  await request.delete(`${API_BASE}/api/employees/${employeeId}?hard=true&confirm=true`)
-}
+export type VacationPeriodData = VacationPeriod
+export type BalanceData = VacationBalance
+export type EmployeeData = Employee
+export type VacationData = Vacation
 
 type VacationsFixtures = {
   vacationsPage: VacationsPage
   apiOps: {
     uid: () => string
-    createEmployee: (overrides?: Record<string, any>) => Promise<EmployeeData>
-    createVacation: (employeeId: number, overrides?: Record<string, any>) => Promise<VacationData>
-    getBalance: (employeeId: number) => Promise<BalanceData>
-    updateEmployee: (employeeId: number, data: Record<string, any>) => Promise<any>
+    createEmployee: (overrides?: Record<string, unknown>) => Promise<Employee>
+    createVacation: (employeeId: number, overrides?: Record<string, unknown>) => Promise<Vacation>
+    getBalance: (employeeId: number) => Promise<VacationBalance>
+    updateEmployee: (employeeId: number, data: Record<string, unknown>) => Promise<Employee>
     deleteVacation: (vacationId: number) => Promise<void>
     cleanupEmployee: (employeeId: number) => Promise<void>
-    getPeriods: (employeeId: number) => Promise<VacationPeriodData[]>
-    getPeriodBalance: (periodId: number) => Promise<VacationPeriodData>
-    closePeriod: (periodId: number) => Promise<VacationPeriodData>
-    partialClosePeriod: (periodId: number, remainingDays: number) => Promise<VacationPeriodData>
-    adjustPeriod: (periodId: number, additionalDays: number) => Promise<VacationPeriodData>
+    getPeriods: (employeeId: number) => Promise<VacationPeriod[]>
+    getPeriodBalance: (periodId: number) => Promise<VacationPeriod>
+    closePeriod: (periodId: number) => Promise<VacationPeriod>
+    partialClosePeriod: (periodId: number, remainingDays: number) => Promise<VacationPeriod>
+    adjustPeriod: (periodId: number, additionalDays: number) => Promise<VacationPeriod>
   }
 }
 
@@ -195,20 +47,145 @@ export const test = base.extend<VacationsFixtures>({
   },
 
   apiOps: async ({ request }, use) => {
+    const employees: number[] = []
+    const vacations: number[] = []
+
+    async function createDepartment(name: string) {
+      const resp = await request.post(`${API_BASE}/api/departments`, {
+        data: { name, sort_order: 0 }
+      })
+      expect([200, 201]).toContain(resp.status())
+      return resp.json()
+    }
+
+    async function createPosition(name: string) {
+      const resp = await request.post(`${API_BASE}/api/positions`, {
+        data: { name, sort_order: 0 }
+      })
+      expect([200, 201]).toContain(resp.status())
+      return resp.json()
+    }
+
+    async function createEmployee(overrides: Record<string, unknown> = {}): Promise<Employee> {
+      const u = uid()
+      const dept = await createDepartment(`Отдел-${u}`)
+      const pos = await createPosition(`Должность-${u}`)
+
+      const empData = {
+        name: `Сотрудник-${u}`,
+        gender: 'М',
+        birth_date: '1990-05-15',
+        tab_number: Math.floor(100000 + Math.random() * 900000),
+        department_id: dept.id,
+        position_id: pos.id,
+        hire_date: '2024-01-15',
+        contract_start: '2024-01-15',
+        contract_end: '2025-01-14',
+        citizenship: true,
+        residency: true,
+        rate: 25.5,
+        payment_form: 'Повременная',
+        ...overrides,
+      }
+
+      const resp = await request.post(`${API_BASE}/api/employees`, { data: empData })
+      expect([200, 201]).toContain(resp.status())
+      const emp = await resp.json()
+      employees.push(emp.id)
+      return emp
+    }
+
+    async function deleteVacation(id: number): Promise<void> {
+      const resp = await request.delete(`${API_BASE}/api/vacations/${id}`)
+      expect([200, 204]).toContain(resp.status())
+    }
+
     await use({
       uid,
-      createEmployee: (overrides?: Record<string, any>) => createEmployee(request, overrides),
-      createVacation: (employeeId: number, overrides?: Record<string, any>) => createVacation(request, employeeId, overrides),
-      getBalance: (employeeId: number) => getBalance(request, employeeId),
-      updateEmployee: (employeeId: number, data: Record<string, any>) => updateEmployee(request, employeeId, data),
-      deleteVacation: (vacationId: number) => deleteVacation(request, vacationId),
-      cleanupEmployee: (employeeId: number) => cleanupEmployee(request, employeeId),
-      getPeriods: (employeeId: number) => getPeriods(request, employeeId),
-      getPeriodBalance: (periodId: number) => getPeriodBalance(request, periodId),
-      closePeriod: (periodId: number) => closePeriod(request, periodId),
-      partialClosePeriod: (periodId: number, remainingDays: number) => partialClosePeriod(request, periodId, remainingDays),
-      adjustPeriod: (periodId: number, additionalDays: number) => adjustPeriod(request, periodId, additionalDays),
+      createEmployee: async (overrides?: Record<string, unknown>) => {
+        return createEmployee(overrides)
+      },
+      createVacation: async (employeeId: number, overrides?: Record<string, unknown>) => {
+        const vacData = {
+          employee_id: employeeId,
+          start_date: '2024-06-01',
+          end_date: '2024-06-14',
+          vacation_type: 'Трудовой',
+          order_date: '2024-05-25',
+          ...overrides,
+        }
+
+        const resp = await request.post(`${API_BASE}/api/vacations`, { data: vacData })
+        expect([200, 201]).toContain(resp.status())
+        const vac = await resp.json()
+        vacations.push(vac.id)
+        return vac
+      },
+      getBalance: async (employeeId: number) => {
+        const resp = await request.get(`${API_BASE}/api/vacations/balance`, {
+          params: { employee_id: employeeId }
+        })
+        expect(resp.status()).toBe(200)
+        return resp.json()
+      },
+      updateEmployee: async (employeeId: number, data: Record<string, unknown>) => {
+        const resp = await request.put(`${API_BASE}/api/employees/${employeeId}`, { data })
+        expect(resp.status()).toBe(200)
+        return resp.json()
+      },
+      deleteVacation: async (vacationId: number) => {
+        await deleteVacation(vacationId)
+      },
+      cleanupEmployee: async (employeeId: number) => {
+        const vacResp = await request.get(`${API_BASE}/api/vacations`, {
+          params: { employee_id: employeeId, per_page: 1000 }
+        })
+        const vacs = (await vacResp.json()).items || []
+        for (const vac of vacs) {
+          await request.delete(`${API_BASE}/api/vacations/${vac.id}`)
+        }
+        await request.delete(`${API_BASE}/api/employees/${employeeId}?hard=true&confirm=true`)
+      },
+      getPeriods: async (employeeId: number) => {
+        const resp = await request.get(`${API_BASE}/api/vacation-periods`, {
+          params: { employee_id: employeeId }
+        })
+        expect(resp.status()).toBe(200)
+        return resp.json()
+      },
+      getPeriodBalance: async (periodId: number) => {
+        const resp = await request.get(`${API_BASE}/api/vacation-periods/${periodId}/balance`)
+        expect(resp.status()).toBe(200)
+        return resp.json()
+      },
+      closePeriod: async (periodId: number) => {
+        const resp = await request.post(`${API_BASE}/api/vacation-periods/${periodId}/close`)
+        expect(resp.status()).toBe(200)
+        return resp.json()
+      },
+      partialClosePeriod: async (periodId: number, remainingDays: number) => {
+        const resp = await request.post(`${API_BASE}/api/vacation-periods/${periodId}/partial-close`, {
+          data: { remaining_days: remainingDays }
+        })
+        expect(resp.status()).toBe(200)
+        return resp.json()
+      },
+      adjustPeriod: async (periodId: number, additionalDays: number) => {
+        const resp = await request.post(`${API_BASE}/api/vacation-periods/${periodId}/adjust`, {
+          data: { additional_days: additionalDays }
+        })
+        expect(resp.status()).toBe(200)
+        return resp.json()
+      },
     })
+
+    // Cleanup
+    for (const vacId of vacations.reverse()) {
+      await request.delete(`${API_BASE}/api/vacations/${vacId}`).catch(() => {})
+    }
+    for (const empId of employees.reverse()) {
+      await request.delete(`${API_BASE}/api/employees/${empId}?hard=true&confirm=true`).catch(() => {})
+    }
   }
 })
 

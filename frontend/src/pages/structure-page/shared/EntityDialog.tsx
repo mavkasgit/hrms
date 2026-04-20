@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import {
@@ -44,6 +44,155 @@ export function renderIcon(name: string, className = "h-4 w-4"): ReactNode | nul
   return Icon ? <Icon className={className} /> : null
 }
 
+/* ───────── ColorPicker ───────── */
+
+function isValidHex(v: string): boolean {
+  return /^#[0-9A-Fa-f]{6}$/.test(v)
+}
+
+function ColorPicker({
+  value,
+  onChange,
+  compact = false,
+}: {
+  value: string
+  onChange: (v: string) => void
+  compact?: boolean
+}) {
+  const colorInputRef = useRef<HTMLInputElement>(null)
+
+  const openNativePicker = () => {
+    colorInputRef.current?.click()
+  }
+
+  if (compact) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="size-8 shrink-0 rounded-md border shadow-sm cursor-pointer transition-transform hover:scale-105 active:scale-95"
+              style={{ backgroundColor: value }}
+            />
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-3" align="start">
+            <div className="grid grid-cols-4 gap-1.5">
+              {COLOR_PRESETS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className={`size-8 rounded-md cursor-pointer transition-all hover:scale-110 ${
+                    value === c ? "ring-2 ring-foreground ring-offset-2" : ""
+                  }`}
+                  style={{ backgroundColor: c }}
+                  onClick={() => onChange(c)}
+                  title={c}
+                />
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        <label
+          className="relative shrink-0 flex items-center gap-1 px-2 py-1 rounded-md border text-[12px] font-medium cursor-pointer transition-colors whitespace-nowrap hover:bg-accent"
+        >
+          <input
+            ref={colorInputRef}
+            type="color"
+            value={isValidHex(value) ? value : "#000000"}
+            onChange={(e) => onChange(e.target.value)}
+            className="absolute inset-0 opacity-0 cursor-pointer"
+          />
+          <svg className="size-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="13.5" cy="6.5" r="2.5" />
+            <path d="M17.5 10.5c2.5 0 4.5 2 4.5 4.5 0 3.5-3.5 7-8 7-1.5 0-3-.5-4-1.5L4 14l3-3 2.5 2.5c.5-1 1.5-2 2.5-3.5" />
+            <path d="M2 20l4-4" />
+          </svg>
+          Свой цвет
+        </label>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center gap-1.5">
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="size-8 shrink-0 rounded-md border shadow-sm cursor-pointer transition-transform hover:scale-105 active:scale-95"
+              style={{ backgroundColor: value }}
+            />
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-3" align="start">
+            <div className="grid grid-cols-4 gap-1.5">
+              {COLOR_PRESETS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className={`size-8 rounded-md cursor-pointer transition-all hover:scale-110 ${
+                    value === c ? "ring-2 ring-foreground ring-offset-2" : ""
+                  }`}
+                  style={{ backgroundColor: c }}
+                  onClick={() => onChange(c)}
+                  title={c}
+                />
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        <span className="font-mono text-xs text-muted-foreground shrink-0">{isValidHex(value) ? value.toUpperCase() : value}</span>
+
+        <button
+          type="button"
+          onClick={openNativePicker}
+          className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-md border text-[12px] font-medium cursor-pointer transition-colors whitespace-nowrap hover:bg-accent ${
+            !COLOR_PRESETS.includes(value) ? "ring-2 ring-foreground ring-offset-1" : ""
+          }`}
+        >
+          <svg className="size-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="13.5" cy="6.5" r="2.5" />
+            <path d="M17.5 10.5c2.5 0 4.5 2 4.5 4.5 0 3.5-3.5 7-8 7-1.5 0-3-.5-4-1.5L4 14l3-3 2.5 2.5c.5-1 1.5-2 2.5-3.5" />
+            <path d="M2 20l4-4" />
+          </svg>
+          Свой цвет
+        </button>
+
+        <input
+          ref={colorInputRef}
+          type="color"
+          value={isValidHex(value) ? value : "#000000"}
+          onChange={(e) => onChange(e.target.value)}
+          className="sr-only"
+        />
+      </div>
+
+      <div>
+        <div className="text-[11px] text-muted-foreground mb-1.5">Быстрый выбор</div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {COLOR_PRESETS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`h-7 rounded-md cursor-pointer transition-all hover:scale-105 ${
+                value === c
+                  ? "ring-2 ring-foreground ring-offset-1"
+                  : "ring-1 ring-border"
+              }`}
+              style={{ backgroundColor: c }}
+              onClick={() => onChange(c)}
+              title={c}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ───────── IconColorPicker ───────── */
 
 function IconColorPicker({
@@ -58,15 +207,15 @@ function IconColorPicker({
   onColorChange: (v: string) => void
 }) {
   const [allOpen, setAllOpen] = useState(false)
-  const preview = ICON_LIST.slice(0, 16)
+  const preview = ICON_LIST.slice(0, 12)
 
   return (
     <div className="flex gap-4">
       <div className="space-y-2">
-        <div className="text-xs text-muted-foreground">Иконка</div>
+        <div className="text-xs text-muted-foreground h-4">Иконка</div>
         {iconValue && (
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-primary">{renderIcon(iconValue)}</span>
+            <span style={{ color: colorValue }}>{renderIcon(iconValue)}</span>
             <span className="text-muted-foreground">{iconValue}</span>
           </div>
         )}
@@ -75,7 +224,7 @@ function IconColorPicker({
             <button
               key={name}
               type="button"
-              className={`flex items-center justify-center h-9 w-9 rounded-md transition-all hover:bg-accent ${
+              className={`flex items-center justify-center size-9 rounded-md transition-all hover:bg-accent ${
                 iconValue === name ? "ring-2 ring-primary bg-accent" : "text-muted-foreground"
               }`}
               onClick={() => onIconChange(name)}
@@ -102,7 +251,7 @@ function IconColorPicker({
                     <button
                       key={name}
                       type="button"
-                      className={`flex items-center justify-center h-9 w-9 rounded-md transition-all hover:bg-accent ${
+                      className={`flex items-center justify-center size-9 rounded-md transition-all hover:bg-accent ${
                         iconValue === name ? "ring-2 ring-primary bg-accent" : "text-muted-foreground"
                       }`}
                       onClick={() => { onIconChange(name); setAllOpen(false) }}
@@ -118,29 +267,9 @@ function IconColorPicker({
         </div>
       </div>
 
-      <div className="flex-1 pt-5">
-        <div className="text-xs text-muted-foreground mb-1.5">
-          Цвет иконки {colorValue && <span className="font-mono">[{colorValue}]</span>}
-        </div>
-        <div className="space-y-1.5">
-          {[0, 1].map((row) => (
-            <div key={row} className="flex gap-1.5">
-              {COLOR_PRESETS.slice(row * 6, row * 6 + 6).map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className="h-8 flex-1 rounded-md cursor-pointer transition-all ring-2 ring-transparent hover:ring-foreground/30 hover:scale-105"
-                  style={{
-                    backgroundColor: c,
-                    boxShadow: colorValue === c ? `0 0 0 2px var(--background), 0 0 0 4px ${c}` : undefined,
-                  }}
-                  onClick={() => onColorChange(c)}
-                  title={c}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
+      <div className="flex-1">
+        <div className="text-xs text-muted-foreground mb-2 h-4">Цвет иконки</div>
+        <ColorPicker value={colorValue} onChange={onColorChange} />
       </div>
     </div>
   )
@@ -155,6 +284,7 @@ export interface EntityDialogField {
   required?: boolean
   min?: number
   rowGroup?: string
+  testId?: string
 }
 
 export interface EntityDialogProps {
@@ -163,13 +293,15 @@ export interface EntityDialogProps {
   onOpenChange: (open: boolean) => void
   mode: "add" | "edit"
   initialValues: Record<string, unknown>
-  onSave: (values: Record<string, unknown>) => void
+  onSave: (values: Record<string, unknown>) => void | Promise<void>
+  onDelete?: () => void
   addTitle: string
   editTitle: string
   addDescription: string
   editDescription: string
   addLabel: string
   saveLabel: string
+  isSaving?: boolean
 }
 
 export function EntityDialog({
@@ -179,19 +311,23 @@ export function EntityDialog({
   mode,
   initialValues,
   onSave,
+  onDelete,
   addTitle,
   editTitle,
   addDescription,
   editDescription,
   addLabel,
   saveLabel,
+  isSaving = false,
 }: EntityDialogProps) {
   const [values, setValues] = useState<Record<string, unknown>>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
   const fieldsKey = JSON.stringify(fields)
 
   useEffect(() => {
     if (!open) return
+    setErrors({})
     if (mode === "edit") {
       setValues({ ...initialValues })
     } else {
@@ -206,41 +342,126 @@ export function EntityDialog({
     }
   }, [open, mode, initialValues, fieldsKey])
 
-  const hasBothIconAndColor = useMemo(
-    () => !!(fields.icon && fields.color),
-    [fieldsKey]
-  )
-
   const setValue = useCallback((key: string, value: unknown) => {
     setValues((prev) => ({ ...prev, [key]: value }))
+    setErrors((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
   }, [])
 
-  const handleSave = () => {
-    onSave(values)
+  const validate = (): boolean => {
+    const next: Record<string, string> = {}
+    for (const [key, field] of Object.entries(fields)) {
+      if (field.required && !values[key]) {
+        next[key] = `${field.label} обязательно`
+      }
+    }
+    setErrors(next)
+    return Object.keys(next).length === 0
+  }
+
+  const handleSave = async () => {
+    if (!validate()) return
+    await onSave(values)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
-      const hasEmptyRequired = Object.entries(fields).some(
-        ([key, f]) => f.required && !values[key]
-      )
-      if (!hasEmptyRequired) handleSave()
+      e.preventDefault()
+      if (!isSaving) handleSave()
     }
   }
 
-  const renderFields = () => {
-    const entries = Object.entries(fields)
-      .filter(([, field]) => {
-        if (field.type === "icon" && hasBothIconAndColor && field === fields.icon) return false
-        if (field.type === "color" && hasBothIconAndColor && field === fields.color) return false
-        return true
-      })
+  const renderField = (key: string, field: EntityDialogField, val: unknown, compact = false) => {
+    const hasError = !!errors[key]
 
+    const inputClasses = hasError ? "border-destructive focus-visible:ring-destructive" : ""
+
+    if (field.type === "text") {
+      return (
+        <Input
+          value={val as string}
+          placeholder={field.placeholder ?? ""}
+          className={inputClasses}
+          onChange={(e) => setValue(key, e.target.value)}
+          data-testid={field.testId}
+        />
+      )
+    }
+
+    if (field.type === "number") {
+      const min = field.min ?? 0
+      return (
+        <Input
+          type="number"
+          value={val as number}
+          className={inputClasses}
+          onChange={(e) => {
+            const parsed = parseInt(e.target.value, 10)
+            setValue(key, isNaN(parsed) ? min : parsed)
+          }}
+          min={min}
+        />
+      )
+    }
+
+    if (field.type === "color") {
+      return <ColorPicker value={(val as string) ?? "#000000"} onChange={(v) => setValue(key, v)} compact={compact} />
+    }
+
+    if (field.type === "icon") {
+      const iconKey = Object.keys(fields).find((k) => fields[k].type === "icon")
+      const colorKey = Object.keys(fields).find((k) => fields[k].type === "color")
+      const hasIconColorPair = !!(iconKey && colorKey)
+
+      if (hasIconColorPair) {
+        return (
+          <IconColorPicker
+            iconValue={values[iconKey!] as string}
+            colorValue={values[colorKey!] as string}
+            onIconChange={(v) => setValue(iconKey!, v)}
+            onColorChange={(v) => setValue(colorKey!, v)}
+          />
+        )
+      }
+
+      return (
+        <div className="grid grid-cols-6 gap-1.5 max-h-40 overflow-auto rounded-md border p-2">
+          {ICON_LIST.map((name) => (
+            <button
+              key={name}
+              type="button"
+              className={`flex items-center justify-center size-8 rounded-md transition-all hover:bg-accent ${
+                val === name ? "ring-2 ring-primary bg-accent" : "text-muted-foreground"
+              }`}
+              onClick={() => setValue(key, name)}
+              title={name}
+            >
+              {renderIcon(name)}
+            </button>
+          ))}
+        </div>
+      )
+    }
+
+    return null
+  }
+
+  const renderFields = () => {
+    const iconKey = Object.keys(fields).find((k) => fields[k].type === "icon")
+    const colorKey = Object.keys(fields).find((k) => fields[k].type === "color")
+    const hasIconColorPair = !!(iconKey && colorKey)
+
+    const entries = Object.entries(fields)
     const rendered = new Set<string>()
     const result: React.ReactNode[] = []
 
     for (const [key, field] of entries) {
       if (rendered.has(key)) continue
+      if (hasIconColorPair && key === colorKey) continue
+
       const val = values[key] ?? ""
 
       if (field.rowGroup) {
@@ -251,26 +472,16 @@ export function EntityDialog({
           <div key={key} className="flex gap-3">
             {groupFields.map(([gk, gf]) => {
               const gv = values[gk] ?? ""
+              const hasError = !!errors[gk]
               return (
                 <div key={gk} className="flex-1">
                   <label className="text-sm font-medium">{gf.label}</label>
                   <div className="mt-1">
-                    {gf.type === "text" && (
-                      <Input
-                        value={gv as string}
-                        placeholder={gf.placeholder ?? ""}
-                        onChange={(e) => setValue(gk, e.target.value)}
-                      />
-                    )}
-                    {gf.type === "number" && (
-                      <Input
-                        type="number"
-                        value={gv as number}
-                        onChange={(e) => setValue(gk, parseInt(e.target.value, 10) || (gf.min ?? 1))}
-                        min={gf.min}
-                      />
-                    )}
+                    {renderField(gk, gf, gv, true)}
                   </div>
+                  {hasError && (
+                    <p className="text-xs text-destructive mt-1">{errors[gk]}</p>
+                  )}
                 </div>
               )
             })}
@@ -280,51 +491,15 @@ export function EntityDialog({
         rendered.add(key)
         result.push(
           <div key={key}>
-            {!(field.type === "icon" && hasBothIconAndColor) && (
+            {!(field.type === "icon" && hasIconColorPair) && (
               <label className="text-sm font-medium">{field.label}</label>
             )}
             <div className="mt-1">
-              {field.type === "text" && (
-                <Input
-                  value={val as string}
-                  placeholder={field.placeholder ?? ""}
-                  onChange={(e) => setValue(key, e.target.value)}
-                />
-              )}
-              {field.type === "number" && (
-                <Input
-                  type="number"
-                  value={val as number}
-                  onChange={(e) => setValue(key, parseInt(e.target.value, 10) || (field.min ?? 1))}
-                  min={field.min}
-                />
-              )}
-              {field.type === "icon" && hasBothIconAndColor && (
-                <IconColorPicker
-                  iconValue={values.icon as string}
-                  colorValue={values.color as string}
-                  onIconChange={(v) => setValue("icon", v)}
-                  onColorChange={(v) => setValue("color", v)}
-                />
-              )}
-              {field.type === "icon" && !hasBothIconAndColor && (
-                <div className="grid grid-cols-6 gap-1.5 max-h-40 overflow-auto rounded-md border p-2">
-                  {ICON_LIST.map((name) => (
-                    <button
-                      key={name}
-                      type="button"
-                      className={`flex items-center justify-center h-8 w-8 rounded-md transition-all hover:bg-accent ${
-                        val === name ? "ring-2 ring-primary bg-accent" : "text-muted-foreground"
-                      }`}
-                      onClick={() => setValue(key, name)}
-                      title={name}
-                    >
-                      {renderIcon(name)}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {renderField(key, field, val)}
             </div>
+            {errors[key] && (
+              <p className="text-xs text-destructive mt-1">{errors[key]}</p>
+            )}
           </div>
         )
       }
@@ -346,11 +521,27 @@ export function EntityDialog({
           {renderFields()}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button onClick={handleSave}>{mode === "add" ? addLabel : saveLabel}</Button>
+        <DialogFooter className="sm:justify-between">
+          {mode === "edit" && onDelete && (
+            <Button variant="destructive" onClick={onDelete} disabled={isSaving}>
+              Удалить
+            </Button>
+          )}
+          <div className="ml-auto flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
+              Отмена
+            </Button>
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <L.Loader2 className="mr-2 size-4 animate-spin" />
+                  Сохранение...
+                </>
+              ) : (
+                <>{mode === "add" ? addLabel : saveLabel}</>
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

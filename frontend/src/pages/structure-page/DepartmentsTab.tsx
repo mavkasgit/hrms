@@ -20,7 +20,7 @@ import {
 } from "@/shared/ui/alert-dialog"
 import {
   Building2, Plus, ChevronRight, ChevronDown, Users,
-  Pencil, Trash2, X, Check, ChevronsDown, ChevronsUp,
+  X, Check, ChevronsDown, ChevronsUp,
 } from "lucide-react"
 import {
   useDepartmentGraph,
@@ -30,14 +30,15 @@ import {
   type GraphNode,
   type GraphEdge,
 } from "@/entities/department"
+import { departmentApi } from "@/entities/department/api"
 import { useTags } from "@/entities/tag"
 import { useAssignDepartmentTag, useUnassignDepartmentTag } from "@/entities/department"
 import { EntityDialog, type EntityDialogField, renderIcon } from "./shared/EntityDialog"
 import { SearchInput } from "./shared/SearchInput"
 
 const DEPT_FIELDS: Record<string, EntityDialogField> = {
-  name: { type: "text", label: "Название", required: true, placeholder: "Отдел разработки" },
-  shortName: { type: "text", label: "Краткое", placeholder: "Отдел разраб.", rowGroup: "meta" },
+  name: { type: "text", label: "Название", required: true, placeholder: "Новый отдел", testId: "name-input" },
+  shortName: { type: "text", label: "Краткое", placeholder: "Краткое", rowGroup: "meta" },
   priority: { type: "number", label: "Приоритет", min: 1, rowGroup: "meta" },
   icon: { type: "icon", label: "Иконка" },
   color: { type: "color", label: "Цвет иконки" },
@@ -149,7 +150,6 @@ function DepartmentTreeNode({
   allTags,
   onAddChild,
   onEdit,
-  onDelete,
   onAssignTag,
   onUnassignTag,
   expandedNodes,
@@ -163,7 +163,6 @@ function DepartmentTreeNode({
   allTags: { id: number; name: string; color?: string }[]
   onAddChild: (parentId: number) => void
   onEdit: (node: GraphNode) => void
-  onDelete: (node: GraphNode) => void
   onAssignTag: (deptId: number, tagId: number) => void
   onUnassignTag: (deptId: number, tagId: number) => void
   expandedNodes: Set<number>
@@ -199,21 +198,19 @@ function DepartmentTreeNode({
           paddingLeft: `${depth * 20 + 8}px`,
           backgroundColor: node.color ? node.color + "18" : undefined,
         }}
-        onClick={() => {
-          if (hasChildren) toggleExpand()
-          else if (node.employees.length > 0) toggleExpand()
-        }}
+        onClick={() => onEdit(node)}
       >
         <button
           onClick={(e) => {
             e.stopPropagation()
-            toggleExpand()
+            if (hasChildren) toggleExpand()
+            else if (node.employees.length > 0) toggleExpand()
           }}
           className={`h-5 w-5 flex items-center justify-center text-muted-foreground rounded-sm transition-transform flex-shrink-0 ${
-            hasChildren ? "hover:bg-accent" : ""
+            hasChildren || node.employees.length > 0 ? "hover:bg-accent" : ""
           }`}
         >
-          {hasChildren ? (
+          {hasChildren || node.employees.length > 0 ? (
             isExpanded ? (
               <ChevronDown className="h-4 w-4" />
             ) : (
@@ -265,7 +262,7 @@ function DepartmentTreeNode({
           </span>
         )}
 
-        <div className="opacity-0 group-hover/dept:opacity-100 transition-opacity flex gap-0.5 flex-shrink-0">
+        <div className="flex gap-0.5 flex-shrink-0">
           <Button
             variant="ghost"
             size="icon"
@@ -276,28 +273,6 @@ function DepartmentTreeNode({
             }}
           >
             <Plus className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-muted-foreground"
-            onClick={(e) => {
-              e.stopPropagation()
-              onEdit(node)
-            }}
-          >
-            <Pencil className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-destructive/60 hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete(node)
-            }}
-          >
-            <Trash2 className="h-3 w-3" />
           </Button>
         </div>
       </div>
@@ -348,7 +323,6 @@ function DepartmentTreeNode({
               allTags={allTags}
               onAddChild={onAddChild}
               onEdit={onEdit}
-              onDelete={onDelete}
               onAssignTag={onAssignTag}
               onUnassignTag={onUnassignTag}
               expandedNodes={expandedNodes}
@@ -438,7 +412,13 @@ export function DepartmentsTab() {
   const [deptPriority, setDeptPriority] = useState(1)
   const [deptIcon, setDeptIcon] = useState("")
   const [deptColor, setDeptColor] = useState("")
-  const [deleteTarget, setDeleteTarget] = useState<GraphNode | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    id: number
+    name: string
+    employeeCount: number
+    linksCount: number
+    tagsCount: number
+  } | null>(null)
 
   // Поиск
   const [searchQuery, setSearchQuery] = useState("")
@@ -509,10 +489,34 @@ export function DepartmentsTab() {
     setDialogOpen(true)
   }
 
-  const handleDelete = () => {
-    if (deleteTarget) {
-      deleteDept.mutate(deleteTarget.id)
-      setDeleteTarget(null)
+  const handleDeleteRequest = async () => {
+    if (editingDept) {
+      try {
+        const usage = await departmentApi.getUsage(editingDept.id)
+        setDeleteConfirm({
+          id: editingDept.id,
+          name: editingDept.name,
+          employeeCount: usage.employee_count,
+          linksCount: usage.links_count,
+          tagsCount: usage.tags_count,
+        })
+      } catch {
+        setDeleteConfirm({
+          id: editingDept.id,
+          name: editingDept.name,
+          employeeCount: 0,
+          linksCount: 0,
+          tagsCount: 0,
+        })
+      }
+    }
+  }
+
+  const handleDeleteConfirm = () => {
+    if (deleteConfirm) {
+      deleteDept.mutate(deleteConfirm.id)
+      setDeleteConfirm(null)
+      setDialogOpen(false)
     }
   }
 
@@ -596,7 +600,6 @@ export function DepartmentsTab() {
               allTags={allTags}
               onAddChild={(id) => openAdd(id)}
               onEdit={openEdit}
-              onDelete={(n) => setDeleteTarget(n)}
               onAssignTag={handleAssignTag}
               onUnassignTag={handleUnassignTag}
               expandedNodes={expandedNodes}
@@ -649,22 +652,36 @@ export function DepartmentsTab() {
         editDescription="Измените название и параметры"
         addLabel="Создать"
         saveLabel="Сохранить"
+        onDelete={handleDeleteRequest}
       />
 
-      {/* Delete */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить подразделение?</AlertDialogTitle>
             <AlertDialogDescription>
-              <span className="font-medium">{deleteTarget?.name}</span>
-              . Должно быть пустым и без связей.
+              <span className="font-medium">{deleteConfirm?.name}</span> будет удалено.
+              {deleteConfirm && (deleteConfirm.employeeCount > 0 || deleteConfirm.linksCount > 0 || deleteConfirm.tagsCount > 0) && (
+                <div className="mt-2 text-sm">
+                  {deleteConfirm.employeeCount > 0 && (
+                    <span>Сотрудников: <strong>{deleteConfirm.employeeCount}</strong></span>
+                  )}
+                  {deleteConfirm.linksCount > 0 && (
+                    <span>{deleteConfirm.employeeCount > 0 ? ", " : ""}Связей: <strong>{deleteConfirm.linksCount}</strong></span>
+                  )}
+                  {deleteConfirm.tagsCount > 0 && (
+                    <span>{deleteConfirm.employeeCount > 0 || deleteConfirm.linksCount > 0 ? ", " : ""}Тегов: <strong>{deleteConfirm.tagsCount}</strong></span>
+                  )}
+                  .
+                </div>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDelete}
+              onClick={handleDeleteConfirm}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Удалить

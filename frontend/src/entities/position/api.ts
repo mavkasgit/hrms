@@ -23,4 +23,9 @@ export const positionApi = {
     const { data } = await axios.delete<{ ok: boolean }>(`${API_URL}/positions/${id}`)
     return data
   },
+
+  async getUsage(id: number): Promise<{ employee_count: number }> {
+    const { data } = await axios.get<{ employee_count: number }>(`${API_URL}/positions/${id}/usage`)
+    return data
+  },
 }

@@ -20,7 +20,7 @@ import {
 } from "@/shared/ui/alert-dialog"
 import {
   Briefcase, Plus, ChevronRight, ChevronDown, Users,
-  Pencil, Trash2, Check, ChevronsDown, ChevronsUp,
+  Pencil, Check, ChevronsDown, ChevronsUp,
 } from "lucide-react"
 import {
   usePositions,
@@ -28,6 +28,7 @@ import {
   useUpdatePosition,
   useDeletePosition,
 } from "@/entities/position"
+import { positionApi } from "@/entities/position/api"
 import { useTags } from "@/entities/tag"
 import {
   useEmployees,
@@ -38,7 +39,7 @@ import { EntityDialog, type EntityDialogField, renderIcon } from "./shared/Entit
 import { SearchInput } from "./shared/SearchInput"
 
 const POS_FIELDS: Record<string, EntityDialogField> = {
-  name: { type: "text", label: "Название", required: true, placeholder: "Менеджер" },
+  name: { type: "text", label: "Название", required: true, placeholder: "Новая должность" },
   icon: { type: "icon", label: "Иконка" },
   color: { type: "color", label: "Цвет иконки" },
 }
@@ -122,7 +123,6 @@ function PositionTreeNode({
   employees,
   allTags,
   onEdit,
-  onDelete,
   onAssignTag,
   onUnassignTag,
   expandedPositions,
@@ -133,7 +133,6 @@ function PositionTreeNode({
   employees: { id: number; name: string; department?: string; tags: { id: number; name: string; color?: string }[] }[]
   allTags: { id: number; name: string; color?: string }[]
   onEdit: (pos: { id: number; name: string; color?: string; icon?: string }) => void
-  onDelete: (pos: { id: number; name: string }) => void
   onAssignTag: (employeeId: number, tagId: number) => void
   onUnassignTag: (employeeId: number, tagId: number) => void
   expandedPositions: Set<number>
@@ -165,14 +164,12 @@ function PositionTreeNode({
           paddingLeft: "8px",
           backgroundColor: position.color ? position.color + "18" : undefined,
         }}
-        onClick={() => {
-          if (employees.length > 0) toggleExpand()
-        }}
+        onClick={() => onEdit({ id: position.id, name: position.name, color: position.color, icon: position.icon })}
       >
         <button
           onClick={(e) => {
             e.stopPropagation()
-            toggleExpand()
+            if (employees.length > 0) toggleExpand()
           }}
           className={`h-5 w-5 flex items-center justify-center text-muted-foreground rounded-sm transition-transform flex-shrink-0 ${
             employees.length > 0 ? "hover:bg-accent" : ""
@@ -230,7 +227,7 @@ function PositionTreeNode({
         )}
 
         {/* Действия */}
-        <div className="opacity-0 group-hover/pos:opacity-100 transition-opacity flex gap-0.5 flex-shrink-0">
+        <div className="flex gap-0.5 flex-shrink-0">
           <Button
             variant="ghost"
             size="icon"
@@ -241,17 +238,6 @@ function PositionTreeNode({
             }}
           >
             <Pencil className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-destructive/60 hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation()
-              onDelete({ id: position.id, name: position.name })
-            }}
-          >
-            <Trash2 className="h-3 w-3" />
           </Button>
         </div>
       </div>
@@ -297,9 +283,10 @@ export function PositionsTab() {
   const [posName, setPosName] = useState("")
   const [posIcon, setPosIcon] = useState("")
   const [posColor, setPosColor] = useState("")
-  const [deleteTarget, setDeleteTarget] = useState<{
+  const [deleteConfirm, setDeleteConfirm] = useState<{
     id: number
     name: string
+    employeeCount: number
   } | null>(null)
 
   // Поиск
@@ -377,10 +364,30 @@ export function PositionsTab() {
     setDialogOpen(true)
   }
 
-  const handleDelete = () => {
-    if (deleteTarget) {
-      deletePos.mutate(deleteTarget.id)
-      setDeleteTarget(null)
+  const handleDeleteRequest = async () => {
+    if (editingId !== null) {
+      try {
+        const usage = await positionApi.getUsage(editingId)
+        setDeleteConfirm({
+          id: editingId,
+          name: posName,
+          employeeCount: usage.employee_count,
+        })
+      } catch {
+        setDeleteConfirm({
+          id: editingId,
+          name: posName,
+          employeeCount: 0,
+        })
+      }
+    }
+  }
+
+  const handleDeleteConfirm = () => {
+    if (deleteConfirm) {
+      deletePos.mutate(deleteConfirm.id)
+      setDeleteConfirm(null)
+      setDialogOpen(false)
     }
   }
 
@@ -460,7 +467,6 @@ export function PositionsTab() {
               employees={employeesByPosition.get(pos.id) ?? []}
               allTags={allTags}
               onEdit={openEdit}
-              onDelete={(p) => setDeleteTarget(p)}
               onAssignTag={handleAssignTag}
               onUnassignTag={handleUnassignTag}
               expandedPositions={expandedPositions}
@@ -503,22 +509,27 @@ export function PositionsTab() {
         editDescription="Измените название"
         addLabel="Создать"
         saveLabel="Сохранить"
+        onDelete={handleDeleteRequest}
       />
 
-      {/* Delete */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить должность?</AlertDialogTitle>
             <AlertDialogDescription>
-              <span className="font-medium">{deleteTarget?.name}</span>
-              . Должность должна быть пустой (без сотрудников).
+              <span className="font-medium">{deleteConfirm?.name}</span> будет удалена.
+              {deleteConfirm && deleteConfirm.employeeCount > 0 && (
+                <div className="mt-2 text-sm">
+                  Сотрудников с этой должностью: <strong>{deleteConfirm.employeeCount}</strong>.
+                </div>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDelete}
+              onClick={handleDeleteConfirm}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Удалить

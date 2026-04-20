@@ -639,3 +639,42 @@ async def get_department_tags(dept_id: int, db: AsyncSession = Depends(get_db)):
     )
     rows = result.all()
     return [TagRef(id=tag.id, name=tag.name, color=tag.color) for _, tag in rows]
+
+
+@router.get("/{dept_id}/usage")
+async def get_department_usage(dept_id: int, db: AsyncSession = Depends(get_db)):
+    """Получить количество связей подразделения перед удалением."""
+    result = await db.execute(select(Department).where(Department.id == dept_id))
+    dept = result.scalar_one_or_none()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+
+    emp_result = await db.execute(
+        select(func.count())
+        .select_from(Employee)
+        .where(Employee.department_id == dept_id, Employee.is_deleted == False)
+    )
+    emp_count = emp_result.scalar_one()
+
+    links_result = await db.execute(
+        select(func.count())
+        .select_from(DepartmentRelation)
+        .where(
+            (DepartmentRelation.head_id == dept_id) |
+            (DepartmentRelation.child_id == dept_id)
+        )
+    )
+    links_count = links_result.scalar_one()
+
+    tags_result = await db.execute(
+        select(func.count())
+        .select_from(DepartmentTag)
+        .where(DepartmentTag.department_id == dept_id)
+    )
+    tags_count = tags_result.scalar_one()
+
+    return {
+        "employee_count": emp_count,
+        "links_count": links_count,
+        "tags_count": tags_count,
+    }

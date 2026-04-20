@@ -37,4 +37,9 @@ export const tagApi = {
     )
     return data
   },
+
+  async getUsage(id: number): Promise<{ employee_count: number; department_count: number }> {
+    const { data } = await axios.get<{ employee_count: number; department_count: number }>(`${API_URL}/tags/${id}/usage`)
+    return data
+  },
 }
