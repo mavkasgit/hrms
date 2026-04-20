@@ -86,3 +86,7 @@ htmlcov/
 
 # Backend data
 backend/data/
+
+# Git worktrees
+.worktrees/
+worktrees/
