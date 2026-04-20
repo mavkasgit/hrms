@@ -1,9 +1,9 @@
-import { test, expect } from './fixtures'
-import type { VacationPeriodData } from './types'
-import { expectPeriodInvariant } from './helpers/vacation-invariants'
+import { test, expect } from '../fixtures'
+import type { VacationPeriodData } from '../types'
+import { expectPeriodInvariant } from '../helpers/vacation-invariants'
 
 test.describe('Генерация отпускных периодов', () => {
-  test.setTimeout(120000)
+  test.setTimeout(15000)
 
   test('1) авто-генерация периодов для нового сотрудника', async ({ apiOps }) => {
     const emp = await apiOps.createEmployee({

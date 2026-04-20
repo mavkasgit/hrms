@@ -32,10 +32,15 @@ export async function comboboxCreate(page: Page, label: string, value: string): 
   await searchInput.waitFor({ state: 'visible', timeout: 3000 })
   console.log(`[TEST] Search input найден, заполняем "${value}"`)
   await searchInput.fill(value)
-  await page.waitForTimeout(300)
+
+  const createBtn = page.getByText(`Создать «${value}»`).first()
+  const option = page.getByRole('option', { name: value }).first()
+  await Promise.race([
+    createBtn.waitFor({ state: 'visible', timeout: 2000 }),
+    option.waitFor({ state: 'visible', timeout: 2000 }),
+  ]).catch(() => null)
 
   // Кнопка "Создать «X»" — ищем внутри popover
-  const createBtn = page.getByText(`Создать «${value}»`).first()
   const isCreateVisible = await createBtn.isVisible({ timeout: 1000 }).catch(() => false)
   if (isCreateVisible) {
     console.log(`[TEST] Кнопка "Создать" найдена, кликаем`)
@@ -78,14 +83,26 @@ export async function comboboxCreate(page: Page, label: string, value: string): 
   if (count > 0) {
     console.log(`[TEST] Существующая опция найдена, кликаем`)
     await allBtns.first().click()
-    await page.waitForTimeout(500)
+    await page
+      .locator(`label:has-text("${label}")`)
+      .locator('..')
+      .locator('button[role="combobox"]')
+      .filter({ hasText: value })
+      .first()
+      .waitFor({ state: 'visible', timeout: 5000 })
     return
   }
 
   // Fallback: Enter
   console.log(`[TEST] Fallback: Enter`)
   await searchInput.press('Enter')
-  await page.waitForTimeout(500)
+  await page
+    .locator(`label:has-text("${label}")`)
+    .locator('..')
+    .locator('button[role="combobox"]')
+    .filter({ hasText: value })
+    .first()
+    .waitFor({ state: 'visible', timeout: 5000 })
 }
 
 /**

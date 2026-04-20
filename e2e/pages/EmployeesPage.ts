@@ -33,47 +33,68 @@ export class EmployeesPage {
     await expect(this.pageTitle).toBeVisible({ timeout: 10000 })
   }
 
+  private async waitForEmployeesRefresh(trigger: () => Promise<void>) {
+    const refreshPromise = this.page
+      .waitForResponse(
+        (resp) => resp.url().includes('/api/employees') && resp.request().method() === 'GET',
+        { timeout: 4000 }
+      )
+      .catch(() => null)
+
+    await trigger()
+    await refreshPromise
+  }
+
   // ============================================================================
   // ПОИСК И ФИЛЬТРАЦИЯ
   // ============================================================================
 
   async searchEmployee(query: string) {
-    await this.searchInput.fill(query)
-    await this.page.waitForTimeout(400) // debounce 300ms
+    await this.waitForEmployeesRefresh(async () => {
+      await this.searchInput.fill(query)
+    })
   }
 
   async clearSearch() {
-    await this.searchInput.clear()
-    await this.page.waitForTimeout(400)
+    await this.waitForEmployeesRefresh(async () => {
+      await this.searchInput.clear()
+    })
   }
 
   async filterByStatus(status: EmployeeStatus) {
-    await this.filterBtn.click()
     const statusLabels: Record<EmployeeStatus, string> = {
       active: 'Активные',
       archived: 'В архиве',
       all: 'Все',
       deleted: 'Удалённые',
     }
-    await this.page.getByText(statusLabels[status]).click()
-    await this.page.waitForTimeout(500)
+    await this.filterBtn.click()
+    await this.waitForEmployeesRefresh(async () => {
+      await this.page.getByText(statusLabels[status]).click()
+    })
   }
 
   async filterByGender(gender: Gender) {
     const genderBtn = this.page.getByRole('button', { name: gender === 'М' ? /мужчины/i : /женщины/i })
-    await genderBtn.click()
-    await this.page.waitForTimeout(300)
+    await this.waitForEmployeesRefresh(async () => {
+      await genderBtn.click()
+    })
   }
 
   async clearFilters() {
-    await this.page.getByRole('button', { name: /очистить/i }).click()
-    await this.page.waitForTimeout(300)
+    await this.waitForEmployeesRefresh(async () => {
+      await this.page.getByRole('button', { name: /очистить/i }).click()
+    })
   }
 
   async sortBy(column: string, direction: 'asc' | 'desc' = 'asc') {
     const header = this.page.locator('thead th').filter({ hasText: new RegExp(column, 'i') })
-    await header.click()
-    await this.page.waitForTimeout(300)
+    await this.waitForEmployeesRefresh(async () => {
+      await header.click()
+      if (direction === 'desc') {
+        await header.click()
+      }
+    })
   }
 
   // ============================================================================

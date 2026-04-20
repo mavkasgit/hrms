@@ -21,7 +21,7 @@ const setOwnColor = async (dialog: Locator, color: string) => {
 }
 
 test.describe('Структура: полный цикл подразделений, должностей и тегов', () => {
-  test.setTimeout(120000)
+  test.setTimeout(45000)
 
   test('подразделение: создание → редактирование всех полей → удаление', async ({ page }) => {
     const u = uniqueSuffix()

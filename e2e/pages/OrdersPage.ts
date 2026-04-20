@@ -44,6 +44,18 @@ export class OrdersPage {
     await expect(this.pageTitle).toBeVisible({ timeout: 10000 })
   }
 
+  private async waitForOrderListRefresh(trigger: () => Promise<void>) {
+    const refreshPromise = this.page
+      .waitForResponse(
+        (resp) => resp.url().includes('/api/orders') && resp.request().method() === 'GET',
+        { timeout: 4000 }
+      )
+      .catch(() => null)
+
+    await trigger()
+    await refreshPromise
+  }
+
   // ============================================================================
   // ЗАПОЛНЕНИЕ ФОРМЫ
   // ============================================================================
@@ -53,24 +65,28 @@ export class OrdersPage {
     const searchInput = this.page.locator('input[placeholder*="Найти"], input[placeholder*="ФИО"]').first()
     await searchInput.waitFor({ state: 'visible', timeout: 3000 })
     await searchInput.fill(name)
-    await this.page.waitForTimeout(300)
 
     // Выбираем из списка
     const option = this.page.getByRole('option', { name }).first()
+    await Promise.race([
+      option.waitFor({ state: 'visible', timeout: 2000 }),
+      searchInput.waitFor({ state: 'visible', timeout: 2000 }),
+    ]).catch(() => null)
     const isVisible = await option.isVisible({ timeout: 2000 }).catch(() => false)
     if (isVisible) {
       await option.click()
     } else {
       // Если нет опции, нажимаем Enter
       await searchInput.press('Enter')
-      await this.page.waitForTimeout(300)
     }
+
+    await expect(this.employeeCombobox).toContainText(name, { timeout: 5000 })
   }
 
   async selectOrderType(type: OrderTypeName) {
     await this.orderTypeCombobox.click()
     await this.page.getByRole('option', { name: type }).click()
-    await this.page.waitForTimeout(300)
+    await expect(this.orderTypeCombobox).toContainText(type, { timeout: 3000 })
   }
 
   async fillOrderDate(date: string) {
@@ -153,13 +169,20 @@ export class OrdersPage {
   // ============================================================================
 
   async clickCreate() {
+    const createPromise = this.page
+      .waitForResponse(
+        (resp) => resp.url().includes('/api/orders') && resp.request().method() === 'POST',
+        { timeout: 7000 }
+      )
+      .catch(() => null)
+
     await this.createBtn.click()
-    await this.page.waitForTimeout(500)
+    await createPromise
   }
 
   async clickClear() {
     await this.clearBtn.click()
-    await this.page.waitForTimeout(300)
+    await expect(this.orderNumberInput).toHaveValue('')
   }
 
   async createOrder(data: OrderFormData) {
@@ -254,12 +277,13 @@ export class OrdersPage {
   // ============================================================================
 
   async filterByYear(year: number | 'all') {
-    if (year === 'all') {
-      await this.page.getByRole('button', { name: /все года/i }).click()
-    } else {
-      await this.page.getByRole('button', { name: String(year) }).click()
-    }
-    await this.page.waitForTimeout(500)
+    await this.waitForOrderListRefresh(async () => {
+      if (year === 'all') {
+        await this.page.getByRole('button', { name: /все года/i }).click()
+      } else {
+        await this.page.getByRole('button', { name: String(year) }).click()
+      }
+    })
   }
 
   // ============================================================================

@@ -29,14 +29,27 @@ export class HolidaysPage {
     await expect(this.pageTitle).toBeVisible({ timeout: 10000 })
   }
 
+  private async waitForHolidayRefresh(trigger: () => Promise<void>) {
+    const refreshPromise = this.page
+      .waitForResponse(
+        (resp) => resp.url().includes('/api/holidays') && resp.request().method() === 'GET',
+        { timeout: 5000 }
+      )
+      .catch(() => null)
+
+    await trigger()
+    await refreshPromise
+  }
+
   // ============================================================================
   // ВЫБОР ГОДА
   // ============================================================================
 
   async selectYear(year: number) {
     await this.yearSelect.click()
-    await this.page.getByRole('option', { name: String(year) }).click()
-    await this.page.waitForTimeout(500)
+    await this.waitForHolidayRefresh(async () => {
+      await this.page.getByRole('option', { name: String(year) }).click()
+    })
   }
 
   // ============================================================================
@@ -55,7 +68,7 @@ export class HolidaysPage {
 
   async clickAdd() {
     await this.addBtn.click()
-    await this.page.waitForTimeout(300)
+    await expect(this.page.getByLabel(/дата/i)).toBeVisible({ timeout: 3000 })
   }
 
   async fillHolidayForm(data: HolidayFormData) {
@@ -69,9 +82,16 @@ export class HolidaysPage {
   }
 
   async submitHoliday() {
+    const createPromise = this.page
+      .waitForResponse(
+        (resp) => resp.url().includes('/api/holidays') && resp.request().method() === 'POST',
+        { timeout: 7000 }
+      )
+      .catch(() => null)
+
     const confirmBtn = this.page.getByRole('button', { name: /подтвердить|добавить/i })
     await confirmBtn.click()
-    await this.page.waitForTimeout(500)
+    await createPromise
   }
 
   async addHoliday(data: HolidayFormData) {
@@ -86,6 +106,15 @@ export class HolidaysPage {
   // ============================================================================
 
   async fillByRB() {
+    const fillPromise = this.page
+      .waitForResponse(
+        (resp) =>
+          resp.url().includes('/api/holidays') &&
+          ['POST', 'PUT'].includes(resp.request().method()),
+        { timeout: 10000 }
+      )
+      .catch(() => null)
+
     await this.fillRBBtn.click()
     // Подтверждение если требуется
     const confirmDialog = this.page.getByRole('alertdialog')
@@ -93,7 +122,8 @@ export class HolidaysPage {
       await confirmDialog.getByRole('button', { name: /заполнить|да/i }).click()
       await expect(confirmDialog).not.toBeVisible({ timeout: 5000 })
     }
-    await this.page.waitForTimeout(1000)
+    await fillPromise
+    await expect(this.rows.first()).toBeVisible({ timeout: 5000 })
   }
 
   // ============================================================================

@@ -1,11 +1,11 @@
-import { test, expect } from './fixtures'
+import { test, expect } from '../fixtures'
 
 /**
  * Тест заполнения плана отпусков с дробными значениями
  * Использует фикстуры с автоматической очисткой
  */
 test.describe('План отпусков - дробные значения', () => {
-  test.setTimeout(180000)
+  test.setTimeout(30000)
 
   test('запись дробного значения и значения меньше 1', async ({ page, request, apiOps }) => {
     const waitForPlanMutation = () => page.waitForResponse((resp) => {

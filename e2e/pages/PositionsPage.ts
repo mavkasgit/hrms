@@ -27,18 +27,32 @@ export class PositionsPage {
     await this.switchToPositionsTab()
   }
 
+  private async waitForStructureRefresh(trigger: () => Promise<void>) {
+    const refreshPromise = this.page
+      .waitForResponse(
+        (resp) => resp.url().includes('/api/structure') && resp.request().method() === 'GET',
+        { timeout: 4000 }
+      )
+      .catch(() => null)
+
+    await trigger()
+    await refreshPromise
+  }
+
   // ============================================================================
   // ВКЛАДКИ
   // ============================================================================
 
   async switchToPositionsTab() {
-    await this.tabs.getByRole('tab', { name: /должности/i }).click()
-    await this.page.waitForTimeout(300)
+    const tab = this.tabs.getByRole('tab', { name: /должности/i })
+    await tab.click()
+    await expect(tab).toHaveAttribute('aria-selected', 'true')
   }
 
   async switchToDepartmentsTab() {
-    await this.tabs.getByRole('tab', { name: /подразделения/i }).click()
-    await this.page.waitForTimeout(300)
+    const tab = this.tabs.getByRole('tab', { name: /подразделения/i })
+    await tab.click()
+    await expect(tab).toHaveAttribute('aria-selected', 'true')
   }
 
   // ============================================================================
@@ -46,23 +60,27 @@ export class PositionsPage {
   // ============================================================================
 
   async searchEmployee(query: string) {
-    await this.searchInput.fill(query)
-    await this.page.waitForTimeout(300)
+    await this.waitForStructureRefresh(async () => {
+      await this.searchInput.fill(query)
+    })
   }
 
   async clearSearch() {
-    await this.searchInput.clear()
-    await this.page.waitForTimeout(300)
+    await this.waitForStructureRefresh(async () => {
+      await this.searchInput.clear()
+    })
   }
 
   async expandAll() {
-    await this.page.getByRole('button', { name: /раскрыть/i }).click()
-    await this.page.waitForTimeout(500)
+    const button = this.page.getByRole('button', { name: /раскрыть/i })
+    await button.click()
+    await expect(this.page.getByRole('button', { name: /скрыть/i })).toBeVisible({ timeout: 5000 })
   }
 
   async collapseAll() {
-    await this.page.getByRole('button', { name: /скрыть/i }).click()
-    await this.page.waitForTimeout(300)
+    const button = this.page.getByRole('button', { name: /скрыть/i })
+    await button.click()
+    await expect(this.page.getByRole('button', { name: /раскрыть/i })).toBeVisible({ timeout: 5000 })
   }
 
   // ============================================================================
@@ -78,7 +96,7 @@ export class PositionsPage {
     const expandBtn = node.locator('button').first()
     if (await expandBtn.count() > 0) {
       await expandBtn.click()
-      await this.page.waitForTimeout(300)
+      await expect(node.locator('[data-lucide="chevron-down"], svg.lucide-chevron-down')).toBeVisible({ timeout: 3000 })
     }
   }
 
@@ -87,7 +105,7 @@ export class PositionsPage {
     const collapseBtn = node.locator('button').first()
     if (await collapseBtn.count() > 0) {
       await collapseBtn.click()
-      await this.page.waitForTimeout(300)
+      await expect(node.locator('[data-lucide="chevron-right"], svg.lucide-chevron-right')).toBeVisible({ timeout: 3000 })
     }
   }
 
@@ -135,7 +153,7 @@ export class PositionsPage {
     const dialog = this.page.getByRole('dialog')
     const submitBtn = dialog.getByRole('button', { name: /создать|сохранить/i })
     await submitBtn.click()
-    await this.page.waitForTimeout(500)
+    await expect(dialog).not.toBeVisible({ timeout: 5000 })
   }
 
   async closeForm() {
@@ -147,7 +165,6 @@ export class PositionsPage {
     await this.clickAdd()
     await this.fillPositionForm(data)
     await this.submitForm()
-    await this.page.waitForTimeout(500)
     await expect(this.getPositionNode(data.name)).toBeVisible({ timeout: 5000 })
   }
 
@@ -165,7 +182,7 @@ export class PositionsPage {
     await expect(this.page.getByRole('dialog')).toBeVisible({ timeout: 5000 })
     await this.fillPositionForm(data)
     await this.submitForm()
-    await this.page.waitForTimeout(500)
+    await expect(this.getPositionNode(data.name)).toBeVisible({ timeout: 5000 })
   }
 
   async deletePosition(name: string) {

@@ -7,7 +7,7 @@ export default defineConfig({
   retries: 1,
   workers: 1,
   reporter: 'list',
-  timeout: 120000,
+    timeout: 60000,
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
@@ -21,7 +21,7 @@ export default defineConfig({
   webServer: {
     command: 'npm run frontend',
     url: 'http://localhost:5173',
-    timeout: 120000,
+  timeout: 60000,
     reuseExistingServer: !process.env.CI,
   },
 });

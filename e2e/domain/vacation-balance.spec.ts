@@ -1,15 +1,58 @@
-import { test, expect } from './fixtures'
-import type { VacationPeriodData, BalanceData } from './types'
+import { test, expect } from '../fixtures'
+import type { VacationPeriodData, BalanceData } from '../types'
 import {
   expectBalanceInvariant,
   expectNonNegativeAvailable,
   expectPeriodInvariant,
-} from './helpers/vacation-invariants'
+} from '../helpers/vacation-invariants'
 
 const API_BASE = ''
+const BALANCE_EMP_RE = /^Employee-T\d+-BALANCE-/
+const BALANCE_DEPT_RE = /^Dept-T\d+-BALANCE-/
+const BALANCE_POS_RE = /^Pos-T\d+-BALANCE-/
 
 test.describe('Vacation Balance API tests', () => {
-  test.setTimeout(180000)
+  test.setTimeout(45000)
+
+  test.afterEach(async ({ request }) => {
+    const ordersResp = await request.get(`${API_BASE}/api/orders/all`, { params: { per_page: 1000 } })
+    const ordersData = await ordersResp.json()
+    const orders = ordersData.items || []
+    for (const order of orders) {
+      if (!BALANCE_EMP_RE.test(order.employee_name || '')) continue
+      await request.delete(`${API_BASE}/api/orders/${order.id}?hard=true&confirm=true`).catch(() => {})
+    }
+
+    const vacationsResp = await request.get(`${API_BASE}/api/vacations`, { params: { per_page: 1000 } })
+    const vacationsData = await vacationsResp.json()
+    const vacations = vacationsData.items || []
+    for (const vacation of vacations) {
+      if (!BALANCE_EMP_RE.test(vacation.employee_name || '')) continue
+      await request.delete(`${API_BASE}/api/vacations/${vacation.id}`).catch(() => {})
+    }
+
+    const employeesResp = await request.get(`${API_BASE}/api/employees`, { params: { per_page: 1000 } })
+    const employeesData = await employeesResp.json()
+    const employees = employeesData.items || []
+    for (const employee of employees) {
+      if (!BALANCE_EMP_RE.test(employee.name || '')) continue
+      await request.delete(`${API_BASE}/api/employees/${employee.id}?hard=true&confirm=true`).catch(() => {})
+    }
+
+    const positionsResp = await request.get(`${API_BASE}/api/positions`, { params: { per_page: 1000 } })
+    const positions = await positionsResp.json()
+    for (const position of positions) {
+      if (!BALANCE_POS_RE.test(position.name || '')) continue
+      await request.delete(`${API_BASE}/api/positions/${position.id}`).catch(() => {})
+    }
+
+    const departmentsResp = await request.get(`${API_BASE}/api/departments`, { params: { per_page: 1000 } })
+    const departments = await departmentsResp.json()
+    for (const department of departments) {
+      if (!BALANCE_DEPT_RE.test(department.name || '')) continue
+      await request.delete(`${API_BASE}/api/departments/${department.id}`).catch(() => {})
+    }
+  })
 
   test('1) employee without vacations - balance by all past periods', async ({ request }) => {
     const uid = 'T1-BALANCE-' + Date.now().toString(36)

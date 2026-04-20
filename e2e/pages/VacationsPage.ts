@@ -55,13 +55,28 @@ export class VacationsPage {
     await expect(this.table).toBeVisible({ timeout: 10000 })
   }
 
+  private async waitForVacationListRefresh(trigger: () => Promise<void>) {
+    const refreshPromise = this.page
+      .waitForResponse(
+        (resp) =>
+          (resp.url().includes('/api/vacations') || resp.url().includes('/api/vacation-periods')) &&
+          resp.request().method() === 'GET',
+        { timeout: 4000 }
+      )
+      .catch(() => null)
+
+    await trigger()
+    await refreshPromise
+  }
+
   // ============================================================================
   // ПОИСК И ФИЛЬТРАЦИЯ
   // ============================================================================
 
   async searchEmployee(query: string) {
-    await this.searchInput.fill(query)
-    await this.page.waitForTimeout(400)
+    await this.waitForVacationListRefresh(async () => {
+      await this.searchInput.fill(query)
+    })
   }
 
   async filterByArchive(status: 'active' | 'archived' | 'all') {
@@ -71,8 +86,9 @@ export class VacationsPage {
       all: 'Все',
     }
     await this.page.getByRole('button', { name: /архив|фильтр/i }).click()
-    await this.page.getByText(statusLabels[status]).click()
-    await this.page.waitForTimeout(500)
+    await this.waitForVacationListRefresh(async () => {
+      await this.page.getByText(statusLabels[status]).click()
+    })
   }
 
   // ============================================================================
@@ -84,22 +100,23 @@ export class VacationsPage {
     const searchInput = this.page.locator('input[placeholder*="Найти"], input[placeholder*="ФИО"]').first()
     await searchInput.waitFor({ state: 'visible', timeout: 3000 })
     await searchInput.fill(name)
-    await this.page.waitForTimeout(300)
 
     const option = this.page.getByRole('option', { name }).first()
+    await option.waitFor({ state: 'visible', timeout: 2000 }).catch(() => null)
     const isVisible = await option.isVisible({ timeout: 2000 }).catch(() => false)
     if (isVisible) {
       await option.click()
     } else {
       await searchInput.press('Enter')
-      await this.page.waitForTimeout(300)
     }
+
+    await expect(this.employeeCombobox).toContainText(name, { timeout: 5000 })
   }
 
   async selectVacationType(type: VacationType) {
     await this.vacationTypeCombobox.click()
     await this.page.getByRole('option', { name: type }).click()
-    await this.page.waitForTimeout(300)
+    await expect(this.vacationTypeCombobox).toContainText(type, { timeout: 3000 })
   }
 
   async fillStartDate(date: string) {
@@ -123,14 +140,20 @@ export class VacationsPage {
   // ============================================================================
 
   async clickCreate() {
+    const createPromise = this.page
+      .waitForResponse(
+        (resp) => resp.url().includes('/api/vacations') && resp.request().method() === 'POST',
+        { timeout: 7000 }
+      )
+      .catch(() => null)
+
     await this.createBtn.click()
-    // Ждём появления success alert или закрытия формы
-    await this.page.waitForTimeout(500)
+    await createPromise
   }
 
   async clickClear() {
     await this.clearBtn.click()
-    await this.page.waitForTimeout(300)
+    await expect(this.orderNumberInput).toHaveValue('')
   }
 
   async createVacation(data: VacationFormData) {
@@ -188,13 +211,13 @@ export class VacationsPage {
     const chevron = row.locator('[data-lucide="chevron-right"], svg.lucide-chevron-right')
     if (await chevron.count() > 0) {
       await chevron.click()
-      await this.page.waitForTimeout(500)
+      await expect(row.locator('[data-lucide="chevron-down"], svg.lucide-chevron-down')).toBeVisible({ timeout: 3000 })
     } else {
       // Если уже раскрыта (chevron-down), ничего не делаем
       const chevronDown = row.locator('[data-lucide="chevron-down"], svg.lucide-chevron-down')
       if (await chevronDown.count() === 0) {
         await row.click()
-        await this.page.waitForTimeout(500)
+        await expect(chevronDown).toBeVisible({ timeout: 3000 })
       }
     }
   }
@@ -203,7 +226,7 @@ export class VacationsPage {
     const chevronDown = row.locator('[data-lucide="chevron-down"], svg.lucide-chevron-down')
     if (await chevronDown.count() > 0) {
       await chevronDown.click()
-      await this.page.waitForTimeout(300)
+      await expect(row.locator('[data-lucide="chevron-right"], svg.lucide-chevron-right')).toBeVisible({ timeout: 3000 })
     }
   }
 
@@ -262,8 +285,11 @@ export class VacationsPage {
   async toggleClosedPeriods() {
     const toggleBtn = this.page.getByRole('button', { name: /показать.*закрытые|скрыть.*закрытые/i })
     await expect(toggleBtn).toBeVisible({ timeout: 3000 })
+    const previousText = (await toggleBtn.textContent())?.trim() ?? ''
     await toggleBtn.click()
-    await this.page.waitForTimeout(300)
+    await expect
+      .poll(async () => ((await toggleBtn.textContent()) ?? '').trim(), { timeout: 3000 })
+      .not.toBe(previousText)
   }
 
   // ============================================================================
