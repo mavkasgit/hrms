@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Button } from "@/shared/ui/button"
-import { Badge } from "@/shared/ui/badge"
+
 import { Skeleton } from "@/shared/ui/skeleton"
 import {
   AlertDialog,
@@ -12,7 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
-import { Plus, Tag as TagIcon } from "lucide-react"
+import { Plus, Tag as TagIcon, Users, Building2 } from "lucide-react"
 import {
   useTags,
   useCreateTag,
@@ -66,11 +66,20 @@ function TagChip({
         style={{ backgroundColor: color }}
       />
       <span className="text-sm truncate flex-1 min-w-0">{tag.name}</span>
-      {tag.employee_count !== undefined && tag.employee_count > 0 && (
-        <Badge variant="secondary" className="text-[10px] h-4 px-1 flex-shrink-0">
-          {tag.employee_count}
-        </Badge>
-      )}
+      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+        {tag.employee_count > 0 && (
+          <span className="flex items-center gap-0.5">
+            <Users className="h-3 w-3" />
+            {tag.employee_count}
+          </span>
+        )}
+        {tag.department_count > 0 && (
+          <span className="flex items-center gap-0.5">
+            <Building2 className="h-3 w-3" />
+            {tag.department_count}
+          </span>
+        )}
+      </span>
     </div>
   )
 }
@@ -80,14 +89,11 @@ function TagChip({
 function TagStats({ tags }: { tags: Tag[] }) {
   const total = tags.length
   const categories = new Set(tags.map((t) => t.category || "Без категории")).size
-  const totalEmployees = new Set(
-    tags.filter((t) => t.employee_count && t.employee_count > 0).map((t) => t.id)
-  ).size
 
   if (total === 0) return null
 
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-2 gap-2">
       <div className="bg-muted/40 rounded-md p-2 text-center">
         <div className="text-lg font-semibold">{total}</div>
         <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Тегов</div>
@@ -95,10 +101,6 @@ function TagStats({ tags }: { tags: Tag[] }) {
       <div className="bg-muted/40 rounded-md p-2 text-center">
         <div className="text-lg font-semibold">{categories}</div>
         <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Категорий</div>
-      </div>
-      <div className="bg-muted/40 rounded-md p-2 text-center">
-        <div className="text-lg font-semibold">{totalEmployees}</div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">С привязкой</div>
       </div>
     </div>
   )

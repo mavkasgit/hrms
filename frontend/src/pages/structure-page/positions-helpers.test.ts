@@ -18,4 +18,22 @@ describe("buildEmployeesByPosition", () => {
       { id: 3, name: "Mentor", color: "#22c55e" },
     ])
   })
+
+  it("uses external employee tags map when employees API has no tags field", () => {
+    const grouped = buildEmployeesByPosition(
+      [
+        {
+          id: 77,
+          position_id: 9,
+          name: "Olga",
+          department: { name: "Finance" },
+        },
+      ],
+      new Map([[77, [{ id: 5, name: "Senior", color: "#ef4444" }]]])
+    )
+
+    expect(grouped.get(9)?.[0].tags).toEqual([
+      { id: 5, name: "Senior", color: "#ef4444" },
+    ])
+  })
 })

@@ -102,14 +102,14 @@ class AnalyticsService:
         
         # Получаем всех активных сотрудников с датой рождения
         result = await db.execute(
-            select(Employee, Department.name)
+            select(Employee, Department.name, Department.color, Department.icon)
             .join(Department, Employee.department_id == Department.id)
             .where(and_(*conditions))
         )
         rows = result.all()
 
         birthdays = []
-        for emp, dept_name in rows:
+        for emp, dept_name, dept_color, dept_icon in rows:
             if not emp.birth_date:
                 continue
 
@@ -127,6 +127,8 @@ class AnalyticsService:
                     "id": emp.id,
                     "name": emp.name,
                     "department": dept_name,
+                    "department_color": dept_color,
+                    "department_icon": dept_icon,
                     "birth_date": emp.birth_date.isoformat(),
                     "age": age,
                     "days_until": days_until,
@@ -157,7 +159,7 @@ class AnalyticsService:
         from app.models.position import Position
 
         result = await db.execute(
-            select(Employee, Department.name, Position.name)
+            select(Employee, Department.name, Department.color, Department.icon, Position.name)
             .join(Department, Employee.department_id == Department.id)
             .join(Position, Employee.position_id == Position.id)
             .where(and_(*conditions))
@@ -166,13 +168,15 @@ class AnalyticsService:
         rows = result.all()
 
         contracts = []
-        for emp, dept_name, pos_name in rows:
+        for emp, dept_name, dept_color, dept_icon, pos_name in rows:
             if emp.contract_end:
                 days_left = (emp.contract_end - today).days
                 contracts.append({
                     "id": emp.id,
                     "name": emp.name,
                     "department": dept_name,
+                    "department_color": dept_color,
+                    "department_icon": dept_icon,
                     "position": pos_name,
                     "contract_end": emp.contract_end.isoformat(),
                     "days_left": days_left,
@@ -182,6 +186,8 @@ class AnalyticsService:
                     "id": emp.id,
                     "name": emp.name,
                     "department": dept_name,
+                    "department_color": dept_color,
+                    "department_icon": dept_icon,
                     "position": pos_name,
                     "contract_end": None,
                     "days_left": None,
@@ -222,24 +228,26 @@ class AnalyticsService:
             result = await db.execute(
                 select(
                     Department.name.label("department"),
+                    Department.color.label("color"),
+                    Department.icon.label("icon"),
                     func.count(Employee.id).label("count")
                 )
                 .join(Department, Employee.department_id == Department.id)
                 .where(and_(*conditions))
-                .group_by(Department.name)
+                .group_by(Department.name, Department.color, Department.icon)
                 .order_by(func.count(Employee.id).desc())
             )
         rows = result.all()
 
         if department_id:
             return [
-                {"position": row[0], "count": row[1]}
+                {"position": row[0], "count": row[3]}
                 for row in rows
                 if row[0]
             ]
         else:
             return [
-                {"department": row[0], "count": row[1]}
+                {"department": row[0], "color": row[1], "icon": row[2], "count": row[3]}
                 for row in rows
                 if row[0]
             ]

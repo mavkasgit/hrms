@@ -122,7 +122,10 @@ export function useAssignTag() {
     mutationFn: ({ employeeId, tagId }: { employeeId: number; tagId: number }) =>
       tagApi.assignTag(employeeId, tagId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["employees"] })
+      qc.invalidateQueries({ queryKey: ["employees"], exact: false })
+      qc.invalidateQueries({ queryKey: ["departments-graph"] })
+      qc.invalidateQueries({ queryKey: ["dashboard-birthdays"] })
+      qc.invalidateQueries({ queryKey: ["dashboard-contracts"] })
       qc.invalidateQueries({ queryKey: ["tags"] })
     },
   })
@@ -134,7 +137,10 @@ export function useUnassignTag() {
     mutationFn: ({ employeeId, tagId }: { employeeId: number; tagId: number }) =>
       tagApi.unassignTag(employeeId, tagId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["employees"] })
+      qc.invalidateQueries({ queryKey: ["employees"], exact: false })
+      qc.invalidateQueries({ queryKey: ["departments-graph"] })
+      qc.invalidateQueries({ queryKey: ["dashboard-birthdays"] })
+      qc.invalidateQueries({ queryKey: ["dashboard-contracts"] })
       qc.invalidateQueries({ queryKey: ["tags"] })
     },
   })

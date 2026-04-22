@@ -10,6 +10,8 @@ export interface Birthday {
   id: number
   name: string
   department: string
+  department_color?: string
+  department_icon?: string
   birth_date: string
   age: number
   days_until: number
@@ -19,6 +21,8 @@ export interface ContractExpiring {
   id: number
   name: string
   department: string
+  department_color?: string
+  department_icon?: string
   position: string
   contract_end: string
   days_left: number
@@ -26,6 +30,8 @@ export interface ContractExpiring {
 
 export interface DepartmentCount {
   department: string
+  color?: string
+  icon?: string
   count: number
 }
 

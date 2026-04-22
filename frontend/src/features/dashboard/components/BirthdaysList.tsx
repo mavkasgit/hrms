@@ -2,26 +2,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card"
 import { EmptyState } from "@/shared/ui/empty-state"
 import { Skeleton } from "@/shared/ui/skeleton"
 import type { Birthday } from "../types"
-import { Cake, Building2, Factory } from "lucide-react"
+import { Cake, Building2 } from "lucide-react"
+import { renderIcon } from "@/pages/structure-page/shared/EntityDialog"
 
 interface BirthdaysListProps {
   birthdays: Birthday[]
   isLoading?: boolean
-}
-
-function getDeptIcon(dept: string, className: string) {
-  if (dept === "Завод КТМ") return <Factory className={className} />
-  return <Building2 className={className} />
-}
-
-function getDeptIconBg(dept: string): string {
-  if (dept === "Завод КТМ") return "bg-sky-100"
-  return "bg-emerald-100"
-}
-
-function getDeptIconColor(dept: string): string {
-  if (dept === "Завод КТМ") return "text-sky-600"
-  return "text-emerald-600"
 }
 
 export function BirthdaysList({ birthdays, isLoading }: BirthdaysListProps) {
@@ -80,8 +66,15 @@ export function BirthdaysList({ birthdays, isLoading }: BirthdaysListProps) {
               className="flex items-center justify-between p-2 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
             >
               <div className="flex items-center gap-3">
-                <div className={`h-8 w-8 rounded-full ${getDeptIconBg(b.department)} flex items-center justify-center shrink-0`}>
-                  {getDeptIcon(b.department, `h-4 w-4 ${getDeptIconColor(b.department)}`)}
+                <div
+                  className="h-8 w-8 rounded-full flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: b.department_color ? b.department_color + "20" : undefined }}
+                >
+                  <span style={{ color: b.department_color ?? undefined }}>
+                    {b.department_icon
+                      ? renderIcon(b.department_icon) ?? <Building2 className="h-4 w-4" />
+                      : <Building2 className="h-4 w-4" />}
+                  </span>
                 </div>
                 <div>
                   <p className="font-medium text-sm leading-tight">{b.name}</p>

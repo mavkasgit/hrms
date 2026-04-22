@@ -1,9 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
-import { fetchDashboardStats, fetchBirthdays, fetchContracts, fetchDepartmentDistribution } from "@/features/dashboard/api"
+import { fetchDashboardStats, fetchBirthdays, fetchContracts } from "@/features/dashboard/api"
 import { StatCard } from "@/features/dashboard/components/StatCard"
 import { BirthdaysList } from "@/features/dashboard/components/BirthdaysList"
 import { ContractsTable } from "@/features/dashboard/components/ContractsTable"
-import { DepartmentChart } from "@/features/dashboard/components/DepartmentChart"
 import { Users, CalendarClock, Briefcase, User } from "lucide-react"
 
 export function DashboardPage() {
@@ -21,15 +20,6 @@ export function DashboardPage() {
     queryKey: ["dashboard-contracts"],
     queryFn: () => fetchContracts(),
   })
-
-  const { data: deptData, isLoading: deptLoading } = useQuery({
-    queryKey: ["dashboard-departments"],
-    queryFn: () => fetchDepartmentDistribution(),
-  })
-
-  const allDepartments = deptData
-    ? (deptData as any[]).map((d: any) => d.department || d.position)
-    : []
 
   return (
     <div className="space-y-6">
@@ -75,17 +65,10 @@ export function DashboardPage() {
         <div className="w-[690px]">
           <ContractsTable
             contracts={contracts || []}
-            departments={allDepartments.filter((d: string) => d)}
             isLoading={contractsLoading}
           />
         </div>
       </div>
-
-      {/* График по отделам */}
-      <DepartmentChart
-        data={deptData || []}
-        isLoading={deptLoading}
-      />
     </div>
   )
 }

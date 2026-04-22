@@ -25,6 +25,7 @@ import {
   useUpdatePosition,
   useDeletePosition,
 } from "@/entities/position"
+import { useDepartmentGraph } from "@/entities/department"
 import { positionApi } from "@/entities/position/api"
 import { useTags } from "@/entities/tag"
 import {
@@ -217,6 +218,7 @@ function PositionTreeNode({
 
 export function PositionsTab() {
   const { data: positions = [], isLoading } = usePositions()
+  const { data: departmentGraph } = useDepartmentGraph()
   const createPos = useCreatePosition()
   const updatePos = useUpdatePosition()
   const deletePos = useDeletePosition()
@@ -248,10 +250,20 @@ export function PositionsTab() {
     status: "active",
   })
 
+  const tagsByEmployeeId = useMemo(() => {
+    const map = new Map<number, { id: number; name: string; color?: string }[]>()
+    departmentGraph?.nodes.forEach((node) => {
+      node.employees.forEach((employee) => {
+        map.set(employee.id, employee.tags)
+      })
+    })
+    return map
+  }, [departmentGraph])
+
   // Группируем по должностям
   const employeesByPosition = useMemo(() => {
-    return buildEmployeesByPosition(employeesData?.items)
-  }, [employeesData])
+    return buildEmployeesByPosition(employeesData?.items, tagsByEmployeeId)
+  }, [employeesData, tagsByEmployeeId])
 
   // При загрузке — раскрыть все
   useEffect(() => {

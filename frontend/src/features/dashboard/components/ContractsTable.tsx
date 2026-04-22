@@ -9,41 +9,12 @@ import { FileText, Search, CalendarDays } from "lucide-react"
 
 interface ContractsTableProps {
   contracts: ContractExpiring[]
-  departments: string[]
   isLoading?: boolean
 }
 
 const FILTER_OPTIONS = [
   { value: 3, label: "3 мес" },
 ]
-
-function getDeptBorderClass(dept: string): string {
-  if (dept === "Основное") return "border-emerald-400";
-  if (dept === "Завод КТМ") return "border-sky-400";
-  return "border-border";
-}
-
-function getDeptDotClass(dept: string): string {
-  if (dept === "Основное") return "bg-emerald-500";
-  if (dept === "Завод КТМ") return "bg-sky-500";
-  return "bg-muted-foreground";
-}
-
-function getDeptButtonClass(dept: string, active: boolean): string {
-  if (dept === "Основное") {
-    return active
-      ? "bg-emerald-100 text-emerald-700 border-emerald-300"
-      : "hover:bg-accent text-muted-foreground";
-  }
-  if (dept === "Завод КТМ") {
-    return active
-      ? "bg-sky-100 text-sky-700 border-sky-300"
-      : "hover:bg-accent text-muted-foreground";
-  }
-  return active
-    ? "bg-muted text-foreground border-border"
-    : "hover:bg-accent text-muted-foreground";
-}
 
 const MONTH_LABELS = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -73,10 +44,23 @@ function contractsInMonthRange(contracts: ContractExpiring[], months: number): C
   })
 }
 
-export function ContractsTable({ contracts, departments, isLoading }: ContractsTableProps) {
+export function ContractsTable({ contracts, isLoading }: ContractsTableProps) {
   const [search, setSearch] = useState("")
   const [threeMonths, setThreeMonths] = useState(false)
   const [selectedDepts, setSelectedDepts] = useState<Set<string>>(new Set())
+
+  // Уникальные отделы с метаданными из contracts
+  const deptMeta = useMemo(() => {
+    const map = new Map<string, { color?: string }>()
+    contracts.forEach((c) => {
+      if (!map.has(c.department)) {
+        map.set(c.department, { color: c.department_color })
+      }
+    })
+    return map
+  }, [contracts])
+
+  const departments = useMemo(() => Array.from(deptMeta.keys()), [deptMeta])
 
   // Инициализация отделов при загрузке данных
   useEffect(() => {
@@ -195,11 +179,25 @@ export function ContractsTable({ contracts, departments, isLoading }: ContractsT
             ))}
             {departments.map((dept) => {
               const active = selectedDepts.has(dept)
+              const color = deptMeta.get(dept)?.color
               return (
                 <button
                   key={dept}
                   onClick={() => toggleDept(dept)}
-                  className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${getDeptButtonClass(dept, active)}`}
+                  className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
+                    active
+                      ? "text-foreground"
+                      : "hover:bg-accent text-muted-foreground"
+                  }`}
+                  style={
+                    active && color
+                      ? {
+                          backgroundColor: color + "18",
+                          borderColor: color + "40",
+                          color: color,
+                        }
+                      : undefined
+                  }
                 >
                   {dept}
                 </button>
@@ -259,13 +257,20 @@ export function ContractsTable({ contracts, departments, isLoading }: ContractsT
 function ContractRow({ contract }: { contract: ContractExpiring }) {
   const isExpired = contract.days_left !== null && contract.days_left < 0
   const isExpiringSoon = contract.days_left !== null && contract.days_left >= 0 && contract.days_left <= 30
+  const color = contract.department_color
 
   return (
-    <div className={`flex items-center justify-between p-3 rounded-lg border border-l-4 ${getDeptBorderClass(contract.department)} bg-card hover:bg-accent/50 transition-colors`}>
+    <div
+      className="flex items-center justify-between p-3 rounded-lg border border-l-4 bg-card hover:bg-accent/50 transition-colors"
+      style={{ borderLeftColor: color || undefined }}
+    >
       <div>
         <p className="font-medium text-sm">{contract.name}</p>
         <p className="text-xs text-muted-foreground">
-          <span className={`inline-block w-2 h-2 rounded-full mr-1 ${getDeptDotClass(contract.department)}`} />
+          <span
+            className="inline-block w-2 h-2 rounded-full mr-1"
+            style={{ backgroundColor: color || undefined }}
+          />
           {contract.department} · {contract.position}
         </p>
       </div>

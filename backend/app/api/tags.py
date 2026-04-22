@@ -17,6 +17,7 @@ class TagResponse(BaseModel):
     color: Optional[str] = None
     sort_order: int
     employee_count: int = 0
+    department_count: int = 0
 
     class Config:
         from_attributes = True
@@ -51,7 +52,16 @@ async def get_tags(db: AsyncSession = Depends(get_db)):
             func.count().label("cnt"),
         ).group_by(EmployeeTag.tag_id)
     )
-    counts = {row.tag_id: row.cnt for row in result.all()}
+    emp_counts = {row.tag_id: row.cnt for row in result.all()}
+
+    # Считаем подразделения для каждого тега
+    result = await db.execute(
+        select(
+            DepartmentTag.tag_id,
+            func.count().label("cnt"),
+        ).group_by(DepartmentTag.tag_id)
+    )
+    dept_counts = {row.tag_id: row.cnt for row in result.all()}
 
     return [
         TagResponse(
@@ -60,7 +70,8 @@ async def get_tags(db: AsyncSession = Depends(get_db)):
             category=t.category,
             color=t.color,
             sort_order=t.sort_order,
-            employee_count=counts.get(t.id, 0),
+            employee_count=emp_counts.get(t.id, 0),
+            department_count=dept_counts.get(t.id, 0),
         )
         for t in tags
     ]

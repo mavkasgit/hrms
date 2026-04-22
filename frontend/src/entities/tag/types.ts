@@ -5,6 +5,7 @@ export interface Tag {
   color?: string
   sort_order: number
   employee_count: number
+  department_count: number
 }
 
 export interface TagCreate {

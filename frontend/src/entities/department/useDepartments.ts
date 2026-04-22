@@ -43,6 +43,9 @@ export function useUpdateDepartment() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["departments"] })
       qc.invalidateQueries({ queryKey: ["departments-graph"] })
+      qc.invalidateQueries({ queryKey: ["dashboard-birthdays"] })
+      qc.invalidateQueries({ queryKey: ["dashboard-contracts"] })
+      qc.invalidateQueries({ queryKey: ["dashboard-departments"] })
     },
   })
 }
@@ -89,6 +92,8 @@ export function useAssignDepartmentTag() {
       departmentApi.assignTag(deptId, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["departments-graph"] })
+      qc.invalidateQueries({ queryKey: ["dashboard-birthdays"] })
+      qc.invalidateQueries({ queryKey: ["dashboard-contracts"] })
     },
   })
 }
@@ -100,6 +105,8 @@ export function useUnassignDepartmentTag() {
       departmentApi.unassignTag(deptId, tagId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["departments-graph"] })
+      qc.invalidateQueries({ queryKey: ["dashboard-birthdays"] })
+      qc.invalidateQueries({ queryKey: ["dashboard-contracts"] })
     },
   })
 }

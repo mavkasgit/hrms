@@ -19,7 +19,10 @@ export type PositionEmployeeView = {
   tags: PositionEmployeeTag[]
 }
 
-export function buildEmployeesByPosition(items: PositionEmployeeInput[] | undefined) {
+export function buildEmployeesByPosition(
+  items: PositionEmployeeInput[] | undefined,
+  tagsByEmployeeId?: Map<number, PositionEmployeeTag[]>
+) {
   const map = new Map<number, PositionEmployeeView[]>()
 
   items?.forEach((emp) => {
@@ -30,7 +33,7 @@ export function buildEmployeesByPosition(items: PositionEmployeeInput[] | undefi
       id: emp.id,
       name: emp.name,
       department: emp.department?.name,
-      tags: emp.tags ?? [],
+      tags: emp.tags ?? tagsByEmployeeId?.get(emp.id) ?? [],
     })
   })
 
