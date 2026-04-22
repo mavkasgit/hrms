@@ -548,7 +548,7 @@ async def delete_department_link(
     return {"ok": True}
 
 
-@router.get("/{dept_id}/links", response_model=list[DepartmentLinkResponse])
+@router.get("/{dept_id:int}/links", response_model=list[DepartmentLinkResponse])
 async def get_department_links(dept_id: int, db: AsyncSession = Depends(get_db)):
     """Получить все связи подразделения (и как head, и как child)."""
     result = await db.execute(
@@ -572,7 +572,7 @@ async def get_department_links(dept_id: int, db: AsyncSession = Depends(get_db))
 # Теги подразделений
 # ============================================================================
 
-@router.post("/{dept_id}/tags", response_model=DepartmentTagResponse)
+@router.post("/{dept_id:int}/tags", response_model=DepartmentTagResponse)
 async def assign_tag_to_department(
     dept_id: int,
     data: DepartmentTagAssign,
@@ -604,7 +604,7 @@ async def assign_tag_to_department(
     )
 
 
-@router.delete("/{dept_id}/tags/{tag_id}")
+@router.delete("/{dept_id:int}/tags/{tag_id}")
 async def unassign_tag_from_department(
     dept_id: int,
     tag_id: int,
@@ -625,7 +625,7 @@ async def unassign_tag_from_department(
     return {"ok": True}
 
 
-@router.get("/{dept_id}/tags", response_model=list[TagRef])
+@router.get("/{dept_id:int}/tags", response_model=list[TagRef])
 async def get_department_tags(dept_id: int, db: AsyncSession = Depends(get_db)):
     """Получить теги подразделения."""
     dept = await db.get(Department, dept_id)
@@ -641,7 +641,7 @@ async def get_department_tags(dept_id: int, db: AsyncSession = Depends(get_db)):
     return [TagRef(id=tag.id, name=tag.name, color=tag.color) for _, tag in rows]
 
 
-@router.get("/{dept_id}/usage")
+@router.get("/{dept_id:int}/usage")
 async def get_department_usage(dept_id: int, db: AsyncSession = Depends(get_db)):
     """Получить количество связей подразделения перед удалением."""
     result = await db.execute(select(Department).where(Department.id == dept_id))

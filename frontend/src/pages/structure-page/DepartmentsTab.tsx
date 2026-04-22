@@ -3,11 +3,7 @@ import { Button } from "@/shared/ui/button"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/shared/ui/popover"
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,8 +16,9 @@ import {
 } from "@/shared/ui/alert-dialog"
 import {
   Building2, Plus, ChevronRight, ChevronDown, Users,
-  X, Check, ChevronsDown, ChevronsUp,
+  ChevronsDown, ChevronsUp,
 } from "lucide-react"
+import { TagPicker } from "@/shared/ui/tag-picker"
 import {
   useDepartmentGraph,
   useCreateDepartment,
@@ -33,8 +30,10 @@ import {
 import { departmentApi } from "@/entities/department/api"
 import { useTags } from "@/entities/tag"
 import { useAssignDepartmentTag, useUnassignDepartmentTag } from "@/entities/department"
+import { useAssignTag, useUnassignTag } from "@/entities/employee/useEmployees"
 import { EntityDialog, type EntityDialogField, renderIcon } from "./shared/EntityDialog"
 import { SearchInput } from "./shared/SearchInput"
+import { createTagAssignmentHandlers } from "./tag-assignment"
 
 const DEPT_FIELDS: Record<string, EntityDialogField> = {
   name: { type: "text", label: "Название", required: true, placeholder: "Новый отдел", testId: "name-input" },
@@ -83,58 +82,23 @@ function EmployeeRow({
   onUnassignTag: (employeeId: number, tagId: number) => void
   highlight?: boolean
 }) {
-  const assignedIds = new Set(emp.tags.map((t) => t.id))
-  const available = allTags.filter((t) => !assignedIds.has(t.id))
-
   return (
     <div className={`flex items-center gap-2 py-1 px-2 text-sm rounded-md transition-colors ${
       highlight ? "bg-yellow-500/10" : "hover:bg-accent/30"
     } group/emp`}>
       <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 flex-shrink-0" />
       <span className="truncate flex-1">{emp.name}</span>
+      <TagPicker
+        tags={allTags}
+        assignedTags={emp.tags}
+        onAssign={(tagId) => onAssignTag(emp.id, tagId)}
+        onUnassign={(tagId) => onUnassignTag(emp.id, tagId)}
+        align="end"
+      />
       {emp.position_name && (
         <Badge variant="secondary" className="text-[10px] flex-shrink-0">
           {emp.position_name}
         </Badge>
-      )}
-      <div className="flex gap-0.5 flex-shrink-0">
-        {emp.tags.map((t) => (
-          <Badge
-            key={t.id}
-            variant="outline"
-            className="text-[10px] h-4.5 px-1 cursor-pointer hover:bg-destructive/10 transition-colors"
-            style={{ borderColor: t.color, color: t.color }}
-            onClick={() => onUnassignTag(emp.id, t.id)}
-            title="Убрать тег"
-          >
-            {t.name}
-          </Badge>
-        ))}
-      </div>
-      {available.length > 0 && (
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="opacity-0 group-hover/emp:opacity-100 transition-opacity text-muted-foreground hover:text-foreground flex-shrink-0">
-              <Plus className="h-3 w-3" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-44 p-1" align="end">
-            {available.map((t) => (
-              <button
-                key={t.id}
-                className="w-full flex items-center gap-2 px-2 py-1 text-xs rounded hover:bg-accent"
-                onClick={() => onAssignTag(emp.id, t.id)}
-              >
-                <div
-                  className="h-2 w-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: t.color || "#94a3b8" }}
-                />
-                {t.name}
-                <Check className="h-3 w-3 ml-auto text-muted-foreground" />
-              </button>
-            ))}
-          </PopoverContent>
-        </Popover>
       )}
     </div>
   )
@@ -150,8 +114,10 @@ function DepartmentTreeNode({
   allTags,
   onAddChild,
   onEdit,
-  onAssignTag,
-  onUnassignTag,
+  onAssignDepartmentTag,
+  onUnassignDepartmentTag,
+  onAssignEmployeeTag,
+  onUnassignEmployeeTag,
   expandedNodes,
   setExpandedNodes,
   searchQuery,
@@ -163,8 +129,10 @@ function DepartmentTreeNode({
   allTags: { id: number; name: string; color?: string }[]
   onAddChild: (parentId: number) => void
   onEdit: (node: GraphNode) => void
-  onAssignTag: (deptId: number, tagId: number) => void
-  onUnassignTag: (deptId: number, tagId: number) => void
+  onAssignDepartmentTag: (deptId: number, tagId: number) => void
+  onUnassignDepartmentTag: (deptId: number, tagId: number) => void
+  onAssignEmployeeTag: (employeeId: number, tagId: number) => void
+  onUnassignEmployeeTag: (employeeId: number, tagId: number) => void
   expandedNodes: Set<number>
   setExpandedNodes: (fn: (prev: Set<number>) => Set<number>) => void
   searchQuery: string
@@ -193,7 +161,7 @@ function DepartmentTreeNode({
     <div>
       {/* Строка отдела */}
       <div
-        className="group/dept flex items-center gap-1.5 py-2 rounded-md hover:bg-accent/50 transition-colors cursor-pointer"
+        className="group/dept flex items-center gap-1.5 py-2 rounded-md hover:bg-accent/50 transition-colors cursor-pointer flex-wrap"
         style={{
           paddingLeft: `${depth * 20 + 8}px`,
           backgroundColor: node.color ? node.color + "18" : undefined,
@@ -249,6 +217,16 @@ function DepartmentTreeNode({
 
         <span className="font-medium text-sm truncate flex-1 min-w-0">{node.name}</span>
 
+        <span onClick={(e) => e.stopPropagation()}>
+          <TagPicker
+            tags={allTags}
+            assignedTags={node.tags}
+            onAssign={(tagId) => onAssignDepartmentTag(node.id, tagId)}
+            onUnassign={(tagId) => onUnassignDepartmentTag(node.id, tagId)}
+            align="start"
+          />
+        </span>
+
         {!hasEmployees && node.employees.length === 0 && (
           <span className="text-[10px] text-muted-foreground/50 w-10 text-right flex-shrink-0">
             пусто
@@ -262,50 +240,20 @@ function DepartmentTreeNode({
           </span>
         )}
 
-        <div className="flex gap-0.5 flex-shrink-0">
+        <div className="flex gap-0.5 flex-shrink-0 mr-2">
           <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-muted-foreground"
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
             onClick={(e) => {
               e.stopPropagation()
               onAddChild(node.id)
             }}
           >
-            <Plus className="h-3 w-3" />
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Подразделение
           </Button>
         </div>
-      </div>
-
-      {/* Теги отдела */}
-      <div className="flex items-center gap-1 flex-wrap pl-8" style={{ paddingLeft: `${depth * 20 + 32}px` }}>
-        {node.tags.map((t) => (
-          <Badge
-            key={t.id}
-            variant="outline"
-            className="text-[10px] h-5 px-1.5 cursor-pointer hover:bg-destructive/10 transition-colors gap-1 group/tag"
-            style={{ borderColor: t.color, color: t.color }}
-            onClick={() => onUnassignTag(node.id, t.id)}
-            title="Убрать тег"
-          >
-            {t.name}
-            <X className="h-2.5 w-2.5 opacity-0 group-hover/tag:opacity-100 transition-opacity" />
-          </Badge>
-        ))}
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="text-muted-foreground hover:text-foreground opacity-50 hover:opacity-100 transition-opacity">
-              <Plus className="h-3 w-3" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-44 p-1" align="start">
-            <TagPopoverContent
-              allTags={allTags}
-              assignedIds={new Set(node.tags.map((t) => t.id))}
-              onAssign={(tagId) => onAssignTag(node.id, tagId)}
-            />
-          </PopoverContent>
-        </Popover>
       </div>
 
       {/* Раскрытые дочерние отделы */}
@@ -323,8 +271,10 @@ function DepartmentTreeNode({
               allTags={allTags}
               onAddChild={onAddChild}
               onEdit={onEdit}
-              onAssignTag={onAssignTag}
-              onUnassignTag={onUnassignTag}
+              onAssignDepartmentTag={onAssignDepartmentTag}
+              onUnassignDepartmentTag={onUnassignDepartmentTag}
+              onAssignEmployeeTag={onAssignEmployeeTag}
+              onUnassignEmployeeTag={onUnassignEmployeeTag}
               expandedNodes={expandedNodes}
               setExpandedNodes={setExpandedNodes}
               searchQuery={searchQuery}
@@ -345,8 +295,8 @@ function DepartmentTreeNode({
                 key={emp.id}
                 emp={emp}
                 allTags={allTags}
-                onAssignTag={onAssignTag}
-                onUnassignTag={onUnassignTag}
+                onAssignTag={onAssignEmployeeTag}
+                onUnassignTag={onUnassignEmployeeTag}
                 highlight={isHighlighted}
               />
             )
@@ -354,41 +304,6 @@ function DepartmentTreeNode({
         </div>
       )}
     </div>
-  )
-}
-
-/* ───────── Popover тегов ───────── */
-
-function TagPopoverContent({
-  allTags,
-  assignedIds,
-  onAssign,
-}: {
-  allTags: { id: number; name: string; color?: string }[]
-  assignedIds: Set<number>
-  onAssign: (tagId: number) => void
-}) {
-  const available = allTags.filter((t) => !assignedIds.has(t.id))
-  if (available.length === 0) {
-    return <div className="px-2 py-1.5 text-xs text-muted-foreground">Нет доступных тегов</div>
-  }
-  return (
-    <>
-      {available.map((t) => (
-        <button
-          key={t.id}
-          className="w-full flex items-center gap-2 px-2 py-1 text-xs rounded hover:bg-accent"
-          onClick={() => onAssign(t.id)}
-        >
-          <div
-            className="h-2.5 w-2.5 rounded-full flex-shrink-0"
-            style={{ backgroundColor: t.color || "#94a3b8" }}
-          />
-          {t.name}
-          <Check className="h-3 w-3 ml-auto text-muted-foreground" />
-        </button>
-      ))}
-    </>
   )
 }
 
@@ -401,6 +316,8 @@ export function DepartmentsTab() {
   const deleteDept = useDeleteDepartment()
   const assignTag = useAssignDepartmentTag()
   const unassignTag = useUnassignDepartmentTag()
+  const assignEmployeeTag = useAssignTag()
+  const unassignEmployeeTag = useUnassignTag()
   const { data: allTags = [] } = useTags()
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -520,13 +437,28 @@ export function DepartmentsTab() {
     }
   }
 
-  const handleAssignTag = (deptId: number, tagId: number) => {
+  const handleAssignDepartmentTag = (deptId: number, tagId: number) => {
     assignTag.mutate({ deptId, data: { tag_id: tagId } })
   }
 
-  const handleUnassignTag = (deptId: number, tagId: number) => {
+  const handleUnassignDepartmentTag = (deptId: number, tagId: number) => {
     unassignTag.mutate({ deptId, tagId })
   }
+
+  const handleAssignEmployeeTag = (employeeId: number, tagId: number) => {
+    assignEmployeeTag.mutate({ employeeId, tagId })
+  }
+
+  const handleUnassignEmployeeTag = (employeeId: number, tagId: number) => {
+    unassignEmployeeTag.mutate({ employeeId, tagId })
+  }
+
+  const tagHandlers = createTagAssignmentHandlers({
+    assignDepartmentTag: handleAssignDepartmentTag,
+    unassignDepartmentTag: handleUnassignDepartmentTag,
+    assignEmployeeTag: handleAssignEmployeeTag,
+    unassignEmployeeTag: handleUnassignEmployeeTag,
+  })
 
   // Подсчёт найденных сотрудников
   const totalMatches = useMemo(() => {
@@ -600,8 +532,10 @@ export function DepartmentsTab() {
               allTags={allTags}
               onAddChild={(id) => openAdd(id)}
               onEdit={openEdit}
-              onAssignTag={handleAssignTag}
-              onUnassignTag={handleUnassignTag}
+              onAssignDepartmentTag={tagHandlers.department.assign}
+              onUnassignDepartmentTag={tagHandlers.department.unassign}
+              onAssignEmployeeTag={tagHandlers.employee.assign}
+              onUnassignEmployeeTag={tagHandlers.employee.unassign}
               expandedNodes={expandedNodes}
               setExpandedNodes={setExpandedNodes}
               searchQuery={searchQuery}

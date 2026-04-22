@@ -3,11 +3,7 @@ import { Button } from "@/shared/ui/button"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/shared/ui/popover"
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,8 +16,9 @@ import {
 } from "@/shared/ui/alert-dialog"
 import {
   Briefcase, Plus, ChevronRight, ChevronDown, Users,
-  Pencil, Check, ChevronsDown, ChevronsUp,
+  ChevronsDown, ChevronsUp,
 } from "lucide-react"
+import { TagPicker } from "@/shared/ui/tag-picker"
 import {
   usePositions,
   useCreatePosition,
@@ -37,6 +34,7 @@ import {
 } from "@/entities/employee/useEmployees"
 import { EntityDialog, type EntityDialogField, renderIcon } from "./shared/EntityDialog"
 import { SearchInput } from "./shared/SearchInput"
+import { buildEmployeesByPosition } from "./positions-helpers"
 
 const POS_FIELDS: Record<string, EntityDialogField> = {
   name: { type: "text", label: "Название", required: true, placeholder: "Новая должность" },
@@ -59,58 +57,23 @@ function EmployeeRowInline({
   onUnassignTag: (employeeId: number, tagId: number) => void
   highlight?: boolean
 }) {
-  const assignedIds = new Set(emp.tags.map((t) => t.id))
-  const available = allTags.filter((t) => !assignedIds.has(t.id))
-
   return (
     <div className={`flex items-center gap-2 py-1 px-2 text-sm rounded-md transition-colors ${
       highlight ? "bg-yellow-500/10" : "hover:bg-accent/30"
     } group/emp`}>
       <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 flex-shrink-0" />
       <span className="truncate flex-1">{emp.name}</span>
+      <TagPicker
+        tags={allTags}
+        assignedTags={emp.tags}
+        onAssign={(tagId) => onAssignTag(emp.id, tagId)}
+        onUnassign={(tagId) => onUnassignTag(emp.id, tagId)}
+        align="end"
+      />
       {emp.department && (
         <Badge variant="secondary" className="text-[10px] flex-shrink-0">
           {emp.department}
         </Badge>
-      )}
-      <div className="flex gap-0.5 flex-shrink-0">
-        {emp.tags.map((t) => (
-          <Badge
-            key={t.id}
-            variant="outline"
-            className="text-[10px] h-4.5 px-1 cursor-pointer hover:bg-destructive/10 transition-colors"
-            style={{ borderColor: t.color, color: t.color }}
-            onClick={() => onUnassignTag(emp.id, t.id)}
-            title="Убрать тег"
-          >
-            {t.name}
-          </Badge>
-        ))}
-      </div>
-      {available.length > 0 && (
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="opacity-0 group-hover/emp:opacity-100 transition-opacity text-muted-foreground hover:text-foreground flex-shrink-0">
-              <Plus className="h-3 w-3" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-44 p-1" align="end">
-            {available.map((t) => (
-              <button
-                key={t.id}
-                className="w-full flex items-center gap-2 px-2 py-1 text-xs rounded hover:bg-accent"
-                onClick={() => onAssignTag(emp.id, t.id)}
-              >
-                <div
-                  className="h-2 w-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: t.color || "#94a3b8" }}
-                />
-                {t.name}
-                <Check className="h-3 w-3 ml-auto text-muted-foreground" />
-              </button>
-            ))}
-          </PopoverContent>
-        </Popover>
       )}
     </div>
   )
@@ -226,28 +189,11 @@ function PositionTreeNode({
           </span>
         )}
 
-        {/* Действия */}
-        <div className="flex gap-0.5 flex-shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 text-muted-foreground"
-            onClick={(e) => {
-              e.stopPropagation()
-              onEdit({ id: position.id, name: position.name, color: position.color, icon: position.icon })
-            }}
-          >
-            <Pencil className="h-3 w-3" />
-          </Button>
-        </div>
       </div>
 
       {/* Сотрудники */}
       {showEmployees && hasEmployees && (
         <div className="mt-1 mb-1 space-y-0.5" style={{ paddingLeft: "28px" }}>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 px-2 py-1">
-            Сотрудники ({filteredEmployees.length}{searchQuery ? ` из ${employees.length}` : ""})
-          </div>
           {filteredEmployees.map((emp) => {
             const isHighlighted = Boolean(searchQuery && emp.name.toLowerCase().includes(searchQuery.toLowerCase()))
             return (
@@ -304,22 +250,7 @@ export function PositionsTab() {
 
   // Группируем по должностям
   const employeesByPosition = useMemo(() => {
-    const map = new Map<
-      number,
-      { id: number; name: string; department?: string; tags: { id: number; name: string; color?: string }[] }[]
-    >()
-    employeesData?.items.forEach((emp: { id: number; position_id: number; name: string; department?: { name: string }; tags?: { id: number }[] }) => {
-      if (emp.position_id) {
-        if (!map.has(emp.position_id)) map.set(emp.position_id, [])
-        map.get(emp.position_id)!.push({
-          id: emp.id,
-          name: emp.name,
-          department: emp.department?.name,
-          tags: [],
-        })
-      }
-    })
-    return map
+    return buildEmployeesByPosition(employeesData?.items)
   }, [employeesData])
 
   // При загрузке — раскрыть все
@@ -347,6 +278,34 @@ export function PositionsTab() {
       collapseAll()
     }
   }, [allExpanded, expandAll, collapseAll])
+
+  // При поиске — раскрываем должности с совпадениями и поднимаем их вверх
+  const visiblePositions = useMemo(() => {
+    if (!searchQuery) return positions
+    const q = searchQuery.toLowerCase()
+    return [...positions].sort((a, b) => {
+      const aEmps = employeesByPosition.get(a.id) ?? []
+      const bEmps = employeesByPosition.get(b.id) ?? []
+      const aMatch = aEmps.some((e) => e.name.toLowerCase().includes(q))
+      const bMatch = bEmps.some((e) => e.name.toLowerCase().includes(q))
+      return Number(bMatch) - Number(aMatch)
+    })
+  }, [positions, employeesByPosition, searchQuery])
+
+  useEffect(() => {
+    if (searchQuery && positions.length > 0) {
+      const q = searchQuery.toLowerCase()
+      const matched = positions.filter((p) => {
+        const emps = employeesByPosition.get(p.id) ?? []
+        return emps.some((e) => e.name.toLowerCase().includes(q))
+      })
+      setExpandedPositions((prev) => {
+        const next = new Set(prev)
+        matched.forEach((p) => next.add(p.id))
+        return next
+      })
+    }
+  }, [searchQuery, positions, employeesByPosition])
 
   const openAdd = () => {
     setEditingId(null)
@@ -460,7 +419,7 @@ export function PositionsTab() {
         <EmptyState message="Нет должностей" description="Добавьте первую должность" />
       ) : (
         <div className="border rounded-lg p-2 bg-card">
-          {positions.map((pos) => (
+          {visiblePositions.map((pos) => (
             <PositionTreeNode
               key={pos.id}
               position={pos}
