@@ -6,6 +6,7 @@ import type {
   DepartmentLinkCreate,
   DepartmentTagAssign,
 } from "./types"
+import { departmentTagInvalidationKeys } from "./tag-invalidation"
 
 /* Граф */
 export function useDepartmentGraph() {
@@ -91,9 +92,9 @@ export function useAssignDepartmentTag() {
     mutationFn: ({ deptId, data }: { deptId: number; data: DepartmentTagAssign }) =>
       departmentApi.assignTag(deptId, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["departments-graph"] })
-      qc.invalidateQueries({ queryKey: ["dashboard-birthdays"] })
-      qc.invalidateQueries({ queryKey: ["dashboard-contracts"] })
+      departmentTagInvalidationKeys.forEach((queryKey) => {
+        qc.invalidateQueries({ queryKey })
+      })
     },
   })
 }
@@ -104,9 +105,9 @@ export function useUnassignDepartmentTag() {
     mutationFn: ({ deptId, tagId }: { deptId: number; tagId: number }) =>
       departmentApi.unassignTag(deptId, tagId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["departments-graph"] })
-      qc.invalidateQueries({ queryKey: ["dashboard-birthdays"] })
-      qc.invalidateQueries({ queryKey: ["dashboard-contracts"] })
+      departmentTagInvalidationKeys.forEach((queryKey) => {
+        qc.invalidateQueries({ queryKey })
+      })
     },
   })
 }

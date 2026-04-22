@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from "react"
-import { ChevronDown, ChevronRight, Trash2, Calendar, Check, X, ScrollText } from "lucide-react"
-import { useNavigate } from "react-router-dom"
+import { ChevronDown, ChevronRight, Trash2, Check, X, ScrollText } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -356,7 +355,6 @@ function EmployeeHistoryRow({
 }
 
 export function VacationsPage() {
-  const navigate = useNavigate()
   // --- Form state ---
   const [collapsed, setCollapsed] = useState(false)
   const [auditLogOpen, setAuditLogOpen] = useState(false)
@@ -562,10 +560,6 @@ export function VacationsPage() {
           <Button variant="outline" size="sm" onClick={() => setAuditLogOpen(true)}>
             <ScrollText className="mr-2 h-4 w-4" />
             Журнал
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate("/vacation-calendar")}>
-            <Calendar className="mr-2 h-4 w-4" />
-            Календарь
           </Button>
         </div>
       </div>

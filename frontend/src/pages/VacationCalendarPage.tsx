@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Search } from "lucide-react"
+import { ArrowLeft, ArrowUpDown, ChevronDown, ChevronUp, Search } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Skeleton } from "@/shared/ui/skeleton"
@@ -22,6 +22,7 @@ interface CalendarRow {
   employee_id: number
   employee_name: string
   department_id: number
+  department_name: string
   months: Record<number, string | null>
   total_plan_count: string
 }
@@ -54,6 +55,7 @@ export function VacationCalendarPage() {
   const navigate = useNavigate()
   const [year, setYear] = useState(2026)
   const [search, setSearch] = useState("")
+  const [departmentSort, setDepartmentSort] = useState<"none" | "asc" | "desc">("none")
 
   const { data: summaries, isLoading: plansLoading } = useVacationPlanSummary(year)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000, status: "active" })
@@ -64,6 +66,14 @@ export function VacationCalendarPage() {
   const [hoveredRow, setHoveredRow] = useState<number | null>(null)
   const [hoveredMonth, setHoveredMonth] = useState<number | null>(null)
   const activeMonth = editingCell?.month ?? hoveredMonth
+
+  const toggleDepartmentSort = () => {
+    setDepartmentSort((prev) => {
+      if (prev === "none") return "asc"
+      if (prev === "asc") return "desc"
+      return "none"
+    })
+  }
 
   // Merge all employees with plan data
   const combinedData: CalendarRow[] = useMemo(() => {
@@ -77,11 +87,18 @@ export function VacationCalendarPage() {
 
     return allEmployees.items.map((emp) => {
       const existing = planMap.get(emp.id)
-      if (existing) return existing
+      const departmentName = emp.department?.name || `Отдел #${emp.department_id}`
+      if (existing) {
+        return {
+          ...existing,
+          department_name: departmentName,
+        }
+      }
       return {
         employee_id: emp.id,
         employee_name: emp.name,
         department_id: emp.department_id,
+        department_name: departmentName,
         months: {} as Record<number, string | null>,
         total_plan_count: "0",
       }
@@ -89,12 +106,26 @@ export function VacationCalendarPage() {
   }, [summaries, allEmployees])
 
   const filtered = useMemo(() => {
-    if (!search) return combinedData
-    const q = search.toLowerCase()
-    return combinedData.filter(
-      (s) => s.employee_name.toLowerCase().includes(q) || s.department_id.toString().includes(q)
-    )
-  }, [combinedData, search])
+    const q = search.toLowerCase().trim()
+    const filteredRows = q
+      ? combinedData.filter(
+          (s) =>
+            s.employee_name.toLowerCase().includes(q) ||
+            s.department_name.toLowerCase().includes(q) ||
+            s.department_id.toString().includes(q)
+        )
+      : combinedData
+
+    if (departmentSort === "none") return filteredRows
+
+    const sortedRows = [...filteredRows].sort((a, b) => {
+      const byDepartment = a.department_name.localeCompare(b.department_name, "ru")
+      if (byDepartment !== 0) return departmentSort === "asc" ? byDepartment : -byDepartment
+      return a.employee_name.localeCompare(b.employee_name, "ru")
+    })
+
+    return sortedRows
+  }, [combinedData, search, departmentSort])
 
   const handleCellClick = (employeeId: number, month: number, currentValue: string | null) => {
     setEditingCell({ employeeId, month })
@@ -166,7 +197,19 @@ export function VacationCalendarPage() {
             <thead>
               <tr>
                 <th className="sticky left-0 text-left font-medium py-2 px-3 min-w-[200px] z-10 border border-zinc-300 bg-background">Сотрудник</th>
-                <th className="text-left font-medium py-2 px-2 min-w-[100px] border border-zinc-300 bg-background">Отдел</th>
+                <th className="text-left font-medium py-2 px-2 min-w-[180px] border border-zinc-300 bg-background">
+                  <button
+                    type="button"
+                    onClick={toggleDepartmentSort}
+                    className="inline-flex items-center gap-1 hover:text-foreground text-muted-foreground"
+                    title="Сортировать по отделу"
+                  >
+                    <span>Отдел</span>
+                    {departmentSort === "asc" && <ChevronUp className="h-3.5 w-3.5" />}
+                    {departmentSort === "desc" && <ChevronDown className="h-3.5 w-3.5" />}
+                    {departmentSort === "none" && <ArrowUpDown className="h-3.5 w-3.5" />}
+                  </button>
+                </th>
                 {MONTHS.map((m, i) => {
                   const monthNum = i + 1
                   const isActive = activeMonth === monthNum
@@ -182,7 +225,7 @@ export function VacationCalendarPage() {
                 return (
                 <tr key={row.employee_id} className={`${isHovered ? "!bg-zinc-100" : ""}`} onMouseEnter={() => setHoveredRow(row.employee_id)} onMouseLeave={() => setHoveredRow(null)}>
                   <td className={`sticky left-0 py-1.5 px-3 z-10 font-medium border border-zinc-300 ${isHovered ? "!bg-zinc-100" : "bg-background"}`}>{row.employee_name}</td>
-                  <td className="py-1.5 px-2 text-muted-foreground text-xs border border-zinc-300">{row.department_id}</td>
+                  <td className="py-1.5 px-2 text-muted-foreground text-xs border border-zinc-300">{row.department_name}</td>
                   {MONTHS.map((_, monthIdx) => {
                     const monthNum = monthIdx + 1
                     const value = row.months[monthNum] ?? null

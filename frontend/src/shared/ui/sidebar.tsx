@@ -29,6 +29,7 @@ const bottomNavItems = [
 
 const absenceItems = [
   { to: "/vacations", label: "Трудовой отпуск", icon: CalendarDays },
+  { to: "/vacation-calendar", label: "Календарь отпусков", icon: CalendarDays },
   { to: "/unpaid-leaves", label: "Отпуск за свой счет", icon: CalendarDays },
   { to: "/weekend-calls", label: "Вызовы в выходные дни", icon: FileText },
   { to: "/sick-leaves", label: "Больничные", icon: Stethoscope },
