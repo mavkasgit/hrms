@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { ChevronDown, ChevronRight, Trash2, X, Stethoscope, Calendar, User } from "lucide-react"
+import { ChevronDown, ChevronRight, Trash2, X } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -167,12 +167,6 @@ export function SickLeavesPage() {
 
   const sickLeaves = sickLeavesData?.items || []
   
-  const totalDays = sickLeaves.reduce((sum, sl) => sum + sl.days_count, 0)
-  const activeNow = sickLeaves.filter(sl => {
-    const today = new Date().toISOString().split('T')[0]
-    return sl.status === "active" && sl.start_date <= today && sl.end_date >= today
-  }).length
-
   return (
     <div className="space-y-4">
       {successMessage && (
@@ -186,44 +180,6 @@ export function SickLeavesPage() {
 
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Больничные листы</h1>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-4 border rounded-lg">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Stethoscope className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Всего больничных</p>
-              <p className="text-2xl font-bold">{sickLeavesData?.total || 0}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4 border rounded-lg">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <Calendar className="h-5 w-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Всего дней</p>
-              <p className="text-2xl font-bold">{totalDays}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4 border rounded-lg">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-100 rounded-lg">
-              <User className="h-5 w-5 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Активных сейчас</p>
-              <p className="text-2xl font-bold">{activeNow}</p>
-            </div>
-          </div>
-        </div>
       </div>
 
       <div className="border rounded-lg bg-card">
@@ -243,7 +199,7 @@ export function SickLeavesPage() {
           <div className="border-t px-4 py-4">
             <div className="grid gap-4">
               <div className="flex gap-4">
-                <div className="w-[40%]" ref={searchRef}>
+                <div className="w-[29%]" ref={searchRef}>
                   <label className="text-sm font-medium">Сотрудник *</label>
                   {selectedEmployee ? (
                     <div className="flex items-center gap-2 border rounded-md px-3 h-10 bg-muted/50">
@@ -322,7 +278,7 @@ export function SickLeavesPage() {
                 )}
               </div>
 
-              <div>
+              <div className="max-w-[420px]">
                 <label className="text-sm font-medium">Описание / комментарий</label>
                 <Input
                   placeholder="Описание больничного..."
@@ -333,10 +289,11 @@ export function SickLeavesPage() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 mt-4">
+            <div className="mt-4 space-y-2">
               <div className="flex gap-2">
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={(e) => {
                     e.stopPropagation()
                     resetForm()
@@ -346,6 +303,7 @@ export function SickLeavesPage() {
                   Очистить
                 </Button>
                 <Button
+                  size="sm"
                   onClick={(e) => {
                     e.stopPropagation()
                     handleSubmit()

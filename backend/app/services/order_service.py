@@ -91,6 +91,18 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
     },
+    {
+        "code": "weekend_call",
+        "name": "Вызов в выходной",
+        "show_in_orders_page": False,
+        "template_filename": "prikaz_vyzov_v_vyhodnoy.docx",
+        "field_schema": [
+            {"key": "call_date", "label": "Дата вызова", "type": "date", "required": False},
+            {"key": "call_date_start", "label": "Дата начала", "type": "date", "required": False},
+            {"key": "call_date_end", "label": "Дата окончания", "type": "date", "required": False},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+    },
 ]
 
 
@@ -211,6 +223,7 @@ class OrderService:
         sort_by: Optional[str] = None,
         sort_order: str = "desc",
         year: Optional[int] = None,
+        order_type_code: Optional[str] = None,
     ) -> dict[str, Any]:
         items, total = await self.order_repo.get_all(
             db,
@@ -219,6 +232,7 @@ class OrderService:
             sort_by=sort_by,
             sort_order=sort_order,
             year=year,
+            order_type_code=order_type_code,
         )
         total_pages = max(1, (total + per_page - 1) // per_page)
         return {

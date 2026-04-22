@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.order import Order
+from app.models.order_type import OrderType
 
 
 class OrderRepository:
@@ -17,28 +18,35 @@ class OrderRepository:
         sort_by: Optional[str] = None,
         sort_order: str = "desc",
         year: Optional[int] = None,
+        order_type_code: Optional[str] = None,
     ) -> tuple[list[Order], int]:
         conditions = [Order.is_deleted == False, Order.is_cancelled == False]
+        joins = []
 
         if year:
             conditions.append(extract("year", Order.order_date) == year)
 
+        if order_type_code:
+            joins.append(OrderType)
+            conditions.append(OrderType.code == order_type_code)
+
         where_clause = and_(*conditions) if conditions else True
 
-        count_query = select(func.count(Order.id)).where(where_clause)
+        count_query = select(func.count(Order.id)).select_from(Order)
+        for join_model in joins:
+            count_query = count_query.join(join_model)
+        count_query = count_query.where(where_clause)
         total_result = await db.execute(count_query)
         total = total_result.scalar()
 
         sort_column = getattr(Order, sort_by, Order.created_date) if sort_by else Order.created_date
         order_expr = sort_column.asc() if sort_order == "asc" else sort_column.desc()
 
+        data_query = select(Order).options(selectinload(Order.employee), selectinload(Order.order_type))
+        for join_model in joins:
+            data_query = data_query.join(join_model)
         data_query = (
-            select(Order)
-            .options(selectinload(Order.employee), selectinload(Order.order_type))
-            .where(where_clause)
-            .order_by(order_expr)
-            .offset((page - 1) * per_page)
-            .limit(per_page)
+            data_query.where(where_clause).order_by(order_expr).offset((page - 1) * per_page).limit(per_page)
         )
         result = await db.execute(data_query)
         items = list(result.scalars().all())

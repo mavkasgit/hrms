@@ -5,6 +5,8 @@ import { EmployeesPage } from "@/pages/EmployeesPage"
 import { StructurePage } from "@/pages/StructurePage"
 import { OrdersPage } from "@/pages/OrdersPage"
 import { VacationsPage } from "@/pages/VacationsPage"
+import { UnpaidLeavesPage } from "@/pages/UnpaidLeavesPage"
+import { WeekendCallsPage } from "@/pages/WeekendCallsPage"
 import { SickLeavesPage } from "@/pages/SickLeavesPage"
 import { VacationCalendarPage } from "@/pages/VacationCalendarPage"
 import { TemplatesPage } from "@/pages/TemplatesPage"
@@ -23,6 +25,8 @@ export const router = createBrowserRouter([
       { path: "structure", element: <StructurePage /> },
       { path: "orders", element: <OrdersPage /> },
       { path: "vacations", element: <VacationsPage /> },
+      { path: "unpaid-leaves", element: <UnpaidLeavesPage /> },
+      { path: "weekend-calls", element: <WeekendCallsPage /> },
       { path: "sick-leaves", element: <SickLeavesPage /> },
       { path: "vacation-calendar", element: <VacationCalendarPage /> },
       { path: "templates", element: <TemplatesPage /> },

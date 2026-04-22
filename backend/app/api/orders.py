@@ -77,11 +77,18 @@ async def get_all_orders(
     sort_by: Optional[str] = Query(None),
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
     year: Optional[int] = Query(None),
+    order_type_code: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
     return await order_service.get_all(
-        db, page=page, per_page=per_page, sort_by=sort_by, sort_order=sort_order, year=year
+        db,
+        page=page,
+        per_page=per_page,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        year=year,
+        order_type_code=order_type_code,
     )
 
 

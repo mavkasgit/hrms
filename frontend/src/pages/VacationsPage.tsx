@@ -30,7 +30,7 @@ import { OrderNumberField } from "@/features/OrderNumberField"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 import type { Employee } from "@/entities/employee/types"
 
-const VACATION_TYPES = ["Трудовой", "За свой счет"]
+const DEFAULT_VACATION_TYPE = "Трудовой"
 
 // Convert ISO date (YYYY-MM-DD) to DD.MM.YYYY
 function formatDate(dateStr: string | null): string {
@@ -364,9 +364,6 @@ export function VacationsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<Employee[]>([])
   const [searchOpen, setSearchOpen] = useState(false)
-  const [vacationType, setVacationType] = useState("")
-  const [vacationTypeSearch, setVacationTypeSearch] = useState("")
-  const [vacationTypeOpen, setVacationTypeOpen] = useState(false)
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [orderNumber, setOrderNumber] = useState("")
@@ -380,7 +377,6 @@ export function VacationsPage() {
   const [closingPeriodId, setClosingPeriodId] = useState<number | null>(null)
 
   const searchRef = useRef<HTMLDivElement>(null)
-  const vacationTypeRef = useRef<HTMLDivElement>(null)
 
   const { data: searchResult } = useSearchEmployees(searchQuery)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
@@ -406,17 +402,11 @@ export function VacationsPage() {
         setSearchResults([])
         setSearchOpen(false)
       }
-      if (vacationTypeRef.current && !vacationTypeRef.current.contains(e.target as Node)) {
-        setVacationTypeOpen(false)
-      }
     }
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  const filteredTypes = VACATION_TYPES.filter((t) =>
-    t.toLowerCase().includes(vacationTypeSearch.toLowerCase())
-  )
 
   const selectEmployee = (emp: Employee) => {
     setSelectedEmployee(emp)
@@ -435,36 +425,9 @@ export function VacationsPage() {
     setExpandedRows(new Set())
   }
 
-  const selectVacationType = (t: string) => {
-    setVacationType(t)
-    setVacationTypeSearch("")
-    setVacationTypeOpen(false)
-    setErrors({})
-  }
-
-  const clearVacationType = () => {
-    setVacationType("")
-    setVacationTypeSearch("")
-    setErrors({})
-  }
-
-  const handleVacationTypeKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault()
-      const first = filteredTypes[0]
-      if (first) selectVacationType(first)
-    }
-    if (e.key === "Enter" && filteredTypes.length > 0) {
-      e.preventDefault()
-      selectVacationType(filteredTypes[0])
-    }
-  }
-
   const resetForm = () => {
     setSelectedEmployee(null)
     setSearchQuery("")
-    setVacationType("")
-    setVacationTypeSearch("")
     setStartDate("")
     setEndDate("")
     setOrderNumber("")
@@ -475,7 +438,6 @@ export function VacationsPage() {
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
     if (!selectedEmployee) newErrors.employee = "Выберите сотрудника"
-    if (!vacationType) newErrors.vacationType = "Выберите тип отпуска"
     if (!startDate) newErrors.startDate = "Укажите дату начала"
     if (!endDate) newErrors.endDate = "Укажите дату конца"
     if (startDate && endDate && endDate < startDate) newErrors.endDate = "Дата конца раньше даты начала"
@@ -498,7 +460,7 @@ export function VacationsPage() {
       employee_id: selectedEmployee!.id,
       start_date: startDate,
       end_date: endDate,
-      vacation_type: vacationType,
+      vacation_type: DEFAULT_VACATION_TYPE,
       order_date: orderDate,
       order_number: orderNumber || undefined,
     }
@@ -595,7 +557,7 @@ export function VacationsPage() {
       )}
       
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Отпуска</h1>
+        <h1 className="text-2xl font-bold">Трудовой отпуск</h1>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => setAuditLogOpen(true)}>
             <ScrollText className="mr-2 h-4 w-4" />
@@ -622,7 +584,7 @@ export function VacationsPage() {
           ) : (
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
           )}
-          <h2 className="text-lg font-semibold">Создать отпуск</h2>
+          <h2 className="text-lg font-semibold">Создать трудовой отпуск</h2>
         </div>
 
         {!collapsed && (
@@ -710,54 +672,6 @@ export function VacationsPage() {
                     </div>
                   )}
                   {errors.employee && <p className="text-xs text-red-500 mt-1">{errors.employee}</p>}
-                </div>
-
-                <div className="w-[17%] relative" ref={vacationTypeRef}>
-                  <label className="text-sm font-medium">Тип отпуска *</label>
-                  {vacationType ? (
-                    <div className="flex items-center gap-2 border rounded-md px-3 h-10 bg-muted/50">
-                      <Check className="h-4 w-4 text-green-600 shrink-0" />
-                      <span className="text-sm flex-1 truncate">{vacationType}</span>
-                      <button
-                        type="button"
-                        onClick={clearVacationType}
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="relative">
-                        <Input
-                          placeholder="Выберите тип..."
-                          value={vacationTypeSearch}
-                          onChange={(e) => {
-                            setVacationTypeSearch(e.target.value)
-                            setVacationTypeOpen(true)
-                          }}
-                          onKeyDown={handleVacationTypeKeyDown}
-                          onFocus={() => setVacationTypeOpen(true)}
-                          className={errors.vacationType ? "border-red-500" : ""}
-                        />
-                        {vacationTypeOpen && filteredTypes.length > 0 && (
-                          <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
-                            {filteredTypes.map((t) => (
-                              <button
-                                key={t}
-                                type="button"
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0"
-                                onClick={() => selectVacationType(t)}
-                              >
-                                {t}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                  {errors.vacationType && <p className="text-xs text-red-500 mt-1">{errors.vacationType}</p>}
                 </div>
               </div>
 

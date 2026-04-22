@@ -1,14 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as api from "./api"
-import type { OrderCreate, OrderTypeCreate, OrderTypeUpdate } from "./types"
+import type { OrderCreate, OrdersQueryParams, OrderTypeCreate, OrderTypeUpdate } from "./types"
 
-export function useOrders(params: {
-  page: number
-  per_page: number
-  sort_by?: string
-  sort_order?: string
-  year?: number
-}) {
+export function useOrders(params: OrdersQueryParams) {
   return useQuery({
     queryKey: ["orders", params],
     queryFn: () => api.fetchOrders(params),

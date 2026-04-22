@@ -3,6 +3,7 @@ import type {
   Order,
   OrderCreate,
   OrderListResponse,
+  OrdersQueryParams,
   OrderSettings,
   OrderSyncResponse,
   OrderType,
@@ -12,13 +13,7 @@ import type {
   TemplateVariablesResponse,
 } from "./types"
 
-export async function fetchOrders(params: {
-  page: number
-  per_page: number
-  sort_by?: string
-  sort_order?: string
-  year?: number
-}) {
+export async function fetchOrders(params: OrdersQueryParams) {
   const { data } = await api.get<OrderListResponse>("/orders/all", { params })
   return data
 }

@@ -48,6 +48,15 @@ export interface OrderListResponse {
   total_pages: number
 }
 
+export interface OrdersQueryParams {
+  page: number
+  per_page: number
+  sort_by?: string
+  sort_order?: string
+  year?: number
+  order_type_code?: string
+}
+
 export interface OrderCreate {
   employee_id: number
   order_type_id: number
