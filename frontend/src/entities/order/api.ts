@@ -10,6 +10,7 @@ import type {
   OrderTypeCreate,
   OrderTypeListResponse,
   OrderTypeUpdate,
+  OrderPreviewResponse,
   TemplateVariablesResponse,
 } from "./types"
 
@@ -69,6 +70,11 @@ export async function fetchNextOrderNumber(year?: number) {
 
 export async function createOrder(order: OrderCreate) {
   const { data } = await api.post<Order>("/orders", order)
+  return data
+}
+
+export async function createOrderPreview(order: OrderCreate) {
+  const { data } = await api.post<OrderPreviewResponse>("/orders/preview", order)
   return data
 }
 

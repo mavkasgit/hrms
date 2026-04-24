@@ -7,9 +7,11 @@ import { Input } from "@/shared/ui/input"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table"
 import { useEmployees, useSearchEmployees } from "@/entities/employee/useEmployees"
-import { useAllOrderTypes, useCancelOrder, useCreateOrder, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
+import { useAllOrderTypes, useCancelOrder, useCreateOrder, useCreateOrderPreview, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
 import { OrderNumberField } from "@/features/OrderNumberField"
+import { OrderPreviewDialog } from "@/features/order-preview/OrderPreviewDialog"
 import type { Employee } from "@/entities/employee/types"
+import type { OrderCreate } from "@/entities/order/types"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -109,10 +111,16 @@ export function UnpaidLeavesPage() {
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
   const { data: orderTypes = [] } = useAllOrderTypes()
   const createMutation = useCreateOrder()
+  const previewMutation = useCreateOrderPreview()
   const cancelMutation = useCancelOrder()
   const deleteMutation = useDeleteOrder()
   const [cancelOrderId, setCancelOrderId] = useState<number | null>(null)
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [previewHtml, setPreviewHtml] = useState("")
+  const [pendingPayload, setPendingPayload] = useState<OrderCreate | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const { data, isLoading } = useOrders({
     page: 1,
     per_page: 1000,
@@ -158,6 +166,14 @@ export function UnpaidLeavesPage() {
     setErrors({})
   }
 
+  const resetPreviewState = () => {
+    setPreviewDialogOpen(false)
+    setPreviewId(null)
+    setPreviewHtml("")
+    setPendingPayload(null)
+    setPreviewError(null)
+  }
+
   const selectEmployee = (employee: Employee) => {
     setSelectedEmployee(employee)
     setSearchQuery("")
@@ -190,20 +206,44 @@ export function UnpaidLeavesPage() {
   const handleSubmit = () => {
     if (!validate() || !unpaidLeaveType || !selectedEmployee) return
 
+    const payload: OrderCreate = {
+      employee_id: selectedEmployee.id,
+      order_type_id: unpaidLeaveType.id,
+      order_date: orderDate,
+      order_number: orderNumber,
+      extra_fields: {
+        vacation_start: vacationStart,
+        vacation_end: vacationEnd,
+        vacation_days: Number(vacationDays),
+      },
+    }
+    setPendingPayload(payload)
+    setPreviewError(null)
+    previewMutation.mutate(payload, {
+      onSuccess: (preview) => {
+        setPreviewId(preview.preview_id)
+        setPreviewHtml(preview.html)
+        setPreviewDialogOpen(true)
+      },
+      onError: (err: any) => {
+        setPreviewError(err?.response?.data?.detail || err?.message || "Ошибка при формировании предпросмотра")
+      },
+    })
+  }
+
+  const handlePreviewConfirm = (editedHtml: string) => {
+    if (!pendingPayload || !previewId) return
     createMutation.mutate(
       {
-        employee_id: selectedEmployee.id,
-        order_type_id: unpaidLeaveType.id,
-        order_date: orderDate,
-        order_number: orderNumber,
-        extra_fields: {
-          vacation_start: vacationStart,
-          vacation_end: vacationEnd,
-          vacation_days: Number(vacationDays),
-        },
+        ...pendingPayload,
+        preview_id: previewId,
+        edited_html: editedHtml,
       },
       {
-        onSuccess: () => resetForm(),
+        onSuccess: () => {
+          resetForm()
+          resetPreviewState()
+        },
       }
     )
   }
@@ -353,6 +393,7 @@ export function UnpaidLeavesPage() {
               </div>
 
               {errors.orderType && <p className="text-sm text-red-600">{errors.orderType}</p>}
+              {previewError && <p className="text-sm text-red-600">{previewError}</p>}
               {createMutation.isError && (
                 <p className="text-sm text-red-600">
                   {(createMutation.error as any)?.response?.data?.detail || (createMutation.error as any)?.message || "Ошибка создания приказа"}
@@ -360,11 +401,11 @@ export function UnpaidLeavesPage() {
               )}
 
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={resetForm} disabled={createMutation.isPending}>
+                <Button variant="outline" size="sm" onClick={resetForm} disabled={createMutation.isPending || previewMutation.isPending}>
                   Очистить
                 </Button>
-                <Button size="sm" onClick={handleSubmit} disabled={createMutation.isPending || !unpaidLeaveType}>
-                  {createMutation.isPending ? "Создание..." : "Создать"}
+                <Button size="sm" onClick={handleSubmit} disabled={createMutation.isPending || previewMutation.isPending || !unpaidLeaveType}>
+                  {previewMutation.isPending ? "Формирование..." : createMutation.isPending ? "Создание..." : "Создать"}
                 </Button>
               </div>
             </div>
@@ -519,6 +560,17 @@ export function UnpaidLeavesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <OrderPreviewDialog
+        open={previewDialogOpen}
+        html={previewHtml}
+        isSubmitting={createMutation.isPending}
+        onOpenChange={(open) => {
+          if (!open) resetPreviewState()
+          else setPreviewDialogOpen(true)
+        }}
+        onConfirm={handlePreviewConfirm}
+      />
     </div>
   )
 }

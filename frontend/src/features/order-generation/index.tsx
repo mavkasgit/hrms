@@ -10,9 +10,11 @@ import {
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
-import { useCreateOrder, useOrderTypes, useRecentOrders } from "@/entities/order/useOrders"
+import { useCreateOrder, useCreateOrderPreview, useOrderTypes, useRecentOrders } from "@/entities/order/useOrders"
 import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
 import type { Employee } from "@/entities/employee/types"
+import type { OrderCreate } from "@/entities/order/types"
+import { OrderPreviewDialog } from "@/features/order-preview/OrderPreviewDialog"
 
 interface OrderGenerationProps {
   open: boolean
@@ -30,6 +32,11 @@ export function OrderGeneration({ open, onOpenChange, employee }: OrderGeneratio
   const { data: orderTypes = [] } = useOrderTypes(true)
   const { data: recentOrders } = useRecentOrders(1000, new Date().getFullYear())
   const createMutation = useCreateOrder()
+  const previewMutation = useCreateOrderPreview()
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [previewHtml, setPreviewHtml] = useState("")
+  const [pendingPayload, setPendingPayload] = useState<OrderCreate | null>(null)
 
   const selectedOrderType = useMemo(
     () => orderTypes.find((item) => item.id === selectedOrderTypeId) ?? null,
@@ -54,18 +61,38 @@ export function OrderGeneration({ open, onOpenChange, employee }: OrderGeneratio
 
   const handleSubmit = () => {
     if (!employee || !selectedOrderTypeId) return
+    const payload: OrderCreate = {
+      employee_id: employee.id,
+      order_type_id: selectedOrderTypeId,
+      order_date: orderDate,
+      order_number: orderNumber || undefined,
+      notes: notes || undefined,
+      extra_fields: extraFields,
+    }
+    setPendingPayload(payload)
+    previewMutation.mutate(payload, {
+      onSuccess: (preview) => {
+        setPreviewId(preview.preview_id)
+        setPreviewHtml(preview.html)
+        setPreviewDialogOpen(true)
+      },
+    })
+  }
+
+  const handlePreviewConfirm = (editedHtml: string) => {
+    if (!pendingPayload || !previewId) return
     createMutation.mutate(
       {
-        employee_id: employee.id,
-        order_type_id: selectedOrderTypeId,
-        order_date: orderDate,
-        order_number: orderNumber || undefined,
-        notes: notes || undefined,
-        extra_fields: extraFields,
+        ...pendingPayload,
+        preview_id: previewId,
+        edited_html: editedHtml,
       },
       {
-        onSuccess: () => onOpenChange(false),
-      },
+        onSuccess: () => {
+          setPreviewDialogOpen(false)
+          onOpenChange(false)
+        },
+      }
     )
   }
 
@@ -137,13 +164,30 @@ export function OrderGeneration({ open, onOpenChange, employee }: OrderGeneratio
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={previewMutation.isPending}>
             Отмена
           </Button>
-          <Button onClick={handleSubmit} disabled={!employee || !selectedOrderTypeId || createMutation.isPending}>
-            {createMutation.isPending ? "Создание..." : "Создать"}
+          <Button onClick={handleSubmit} disabled={!employee || !selectedOrderTypeId || createMutation.isPending || previewMutation.isPending}>
+            {previewMutation.isPending ? "Формирование..." : createMutation.isPending ? "Создание..." : "Создать"}
           </Button>
         </DialogFooter>
+
+        <OrderPreviewDialog
+          open={previewDialogOpen}
+          html={previewHtml}
+          isSubmitting={createMutation.isPending}
+          onOpenChange={(open) => {
+            if (!open) {
+              setPreviewDialogOpen(false)
+              setPreviewId(null)
+              setPreviewHtml("")
+              setPendingPayload(null)
+            } else {
+              setPreviewDialogOpen(true)
+            }
+          }}
+          onConfirm={handlePreviewConfirm}
+        />
       </DialogContent>
     </Dialog>
   )

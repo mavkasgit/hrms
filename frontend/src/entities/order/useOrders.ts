@@ -63,6 +63,12 @@ export function useCreateOrder() {
   })
 }
 
+export function useCreateOrderPreview() {
+  return useMutation({
+    mutationFn: (data: OrderCreate) => api.createOrderPreview(data),
+  })
+}
+
 export function useCreateOrderType() {
   const queryClient = useQueryClient()
   return useMutation({

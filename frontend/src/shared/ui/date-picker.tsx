@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useId } from "react"
 import { createPortal } from "react-dom"
 import { Calendar } from "lucide-react"
 import { Button } from "./button"
@@ -36,6 +36,7 @@ function formatDateForStorage(displayDate: string): string {
 }
 
 export function DatePicker({ value, onChange, label, placeholder, required = false, className, disabled = false }: DatePickerProps) {
+  const id = useId()
   const [showCalendar, setShowCalendar] = useState(false)
   const [currentMonth, setCurrentMonth] = useState(() => {
     if (value) {
@@ -177,13 +178,14 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
   return (
     <div className={cn("relative", className)} ref={ref}>
       {label && (
-        <label className="text-sm font-medium whitespace-nowrap">
+        <label htmlFor={id} className="text-sm font-medium whitespace-nowrap">
           {label}
           {required && <span className="text-red-500 ml-0.5">*</span>}
         </label>
       )}
       <div className={cn("flex items-stretch gap-0 rounded-md border border-input focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2", disabled && "opacity-50 pointer-events-none")}>
         <input
+          id={id}
           type="text"
           placeholder={placeholder || "ДД.ММ.ГГГГ"}
           value={inputValue}

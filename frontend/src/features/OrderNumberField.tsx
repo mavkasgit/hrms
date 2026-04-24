@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useId } from "react"
 import { ListFilter } from "lucide-react"
 import { Input } from "@/shared/ui/input"
 import { useRecentOrders } from "@/entities/order/useOrders"
@@ -45,6 +45,7 @@ interface OrderNumberFieldProps {
 }
 
 export function OrderNumberField({ value, onChange, required, error }: OrderNumberFieldProps) {
+  const id = useId()
   const { data } = useRecentOrders(100)
   const orders = data || []
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -70,7 +71,7 @@ export function OrderNumberField({ value, onChange, required, error }: OrderNumb
 
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium">
+      <label htmlFor={id} className="text-sm font-medium">
         Номер приказа
         {required && <span className="text-red-500 ml-1">*</span>}
       </label>
@@ -80,6 +81,7 @@ export function OrderNumberField({ value, onChange, required, error }: OrderNumb
         onMouseLeave={handleMouseLeave}
       >
         <Input
+          id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={`h-10 text-sm pr-7 ${hasError ? "border-red-500 focus-visible:ring-red-500" : ""}`}

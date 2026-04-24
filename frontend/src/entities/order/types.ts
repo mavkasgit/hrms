@@ -64,6 +64,13 @@ export interface OrderCreate {
   order_number?: string | null
   notes?: string | null
   extra_fields?: Record<string, string | number> | null
+  preview_id?: string | null
+  edited_html?: string | null
+}
+
+export interface OrderPreviewResponse {
+  preview_id: string
+  html: string
 }
 
 export interface OrderTypeCreate {
