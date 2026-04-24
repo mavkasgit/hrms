@@ -169,6 +169,18 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         passport_number: form.passport_number,
       }
       console.log(`[FORM] Данные для обновления:`, updateData)
+
+      // Предупреждение при изменении даты приёма
+      if (employee.hire_date !== form.hire_date) {
+        const confirmed = window.confirm(
+          "Все периоды отпусков будут сброшены и созданы заново от новой даты приёма."
+        )
+        if (!confirmed) {
+          console.log(`[FORM] Пользователь отменил изменение hire_date`)
+          return
+        }
+      }
+
       updateMutation.mutate(
         { employeeId: employee.id, data: updateData },
         {

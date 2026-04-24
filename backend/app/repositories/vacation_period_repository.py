@@ -215,3 +215,15 @@ class VacationPeriodRepository:
         
         await db.flush()
         await db.refresh(period)
+
+    async def delete_all_by_employee(self, db: AsyncSession, employee_id: int) -> int:
+        """Удалить все периоды отпусков сотрудника."""
+        result = await db.execute(
+            select(VacationPeriod).where(VacationPeriod.employee_id == employee_id)
+        )
+        periods = result.scalars().all()
+        count = len(periods)
+        for period in periods:
+            await db.delete(period)
+        await db.flush()
+        return count
