@@ -1,15 +1,20 @@
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from app.core.database import get_db
 from app.core.exceptions import HRMSException
 from app.schemas.order import (
     OrderCreate,
     OrderListResponse,
+    OrderPreviewResponse,
     OrderResponse,
     OrderSettingsResponse,
     OrderSettingsUpdate,
@@ -58,6 +63,15 @@ async def create_order(
 ):
     order = await order_service.create_order(db, data)
     return order_service._serialize_order(order)
+
+
+@router.post("/preview", response_model=OrderPreviewResponse)
+async def create_order_preview(
+    data: OrderCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    return await order_service.generate_order_preview(db, data)
 
 
 @router.get("/recent")
@@ -163,6 +177,7 @@ async def preview_order(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
+    # Quick human-readable HTML view only. Use /orders/{order_id}/print for print-faithful PDF output.
     order = await order_service.get_by_id(db, order_id)
     if not order.file_path:
         raise HRMSException("Файл приказа не найден", "order_file_not_found", status_code=404)
@@ -176,7 +191,7 @@ async def preview_order(
 
         with open(file_path, "rb") as docx_file:
             result = mammoth.convert_to_html(docx_file)
-            html_content = result.value
+            html_content = order_service._style_missing_template_warning_html(result.value)
 
         full_html = f"""
         <!DOCTYPE html>
@@ -196,6 +211,10 @@ async def preview_order(
                     background: white;
                     padding: 40px;
                     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                }}
+                .missing-template-warning {{
+                    color: #dc2626;
+                    font-weight: 700;
                 }}
             </style>
         </head>
@@ -229,6 +248,38 @@ async def download_order(
         str(file_path),
         filename=file_path.name,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+@router.get("/{order_id}/print")
+async def print_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    order = await order_service.get_by_id(db, order_id)
+    if not order.file_path:
+        raise HRMSException("Р¤Р°Р№Р» РїСЂРёРєР°Р·Р° РЅРµ РЅР°Р№РґРµРЅ", "order_file_not_found", status_code=404)
+
+    file_path = Path(order.file_path)
+    if not file_path.exists():
+        raise HRMSException("Р¤Р°Р№Р» РїСЂРёРєР°Р·Р° РѕС‚СЃСѓС‚СЃС‚РІСѓРµС‚ РЅР° РґРёСЃРєРµ", "order_file_missing", status_code=404)
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="hrms-order-print-"))
+    try:
+        pdf_path = await order_service.convert_docx_to_pdf(file_path, temp_dir)
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+
+    filename = f"{file_path.stem}.pdf"
+    fallback_filename = f"order-{order_id}.pdf"
+    content_disposition = f"inline; filename=\"{fallback_filename}\"; filename*=UTF-8''{quote(filename)}"
+    return FileResponse(
+        str(pdf_path),
+        media_type="application/pdf",
+        headers={"Content-Disposition": content_disposition},
+        background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
     )
 
 

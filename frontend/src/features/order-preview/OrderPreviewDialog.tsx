@@ -57,7 +57,7 @@ export function OrderPreviewDialog({
         <div className="flex-1 min-h-[420px] overflow-auto border rounded-md p-3 bg-background">
           <EditorContent
             editor={editor}
-            className="outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[380px] [&_.ProseMirror_mark[data-placeholder-key]]:bg-yellow-200 [&_.ProseMirror_mark[data-placeholder-key]]:px-1 [&_.ProseMirror_mark[data-placeholder-key]]:rounded-sm"
+            className="outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[380px] [&_.ProseMirror_.missing-template-warning]:text-red-600 [&_.ProseMirror_.missing-template-warning]:font-bold [&_.ProseMirror_mark[data-placeholder-key]]:bg-yellow-200 [&_.ProseMirror_mark[data-placeholder-key]]:px-1 [&_.ProseMirror_mark[data-placeholder-key]]:rounded-sm"
           />
         </div>
 

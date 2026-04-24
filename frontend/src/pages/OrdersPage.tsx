@@ -268,7 +268,7 @@ export function OrdersPage() {
   }
 
   const handlePreview = (orderId: number) => {
-    const url = `${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/preview`
+    const url = `${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/print`
     window.open(url, "_blank")
   }
 

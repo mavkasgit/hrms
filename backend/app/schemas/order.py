@@ -11,6 +11,8 @@ class OrderCreate(BaseModel):
     order_number: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = None
     extra_fields: Optional[dict[str, Any]] = None
+    preview_id: Optional[str] = None
+    edited_html: Optional[str] = None
 
     @field_validator("order_date")
     @classmethod
@@ -59,3 +61,8 @@ class OrderSyncResponse(BaseModel):
     message: str
     deleted: int
     added: int
+
+
+class OrderPreviewResponse(BaseModel):
+    preview_id: str
+    html: str

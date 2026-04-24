@@ -5,7 +5,12 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
+    fontconfig \
+    libreoffice \
     && rm -rf /var/lib/apt/lists/*
+
+COPY fonts/ /usr/local/share/fonts/hrms/
+RUN fc-cache -f -v
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
