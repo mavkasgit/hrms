@@ -29,7 +29,6 @@ async def test_employee_import_creates_vacation_periods(
             hire_date=date(2023, 3, 1),
             birth_date=date(1990, 5, 15),
             gender="M",
-            contract_start=date(2023, 3, 1),
             additional_vacation_days=5,
             citizenship=True,
             residency=True,
@@ -50,7 +49,7 @@ async def test_employee_import_creates_vacation_periods(
         ).scalars().all()
     )
 
-    assert employee.contract_start == date(2023, 3, 1)
+    assert employee.hire_date == date(2023, 3, 1)
     assert len(periods) >= 1
 
     first_period = periods[0]

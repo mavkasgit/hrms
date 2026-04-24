@@ -152,7 +152,6 @@ def create_employee(
             department_id=overrides.pop("department_id", department.id if department else None),
             position_id=overrides.pop("position_id", position.id if position else None),
             additional_vacation_days=overrides.pop("additional_vacation_days", 0),
-            contract_start=overrides.pop("contract_start", date(2024, 1, 15)),
             hire_date=overrides.pop("hire_date", date(2024, 1, 15)),
             **overrides,
         )

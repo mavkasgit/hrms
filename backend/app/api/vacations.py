@@ -25,7 +25,7 @@ class EmployeeVacationSummary(BaseModel):
     name: str
     department: str
     position: str
-    contract_start: Optional[str]
+    hire_date: Optional[str]
     additional_vacation_days: Optional[int]
     total_used_days: int
     calculated_available: Optional[int]
@@ -54,7 +54,7 @@ class YearGroup(BaseModel):
 class EmployeeVacationHistory(BaseModel):
     employee_id: int
     employee_name: str
-    contract_start: Optional[str]
+    hire_date: Optional[str]
     years: list[YearGroup]
 
 

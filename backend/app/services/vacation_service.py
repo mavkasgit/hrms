@@ -75,11 +75,11 @@ class VacationService:
         if not employee:
             raise EmployeeNotFoundError(employee_id)
 
-        if employee.contract_start:
+        if employee.hire_date:
             await vacation_period_service.ensure_periods_for_employee(
                 db,
                 employee_id,
-                employee.contract_start,
+                employee.hire_date,
                 employee.additional_vacation_days or 0,
             )
 
@@ -193,11 +193,11 @@ class VacationService:
         employee_repo = EmployeeRepository()
         employee = await employee_repo.get_by_id(db, vacation.employee_id)
 
-        if employee and employee.contract_start:
+        if employee and employee.hire_date:
             await vacation_period_service.ensure_periods_for_employee(
                 db,
                 vacation.employee_id,
-                employee.contract_start,
+                employee.hire_date,
                 employee.additional_vacation_days or 0,
             )
 
@@ -322,11 +322,11 @@ class VacationService:
 
     async def get_vacation_balance(self, db: AsyncSession, employee_id: int, year: Optional[int] = None) -> dict:
         employee = await EmployeeRepository().get_by_id(db, employee_id)
-        if employee and employee.contract_start:
+        if employee and employee.hire_date:
             await vacation_period_service.ensure_periods_for_employee(
                 db,
                 employee_id,
-                employee.contract_start,
+                employee.hire_date,
                 employee.additional_vacation_days or 0,
             )
         return await vacation_repository.get_vacation_balance(db, employee_id, year)

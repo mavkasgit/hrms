@@ -61,7 +61,7 @@ async def test_create_vacation_uses_holiday_adjusted_days_and_auto_use(
     db_session,
     create_employee,
 ):
-    employee = await create_employee(contract_start=date(2023, 1, 15))
+    employee = await create_employee(hire_date=date(2023, 1, 15))
 
     with patch(
         "app.services.vacation_service.references_repository.get_holidays_for_year",
@@ -170,7 +170,7 @@ async def test_delete_vacation_restores_period_usage(
     create_vacation,
     create_vacation_period,
 ):
-    employee = await create_employee(contract_start=date(2024, 1, 15))
+    employee = await create_employee(hire_date=date(2024, 1, 15))
     vacation = await create_vacation(
         employee=employee,
         start_date=date(2024, 4, 1),

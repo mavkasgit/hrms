@@ -143,7 +143,7 @@ async def test_get_vacation_balance_uses_closed_periods_and_type_breakdown(
     create_vacation,
     create_vacation_period,
 ):
-    employee = await create_employee(contract_start=date(2023, 1, 15))
+    employee = await create_employee(hire_date=date(2023, 1, 15))
 
     await create_vacation_period(
         employee=employee,
@@ -219,7 +219,7 @@ async def test_get_vacation_balance_accrues_open_current_period(
     period_end = period_start + relativedelta(years=1) - relativedelta(days=1)
     vacation_type = "integration-accrual"
 
-    employee = await create_employee(contract_start=period_start)
+    employee = await create_employee(hire_date=period_start)
     await create_vacation_period(
         employee=employee,
         period_start=period_start,
@@ -263,7 +263,7 @@ async def test_get_employee_vacation_history_splits_cross_year_vacation_and_atta
     current_year = today.year
     previous_year = current_year - 1
 
-    employee = await create_employee(contract_start=date(previous_year, 1, 15))
+    employee = await create_employee(hire_date=date(previous_year, 1, 15))
     order = await create_order(
         employee=employee,
         order_number="42",
@@ -286,7 +286,7 @@ async def test_get_employee_vacation_history_splits_cross_year_vacation_and_atta
     previous_year_entry = next(item for item in history["years"] if item["year"] == previous_year)
 
     assert history["employee_id"] == employee.id
-    assert history["contract_start"] == str(employee.contract_start)
+    assert history["hire_date"] == str(employee.hire_date)
     assert current_year_entry["used_days"] == 5
     assert current_year_entry["vacations"][0]["days_count"] == 5
     assert current_year_entry["vacations"][0]["order_number"] == "42"

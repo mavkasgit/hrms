@@ -22,13 +22,13 @@ class VacationPeriodService:
         self,
         db: AsyncSession,
         employee_id: int,
-        contract_start: date,
+        hire_date: date,
         year_number: int,
         additional_days: int = 0,
     ) -> VacationPeriodBalance:
         from dateutil.relativedelta import relativedelta
 
-        period_start = contract_start + relativedelta(months=12 * (year_number - 1))
+        period_start = hire_date + relativedelta(months=12 * (year_number - 1))
         period_end = period_start + relativedelta(months=12) - relativedelta(days=1)
 
         period = await self._repo.create(
@@ -64,7 +64,7 @@ class VacationPeriodService:
         self,
         db: AsyncSession,
         employee_id: int,
-        contract_start: date,
+        hire_date: date,
         additional_days: int = 0,
     ) -> None:
         from dateutil.relativedelta import relativedelta
@@ -77,12 +77,12 @@ class VacationPeriodService:
             if period.additional_days != additional_days:
                 await self._repo.update_additional_days(db, period.id, additional_days)
 
-        rd = relativedelta(today, contract_start)
+        rd = relativedelta(today, hire_date)
         years_passed = rd.years
         current_year_number = years_passed + 1 if rd.months > 0 or rd.days > 0 else years_passed
 
         for year_number in range(last_year + 1, current_year_number + 1):
-            await self.create_period(db, employee_id, contract_start, year_number, additional_days)
+            await self.create_period(db, employee_id, hire_date, year_number, additional_days)
 
     async def get_balance(self, db: AsyncSession, period_id: int) -> VacationPeriodBalance:
         period = await self._repo.get_by_id(db, period_id)

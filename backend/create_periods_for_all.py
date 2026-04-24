@@ -15,29 +15,29 @@ async def create_periods():
         try:
             print("\n=== Creating Vacation Periods for All Employees ===\n")
             
-            # Get all employees with contract_start
+            # Get all employees with hire_date
             result = await db.execute(
                 select(Employee)
                 .where(
                     Employee.is_deleted == False,
-                    Employee.contract_start.isnot(None)
+                    Employee.hire_date.isnot(None)
                 )
             )
             employees = result.scalars().all()
             
-            print(f"Found {len(employees)} employees with contract_start\n")
+            print(f"Found {len(employees)} employees with hire_date\n")
             
             created_count = 0
             skipped_count = 0
             
             for emp in employees:
-                print(f"Processing: {emp.name} (ID: {emp.id}, contract_start: {emp.contract_start})")
+                print(f"Processing: {emp.name} (ID: {emp.id}, hire_date: {emp.hire_date})")
                 
                 try:
                     await vacation_period_service.ensure_periods_for_employee(
                         db,
                         employee_id=emp.id,
-                        contract_start=emp.contract_start,
+                        hire_date=emp.hire_date,
                         additional_days=emp.additional_vacation_days or 0
                     )
                     created_count += 1

@@ -11,26 +11,26 @@ async def create_periods():
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
     
     async with AsyncSession(engine) as db:
-        # Get employees with contract_start
+        # Get employees with hire_date
         result = await db.execute(text("""
-            SELECT id, name, contract_start, additional_vacation_days 
+            SELECT id, name, hire_date, additional_vacation_days 
             FROM employees 
-            WHERE is_deleted = false AND is_archived = false AND contract_start IS NOT NULL
+            WHERE is_deleted = false AND is_archived = false AND hire_date IS NOT NULL
             ORDER BY name
         """))
         employees = result.all()
-        print(f"Found {len(employees)} employees with contract_start")
+        print(f"Found {len(employees)} employees with hire_date")
         
         today = date.today()
         periods_created = 0
         
         for emp in employees:
-            emp_id, name, contract_start, additional_days = emp
-            if not contract_start:
+            emp_id, name, hire_date, additional_days = emp
+            if not hire_date:
                 continue
                 
             # Calculate how many years worked
-            rd = relativedelta(today, contract_start)
+            rd = relativedelta(today, hire_date)
             years_worked = rd.years + (rd.months / 12)
             
             # Create periods for each year worked + current year
@@ -39,7 +39,7 @@ async def create_periods():
                 years_to_create = 5  # Max 5 years back
                 
             for year_num in range(1, years_to_create + 1):
-                p_start = contract_start + relativedelta(months=12 * (year_num - 1))
+                p_start = hire_date + relativedelta(months=12 * (year_num - 1))
                 p_end = p_start + relativedelta(months=12) - relativedelta(days=1)
                 
                 # Check if period exists

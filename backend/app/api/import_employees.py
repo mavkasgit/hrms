@@ -441,7 +441,8 @@ async def import_excel_confirm(
             # Update existing - explicitly set all fields
             emp.department_id = dept_id
             emp.position_id = pos_id
-            emp.hire_date = hire
+            if hire is not None:
+                emp.hire_date = hire
             emp.birth_date = birth
             emp.gender = emp_gender
             emp.citizenship = citizen_rb if citizen_rb is not None else emp.citizenship
@@ -524,10 +525,10 @@ async def import_excel_confirm(
         print(f"[IMPORT] Creating vacation periods for {len(imported_employees)} employees...")
         
         for emp in imported_employees:
-            if emp.contract_start:
+            if emp.hire_date:
                 try:
                     await vacation_period_service.ensure_periods_for_employee(
-                        db, emp.id, emp.contract_start, emp.additional_vacation_days or 0
+                        db, emp.id, emp.hire_date, emp.additional_vacation_days or 0
                     )
                     print(f"[IMPORT]   OK Created periods for {emp.name}")
                 except Exception as e:

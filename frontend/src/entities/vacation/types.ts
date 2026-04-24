@@ -59,7 +59,7 @@ export interface EmployeeVacationSummary {
   name: string
   department: string
   position: string
-  contract_start: string | null
+  hire_date: string | null
   vacation_days_override: number | null
   vacation_days_correction: number | null
   additional_vacation_days: number
@@ -90,7 +90,7 @@ export interface YearGroup {
 export interface EmployeeVacationHistory {
   employee_id: number
   employee_name: string
-  contract_start: string | null
+  hire_date: string | null
   vacation_days_correction: number | null
   years: YearGroup[]
 }

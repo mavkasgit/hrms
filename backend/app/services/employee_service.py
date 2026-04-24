@@ -14,6 +14,7 @@ from app.core.exceptions import (
 )
 from app.models.employee import Employee
 from app.repositories.employee_repository import EmployeeRepository
+from app.repositories.vacation_period_repository import VacationPeriodRepository
 from app.services.vacation_period_service import vacation_period_service
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
 
@@ -81,13 +82,13 @@ class EmployeeService:
 
         employee = await repository.create(db, data.model_dump())
 
-        # Создаём все периоды отпусков если есть contract_start
-        if data.contract_start:
+        # Создаём все периоды отпусков если есть hire_date
+        if data.hire_date:
             try:
                 await vacation_period_service.ensure_periods_for_employee(
                     db,
                     employee_id=employee.id,
-                    contract_start=data.contract_start,
+                    hire_date=data.hire_date,
                     additional_days=data.additional_vacation_days or 0,
                 )
             except Exception:
@@ -139,10 +140,38 @@ class EmployeeService:
 
         employee = await repository.update(db, employee_id, update_data)
 
-        # Если изменились additional_vacation_days — обновить все периоды
-        if "additional_vacation_days" in update_data and employee.contract_start:
+        # Если изменилась дата приёма — сбросить все периоды отпусков и создать новые
+        if "hire_date" in update_data and old_values.get("hire_date") != employee.hire_date:
+            period_repo = VacationPeriodRepository()
+            deleted_count = await period_repo.delete_all_by_employee(db, employee_id)
+            if employee.hire_date:
+                await vacation_period_service.ensure_periods_for_employee(
+                    db, employee_id, employee.hire_date, employee.additional_vacation_days or 0
+                )
+            await repository._add_audit_entry(
+                db, employee_id, "periods_reset", user_id,
+                f"Дата приёма изменена (старая: {old_values.get('hire_date')}, новая: {employee.hire_date}). "
+                f"Удалено периодов: {deleted_count}. Созданы новые периоды от новой даты.",
+                None
+            )
+            audit_logger.info(
+                f"PERIODS RESET: employee_id={employee_id}, name={employee.name}, "
+                f"old_hire_date={old_values.get('hire_date')}, new_hire_date={employee.hire_date}, "
+                f"deleted_periods={deleted_count}",
+                extra={
+                    "employee_id": employee_id,
+                    "employee_name": employee.name,
+                    "action": "periods_reset",
+                    "user_id": user_id,
+                    "old_hire_date": str(old_values.get("hire_date")),
+                    "new_hire_date": str(employee.hire_date),
+                    "deleted_periods": deleted_count,
+                }
+            )
+        # Иначе если изменились только additional_vacation_days — обновить существующие периоды
+        elif "additional_vacation_days" in update_data and employee.hire_date:
             await vacation_period_service.ensure_periods_for_employee(
-                db, employee_id, employee.contract_start, update_data["additional_vacation_days"]
+                db, employee_id, employee.hire_date, update_data["additional_vacation_days"]
             )
 
         changed_fields = {}

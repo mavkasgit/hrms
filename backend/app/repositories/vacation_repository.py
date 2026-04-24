@@ -337,7 +337,7 @@ class VacationRepository:
         employees_data = []
         for emp in employees:
             emp_id = emp.id
-            contract_start = emp.contract_start
+            hire_date = emp.hire_date
             additional_days = emp.additional_vacation_days
 
             # Считаем все использованные дни:
@@ -455,7 +455,7 @@ class VacationRepository:
                 "name": emp.name,
                 "department": emp.department.name if emp.department else "",
                 "position": emp.position.name if emp.position else "",
-                "contract_start": str(contract_start) if contract_start else None,
+                "hire_date": str(hire_date) if hire_date else None,
                 "additional_vacation_days": additional_days,
                 "total_used_days": total_used,
                 "calculated_available": calculated_available,
@@ -478,11 +478,11 @@ class VacationRepository:
         if not employee:
             return {"error": "Employee not found"}
 
-        contract_start = employee.contract_start
-        if not contract_start:
+        hire_date = employee.hire_date
+        if not hire_date:
             start_year = date.today().year
         else:
-            start_year = contract_start.year
+            start_year = hire_date.year
 
         current_year = date.today().year
 
@@ -532,13 +532,13 @@ class VacationRepository:
                 "vacations": year_vacations,
             })
 
-        # Определяем общую дату начала контракта
-        contract_start_str = str(employee.contract_start) if employee.contract_start else None
+        # Определяем дату приема на работу
+        hire_date_str = str(employee.hire_date) if employee.hire_date else None
 
         return {
             "employee_id": employee.id,
             "employee_name": employee.name,
-            "contract_start": contract_start_str,
+            "hire_date": hire_date_str,
             "years": years,
         }
 

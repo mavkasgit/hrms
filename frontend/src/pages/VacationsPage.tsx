@@ -860,7 +860,7 @@ export function VacationsPage() {
                         )}
                       </td>
                       <td className="px-4 py-2 text-muted-foreground">
-                        {formatDate(emp.contract_start)}
+                        {formatDate(emp.hire_date)}
                       </td>
                     </tr>
                     {isExpanded && (

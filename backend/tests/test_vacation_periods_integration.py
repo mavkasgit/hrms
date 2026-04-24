@@ -11,14 +11,14 @@ pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 async def test_close_period_consumes_remaining_days(db_session, create_employee):
     employee = await create_employee(
-        contract_start=date(2024, 1, 15),
+        hire_date=date(2024, 1, 15),
         additional_vacation_days=5,
     )
 
     await vacation_period_service.ensure_periods_for_employee(
         db_session,
         employee.id,
-        employee.contract_start,
+        employee.hire_date,
         employee.additional_vacation_days,
     )
 
@@ -46,14 +46,14 @@ async def test_close_period_consumes_remaining_days(db_session, create_employee)
 
 async def test_partial_close_keeps_requested_remaining_days(db_session, create_employee):
     employee = await create_employee(
-        contract_start=date(2024, 1, 15),
+        hire_date=date(2024, 1, 15),
         additional_vacation_days=0,
     )
 
     await vacation_period_service.ensure_periods_for_employee(
         db_session,
         employee.id,
-        employee.contract_start,
+        employee.hire_date,
         employee.additional_vacation_days,
     )
 
@@ -81,14 +81,14 @@ async def test_partial_close_keeps_requested_remaining_days(db_session, create_e
 
 async def test_partial_close_can_restore_fully_closed_period(db_session, create_employee):
     employee = await create_employee(
-        contract_start=date(2024, 1, 15),
+        hire_date=date(2024, 1, 15),
         additional_vacation_days=3,
     )
 
     await vacation_period_service.ensure_periods_for_employee(
         db_session,
         employee.id,
-        employee.contract_start,
+        employee.hire_date,
         employee.additional_vacation_days,
     )
 
@@ -115,14 +115,14 @@ async def test_close_period_preserves_auto_used_days_and_spends_only_remainder(
     create_vacation,
 ):
     employee = await create_employee(
-        contract_start=date(2024, 1, 15),
+        hire_date=date(2024, 1, 15),
         additional_vacation_days=5,
     )
 
     await vacation_period_service.ensure_periods_for_employee(
         db_session,
         employee.id,
-        employee.contract_start,
+        employee.hire_date,
         employee.additional_vacation_days,
     )
 
@@ -152,14 +152,14 @@ async def test_close_period_preserves_auto_used_days_and_spends_only_remainder(
 
 async def test_auto_use_days_spends_oldest_period_first(db_session, create_employee):
     employee = await create_employee(
-        contract_start=date(2024, 1, 15),
+        hire_date=date(2024, 1, 15),
         additional_vacation_days=0,
     )
 
     await vacation_period_service.ensure_periods_for_employee(
         db_session,
         employee.id,
-        employee.contract_start,
+        employee.hire_date,
         employee.additional_vacation_days,
     )
 

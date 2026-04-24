@@ -29,11 +29,11 @@ async def list_vacation_periods(
 ):
     result = await db.execute(select(Employee).where(Employee.id == employee_id))
     employee = result.scalar_one_or_none()
-    if employee and employee.contract_start:
+    if employee and employee.hire_date:
         await vacation_period_service.ensure_periods_for_employee(
             db,
             employee_id,
-            employee.contract_start,
+            employee.hire_date,
             employee.additional_vacation_days,
         )
     return await vacation_period_service.get_employee_periods(db, employee_id)

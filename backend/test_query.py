@@ -12,7 +12,7 @@ async def test_employees_summary():
     async with AsyncSession(engine) as db:
         # Try the same query as vacation_repository
         result = await db.execute(text("""
-            SELECT id, tab_number, name, department_id, position_id, contract_start, additional_vacation_days
+            SELECT id, tab_number, name, department_id, position_id, hire_date, additional_vacation_days
             FROM employees 
             WHERE is_deleted = false AND is_archived = false
             ORDER BY name
@@ -22,8 +22,8 @@ async def test_employees_summary():
         print(f"Got {len(rows)} rows")
         
         for row in rows:
-            emp_id, tab_num, name, dept_id, pos_id, contract_start, add_days = row
-            print(f"Employee: {emp_id} {name}, contract_start: {contract_start}, add_days: {add_days}")
+            emp_id, tab_num, name, dept_id, pos_id, hire_date, add_days = row
+            print(f"Employee: {emp_id} {name}, hire_date: {hire_date}, add_days: {add_days}")
             
             # Test query for vacation periods (this is what causes the error!)
             periods_result = await db.execute(text("""
