@@ -66,3 +66,10 @@ class OrderSyncResponse(BaseModel):
 class OrderPreviewResponse(BaseModel):
     preview_id: str
     html: str
+
+
+class OrderUpdate(BaseModel):
+    order_number: str | None = Field(None, max_length=50)
+    order_date: date | None = None
+    notes: str | None = None
+    extra_fields: dict[str, Any] | None = None

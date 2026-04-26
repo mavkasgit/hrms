@@ -16,6 +16,7 @@ class OrderType(Base):
     template_filename = Column(String(255), nullable=True)
     field_schema = Column(JSON, nullable=False, default=list, server_default="[]")
     filename_pattern = Column(Text, nullable=True)
+    letter = Column(String(1), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),

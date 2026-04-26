@@ -75,14 +75,30 @@ class OrderRepository:
         )
         return list(result.scalars().all())
 
-    async def get_next_order_number(self, db: AsyncSession, year: int) -> str:
-        """Берёт номер последнего приказа по дате + 1, а не максимальный."""
+    async def get_next_order_number(self, db: AsyncSession, order_type_id: int) -> str:
+        """Возвращает следующий номер приказа для заданного типа (по литере).
+
+        Нумерация сквозная: берем последний приказ с той же литерой (по id DESC),
+        парсим числовую часть, +1. Формат: '{N}-{letter}'.
+        """
+        from app.models.order_type import OrderType
+
+        # Получаем литеру типа приказа
+        type_result = await db.execute(
+            select(OrderType.letter).where(OrderType.id == order_type_id)
+        )
+        letter = type_result.scalar_one_or_none()
+        if not letter:
+            raise ValueError(f"Тип приказа {order_type_id} не имеет литеры")
+
+        # Ищем последний приказ с той же литерой
         result = await db.execute(
             select(Order.order_number)
+            .join(OrderType, Order.order_type_id == OrderType.id)
             .where(
                 Order.is_deleted == False,
                 Order.is_cancelled == False,
-                extract("year", Order.order_date) == year,
+                OrderType.letter == letter,
             )
             .order_by(Order.id.desc())
             .limit(1)
@@ -90,10 +106,15 @@ class OrderRepository:
         last_order = result.scalar_one_or_none()
 
         if not last_order:
-            return "01"
+            return f"1-{letter}"
 
-        last_num = int(last_order) if last_order.isdigit() else 0
-        return f"{last_num + 1:02d}"
+        # Парсим числовую часть до дефиса
+        try:
+            last_num = int(last_order.split("-")[0])
+        except (ValueError, IndexError):
+            last_num = 0
+
+        return f"{last_num + 1}-{letter}"
 
     async def get_years(self, db: AsyncSession) -> list[int]:
         result = await db.execute(

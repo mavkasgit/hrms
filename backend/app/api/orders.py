@@ -19,6 +19,7 @@ from app.schemas.order import (
     OrderSettingsResponse,
     OrderSettingsUpdate,
     OrderSyncResponse,
+    OrderUpdate,
 )
 from app.schemas.order_type import OrderTypeListResponse
 from app.services.order_service import order_service
@@ -47,11 +48,11 @@ async def get_order_types(
 
 @router.get("/next-number")
 async def get_next_order_number(
-    year: Optional[int] = Query(None),
+    order_type_id: int = Query(..., gt=0),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    number = await order_service.get_next_number(db, year)
+    number = await order_service.get_next_number(db, order_type_id)
     return {"order_number": number}
 
 
@@ -281,6 +282,17 @@ async def print_order(
         headers={"Content-Disposition": content_disposition},
         background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
     )
+
+
+@router.put("/{order_id}", response_model=OrderResponse)
+async def update_order(
+    order_id: int,
+    data: OrderUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    order = await order_service.update_order(db, order_id, data, current_user)
+    return order_service._serialize_order(order)
 
 
 @router.put("/{order_id}/cancel")

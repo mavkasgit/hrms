@@ -27,6 +27,7 @@ class OrderTypeBase(BaseModel):
     template_filename: str | None = Field(None, max_length=255)
     field_schema: list[OrderTypeFieldSchema] = Field(default_factory=list)
     filename_pattern: str | None = None
+    letter: str | None = Field(None, max_length=1)
 
     @field_validator("code")
     @classmethod
@@ -46,7 +47,14 @@ class OrderTypeBase(BaseModel):
 
 
 class OrderTypeCreate(OrderTypeBase):
-    pass
+    letter: str = Field(..., pattern="^[лк]$")
+
+    @field_validator("letter")
+    @classmethod
+    def validate_letter(cls, value: str) -> str:
+        if value not in ("л", "к"):
+            raise ValueError("Литера должна быть 'л' или 'к'")
+        return value
 
 
 class OrderTypeUpdate(BaseModel):
@@ -55,6 +63,7 @@ class OrderTypeUpdate(BaseModel):
     show_in_orders_page: bool | None = None
     field_schema: list[OrderTypeFieldSchema] | None = None
     filename_pattern: str | None = None
+    letter: str | None = Field(None, max_length=1)
 
 
 class OrderTypeResponse(BaseModel):
@@ -66,6 +75,7 @@ class OrderTypeResponse(BaseModel):
     template_filename: str | None = None
     field_schema: list[OrderTypeFieldSchema]
     filename_pattern: str | None = None
+    letter: str | None = None
     template_exists: bool = False
     file_size: int | None = None
     last_modified: str | None = None

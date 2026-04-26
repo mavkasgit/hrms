@@ -24,7 +24,7 @@ from app.models.order_type import OrderType
 from app.repositories.employee_repository import EmployeeRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_type_repository import OrderTypeRepository
-from app.schemas.order import OrderCreate
+from app.schemas.order import OrderCreate, OrderUpdate
 from app.schemas.order_type import OrderTypeCreate, OrderTypeUpdate
 
 audit_logger = get_audit_logger()
@@ -71,6 +71,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "trial_end", "label": "Конец испытательного срока", "type": "date", "required": False},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "к",
     },
     {
         "code": "dismissal",
@@ -81,6 +82,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "dismissal_date", "label": "Дата увольнения", "type": "date", "required": False},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "к",
     },
     {
         "code": "transfer",
@@ -92,6 +94,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "transfer_reason", "label": "Основание", "type": "textarea", "required": False},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "к",
     },
     {
         "code": "contract_extension",
@@ -103,6 +106,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "trial_end", "label": "Конец испытательного срока", "type": "date", "required": False},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "л",
     },
     {
         "code": "vacation_paid",
@@ -115,6 +119,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "vacation_days", "label": "Количество дней", "type": "number", "required": True},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "к",
     },
     {
         "code": "vacation_unpaid",
@@ -127,6 +132,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "vacation_days", "label": "Количество дней", "type": "number", "required": True},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "к",
     },
     {
         "code": "weekend_call",
@@ -139,6 +145,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "call_date_end", "label": "Дата окончания", "type": "date", "required": False},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "к",
     },
 ]
 
@@ -246,9 +253,8 @@ class OrderService:
         await self.order_type_repo.delete(db, order_type)
         await db.commit()
 
-    async def get_next_number(self, db: AsyncSession, year: Optional[int] = None) -> str:
-        y = year or date.today().year
-        return await self.order_repo.get_next_order_number(db, y)
+    async def get_next_number(self, db: AsyncSession, order_type_id: int) -> str:
+        return await self.order_repo.get_next_order_number(db, order_type_id)
 
     async def get_years(self, db: AsyncSession) -> list[int]:
         return await self.order_repo.get_years(db)
@@ -358,7 +364,7 @@ class OrderService:
 
     async def generate_order_preview(self, db: AsyncSession, data: OrderCreate) -> dict[str, str]:
         await self.ensure_default_order_types(db)
-        order_number = data.order_number.strip() if data.order_number else await self.order_repo.get_next_order_number(db, data.order_date.year)
+        order_number = data.order_number.strip() if data.order_number else await self.order_repo.get_next_order_number(db, data.order_type_id)
 
         employee = await self.employee_repo.get_by_id(db, data.employee_id)
         if not employee:
@@ -389,10 +395,11 @@ class OrderService:
         return {"preview_id": preview_id, "html": highlighted_html}
 
     async def _do_create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
-        if data.order_number:
-            order_number = data.order_number.strip()
+        order_number = data.order_number
+        if not order_number:
+            order_number = await self.order_repo.get_next_order_number(db, data.order_type_id)
         else:
-            order_number = await self.order_repo.get_next_order_number(db, data.order_date.year)
+            order_number = order_number.strip()
 
         employee = await self.employee_repo.get_by_id(db, data.employee_id)
         if not employee:
@@ -440,6 +447,29 @@ class OrderService:
             },
         )
         return order
+
+    async def update_order(self, db: AsyncSession, order_id: int, data: OrderUpdate, user_id: str) -> dict[str, Any]:
+        order = await self.order_repo.get_by_id(db, order_id)
+        if not order:
+            raise OrderNotFoundError(f"Приказ {order_id} не найден")
+
+        updates: dict[str, Any] = {}
+        if data.order_number is not None:
+            updates["order_number"] = data.order_number
+        if data.order_date is not None:
+            updates["order_date"] = data.order_date
+        if data.notes is not None:
+            updates["notes"] = data.notes
+        if data.extra_fields is not None:
+            updates["extra_fields"] = data.extra_fields
+
+        if updates:
+            for key, value in updates.items():
+                setattr(order, key, value)
+            await db.flush()
+            await db.refresh(order)
+
+        return self._serialize_order(order)
 
     async def _generate_document(
         self,
@@ -793,6 +823,7 @@ class OrderService:
             "template_filename": order_type.template_filename,
             "field_schema": order_type.field_schema or [],
             "filename_pattern": order_type.filename_pattern,
+            "letter": order_type.letter,
             "template_exists": template_path.exists(),
             "created_at": order_type.created_at,
             "updated_at": order_type.updated_at,
