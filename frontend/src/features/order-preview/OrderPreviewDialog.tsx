@@ -36,7 +36,7 @@ export function OrderPreviewDialog({
 
   useEffect(() => {
     if (editor && open) {
-      editor.commands.setContent(html || "<p></p>", false)
+      editor.commands.setContent(html || "<p></p>", { emitUpdate: false })
     }
   }, [editor, html, open])
 

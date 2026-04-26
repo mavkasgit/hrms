@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { fetchVacationPeriods, adjustVacationPeriod, closePeriod, partialClosePeriod } from "./api"
+import { fetchVacationPeriods, adjustVacationPeriod, closePeriod, partialClosePeriod, recalculateVacationPeriods } from "./api"
 import type { VacationPeriodAdjust } from "./types"
 
 export function useVacationPeriods(employeeId: number | null) {
@@ -63,6 +63,19 @@ export function usePartialClosePeriod() {
       })
       
       // Также инвалидируем
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
+    },
+  })
+}
+
+export function useRecalculateVacationPeriods() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (employeeId: number) => recalculateVacationPeriods(employeeId),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["vacation-periods"], data)
       queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-history"] })

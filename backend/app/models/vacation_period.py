@@ -28,3 +28,4 @@ class VacationPeriod(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     employee = relationship("Employee", back_populates="vacation_periods")
+    transactions = relationship("VacationPeriodTransaction", back_populates="period", order_by="VacationPeriodTransaction.created_at", cascade="all, delete-orphan")

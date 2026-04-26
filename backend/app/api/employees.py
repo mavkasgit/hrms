@@ -13,7 +13,9 @@ from app.schemas.employee import (
     EmployeeAuditLogResponse,
     EmployeeWarningsResponse,
 )
+from app.schemas.vacation_period import VacationPeriodBalance
 from app.services.employee_service import employee_service
+from app.services.vacation_period_service import vacation_period_service
 from app.services.audit_log_service import read_audit_logs
 
 router = APIRouter(prefix="/employees", tags=["employees"])
@@ -130,8 +132,41 @@ async def update_employee(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    employee = await employee_service.update_employee(db, employee_id, data, current_user)
-    return employee
+    employee, periods_need_reset = await employee_service.update_employee(db, employee_id, data, current_user)
+    response = EmployeeResponse.model_validate(employee)
+    result = response.model_dump()
+    if periods_need_reset:
+        result["periods_need_reset"] = True
+    return result
+
+
+@router.post("/{employee_id}/reset-periods", response_model=EmployeeResponse)
+async def reset_employee_periods(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    # Полностью пересоздаём периоды и перераспределяем дни отпусков
+    await vacation_period_service.recalculate_periods(db, employee_id)
+    # Перезагружаем employee с relations для сериализации
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import select
+    from app.models.employee import Employee
+    result = await db.execute(
+        select(Employee)
+        .options(joinedload(Employee.department), joinedload(Employee.position))
+        .where(Employee.id == employee_id)
+    )
+    return result.scalar_one()
+
+
+@router.post("/{employee_id}/recalculate-periods", response_model=list[VacationPeriodBalance])
+async def recalculate_employee_periods(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    return await vacation_period_service.recalculate_periods(db, employee_id)
 
 
 @router.post("/{employee_id}/archive")
@@ -185,6 +220,22 @@ async def get_all_audit_log(
         employee_name=employee_name, date_from=date_from, date_to=date_to
     )
     return result
+
+
+@router.get("/{employee_id}/periods-status")
+async def get_employee_periods_status(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Проверить, соответствуют ли периоды отпусков текущему hire_date."""
+    employee = await employee_service.get_by_id(db, employee_id)
+    mismatch = False
+    if employee and employee.hire_date:
+        mismatch = await vacation_period_service.check_periods_mismatch(
+            db, employee_id, employee.hire_date
+        )
+    return {"mismatch": mismatch}
 
 
 @router.get("/{employee_id}/warnings", response_model=EmployeeWarningsResponse)

@@ -61,6 +61,8 @@ class VacationService:
                 order_number=order_payload["order_number"],
                 notes=order_payload["notes"],
                 extra_fields=order_payload["extra_fields"],
+                preview_id=vacation_data.get("preview_id"),
+                edited_html=vacation_data.get("edited_html"),
             ),
         )
 
@@ -100,8 +102,6 @@ class VacationService:
         if days_count <= 0:
             raise InsufficientVacationDaysError("Нет дней отпуска в выбранном диапазоне")
 
-        await vacation_period_service.check_balance_before_create(db, employee_id, days_count)
-
         order = await self._create_linked_order(db, employee_id, data, days_count)
         vacation = await vacation_repository.create(
             db,
@@ -117,7 +117,12 @@ class VacationService:
             },
         )
 
-        await auto_use_days(db, employee_id, days_count, order.id, order.order_number)
+        await auto_use_days(
+            db, employee_id, days_count,
+            employee.hire_date,
+            employee.additional_vacation_days or 0,
+            order.id, order.order_number
+        )
         await db.flush()
         await db.commit()
 
@@ -269,30 +274,11 @@ class VacationService:
 
         await vacation_repository.hard_delete(db, id)
 
-        if vacation.days_count:
-            from app.models.vacation_period import VacationPeriod
-            from app.repositories.vacation_period_repository import VacationPeriodRepository
-
-            period_repo = VacationPeriodRepository()
-            result = await db.execute(
-                select(VacationPeriod).where(VacationPeriod.employee_id == vacation.employee_id)
-            )
-            all_periods = list(result.scalars().all())
-            days_left = vacation.days_count
-            for period in reversed(all_periods):
-                if days_left <= 0:
-                    break
-                used_auto = period.used_days_auto or 0
-                if used_auto <= 0:
-                    continue
-                to_remove = min(used_auto, days_left)
-                await period_repo.remove_used_days(db, period.id, to_remove, vacation.order_id)
-                days_left -= to_remove
-
         if vacation.order_id:
             await order_service.hard_delete_order(db, vacation.order_id)
 
-        await db.commit()
+        # Полностью пересчитываем периоды после удаления отпуска
+        await vacation_period_service.recalculate_periods(db, vacation.employee_id)
 
         audit_logger.info(
             f"VACATION DELETED: id={id}, employee_id={vacation.employee_id}, "

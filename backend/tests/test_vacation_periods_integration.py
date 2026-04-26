@@ -174,3 +174,82 @@ async def test_auto_use_days_spends_oldest_period_first(db_session, create_emplo
     assert first_period.used_days == 7
     assert first_period.used_days_auto == 7
     assert second_period.used_days == 0
+
+
+async def test_auto_use_days_creates_future_periods_when_not_enough_balance(
+    db_session,
+    create_employee,
+):
+    employee = await create_employee(
+        hire_date=date(2024, 1, 15),
+        additional_vacation_days=0,
+    )
+
+    await vacation_period_service.ensure_periods_for_employee(
+        db_session,
+        employee.id,
+        employee.hire_date,
+        employee.additional_vacation_days,
+    )
+
+    # Списываем 40 дней, хотя доступно только 24 в первом периоде
+    await auto_use_days(
+        db_session,
+        employee.id,
+        40,
+        employee.hire_date,
+        employee.additional_vacation_days,
+    )
+
+    repo = VacationPeriodRepository()
+    periods = await repo.get_by_employee(db_session, employee.id)
+    periods_by_year = {p.year_number: p for p in periods}
+
+    assert 1 in periods_by_year
+    assert 2 in periods_by_year
+
+    first = periods_by_year[1]
+    second = periods_by_year[2]
+
+    assert first.used_days == 24
+    assert first.used_days_auto == 24
+    assert second.used_days == 16
+    assert second.used_days_auto == 16
+
+
+async def test_auto_use_days_creates_multiple_future_periods_for_large_overdraft(
+    db_session,
+    create_employee,
+):
+    employee = await create_employee(
+        hire_date=date(2024, 1, 15),
+        additional_vacation_days=0,
+    )
+
+    await vacation_period_service.ensure_periods_for_employee(
+        db_session,
+        employee.id,
+        employee.hire_date,
+        employee.additional_vacation_days,
+    )
+
+    # Списываем 55 дней — больше двух периодов (24 + 24 = 48)
+    await auto_use_days(
+        db_session,
+        employee.id,
+        55,
+        employee.hire_date,
+        employee.additional_vacation_days,
+    )
+
+    repo = VacationPeriodRepository()
+    periods = await repo.get_by_employee(db_session, employee.id)
+    periods_by_year = {p.year_number: p for p in periods}
+
+    assert 1 in periods_by_year
+    assert 2 in periods_by_year
+    assert 3 in periods_by_year
+
+    assert periods_by_year[1].used_days == 24
+    assert periods_by_year[2].used_days == 24
+    assert periods_by_year[3].used_days == 7

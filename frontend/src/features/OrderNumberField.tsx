@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useId } from "react"
 import { ListFilter } from "lucide-react"
 import { Input } from "@/shared/ui/input"
 import { useRecentOrders } from "@/entities/order/useOrders"
+import { useQueryClient } from "@tanstack/react-query"
 import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
 import type { Order } from "@/entities/order/types"
 
@@ -46,6 +47,7 @@ interface OrderNumberFieldProps {
 
 export function OrderNumberField({ value, onChange, required, error }: OrderNumberFieldProps) {
   const id = useId()
+  const queryClient = useQueryClient()
   const { data } = useRecentOrders(100)
   const orders = data || []
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -60,6 +62,9 @@ export function OrderNumberField({ value, onChange, required, error }: OrderNumb
 
   const handleMouseEnter = () => {
     if (timerRef.current) clearTimeout(timerRef.current)
+    // Принудительно обновляем данные при открытии поповера
+    queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
+    queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
     setPopoverOpen(true)
   }
 

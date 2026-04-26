@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useId } from "react"
-import { createPortal } from "react-dom"
+import { useState, useEffect, useId } from "react"
 import { Calendar } from "lucide-react"
 import { Button } from "./button"
+import { Popover, PopoverTrigger, PopoverContent } from "./popover"
 import { cn } from "@/shared/utils/cn"
 
 interface DatePickerProps {
@@ -37,7 +37,7 @@ function formatDateForStorage(displayDate: string): string {
 
 export function DatePicker({ value, onChange, label, placeholder, required = false, className, disabled = false }: DatePickerProps) {
   const id = useId()
-  const [showCalendar, setShowCalendar] = useState(false)
+  const [open, setOpen] = useState(false)
   const [currentMonth, setCurrentMonth] = useState(() => {
     if (value) {
       const d = new Date(value + "T00:00:00")
@@ -46,9 +46,6 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
     return new Date()
   })
   const [inputValue, setInputValue] = useState(formatDateForDisplay(value))
-  const [calendarPosition, setCalendarPosition] = useState({ top: 0, left: 0, width: 0 })
-  const ref = useRef<HTMLDivElement>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     setInputValue(formatDateForDisplay(value))
@@ -62,33 +59,6 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
       setCurrentMonth(new Date())
     }
   }, [value])
-
-  useEffect(() => {
-    if (showCalendar && ref.current) {
-      const rect = ref.current.getBoundingClientRect()
-      setCalendarPosition({
-        top: rect.bottom + window.scrollY + 4,
-        left: rect.left + window.scrollX,
-        width: rect.width
-      })
-    }
-  }, [showCalendar])
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      // Проверяем, не клик ли это по календарю в портале
-      if (target.closest('[data-calendar-portal]')) {
-        return
-      }
-      // Проверяем, не клик ли это по нашему компоненту
-      if (ref.current && !ref.current.contains(target)) {
-        setShowCalendar(false)
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [])
 
   const formatDisplayDate = (raw: string): string => {
     const digits = raw.replace(/\D/g, "").slice(0, 8)
@@ -116,7 +86,7 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
     const isoDate = `${year}-${month}-${dayStr}`
     onChange(isoDate)
     setInputValue(`${dayStr}.${month}.${year}`)
-    setShowCalendar(false)
+    setOpen(false)
   }
 
   const handlePrevMonth = () => {
@@ -137,7 +107,6 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
   }
 
   const renderCalendar = () => {
-    // Защита от NaN
     if (isNaN(currentMonth.getTime())) {
       setCurrentMonth(new Date())
       return null
@@ -176,7 +145,7 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
   }
 
   return (
-    <div className={cn("relative", className)} ref={ref}>
+    <div className={cn("relative", className)}>
       {label && (
         <label htmlFor={id} className="text-sm font-medium whitespace-nowrap">
           {label}
@@ -188,6 +157,7 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
           id={id}
           type="text"
           placeholder={placeholder || "ДД.ММ.ГГГГ"}
+          aria-label={label || placeholder || "ДД.ММ.ГГГГ"}
           value={inputValue}
           onChange={(e) => handleInputChange(e.target.value)}
           onFocus={(e) => e.target.select()}
@@ -196,66 +166,53 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
           maxLength={10}
           disabled={disabled}
         />
-        <Button
-          ref={buttonRef}
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-10 rounded-l-none px-2.5"
-          onClick={() => setShowCalendar(!showCalendar)}
-          disabled={disabled}
-        >
-          <Calendar className="h-4 w-4" />
-        </Button>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-10 rounded-l-none px-2.5"
+              disabled={disabled}
+            >
+              <Calendar className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[260px] p-3" align="end" sideOffset={4}>
+            <div className="flex items-center justify-between mb-2 pb-2 border-b">
+              <button
+                type="button"
+                className="text-primary hover:text-primary/80 text-sm font-medium px-1"
+                onClick={handlePrevMonth}
+              >
+                ‹
+              </button>
+              <span className="text-sm font-semibold">
+                {(() => {
+                  const m = currentMonth.getMonth()
+                  const y = currentMonth.getFullYear()
+                  return isNaN(m) || isNaN(y) ? new Date().toLocaleDateString("ru-RU", { month: "long", year: "numeric" }) : `${MONTH_NAMES[m]} ${y}`
+                })()}
+              </span>
+              <button
+                type="button"
+                className="text-primary hover:text-primary/80 text-sm font-medium px-1"
+                onClick={handleNextMonth}
+              >
+                ›
+              </button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 mb-1 text-center">
+              {WEEKDAYS.map((d) => (
+                <div key={d} className="text-xs font-semibold text-muted-foreground py-1">{d}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {renderCalendar()}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
-
-      {showCalendar && createPortal(
-        <div
-          data-calendar-portal
-          className="fixed z-[99999] w-[260px] border rounded-md bg-popover shadow-lg p-3"
-          style={{
-            top: `${calendarPosition.top}px`,
-            left: `${calendarPosition.left}px`,
-            pointerEvents: 'auto',
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between mb-2 pb-2 border-b">
-            <button
-              type="button"
-              className="text-primary hover:text-primary/80 text-sm font-medium px-1"
-              onClick={handlePrevMonth}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              ‹
-            </button>
-            <span className="text-sm font-semibold">
-              {(() => {
-                const m = currentMonth.getMonth()
-                const y = currentMonth.getFullYear()
-                return isNaN(m) || isNaN(y) ? new Date().toLocaleDateString("ru-RU", { month: "long", year: "numeric" }) : `${MONTH_NAMES[m]} ${y}`
-              })()}
-            </span>
-            <button
-              type="button"
-              className="text-primary hover:text-primary/80 text-sm font-medium px-1"
-              onClick={handleNextMonth}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              ›
-            </button>
-          </div>
-          <div className="grid grid-cols-7 gap-1 mb-1 text-center">
-            {WEEKDAYS.map((d) => (
-              <div key={d} className="text-xs font-semibold text-muted-foreground py-1">{d}</div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-1">
-            {renderCalendar()}
-          </div>
-        </div>,
-        document.body
-      )}
     </div>
   )
 }

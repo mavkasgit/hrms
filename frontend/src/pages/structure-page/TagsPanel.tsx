@@ -246,6 +246,7 @@ export function TagsPanel() {
           color: tagColor,
         }}
         onSave={(v) => {
+          setDialogOpen(false)
           const data = {
             name: String(v.name).trim(),
             category: v.category ? String(v.category).trim() || undefined : undefined,
@@ -256,7 +257,6 @@ export function TagsPanel() {
           } else {
             createTag.mutate(data)
           }
-          setDialogOpen(false)
         }}
         addTitle="Новый тег"
         editTitle="Редактировать тег"

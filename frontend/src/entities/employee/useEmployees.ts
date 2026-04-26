@@ -100,10 +100,31 @@ export function useDeleteEmployee() {
   })
 }
 
+export function useResetEmployeePeriods() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (employeeId: number) => api.resetEmployeePeriods(employeeId),
+    onSuccess: (_, employeeId) => {
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["employee", employeeId], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
+    },
+  })
+}
+
 export function useEmployeeAuditLog(employeeId: number) {
   return useQuery({
     queryKey: ["audit-log", employeeId],
     queryFn: () => api.fetchEmployeeAuditLog(employeeId),
+    enabled: !!employeeId,
+  })
+}
+
+export function useEmployeePeriodsStatus(employeeId: number) {
+  return useQuery({
+    queryKey: ["employee-periods-status", employeeId],
+    queryFn: () => api.fetchEmployeePeriodsStatus(employeeId),
     enabled: !!employeeId,
   })
 }

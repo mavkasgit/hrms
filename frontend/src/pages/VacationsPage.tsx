@@ -1,5 +1,11 @@
 import React, { useState, useRef, useEffect } from "react"
-import { ChevronDown, ChevronRight, Trash2, Check, X, ScrollText } from "lucide-react"
+import { ChevronDown, ChevronRight, Trash2, Check, X, ScrollText, RefreshCw, Eye, Download, Pencil } from "lucide-react"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/shared/ui/tooltip"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -23,11 +29,16 @@ import {
   useVacationEmployeesSummary,
   useEmployeeVacationHistory,
 } from "@/entities/vacation"
-import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, VacationPeriodVacation } from "@/entities/vacation-period"
+import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, VacationPeriodVacation } from "@/entities/vacation-period"
 import { useSearchEmployees, useEmployees, useUpdateEmployee } from "@/entities/employee/useEmployees"
+import { useAllOrderTypes, useCreateOrderPreview } from "@/entities/order/useOrders"
+import type { OrderCreate } from "@/entities/order/types"
 import { OrderNumberField } from "@/features/OrderNumberField"
+import { OrderPreviewDialog } from "@/features/order-preview/OrderPreviewDialog"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 import type { Employee } from "@/entities/employee/types"
+
+const VACATION_ORDER_CODE = "vacation_paid"
 
 const DEFAULT_VACATION_TYPE = "Трудовой"
 
@@ -38,6 +49,16 @@ function formatDate(dateStr: string | null): string {
   const parts = s.split("-")
   if (parts.length !== 3) return dateStr
   return `${parts[2]}.${parts[1]}.${parts[0]}`
+}
+
+function formatTransactionType(type: string): string {
+  switch (type) {
+    case "auto_use": return "Автосписание"
+    case "manual_close": return "Ручное закрытие"
+    case "partial_close": return "Частичное закрытие"
+    case "restore": return "Восстановление"
+    default: return type
+  }
 }
 
 // Debounce hook
@@ -62,6 +83,7 @@ interface EmployeeHistoryRowProps {
   setSuccessMessage: (msg: string | null) => void
   closingPeriodId: number | null
   setClosingPeriodId: (id: number | null) => void
+  recalculatePeriodsMutation: any
 }
 
 function EmployeeHistoryRow({ 
@@ -74,7 +96,8 @@ function EmployeeHistoryRow({
   closePeriodMutation,
   setSuccessMessage,
   closingPeriodId,
-  setClosingPeriodId
+  setClosingPeriodId,
+  recalculatePeriodsMutation,
 }: EmployeeHistoryRowProps) {
   const { data: history, isLoading } = useEmployeeVacationHistory(employeeId)
   const { data: periods } = useVacationPeriods(employeeId)
@@ -84,6 +107,18 @@ function EmployeeHistoryRow({
   const [cancelId, setCancelId] = useState<number | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [showClosedPeriods, setShowClosedPeriods] = useState(false)
+  const [recalculateAlertOpen, setRecalculateAlertOpen] = useState(false)
+  const [isRecalculating, setIsRecalculating] = useState(false)
+
+  // Определяем, есть ли открытые периоды (до early return для соблюдения Rules of Hooks)
+  const hasOpenPeriods = periods ? periods.filter(p => p.remaining_days > 0).length > 0 : false
+  const hasClosedPeriods = periods ? periods.filter(p => p.remaining_days === 0).length > 0 : false
+
+  useEffect(() => {
+    if (periods && !hasOpenPeriods && hasClosedPeriods) {
+      setShowClosedPeriods(true)
+    }
+  }, [periods, hasOpenPeriods, hasClosedPeriods])
 
   const handleCancelConfirm = () => {
     if (cancelId) cancelVacationMutation.mutate(cancelId)
@@ -95,6 +130,37 @@ function EmployeeHistoryRow({
     setDeleteId(null)
   }
 
+  const handleOrderPreview = (orderId: number) => {
+    window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/print`, "_blank")
+  }
+
+  const handleOrderDownload = (orderId: number) => {
+    window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
+  }
+
+  const handleRecalculateConfirm = () => {
+    setIsRecalculating(true)
+    const startTime = Date.now()
+
+    const finishRecalculate = () => {
+      const elapsed = Date.now() - startTime
+      const minDelay = 1500
+      const remaining = Math.max(0, minDelay - elapsed)
+      setTimeout(() => {
+        setIsRecalculating(false)
+        setRecalculateAlertOpen(false)
+      }, remaining)
+    }
+
+    recalculatePeriodsMutation.mutate(employeeId, {
+      onSettled: finishRecalculate,
+      onSuccess: () => {
+        setSuccessMessage("Периоды пересозданы")
+        setTimeout(() => setSuccessMessage(null), 3000)
+      }
+    })
+  }
+
   if (isLoading) return <div className="px-4 py-3"><Skeleton className="h-20 w-full" /></div>
   if (!history || !periods) return <div className="px-4 py-3 text-sm text-muted-foreground">Нет данных</div>
   
@@ -103,14 +169,15 @@ function EmployeeHistoryRow({
   const sortedPeriods = [...periods].sort((a, b) => b.year_number - a.year_number)
   const openPeriods = sortedPeriods.filter(p => p.remaining_days > 0)
   const closedPeriods = sortedPeriods.filter(p => p.remaining_days === 0)
+
   const displayedPeriods = showClosedPeriods ? sortedPeriods : openPeriods
 
   return (
     <>
-    <div className="px-4 py-3 space-y-2 bg-muted/20">
+    <div className="px-4 py-1.5 space-y-0.5 bg-muted/20">
       {/* Кнопка показа закрытых периодов - слева под ФИО */}
-      {closedPeriods.length > 0 && (
-        <div className="flex justify-start mb-2">
+      <div className="flex justify-between items-center mb-2">
+        {closedPeriods.length > 0 ? (
           <Button
             variant="ghost"
             size="sm"
@@ -123,49 +190,88 @@ function EmployeeHistoryRow({
               <>Показать закрытые периоды ({closedPeriods.length})</>
             )}
           </Button>
-        </div>
-      )}
+        ) : (
+          <div />
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs text-slate-500"
+          onClick={() => setRecalculateAlertOpen(true)}
+        >
+          <RefreshCw className="h-3 w-3 mr-1" />
+          Пересоздать трудовые периоды
+        </Button>
+      </div>
       
       {displayedPeriods.map((p) => {
         const periodVacations = p.vacations || []
         const isClosed = p.remaining_days === 0
         const isClosing = closingPeriodId === p.period_id
-        const isEnded = new Date(p.period_end) < new Date() // Период уже закончился
         
         return (
-          <div key={p.period_id} className={`flex gap-3 border border-muted/30 rounded overflow-hidden ${isClosed ? 'opacity-60' : ''} ${isClosing ? 'border-blue-400 bg-blue-50' : ''}`}>
+          <div key={p.period_id} className={`flex gap-2 border border-muted/30 rounded ${isClosed ? 'opacity-60' : ''} ${isClosing ? 'border-blue-400 bg-blue-50' : ''}`}>
             {/* Левая часть — период */}
-<div className="w-1/2 min-w-[280px] bg-card p-3 flex items-center gap-3">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 text-xs">
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
-                      <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
-                      {isClosed && <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>}
+<div className="w-1/2 min-w-[280px] bg-card py-1.5 px-2 flex items-center gap-2">
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex-1 cursor-help rounded hover:ring-1 hover:ring-gray-300 hover:ring-inset transition-shadow">
+                      <div className="flex items-center gap-2 text-xs">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
+                            <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
+                            {isClosed && <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs mt-1">
+                        <span className="text-muted-foreground">
+                          {p.main_days}+{p.additional_days}
+                        </span>
+                        <span className="text-muted-foreground">|</span>
+                        <span className="font-medium text-blue-600 tabular-nums">{p.used_days} исп.</span>
+                        <span className="text-muted-foreground">|</span>
+                        <span className={`font-semibold ${p.remaining_days < 0 ? "text-red-600" : p.remaining_days < 7 ? "text-amber-600" : "text-green-600"}`}>
+                          {p.remaining_days}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-xs mt-1">
-                  <span className="text-muted-foreground">
-                    {p.main_days}+{p.additional_days}
-                  </span>
-                  <span className="text-muted-foreground">|</span>
-                  <span className="font-medium text-blue-600 tabular-nums">{p.used_days} исп.</span>
-                  <span className="text-muted-foreground">|</span>
-                  <span className={`font-semibold ${p.remaining_days < 0 ? "text-red-600" : p.remaining_days < 7 ? "text-amber-600" : "text-green-600"}`}>
-                    {p.remaining_days}
-                  </span>
-                  {p.used_days > 0 && (
-                    <span className="text-[9px] text-muted-foreground ml-2">
-                      {p.used_days_auto > 0 && <span>автосписание: {p.used_days_auto} дней</span>}
-                      {p.used_days_manual > 0 && <span> вручную: {p.used_days_manual} дней</span>}
-                    </span>
-                  )}
-                </div>
-              </div>
-              {/* Кнопки управления периодом - только для завершенных периодов */}
-              {isEnded && (
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    align="start"
+                    sideOffset={4}
+                    avoidCollisions={true}
+                    className="bg-white text-gray-900 border border-gray-200 shadow-xl w-max"
+                  >
+                    {p.transactions && p.transactions.length > 0 ? (
+                      <div className="space-y-1">
+                        {p.transactions.map((tx) => (
+                          <div key={tx.id} className="text-xs whitespace-nowrap">
+                            <span className="font-medium">{formatTransactionType(tx.transaction_type)}</span>
+                            {tx.order_number && (
+                              <span className="text-muted-foreground"> по приказу №{tx.order_number}</span>
+                            )}
+                            {!tx.order_number && tx.order_id && (
+                              <span className="text-muted-foreground"> (приказ #{tx.order_id})</span>
+                            )}
+                            <span className="tabular-nums"> — {tx.days_count > 0 ? `+${tx.days_count}` : tx.days_count} дн.</span>
+                            {tx.created_at && (
+                              <span className="text-muted-foreground ml-1">({formatDate(tx.created_at)})</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Нет операций</span>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              {/* Кнопки управления периодом */}
+              {
                 <>
                   {isClosed ? (
                     <div className="flex gap-1 shrink-0">
@@ -231,18 +337,17 @@ function EmployeeHistoryRow({
                     </div>
                   )}
                 </>
-              )}
+              }
             </div>
 
             {/* Правая часть — отпуска за период */}
             <div className="flex-1 bg-muted/30">
               {periodVacations.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-xs text-muted-foreground py-4">Нет отпусков</div>
+                <div className="flex items-center justify-center h-full text-xs text-muted-foreground py-2">Нет отпусков</div>
               ) : (
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-muted-foreground border-b border-muted/40">
-                      <th className="text-left px-2 py-1 font-medium">Тип</th>
                       <th className="text-left px-2 py-1 font-medium">Начало</th>
                       <th className="text-left px-2 py-1 font-medium">Конец</th>
                       <th className="text-left px-2 py-1 font-medium">Дней</th>
@@ -254,25 +359,30 @@ function EmployeeHistoryRow({
                   <tbody>
                     {periodVacations.map((v: VacationPeriodVacation) => (
                       <tr key={v.id} className={`border-b border-muted/30 ${v.is_cancelled ? "opacity-40" : ""}`}>
-                        <td className="px-2 py-1">
-                          <Badge variant={v.vacation_type === "Трудовой" ? "default" : "secondary"} className={`text-[10px] px-1 py-0 ${v.is_cancelled ? "line-through" : ""}`}>
-                            {v.vacation_type}
-                          </Badge>
-                        </td>
                         <td className="px-2 py-1">{formatDate(v.start_date)}</td>
                         <td className="px-2 py-1">{formatDate(v.end_date)}</td>
                         <td className="px-2 py-1">{v.days_count}</td>
-                        <td className="px-2 py-1 font-mono text-[10px]">{v.order_number || "—"}</td>
+                        <td className="px-2 py-1">{v.order_number || "—"}</td>
                         <td className="px-2 py-1 text-muted-foreground text-[10px]">{v.comment || "—"}</td>
                         <td className="px-1 py-1">
                           <div className="flex gap-0.5">
+                            {v.order_id && (
+                              <>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-400 hover:text-blue-600" onClick={() => handleOrderPreview(v.order_id!)} title="Просмотр приказа">
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-400 hover:text-green-600" onClick={() => handleOrderDownload(v.order_id!)} title="Скачать приказ">
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              </>
+                            )}
                             {!v.is_cancelled && (
-                              <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-amber-500 hover:text-amber-700" onClick={() => setCancelId(v.id)} title="Отменить">
-                                <X className="h-3 w-3" />
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-amber-500 hover:text-amber-700" onClick={() => setCancelId(v.id)} title="Отменить">
+                                <X className="h-4 w-4" />
                               </Button>
                             )}
-                            <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-red-400 hover:text-red-600" onClick={() => setDeleteId(v.id)} title="Удалить">
-                              <Trash2 className="h-3 w-3" />
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-400 hover:text-red-600" onClick={() => setDeleteId(v.id)} title="Удалить">
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
                         </td>
@@ -321,6 +431,37 @@ function EmployeeHistoryRow({
       </AlertDialogContent>
     </AlertDialog>
 
+    {/* Диалог пересоздания периодов */}
+    <AlertDialog open={recalculateAlertOpen} onOpenChange={setRecalculateAlertOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Пересоздать трудовые периоды</AlertDialogTitle>
+          <AlertDialogDescription>
+            Периоды будут пересозданы и дни отпусков заново распределены по порядку.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setRecalculateAlertOpen(false)} disabled={isRecalculating}>Отмена</AlertDialogCancel>
+          <Button
+            onClick={handleRecalculateConfirm}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+            disabled={isRecalculating}
+          >
+            {isRecalculating ? (
+              <span className="flex items-center gap-1.5">
+                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Пересоздание...
+              </span>
+            ) : (
+              "Пересоздать"
+            )}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     {/* Диалог частичного закрытия периода */}
     <AlertDialog open={partialClosePeriodId !== null} onOpenChange={(open) => !open && setPartialClosePeriodId(null)}>
@@ -374,11 +515,20 @@ export function VacationsPage() {
   const [partialCloseRemaining, setPartialCloseRemaining] = useState("")
   const [closingPeriodId, setClosingPeriodId] = useState<number | null>(null)
 
+  // Preview state
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
+  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [previewHtml, setPreviewHtml] = useState("")
+  const [pendingPayload, setPendingPayload] = useState<any>(null)
+
   const searchRef = useRef<HTMLDivElement>(null)
 
   const { data: searchResult } = useSearchEmployees(searchQuery)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
+  const { data: orderTypes = [] } = useAllOrderTypes()
   const createMutation = useCreateVacation()
+  const previewMutation = useCreateOrderPreview()
+  const vacationOrderType = orderTypes.find((item) => item.code === VACATION_ORDER_CODE) ?? null
 
   // Получаем остаток дней выбранного сотрудника из summary
   const { data: employeesSummary } = useVacationEmployeesSummary()
@@ -445,33 +595,68 @@ export function VacationsPage() {
     return Object.keys(newErrors).length === 0
   }
 
-  const isPending = createMutation.isPending
+  const isPending = createMutation.isPending || previewMutation.isPending
 
   const handleSubmit = () => {
     console.log("[VacationsPage] handleSubmit called")
-    if (!validate()) {
-      console.log("[VacationsPage] validation failed")
+    if (!validate() || !vacationOrderType || !selectedEmployee) {
+      console.log("[VacationsPage] validation failed or no order type")
       return
     }
+
+    const orderPayload: OrderCreate = {
+      employee_id: selectedEmployee.id,
+      order_type_id: vacationOrderType.id,
+      order_date: orderDate,
+      order_number: orderNumber || null,
+      extra_fields: {
+        vacation_start: startDate,
+        vacation_end: endDate,
+        vacation_days: 0, // backend will calculate
+        vacation_type: DEFAULT_VACATION_TYPE,
+      },
+    }
+    setPendingPayload(orderPayload)
+    previewMutation.mutate(orderPayload, {
+      onSuccess: (preview) => {
+        setPreviewId(preview.preview_id)
+        setPreviewHtml(preview.html)
+        setPreviewDialogOpen(true)
+      },
+      onError: (err: any) => {
+        console.error("[VacationsPage] preview error:", err)
+        setSuccessMessage("Ошибка при формировании предпросмотра")
+        setTimeout(() => setSuccessMessage(null), 3000)
+      },
+    })
+  }
+
+  const handlePreviewConfirm = (editedHtml: string) => {
+    if (!pendingPayload || !previewId) return
     
-    const payload = {
+    const vacationPayload = {
       employee_id: selectedEmployee!.id,
       start_date: startDate,
       end_date: endDate,
       vacation_type: DEFAULT_VACATION_TYPE,
       order_date: orderDate,
       order_number: orderNumber || undefined,
+      preview_id: previewId,
+      edited_html: editedHtml,
     }
-    console.log("[VacationsPage] handleSubmit payload:", JSON.stringify(payload, null, 2))
     
     createMutation.mutate(
-      payload,
+      vacationPayload,
       { 
         onSuccess: (data) => {
           console.log("[VacationsPage] mutation success:", data)
           setSuccessMessage("Отпуск успешно создан!")
           setTimeout(() => setSuccessMessage(null), 5000)
           resetForm()
+          setPreviewDialogOpen(false)
+          setPreviewId(null)
+          setPreviewHtml("")
+          setPendingPayload(null)
         },
         onError: (error: any) => {
           console.error("[VacationsPage] mutation error:", error)
@@ -483,6 +668,7 @@ export function VacationsPage() {
   // --- Vacation periods for selected employee ---
   const closePeriodMutation = useClosePeriod()
   const partialClosePeriodMutation = usePartialClosePeriod()
+  const recalculatePeriodsMutation = useRecalculateVacationPeriods()
 
   const handlePartialClosePeriod = () => {
     if (partialClosePeriodId) {
@@ -546,9 +732,12 @@ export function VacationsPage() {
     <div className="space-y-4">
       {/* Success Alert */}
       {successMessage && (
-        <div className="fixed bottom-4 right-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg flex items-center gap-3 shadow-lg z-50">
+        <div className="fixed bottom-4 right-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg flex items-center gap-3 shadow-lg z-50 animate-in slide-in-from-bottom-2 fade-in duration-300">
+          <svg className="h-5 w-5 text-green-600 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
           <span className="text-sm font-medium">{successMessage}</span>
-          <button onClick={() => setSuccessMessage(null)} className="text-green-600 hover:text-green-800">
+          <button onClick={() => setSuccessMessage(null)} className="text-green-600 hover:text-green-800 ml-2">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -775,7 +964,7 @@ export function VacationsPage() {
                 <th className="text-left px-4 py-2 font-medium">Должность</th>
                 <th className="text-left px-4 py-2 font-medium">Остаток дней</th>
                 <th className="text-left px-4 py-2 font-medium">Доп. дни</th>
-                <th className="text-left px-4 py-2 font-medium">Начало контракта</th>
+                <th className="text-left px-4 py-2 font-medium">Дата приема</th>
               </tr>
             </thead>
             <tbody>
@@ -853,9 +1042,11 @@ export function VacationsPage() {
                         ) : (
                           <button
                             onClick={() => { setEditingAddDays(emp.id); setEditingAddDaysValue(String(emp.additional_vacation_days ?? 0)) }}
-                            className="w-16 h-8 rounded-md border border-transparent hover:border-input text-sm font-semibold text-center hover:bg-muted/50 transition-colors"
+                            className="w-16 h-8 rounded-md border border-dashed border-gray-300 hover:border-solid hover:border-gray-400 text-sm font-semibold text-center hover:bg-muted/50 transition-colors flex items-center justify-center gap-1 group"
+                            title="Нажмите для редактирования"
                           >
                             {emp.additional_vacation_days ?? 0}
+                            <Pencil className="h-3 w-3 text-gray-400" />
                           </button>
                         )}
                       </td>
@@ -877,6 +1068,7 @@ export function VacationsPage() {
                             setSuccessMessage={setSuccessMessage}
                             closingPeriodId={closingPeriodId}
                             setClosingPeriodId={setClosingPeriodId}
+                            recalculatePeriodsMutation={recalculatePeriodsMutation}
                           />
                         </td>
                       </tr>
@@ -888,6 +1080,14 @@ export function VacationsPage() {
           </table>
         </div>
       )}
+
+      <OrderPreviewDialog
+        open={previewDialogOpen}
+        html={previewHtml}
+        isSubmitting={createMutation.isPending}
+        onOpenChange={setPreviewDialogOpen}
+        onConfirm={handlePreviewConfirm}
+      />
 
       <GlobalAuditLog open={auditLogOpen} onOpenChange={setAuditLogOpen} initialActionFilter="vacation" />
     </div>

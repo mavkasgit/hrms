@@ -109,7 +109,7 @@ export async function comboboxCreate(page: Page, label: string, value: string): 
  * Поле даты (ДД.ММ.ГГГГ)
  */
 export function dateField(page: Page, nth: number) {
-  return page.getByRole('textbox', { name: 'ДД.ММ.ГГГГ' }).nth(nth)
+  return page.locator('input[placeholder="ДД.ММ.ГГГГ"]').nth(nth)
 }
 
 /**

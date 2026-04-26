@@ -456,6 +456,7 @@ export function PositionsTab() {
         mode={editingId ? "edit" : "add"}
         initialValues={{ name: posName, icon: posIcon, color: posColor }}
         onSave={(v) => {
+          setDialogOpen(false)
           if (editingId) {
             updatePos.mutate({
               id: editingId,
@@ -472,7 +473,6 @@ export function PositionsTab() {
               color: v.color ? String(v.color) : undefined,
             })
           }
-          setDialogOpen(false)
         }}
         addTitle="Добавить должность"
         editTitle="Редактировать должность"

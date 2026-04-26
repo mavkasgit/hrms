@@ -71,7 +71,19 @@ class VacationPeriodService:
 
         today = date.today()
         existing = await self._repo.get_by_employee(db, employee_id)
-        last_year = max((p.year_number for p in existing), default=0)
+
+        # Проверяем наличие дублей по year_number или несоответствие hire_date
+        if existing:
+            first_period = min(existing, key=lambda p: p.year_number)
+            expected_start = hire_date + relativedelta(months=12 * (first_period.year_number - 1))
+            year_numbers = [p.year_number for p in existing]
+            has_duplicates = len(year_numbers) != len(set(year_numbers))
+            if has_duplicates or first_period.period_start != expected_start:
+                await self._repo.delete_all_by_employee(db, employee_id)
+                existing = []
+
+        existing_years = {p.year_number for p in existing}
+        last_year = max(existing_years, default=0)
 
         for period in existing:
             if period.additional_days != additional_days:
@@ -82,7 +94,20 @@ class VacationPeriodService:
         current_year_number = years_passed + 1 if rd.months > 0 or rd.days > 0 else years_passed
 
         for year_number in range(last_year + 1, current_year_number + 1):
-            await self.create_period(db, employee_id, hire_date, year_number, additional_days)
+            if year_number not in existing_years:
+                await self.create_period(db, employee_id, hire_date, year_number, additional_days)
+
+    async def check_periods_mismatch(self, db: AsyncSession, employee_id: int, hire_date: date) -> bool:
+        """Проверяет, соответствуют ли существующие периоды текущему hire_date."""
+        from dateutil.relativedelta import relativedelta
+
+        existing = await self._repo.get_by_employee(db, employee_id)
+        if not existing:
+            return False
+
+        first_period = min(existing, key=lambda p: p.year_number)
+        expected_start = hire_date + relativedelta(months=12 * (first_period.year_number - 1))
+        return first_period.period_start != expected_start
 
     async def get_balance(self, db: AsyncSession, period_id: int) -> VacationPeriodBalance:
         period = await self._repo.get_by_id(db, period_id)
@@ -115,9 +140,6 @@ class VacationPeriodService:
         result: list[VacationPeriodBalance] = []
 
         for period in sorted(periods, key=lambda p: p.year_number, reverse=True):
-            if period.period_start > today:
-                continue
-
             used_days = period.used_days or 0
             total_days_full = period.main_days + period.additional_days
 
@@ -129,6 +151,8 @@ class VacationPeriodService:
                 if rd.days > 0:
                     months_passed += 1
                 display_total = round(total_days_full / 12 * months_passed)
+            elif period.period_start > today:
+                display_total = 0
             else:
                 display_total = total_days_full
 
@@ -141,6 +165,7 @@ class VacationPeriodService:
                     Vacation.start_date <= period.period_end,
                     Vacation.is_deleted == False,
                 )
+.order_by(Vacation.start_date.desc())
             )
             period_vacations = [
                 {
@@ -155,6 +180,14 @@ class VacationPeriodService:
                     "is_cancelled": vacation.is_cancelled,
                 }
                 for vacation in vac_result.scalars().all()
+            ]
+
+            # Получаем транзакции периода
+            from app.schemas.vacation_period import VacationPeriodTransactionResponse
+            transactions = await self._repo.get_transactions(db, period.id)
+            tx_list = [
+                VacationPeriodTransactionResponse.model_validate(tx)
+                for tx in transactions
             ]
 
             result.append(
@@ -173,6 +206,7 @@ class VacationPeriodService:
                     order_numbers=period.order_numbers,
                     remaining_days=display_total - used_days,
                     vacations=period_vacations,
+                    transactions=tx_list,
                 )
             )
 
@@ -232,6 +266,16 @@ class VacationPeriodService:
         period.used_days = effective_auto + new_manual
         period.remaining_days = 0
 
+        # Создаём транзакцию ручного закрытия
+        if new_manual > 0:
+            await self._repo.add_transaction(
+                db,
+                period_id=period.id,
+                days_count=new_manual,
+                transaction_type="manual_close",
+                description=f"Закрытие периода: списано {new_manual} дней",
+            )
+
         await db.flush()
         await db.commit()
         await db.refresh(period)
@@ -278,6 +322,16 @@ class VacationPeriodService:
         period.used_days = effective_auto + new_manual
         period.remaining_days = remaining_days
 
+        # Создаём транзакцию частичного закрытия
+        if new_manual > 0:
+            await self._repo.add_transaction(
+                db,
+                period_id=period.id,
+                days_count=new_manual,
+                transaction_type="partial_close",
+                description=f"Частичное закрытие: списано {new_manual} дней, остаток {remaining_days}",
+            )
+
         await db.flush()
         await db.commit()
         await db.refresh(period)
@@ -299,14 +353,75 @@ class VacationPeriodService:
             vacations=[],
         )
 
+    async def recalculate_periods(self, db: AsyncSession, employee_id: int) -> list[VacationPeriodBalance]:
+        """Пересоздать периоды и заново распределить дни отпусков по порядку."""
+        from app.repositories.employee_repository import EmployeeRepository
+        from app.models.vacation import Vacation
+
+        employee_repo = EmployeeRepository()
+        employee = await employee_repo.get_by_id(db, employee_id)
+        if not employee or not employee.hire_date:
+            raise HTTPException(status_code=400, detail="У сотрудника не указана дата приёма")
+
+        # Удаляем все периоды (cascade удалит транзакции)
+        await self._repo.delete_all_by_employee(db, employee_id)
+
+        # Создаём периоды заново
+        await self.ensure_periods_for_employee(
+            db,
+            employee_id,
+            employee.hire_date,
+            employee.additional_vacation_days or 0,
+        )
+
+        # Получаем все отпуска сотрудника (не удалённые, не отменённые, с приказом)
+        result = await db.execute(
+            select(Vacation)
+            .where(
+                Vacation.employee_id == employee_id,
+                Vacation.is_deleted == False,
+                Vacation.is_cancelled == False,
+                Vacation.order_id.isnot(None),
+            )
+            .order_by(Vacation.start_date.asc())
+        )
+        vacations = list(result.scalars().all())
+
+        # По порядку от самого старого отпуска распределяем дни по периодам
+        for vacation in vacations:
+            # Получаем номер приказа
+            from app.repositories.order_repository import OrderRepository
+            order_repo = OrderRepository()
+            order = await order_repo.get_by_id(db, vacation.order_id)
+            order_number = order.order_number if order else str(vacation.order_id)
+
+            await auto_use_days(
+                db,
+                employee_id=employee_id,
+                days_to_use=vacation.days_count,
+                hire_date=employee.hire_date,
+                additional_days=employee.additional_vacation_days or 0,
+                order_id=vacation.order_id,
+                order_number=order_number,
+                is_recalc=True,
+            )
+
+        await db.commit()
+        return await self.get_employee_periods(db, employee_id)
+
 
 async def auto_use_days(
     db: AsyncSession,
     employee_id: int,
     days_to_use: int,
+    hire_date: date = None,
+    additional_days: int = 0,
     order_id: int = None,
     order_number: str = None,
+    is_recalc: bool = False,
 ) -> None:
+    from dateutil.relativedelta import relativedelta
+
     repo = VacationPeriodRepository()
     result = await db.execute(
         select(VacationPeriod)
@@ -328,7 +443,57 @@ async def auto_use_days(
         days_to_take = min(remaining, remaining_to_use)
         if days_to_take > 0:
             await repo.add_used_days(db, period.id, days_to_take, order_id, order_number)
+            desc = f"Автосписание по приказу {order_number or order_id}: {days_to_take} дней"
+            if is_recalc:
+                desc += " (Перезаписан)"
+            await repo.add_transaction(
+                db,
+                period_id=period.id,
+                days_count=days_to_take,
+                transaction_type="auto_use",
+                order_id=order_id,
+                order_number=order_number,
+                description=desc,
+            )
             remaining_to_use -= days_to_take
+
+    # Если остались непокрытые дни — создаём будущие периоды
+    while remaining_to_use > 0 and hire_date is not None:
+        last_year = max((p.year_number for p in periods_sorted), default=0)
+        next_year = last_year + 1
+
+        period_start = hire_date + relativedelta(months=12 * (next_year - 1))
+        period_end = period_start + relativedelta(months=12) - relativedelta(days=1)
+
+        new_period = await repo.create(
+            db,
+            {
+                "employee_id": employee_id,
+                "period_start": period_start,
+                "period_end": period_end,
+                "main_days": MAIN_VACATION_DAYS,
+                "additional_days": additional_days,
+                "year_number": next_year,
+            },
+        )
+        periods_sorted.append(new_period)
+
+        total = new_period.main_days + new_period.additional_days
+        days_to_take = min(total, remaining_to_use)
+        await repo.add_used_days(db, new_period.id, days_to_take, order_id, order_number)
+        desc = f"Автосписание по приказу {order_number or order_id}: {days_to_take} дней (будущий период)"
+        if is_recalc:
+            desc += " (Перезаписан)"
+        await repo.add_transaction(
+            db,
+            period_id=new_period.id,
+            days_count=days_to_take,
+            transaction_type="auto_use",
+            order_id=order_id,
+            order_number=order_number,
+            description=desc,
+        )
+        remaining_to_use -= days_to_take
 
 
 vacation_period_service = VacationPeriodService()

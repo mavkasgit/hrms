@@ -231,7 +231,6 @@ class VacationRepository:
                 select(VacationPeriod)
                 .where(
                     VacationPeriod.employee_id == employee_id,
-                    VacationPeriod.period_start <= today,
                 )
                 .order_by(VacationPeriod.year_number)
             )
@@ -256,7 +255,7 @@ class VacationRepository:
         for period in periods:
             full_days = period.main_days + period.additional_days
             used_days = period.used_days or 0
-            
+
             # Закрытый период - used >= total или явно сохранённый remaining_days
             is_closed = used_days >= full_days or period.remaining_days is not None
 
@@ -273,6 +272,8 @@ class VacationRepository:
                         months_passed += 1
                     accrued = round(full_days / 12 * months_passed)
                     period_total = accrued
+                elif period.period_start > today:
+                    period_total = 0
                 else:
                     period_total = full_days
 
@@ -372,82 +373,70 @@ class VacationRepository:
                     VacationPeriod.period_start <= today,
                     VacationPeriod.period_end >= today
                 )
+                .order_by(VacationPeriod.year_number.desc())
+                .limit(1)
             )
             current_period = current_period_result.scalar_one_or_none()
             
-            if current_period:
-                # Считаем остаток = (все прошлые периоды + текущий accrued) - использованные со всех периодов
-                from app.repositories.vacation_period_repository import VacationPeriodRepository
-                from dateutil.relativedelta import relativedelta
-                
-                period_repo = VacationPeriodRepository()
-                
-                # Получаем ВСЕ периоды сотрудника
-                all_periods_result = await db.execute(
-                    select(VacationPeriod)
-                    .where(
-                        VacationPeriod.employee_id == emp_id,
-                        VacationPeriod.period_start <= today
-                    )
-                    .order_by(VacationPeriod.year_number)
-                )
-                all_periods = all_periods_result.scalars().all()
-                
-                # Считаем доступные дни
-                total_available = 0
-                for p in all_periods:
-                    period_days = p.main_days + p.additional_days
-                    
-                    if p.id == current_period.id:
-                        # Текущий период - считаем помесячно
-                        rd = relativedelta(today, p.period_start)
-                        months_passed = rd.years * 12 + rd.months
-                        if rd.days > 0:
-                            months_passed += 1
-                        months_passed = min(months_passed, 12)
-                        accrued = round(period_days / 12 * months_passed)
-                        total_available += accrued
-                    elif p.period_end < today:
-                        # Прошлый период - берем полностью
-                        total_available += period_days
-                
-                # Считаем использованные дни со ВСЕХ периодов
-                total_used_result = await db.execute(
-                    select(func.sum(Vacation.days_count))
-                    .where(
-                        Vacation.employee_id == emp_id,
-                        Vacation.is_deleted == False,
-                        Vacation.is_cancelled == False
-                    )
-                )
-                total_used = total_used_result.scalar() or 0
-                
-                # Также учитываем вручную списанные дни из закрытых периодов
-                manual_used_result = await db.execute(
-                    select(func.sum(VacationPeriod.used_days))
-                    .where(VacationPeriod.employee_id == emp_id)
-                )
-                manual_used = manual_used_result.scalar() or 0
-                
-                # Берем максимум (periods.used_days включает vacations + закрытые дни)
-                total_used = max(total_used, manual_used)
-                
-                remaining = total_available - total_used
-            else:
-                # Если нет текущего периода, показываем 0
-                remaining = 0
-            
-            # Для calculated_available показываем сумму всех периодов (для истории)
-            # Получаем все периоды и суммируем вручную, исключая будущие периоды
+            from dateutil.relativedelta import relativedelta
+
+            # Получаем ВСЕ периоды сотрудника (включая будущие)
             all_periods_result = await db.execute(
                 select(VacationPeriod)
-                .where(
-                    VacationPeriod.employee_id == emp_id,
-                    VacationPeriod.period_start <= today
-                )
+                .where(VacationPeriod.employee_id == emp_id)
+                .order_by(VacationPeriod.year_number)
             )
             all_periods = all_periods_result.scalars().all()
-            calculated_available = sum((p.main_days + p.additional_days) for p in all_periods)
+
+            # Считаем доступные дни
+            total_available = 0
+            for p in all_periods:
+                period_days = p.main_days + p.additional_days
+
+                if p.period_start <= today <= p.period_end:
+                    # Текущий период - считаем помесячно
+                    rd = relativedelta(today, p.period_start)
+                    months_passed = rd.years * 12 + rd.months
+                    if rd.days > 0:
+                        months_passed += 1
+                    months_passed = min(months_passed, 12)
+                    accrued = round(period_days / 12 * months_passed)
+                    total_available += accrued
+                elif p.period_start > today:
+                    # Будущий период - ещё не начислено
+                    total_available += 0
+                else:
+                    # Прошлый период - берем полностью
+                    total_available += period_days
+
+            # Считаем использованные дни со ВСЕХ периодов
+            total_used_result = await db.execute(
+                select(func.sum(Vacation.days_count))
+                .where(
+                    Vacation.employee_id == emp_id,
+                    Vacation.is_deleted == False,
+                    Vacation.is_cancelled == False
+                )
+            )
+            total_used = total_used_result.scalar() or 0
+
+            # Также учитываем вручную списанные дни из закрытых периодов
+            manual_used_result = await db.execute(
+                select(func.sum(VacationPeriod.used_days))
+                .where(VacationPeriod.employee_id == emp_id)
+            )
+            manual_used = manual_used_result.scalar() or 0
+
+            # Берем максимум (periods.used_days включает vacations + закрытые дни)
+            total_used = max(total_used, manual_used)
+
+            remaining = total_available - total_used
+
+            # Для calculated_available показываем сумму всех периодов (включая будущие с 0)
+            calculated_available = sum(
+                (p.main_days + p.additional_days) if p.period_start <= today else 0
+                for p in all_periods
+            )
 
             employees_data.append({
                 "id": emp_id,

@@ -12,6 +12,8 @@ class VacationCreate(BaseModel):
     order_date: Optional[date] = None
     order_number: Optional[str] = Field(None, max_length=50)
     comment: Optional[str] = Field(None, max_length=500)
+    preview_id: Optional[str] = None
+    edited_html: Optional[str] = None
 
 
 class VacationUpdate(BaseModel):

@@ -130,7 +130,11 @@ class EmployeeService:
 
     async def update_employee(
         self, db: AsyncSession, employee_id: int, data: EmployeeUpdate, user_id: str
-    ) -> Employee:
+    ) -> tuple[Employee, bool]:
+        """
+        Возвращает (employee, periods_need_reset).
+        periods_need_reset=True если hire_date изменилась и периоды нужно пересоздать.
+        """
         employee = await self.get_by_id(db, employee_id)
 
         old_values = {}
@@ -140,32 +144,30 @@ class EmployeeService:
 
         employee = await repository.update(db, employee_id, update_data)
 
-        # Если изменилась дата приёма — сбросить все периоды отпусков и создать новые
+        periods_need_reset = False
+
+        # Если изменилась дата приёма — НЕ удаляем периоды автоматически,
+        # а возвращаем флаг для подтверждения пользователем
         if "hire_date" in update_data and old_values.get("hire_date") != employee.hire_date:
-            period_repo = VacationPeriodRepository()
-            deleted_count = await period_repo.delete_all_by_employee(db, employee_id)
-            if employee.hire_date:
-                await vacation_period_service.ensure_periods_for_employee(
-                    db, employee_id, employee.hire_date, employee.additional_vacation_days or 0
-                )
+            periods_need_reset = True
+            # Записываем в аудит, что дата изменена (периоды пока не трогаем)
             await repository._add_audit_entry(
-                db, employee_id, "periods_reset", user_id,
+                db, employee_id, "hire_date_changed", user_id,
                 f"Дата приёма изменена (старая: {old_values.get('hire_date')}, новая: {employee.hire_date}). "
-                f"Удалено периодов: {deleted_count}. Созданы новые периоды от новой даты.",
+                f"Требуется подтверждение для пересоздания периодов отпусков.",
                 None
             )
             audit_logger.info(
-                f"PERIODS RESET: employee_id={employee_id}, name={employee.name}, "
+                f"HIRE DATE CHANGED: employee_id={employee_id}, name={employee.name}, "
                 f"old_hire_date={old_values.get('hire_date')}, new_hire_date={employee.hire_date}, "
-                f"deleted_periods={deleted_count}",
+                f"periods_reset_pending=true",
                 extra={
                     "employee_id": employee_id,
                     "employee_name": employee.name,
-                    "action": "periods_reset",
+                    "action": "hire_date_changed",
                     "user_id": user_id,
                     "old_hire_date": str(old_values.get("hire_date")),
                     "new_hire_date": str(employee.hire_date),
-                    "deleted_periods": deleted_count,
                 }
             )
         # Иначе если изменились только additional_vacation_days — обновить существующие периоды
@@ -194,6 +196,43 @@ class EmployeeService:
                     "changed_fields": changed_fields,
                 }
             )
+
+        return employee, periods_need_reset
+
+    async def reset_employee_periods(
+        self, db: AsyncSession, employee_id: int, user_id: str
+    ) -> Employee:
+        """
+        Удаляет все периоды отпусков сотрудника и создаёт новые от текущего hire_date.
+        Вызывается после подтверждения пользователем при изменении hire_date.
+        """
+        employee = await self.get_by_id(db, employee_id)
+
+        period_repo = VacationPeriodRepository()
+        deleted_count = await period_repo.delete_all_by_employee(db, employee_id)
+
+        if employee.hire_date:
+            await vacation_period_service.ensure_periods_for_employee(
+                db, employee_id, employee.hire_date, employee.additional_vacation_days or 0
+            )
+
+        await repository._add_audit_entry(
+            db, employee_id, "periods_reset", user_id,
+            f"Периоды отпусков пересозданы после изменения даты приёма. "
+            f"Удалено периодов: {deleted_count}. Созданы новые периоды от {employee.hire_date}.",
+            None
+        )
+        audit_logger.info(
+            f"PERIODS RESET CONFIRMED: employee_id={employee_id}, name={employee.name}, "
+            f"deleted_periods={deleted_count}",
+            extra={
+                "employee_id": employee_id,
+                "employee_name": employee.name,
+                "action": "periods_reset_confirmed",
+                "user_id": user_id,
+                "deleted_periods": deleted_count,
+            }
+        )
 
         return employee
 

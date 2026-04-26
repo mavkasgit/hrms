@@ -301,7 +301,6 @@ export interface EntityDialogProps {
   editDescription: string
   addLabel: string
   saveLabel: string
-  isSaving?: boolean
 }
 
 export function EntityDialog({
@@ -318,12 +317,13 @@ export function EntityDialog({
   editDescription,
   addLabel,
   saveLabel,
-  isSaving = false,
 }: EntityDialogProps) {
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [isSaving, setIsSaving] = useState(false)
 
   const fieldsKey = JSON.stringify(fields)
+  const initialValuesKey = JSON.stringify(initialValues)
 
   useEffect(() => {
     if (!open) return
@@ -340,7 +340,7 @@ export function EntityDialog({
       }
       setValues(defaults)
     }
-  }, [open, mode, initialValues, fieldsKey])
+  }, [open, mode, initialValuesKey, fieldsKey])
 
   const setValue = useCallback((key: string, value: unknown) => {
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -362,9 +362,15 @@ export function EntityDialog({
     return Object.keys(next).length === 0
   }
 
-  const handleSave = async () => {
-    if (!validate()) return
-    await onSave(values)
+  const handleSave = () => {
+    if (!validate() || isSaving) return
+    setIsSaving(true)
+    const result = onSave(values)
+    if (result && typeof result.then === 'function') {
+      result.finally(() => setIsSaving(false))
+    } else {
+      setIsSaving(false)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

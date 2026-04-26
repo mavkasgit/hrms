@@ -10,6 +10,18 @@ export interface VacationPeriodVacation {
   is_cancelled: boolean
 }
 
+export interface VacationPeriodTransaction {
+  id: number
+  vacation_id?: number | null
+  order_id?: number | null
+  order_number?: string | null
+  days_count: number
+  transaction_type: string
+  description?: string | null
+  created_at?: string | null
+  created_by?: string | null
+}
+
 export interface VacationPeriod {
   period_id: number
   year_number: number
@@ -25,6 +37,7 @@ export interface VacationPeriod {
   order_numbers: string | null
   remaining_days: number
   vacations?: VacationPeriodVacation[]
+  transactions?: VacationPeriodTransaction[]
 }
 
 export interface VacationPeriodAdjust {

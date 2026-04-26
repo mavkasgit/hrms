@@ -13,6 +13,7 @@ export function useRecentOrders(limit = 10, year?: number) {
   return useQuery({
     queryKey: ["orders-recent", limit, year],
     queryFn: () => api.fetchRecentOrders(limit, year),
+    staleTime: 0,
   })
 }
 
@@ -56,8 +57,13 @@ export function useCreateOrder() {
   return useMutation({
     mutationFn: (data: OrderCreate) => api.createOrder(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] })
-      queryClient.invalidateQueries({ queryKey: ["orders-recent"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
       queryClient.invalidateQueries({ queryKey: ["next-order-number"] })
     },
   })
@@ -131,8 +137,8 @@ export function useSyncOrders() {
   return useMutation({
     mutationFn: (year?: number) => api.syncOrders(year),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] })
-      queryClient.invalidateQueries({ queryKey: ["orders-recent"] })
+      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
     },
   })
 }
@@ -142,8 +148,13 @@ export function useCancelOrder() {
   return useMutation({
     mutationFn: (orderId: number) => api.cancelOrder(orderId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] })
-      queryClient.invalidateQueries({ queryKey: ["orders-recent"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
     },
   })
 }
@@ -153,8 +164,13 @@ export function useDeleteOrder() {
   return useMutation({
     mutationFn: (orderId: number) => api.deleteOrder(orderId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] })
-      queryClient.invalidateQueries({ queryKey: ["orders-recent"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
     },
   })
 }

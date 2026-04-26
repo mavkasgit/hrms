@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.vacation_period import VacationPeriod
 from app.models.vacation import Vacation
+from app.models.vacation_period_transaction import VacationPeriodTransaction
 
 
 class VacationPeriodRepository:
@@ -227,3 +228,42 @@ class VacationPeriodRepository:
             await db.delete(period)
         await db.flush()
         return count
+
+    async def add_transaction(
+        self,
+        db: AsyncSession,
+        period_id: int,
+        days_count: int,
+        transaction_type: str,
+        order_id: int = None,
+        order_number: str = None,
+        vacation_id: int = None,
+        description: str = None,
+        created_by: str = None,
+    ) -> VacationPeriodTransaction:
+        """Создать запись транзакции для периода."""
+        tx = VacationPeriodTransaction(
+            period_id=period_id,
+            vacation_id=vacation_id,
+            order_id=order_id,
+            order_number=order_number,
+            days_count=days_count,
+            transaction_type=transaction_type,
+            description=description,
+            created_by=created_by or "system",
+        )
+        db.add(tx)
+        await db.flush()
+        await db.refresh(tx)
+        return tx
+
+    async def get_transactions(self, db: AsyncSession, period_id: int) -> list[VacationPeriodTransaction]:
+        """Получить все транзакции периода, отсортированные по дате отпуска (новые сверху)."""
+        from app.models.vacation import Vacation
+        result = await db.execute(
+            select(VacationPeriodTransaction)
+            .outerjoin(Vacation, VacationPeriodTransaction.order_id == Vacation.order_id)
+            .where(VacationPeriodTransaction.period_id == period_id)
+            .order_by(Vacation.start_date.desc().nulls_last(), VacationPeriodTransaction.created_at.desc())
+        )
+        return list(result.scalars().all())

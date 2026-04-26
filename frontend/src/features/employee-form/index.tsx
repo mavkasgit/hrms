@@ -27,6 +27,7 @@ import {
   useArchiveEmployee,
   useRestoreEmployee,
   useDeleteEmployee,
+  useResetEmployeePeriods,
 } from "@/entities/employee/useEmployees"
 import { Archive, Trash2, RotateCcw, Building, Briefcase } from "lucide-react"
 import { useDepartments, useCreateDepartment } from "@/entities/department"
@@ -72,12 +73,16 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showArchiveDialog, setShowArchiveDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showHireDateDialog, setShowHireDateDialog] = useState(false)
+  const [pendingUpdateData, setPendingUpdateData] = useState<EmployeeUpdate | null>(null)
+  const [isRecalculating, setIsRecalculating] = useState(false)
 
   const createMutation = useCreateEmployee()
   const updateMutation = useUpdateEmployee()
   const archiveMutation = useArchiveEmployee()
   const restoreMutation = useRestoreEmployee()
   const deleteMutation = useDeleteEmployee()
+  const resetPeriodsMutation = useResetEmployeePeriods()
   const createDept = useCreateDepartment()
   const createPos = useCreatePosition()
   const { data: departments = [] } = useDepartments()
@@ -170,22 +175,18 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
       }
       console.log(`[FORM] Данные для обновления:`, updateData)
 
-      // Предупреждение при изменении даты приёма
+      // Если изменилась дата приёма — показываем диалог ПЕРЕД отправкой
       if (employee.hire_date !== form.hire_date) {
-        const confirmed = window.confirm(
-          "Все периоды отпусков будут сброшены и созданы заново от новой даты приёма."
-        )
-        if (!confirmed) {
-          console.log(`[FORM] Пользователь отменил изменение hire_date`)
-          return
-        }
+        setPendingUpdateData(updateData)
+        setShowHireDateDialog(true)
+        return
       }
 
+      // Обычное обновление без изменения hire_date
       updateMutation.mutate(
         { employeeId: employee.id, data: updateData },
         {
           onSuccess: () => {
-            console.log(`[FORM] Сотрудник успешно обновлен, ждем 500ms перед закрытием`)
             setTimeout(() => {
               console.log(`[FORM] Закрытие формы`)
               onOpenChange(false)
@@ -211,6 +212,72 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         },
       })
     }
+  }
+
+  const handleConfirmHireDateChange = () => {
+    console.log(`[FORM] handleConfirmHireDateChange вызван`)
+    if (!employee || !pendingUpdateData) {
+      console.log(`[FORM] Нет данных для обновления`)
+      return
+    }
+    console.log(`[FORM] Сохранение hire_date и пересоздание периодов для employeeId=${employee.id}`)
+    setIsRecalculating(true)
+    const startTime = Date.now()
+
+    const finishRecalculate = () => {
+      const elapsed = Date.now() - startTime
+      const minDelay = 1500
+      const remaining = Math.max(0, minDelay - elapsed)
+      setTimeout(() => {
+        setIsRecalculating(false)
+        setShowHireDateDialog(false)
+      }, remaining)
+    }
+
+    updateMutation.mutate(
+      { employeeId: employee.id, data: pendingUpdateData },
+      {
+        onSuccess: (data) => {
+          console.log(`[FORM] Сотрудник успешно обновлен`, data)
+          if (data.periods_need_reset) {
+            resetPeriodsMutation.mutate(employee.id, {
+              onSettled: () => {
+                finishRecalculate()
+              },
+              onSuccess: () => {
+                console.log(`[FORM] Периоды успешно пересозданы`)
+                setPendingUpdateData(null)
+                setTimeout(() => {
+                  onOpenChange(false)
+                }, 500)
+              },
+              onError: (error) => {
+                console.error(`[FORM] Ошибка при пересоздании периодов:`, error)
+              },
+            })
+          } else {
+            finishRecalculate()
+            setPendingUpdateData(null)
+            setTimeout(() => {
+              onOpenChange(false)
+            }, 500)
+          }
+        },
+        onError: (error) => {
+          finishRecalculate()
+          console.error(`[FORM] Ошибка при обновлении сотрудника:`, error)
+        },
+      }
+    )
+  }
+
+  const handleCancelHireDateChange = () => {
+    console.log(`[FORM] Пользователь отменил изменение hire_date — откатываем только hire_date`)
+    if (employee) {
+      updateField("hire_date", employee.hire_date ?? null)
+    }
+    setShowHireDateDialog(false)
+    setPendingUpdateData(null)
   }
 
   const handleArchive = () => {
@@ -578,6 +645,40 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
           >
             Удалить навсегда
           </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <AlertDialog open={showHireDateDialog} onOpenChange={setShowHireDateDialog}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Изменилась дата приёма</AlertDialogTitle>
+          <AlertDialogDescription>
+            Периоды отпусков будут пересозданы от новой даты.
+            Все закрытия и списания будут потеряны. Продолжить?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={handleCancelHireDateChange}>
+            Отмена
+          </AlertDialogCancel>
+          <Button
+            onClick={handleConfirmHireDateChange}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+            disabled={isRecalculating}
+          >
+            {isRecalculating ? (
+              <span className="flex items-center gap-1.5">
+                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Пересоздание...
+              </span>
+            ) : (
+              "Пересоздать периоды"
+            )}
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

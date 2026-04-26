@@ -56,16 +56,17 @@ async def test_update_employee_hire_date_resets_vacation_periods(
     assert first_period_before.year_number == 1
 
     # Меняем hire_date на 2023-03-01
-    updated = await employee_service.update_employee(
+    updated, periods_need_reset = await employee_service.update_employee(
         db_session,
         employee.id,
         EmployeeUpdate(hire_date=date(2023, 3, 1)),
         "test_user",
     )
     assert updated.hire_date == date(2023, 3, 1)
+    assert periods_need_reset is True
 
-    # Проверяем, что старые периоды удалены и созданы новые
-    periods_after = list(
+    # Периоды НЕ должны быть сброшены автоматически — ждём подтверждения пользователя
+    periods_after_update = list(
         (
             await db_session.execute(
                 select(VacationPeriod)
@@ -74,8 +75,25 @@ async def test_update_employee_hire_date_resets_vacation_periods(
             )
         ).scalars().all()
     )
-    assert len(periods_after) >= 1
-    first_period_after = periods_after[0]
+    # Старые периоды должны остаться (от старой даты)
+    assert len(periods_after_update) >= 1
+    assert periods_after_update[0].period_start == date(2023, 1, 15)
+
+    # Пользователь подтверждает пересоздание периодов
+    await employee_service.reset_employee_periods(db_session, employee.id, "test_user")
+
+    # Проверяем, что старые периоды удалены и созданы новые
+    periods_after_reset = list(
+        (
+            await db_session.execute(
+                select(VacationPeriod)
+                .where(VacationPeriod.employee_id == employee.id)
+                .order_by(VacationPeriod.year_number)
+            )
+        ).scalars().all()
+    )
+    assert len(periods_after_reset) >= 1
+    first_period_after = periods_after_reset[0]
     assert first_period_after.period_start == date(2023, 3, 1)
     assert first_period_after.year_number == 1
     assert first_period_after.used_days == 0
@@ -139,13 +157,14 @@ async def test_update_employee_additional_days_without_hire_date_change(
     assert periods_before[0].additional_days == 5
 
     # Меняем только additional_vacation_days, hire_date не трогаем
-    updated = await employee_service.update_employee(
+    updated, periods_need_reset = await employee_service.update_employee(
         db_session,
         employee.id,
         EmployeeUpdate(additional_vacation_days=10),
         "test_user",
     )
     assert updated.additional_vacation_days == 10
+    assert periods_need_reset is False
 
     periods_after = list(
         (
@@ -198,7 +217,7 @@ async def test_update_employee_same_hire_date_does_not_reset(
     count_before = len(periods_before)
 
     # Отправляем тот же hire_date (симуляция frontend, который шлёт все поля)
-    updated = await employee_service.update_employee(
+    updated, periods_need_reset = await employee_service.update_employee(
         db_session,
         employee.id,
         EmployeeUpdate(hire_date=date(2024, 6, 1), name="Third Employee Updated"),
@@ -206,6 +225,7 @@ async def test_update_employee_same_hire_date_does_not_reset(
     )
     assert updated.name == "Third Employee Updated"
     assert updated.hire_date == date(2024, 6, 1)
+    assert periods_need_reset is False
 
     periods_after = list(
         (

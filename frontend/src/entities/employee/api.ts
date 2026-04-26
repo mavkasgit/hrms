@@ -43,6 +43,16 @@ export async function updateEmployee(employeeId: number, employee: EmployeeUpdat
   return data
 }
 
+export async function resetEmployeePeriods(employeeId: number) {
+  const { data } = await api.post<Employee>(`/employees/${employeeId}/reset-periods`)
+  return data
+}
+
+export async function fetchEmployeePeriodsStatus(employeeId: number) {
+  const { data } = await api.get<{ mismatch: boolean }>(`/employees/${employeeId}/periods-status`)
+  return data
+}
+
 export async function archiveEmployee(employeeId: number, reason?: string) {
   const { data } = await api.post<Employee & { warnings?: string[] }>(
     `/employees/${employeeId}/archive`,

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel
@@ -25,6 +25,20 @@ class VacationPeriodResponse(VacationPeriodBase):
     model_config = {"from_attributes": True}
 
 
+class VacationPeriodTransactionResponse(BaseModel):
+    id: int
+    vacation_id: Optional[int] = None
+    order_id: Optional[int] = None
+    order_number: Optional[str] = None
+    days_count: int
+    transaction_type: str
+    description: Optional[str] = None
+    created_at: Optional[datetime] = None
+    created_by: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class VacationPeriodBalance(BaseModel):
     period_id: int
     year_number: int
@@ -40,6 +54,7 @@ class VacationPeriodBalance(BaseModel):
     order_numbers: Optional[str] = None  # Номера приказов для отображения
     remaining_days: int
     vacations: list[dict] = []  # Отпуска, которые списали дни из этого периода
+    transactions: list[VacationPeriodTransactionResponse] = []
 
 
 class VacationPeriodAdjust(BaseModel):

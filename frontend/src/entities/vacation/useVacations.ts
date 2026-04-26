@@ -59,12 +59,14 @@ export function useCreateVacation() {
       return api.createVacation(data)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["vacations"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
       queryClient.invalidateQueries({ queryKey: ["vacation-balance"] })
-      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
-      queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
-      queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
-      queryClient.invalidateQueries({ queryKey: ["orders-recent"] })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
     },
     onError: (error) => {
       console.error("[useCreateVacation] error:", error)
@@ -77,10 +79,12 @@ export function useUpdateVacation() {
   return useMutation({
     mutationFn: ({ id, data }: { id: number; data: VacationUpdate }) => api.updateVacation(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["vacations"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
       queryClient.invalidateQueries({ queryKey: ["vacation-balance"] })
-      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
-      queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
     },
   })
 }
@@ -90,10 +94,12 @@ export function useDeleteVacation() {
   return useMutation({
     mutationFn: (id: number) => api.deleteVacation(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["vacations"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
       queryClient.invalidateQueries({ queryKey: ["vacation-balance"] })
-      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
-      queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
     },
   })
 }
@@ -103,10 +109,12 @@ export function useCancelVacation() {
   return useMutation({
     mutationFn: (id: number) => api.cancelVacation(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["vacations"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
       queryClient.invalidateQueries({ queryKey: ["vacation-balance"] })
-      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
-      queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
     },
   })
 }

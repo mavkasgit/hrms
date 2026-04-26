@@ -32,6 +32,7 @@ test.describe('Генерация отпускных периодов', () => {
 
   test('2) структура дат периода (contract_start + 12мес * year)', async ({ apiOps }) => {
     const emp = await apiOps.createEmployee({
+      hire_date: '2024-03-01',
       contract_start: '2024-03-01',
     })
 

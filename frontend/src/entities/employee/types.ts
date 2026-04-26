@@ -38,6 +38,7 @@ export interface Employee {
   archived_by: string | null
   archived_at: string | null
   is_deleted: boolean
+  periods_need_reset?: boolean
 }
 
 export interface EmployeeListResponse {

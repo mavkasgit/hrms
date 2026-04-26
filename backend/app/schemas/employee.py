@@ -137,6 +137,7 @@ class EmployeeResponse(BaseModel):
     archived_by: Optional[str] = None
     archived_at: Optional[datetime] = None
     is_deleted: bool
+    periods_need_reset: Optional[bool] = None
 
     model_config = {"from_attributes": True}
 

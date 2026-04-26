@@ -558,6 +558,7 @@ export function DepartmentsTab() {
           color: deptColor,
         }}
         onSave={(v) => {
+          setDialogOpen(false)
           if (dialogMode === "add") {
             createDept.mutate({
               name: String(v.name).trim(),
@@ -578,7 +579,6 @@ export function DepartmentsTab() {
               },
             })
           }
-          setDialogOpen(false)
         }}
         addTitle="Добавить подразделение"
         editTitle="Редактировать подразделение"

@@ -10,6 +10,7 @@ from app.core.exceptions import (
 )
 from app.repositories.vacation_period_repository import VacationPeriodRepository
 from app.repositories.vacation_repository import vacation_repository
+from app.services.vacation_period_service import vacation_period_service
 from app.services.vacation_service import vacation_service
 
 WORK_VACATION_TYPE = "Трудовой"
@@ -66,10 +67,7 @@ async def test_create_vacation_uses_holiday_adjusted_days_and_auto_use(
     with patch(
         "app.services.vacation_service.references_repository.get_holidays_for_year",
         new=AsyncMock(return_value=[date(2024, 4, 3)]),
-    ), patch(
-        "app.services.vacation_service.vacation_period_service.check_balance_before_create",
-        new=AsyncMock(),
-    ) as check_balance, patch("app.services.vacation_service.auto_use_days", new=AsyncMock()) as auto_use_days:
+    ), patch("app.services.vacation_service.auto_use_days", new=AsyncMock()) as auto_use_days:
         result = await vacation_service.create_vacation(
             db_session,
             {
@@ -89,8 +87,11 @@ async def test_create_vacation_uses_holiday_adjusted_days_and_auto_use(
     assert stored_vacation.comment == "integration-create"
     assert result["order_id"] == stored_vacation.order_id
     assert result["order_number"] is not None
-    assert check_balance.await_args.args == (db_session, employee.id, 4)
-    assert auto_use_days.await_args.args == (db_session, employee.id, 4, stored_vacation.order_id, result["order_number"])
+    assert auto_use_days.await_args.args == (
+        db_session, employee.id, 4,
+        employee.hire_date, employee.additional_vacation_days or 0,
+        stored_vacation.order_id, result["order_number"],
+    )
 
 
 async def test_create_vacation_fails_when_holidays_consume_entire_range(
@@ -179,7 +180,7 @@ async def test_delete_vacation_restores_period_usage(
         vacation_year=2024,
         vacation_type=WORK_VACATION_TYPE,
     )
-    period = await create_vacation_period(
+    await create_vacation_period(
         employee=employee,
         period_start=date(2024, 1, 15),
         period_end=date(2025, 1, 14),
@@ -190,15 +191,15 @@ async def test_delete_vacation_restores_period_usage(
 
     result = await vacation_service.delete_vacation(db_session, vacation.id, "admin")
 
-    period_repo = VacationPeriodRepository()
-    restored_period = await period_repo.get_by_id(db_session, period.id)
     deleted_vacation = await vacation_repository.get_by_id(db_session, vacation.id)
+    periods = await vacation_period_service.get_employee_periods(db_session, employee.id)
 
     assert result is True
-    assert restored_period is not None
-    assert restored_period.used_days == 0
-    assert restored_period.used_days_auto == 0
     assert deleted_vacation is None
+    # После recalculate_periods периоды пересозданы, баланс восстановлен
+    assert len(periods) > 0
+    total_used = sum(p.used_days for p in periods)
+    assert total_used == 0
 
 
 async def test_cancel_vacation_marks_vacation_as_cancelled(

@@ -43,3 +43,10 @@ export async function partialClosePeriod(
   )
   return data
 }
+
+export async function recalculateVacationPeriods(employeeId: number): Promise<VacationPeriod[]> {
+  const { data } = await api.post<VacationPeriod[]>(
+    `/employees/${employeeId}/recalculate-periods`,
+  )
+  return data
+}
