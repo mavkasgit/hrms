@@ -290,13 +290,13 @@ export function EmployeesPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Таб. №</TableHead>
+              <TableHead className="px-2 py-1">Таб. №</TableHead>
               <SortHeader field="name">ФИО</SortHeader>
               <SortHeader field="department">Подразделение</SortHeader>
               <SortHeader field="position">Должность</SortHeader>
               <SortHeader field="age">Возраст</SortHeader>
               <SortHeader field="hire_date">Конец контракта</SortHeader>
-              <TableHead className="text-right"></TableHead>
+              <TableHead className="text-right px-2 py-1"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -308,15 +308,15 @@ export function EmployeesPage() {
                   className={`${emp.is_archived ? "bg-muted/30" : ""} cursor-pointer hover:bg-muted/50 transition-colors`}
                   onClick={() => handleEdit(emp)}
                 >
-                  <TableCell className="font-mono text-sm">{emp.tab_number ?? "—"}</TableCell>
-                  <TableCell className="font-medium">{emp.name}</TableCell>
-                  <TableCell>{emp.department?.name ?? "—"}</TableCell>
-                  <TableCell>{emp.position?.name ?? "—"}</TableCell>
-                  <TableCell>{age !== null ? `${age} лет` : "—"}</TableCell>
-                  <TableCell>
+                  <TableCell className="font-mono text-sm px-2 py-0.5">{emp.tab_number ?? "—"}</TableCell>
+                  <TableCell className="font-medium px-2 py-0.5">{emp.name}</TableCell>
+                  <TableCell className="px-2 py-0.5">{emp.department?.name ?? "—"}</TableCell>
+                  <TableCell className="px-2 py-0.5">{emp.position?.name ?? "—"}</TableCell>
+                  <TableCell className="px-2 py-0.5">{age !== null ? `${age} лет` : "—"}</TableCell>
+                  <TableCell className="px-2 py-0.5">
                     {emp.contract_end ? new Date(emp.contract_end).toLocaleDateString("ru-RU") : "—"}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right px-2 py-0.5">
                     <Button
                       variant="ghost"
                       size="icon"

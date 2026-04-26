@@ -1,10 +1,8 @@
-import { useState, useEffect, useRef, useId } from "react"
+import { useState, useEffect, useId, useRef } from "react"
 import { ListFilter } from "lucide-react"
 import { Input } from "@/shared/ui/input"
-import { useRecentOrders } from "@/entities/order/useOrders"
-import { useQueryClient } from "@tanstack/react-query"
-import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
-import type { Order } from "@/entities/order/types"
+import { useNextOrderNumber, useRecentOrders } from "@/entities/order/useOrders"
+import type { OrderType, Order } from "@/entities/order/types"
 
 function formatOrderDate(dateStr: string): string {
   const d = new Date(dateStr)
@@ -41,35 +39,78 @@ function RecentOrdersList({ orders, onSelect }: { orders: Order[]; onSelect: (nu
 interface OrderNumberFieldProps {
   value: string
   onChange: (v: string) => void
+  orderTypeId?: number
+  orderTypes?: OrderType[]
   required?: boolean
   error?: string
 }
 
-export function OrderNumberField({ value, onChange, required, error }: OrderNumberFieldProps) {
+export function OrderNumberField({
+  value,
+  onChange,
+  orderTypeId,
+  orderTypes,
+  required,
+  error,
+}: OrderNumberFieldProps) {
   const id = useId()
-  const queryClient = useQueryClient()
-  const { data } = useRecentOrders(100)
-  const orders = data || []
+  const [numericValue, setNumericValue] = useState("")
+  const [letter, setLetter] = useState<string | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const { data: suggestedNumber } = useNextOrderNumber(orderTypeId)
+  const { data: recentOrdersData } = useRecentOrders(100)
+  const recentOrders = (recentOrdersData || []).filter((o) => {
+    if (!letter) return true
+    return o.order_number.endsWith(`-${letter}`)
+  })
+
   useEffect(() => {
-    const computed = computeNextOrderNumber(orders)
-    if (computed) {
-      onChange(computed)
+    if (!orderTypeId || !orderTypes) {
+      setLetter(null)
+      onChange("")
+      setNumericValue("")
+      return
     }
-  }, [orders, onChange])
+    const type = orderTypes.find((t) => t.id === orderTypeId)
+    setLetter(type?.letter ?? null)
+  }, [orderTypeId, orderTypes, onChange])
+
+  useEffect(() => {
+    if (suggestedNumber && !value) {
+      onChange(suggestedNumber)
+    }
+  }, [suggestedNumber, value, onChange])
+
+  useEffect(() => {
+    if (value && letter) {
+      const parts = value.split("-")
+      setNumericValue(parts[0] || "")
+    } else if (value) {
+      setNumericValue(value)
+    } else {
+      setNumericValue("")
+    }
+  }, [value, letter])
+
+  const handleNumericChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const num = e.target.value.replace(/\D/g, "")
+    setNumericValue(num)
+    if (letter) {
+      onChange(num ? `${num}-${letter}` : "")
+    } else {
+      onChange(num)
+    }
+  }
 
   const handleMouseEnter = () => {
     if (timerRef.current) clearTimeout(timerRef.current)
-    // Принудительно обновляем данные при открытии поповера
-    queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
-    queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
     setPopoverOpen(true)
   }
 
   const handleMouseLeave = () => {
-    timerRef.current = setTimeout(() => setPopoverOpen(false), 100)
+    timerRef.current = setTimeout(() => setPopoverOpen(false), 200)
   }
 
   const hasError = error || (required && !value)
@@ -81,26 +122,43 @@ export function OrderNumberField({ value, onChange, required, error }: OrderNumb
         {required && <span className="text-red-500 ml-1">*</span>}
       </label>
       <div
-        className="relative inline-block w-[105px]"
+        className="relative inline-block"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <Input
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={`h-10 text-sm pr-7 ${hasError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
-          onFocus={(e) => e.target.select()}
-        />
-        <ListFilter className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        <div className="flex items-center gap-1">
+          <div className="relative">
+            <Input
+              id={id}
+              value={numericValue}
+              onChange={handleNumericChange}
+              className={`h-10 text-sm w-[100px] pr-7 ${hasError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+              onFocus={(e) => e.target.select()}
+            />
+            <ListFilter className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          </div>
+          {letter && (
+            <span className="text-sm text-muted-foreground px-2 py-2 h-10 border rounded-md bg-muted flex items-center">
+              -{letter}
+            </span>
+          )}
+        </div>
         {popoverOpen && (
           <div
             className="absolute top-full left-0 mt-1 min-w-[420px] border rounded-md bg-background p-2 z-50 shadow-lg"
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
           >
-            <p className="text-xs font-semibold mb-2 text-muted-foreground">Последние приказы</p>
-            <RecentOrdersList orders={orders} onSelect={(num) => { onChange(num); setPopoverOpen(false) }} />
+            <p className="text-xs font-semibold mb-2 text-muted-foreground">Последние приказы ({letter ? `литера ${letter}` : "все"})</p>
+            <RecentOrdersList
+              orders={recentOrders}
+              onSelect={(num) => {
+                const parts = num.split("-")
+                setNumericValue(parts[0] || "")
+                onChange(num)
+                setPopoverOpen(false)
+              }}
+            />
           </div>
         )}
       </div>

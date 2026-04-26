@@ -67,12 +67,12 @@ function ColorPicker({
 
   if (compact) {
     return (
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 h-10">
         <Popover>
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="size-8 shrink-0 rounded-md border shadow-sm cursor-pointer transition-transform hover:scale-105 active:scale-95"
+              className="size-10 shrink-0 rounded-md border shadow-sm cursor-pointer transition-transform hover:scale-105 active:scale-95"
               style={{ backgroundColor: value }}
             />
           </PopoverTrigger>
@@ -95,7 +95,7 @@ function ColorPicker({
         </Popover>
 
         <label
-          className="relative shrink-0 flex items-center gap-1 px-2 py-1 rounded-md border text-[12px] font-medium cursor-pointer transition-colors whitespace-nowrap hover:bg-accent"
+          className="relative shrink-0 flex items-center gap-1 px-2 h-10 rounded-md border text-[12px] font-medium cursor-pointer transition-colors whitespace-nowrap hover:bg-accent"
         >
           <input
             ref={colorInputRef}

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as api from "./api"
-import type { OrderCreate, OrdersQueryParams, OrderTypeCreate, OrderTypeUpdate } from "./types"
+import type { OrderCreate, OrderUpdate, OrdersQueryParams, OrderTypeCreate, OrderTypeUpdate } from "./types"
 
 export function useOrders(params: OrdersQueryParams) {
   return useQuery({
@@ -45,10 +45,23 @@ export function useTemplateVariables() {
   })
 }
 
-export function useNextOrderNumber(year?: number) {
+export function useNextOrderNumber(orderTypeId?: number) {
   return useQuery({
-    queryKey: ["next-order-number", year],
-    queryFn: () => api.fetchNextOrderNumber(year),
+    queryKey: ["next-order-number", orderTypeId],
+    queryFn: () => api.fetchNextOrderNumber(orderTypeId!),
+    enabled: !!orderTypeId,
+  })
+}
+
+export function useUpdateOrder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ orderId, payload }: { orderId: number; payload: OrderUpdate }) =>
+      api.updateOrder(orderId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
+    },
   })
 }
 

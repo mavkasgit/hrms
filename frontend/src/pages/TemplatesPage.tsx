@@ -15,6 +15,13 @@ import {
   TableRow,
 } from "@/shared/ui/table"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/ui/select"
+import {
   useAllOrderTypes,
   useCreateOrderType,
   useDeleteOrderType,
@@ -43,9 +50,11 @@ export function TemplatesPage() {
   const deleteTemplateMutation = useDeleteTemplate()
 
   const [newName, setNewName] = useState("")
+  const [newLetter, setNewLetter] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [draftName, setDraftName] = useState("")
   const [draftPattern, setDraftPattern] = useState("")
+  const [draftLetter, setDraftLetter] = useState<string | null>(null)
   const [draftFields, setDraftFields] = useState<OrderTypeFieldSchema[]>([])
   const [variablesExpanded, setVariablesExpanded] = useState(() => {
     const saved = localStorage.getItem("templatesPage.variablesExpanded")
@@ -71,6 +80,7 @@ export function TemplatesPage() {
     setEditingId(orderType.id)
     setDraftName(orderType.name)
     setDraftPattern(orderType.filename_pattern || "")
+    setDraftLetter(orderType.letter || null)
     setDraftFields(orderType.field_schema.length ? orderType.field_schema : [emptyField()])
   }
 
@@ -81,6 +91,7 @@ export function TemplatesPage() {
       payload: {
         name: draftName,
         filename_pattern: draftPattern || null,
+        letter: draftLetter,
         field_schema: draftFields.filter((field) => field.key.trim() && field.label.trim()),
       },
     })
@@ -192,6 +203,7 @@ export function TemplatesPage() {
               <TableRow>
                 <TableHead>Название</TableHead>
                 <TableHead>Code</TableHead>
+                <TableHead>Литера</TableHead>
                 <TableHead>Где показывается</TableHead>
                 <TableHead>Шаблон</TableHead>
                 <TableHead>Статус</TableHead>
@@ -203,6 +215,7 @@ export function TemplatesPage() {
                 <TableRow key={orderType.id}>
                   <TableCell>{orderType.name}</TableCell>
                   <TableCell className="font-mono text-sm">{orderType.code}</TableCell>
+                  <TableCell className="font-mono text-sm">{orderType.letter ?? "—"}</TableCell>
                   <TableCell>{orderType.show_in_orders_page ? "Общий журнал" : "Только в отпусках"}</TableCell>
                   <TableCell>{orderType.template_filename || "—"}</TableCell>
                   <TableCell>{orderType.is_active ? "Активен" : "Архив"}</TableCell>
@@ -273,8 +286,17 @@ export function TemplatesPage() {
           {editingId !== null && (
             <div className="rounded-lg border bg-card p-4 space-y-4">
               <h2 className="text-lg font-semibold">Редактирование типа</h2>
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-3">
                 <Input value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Название" />
+                <select
+                  value={draftLetter || ""}
+                  onChange={(e) => setDraftLetter(e.target.value || null)}
+                  className="h-10 px-3 border rounded-md text-sm bg-background"
+                >
+                  <option value="">—</option>
+                  <option value="л">л</option>
+                  <option value="к">к</option>
+                </select>
                 <Input
                   value={draftPattern}
                   onChange={(e) => setDraftPattern(e.target.value)}
@@ -361,18 +383,33 @@ export function TemplatesPage() {
             placeholder="Название"
             className="max-w-[200px]"
             onKeyDown={(e) => {
-              if (e.key === "Enter" && newName.trim()) {
-                createMutation.mutate({ code: newName.trim().toLowerCase().replace(/\s+/g, "_"), name: newName, field_schema: [] })
+              if (e.key === "Enter" && newName.trim() && newLetter) {
+                createMutation.mutate({ code: newName.trim().toLowerCase().replace(/\s+/g, "_"), name: newName, field_schema: [], letter: newLetter })
                 setNewName("")
+                setNewLetter(null)
               }
             }}
           />
+          <Select
+            value={newLetter || ""}
+            onValueChange={(v) => setNewLetter(v || null)}
+          >
+            <SelectTrigger className="w-[100px]">
+              <SelectValue placeholder="Литера" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="л">л</SelectItem>
+              <SelectItem value="к">к</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             onClick={() => {
-              createMutation.mutate({ code: newName.trim().toLowerCase().replace(/\s+/g, "_"), name: newName, field_schema: [] })
+              if (!newLetter) return
+              createMutation.mutate({ code: newName.trim().toLowerCase().replace(/\s+/g, "_"), name: newName, field_schema: [], letter: newLetter })
               setNewName("")
+              setNewLetter(null)
             }}
-            disabled={!newName.trim() || createMutation.isPending}
+            disabled={!newName.trim() || !newLetter || createMutation.isPending}
           >
             <Plus className="mr-2 h-4 w-4" />
             Создать тип

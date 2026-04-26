@@ -12,6 +12,7 @@ import type {
   OrderTypeUpdate,
   OrderPreviewResponse,
   TemplateVariablesResponse,
+  OrderUpdate,
 } from "./types"
 
 export async function fetchOrders(params: OrdersQueryParams) {
@@ -61,11 +62,16 @@ export async function fetchTemplateVariables() {
   return data.variables
 }
 
-export async function fetchNextOrderNumber(year?: number) {
+export async function fetchNextOrderNumber(orderTypeId: number) {
   const { data } = await api.get<{ order_number: string }>("/orders/next-number", {
-    params: { year },
+    params: { order_type_id: orderTypeId },
   })
   return data.order_number
+}
+
+export async function updateOrder(orderId: number, payload: OrderUpdate) {
+  const { data } = await api.put<Order>(`/orders/${orderId}`, payload)
+  return data
 }
 
 export async function createOrder(order: OrderCreate) {

@@ -14,6 +14,7 @@ export interface OrderType {
   template_filename: string | null
   field_schema: OrderTypeFieldSchema[]
   filename_pattern: string | null
+  letter: string | null
   template_exists: boolean
   file_size: number | null
   last_modified: string | null
@@ -81,6 +82,7 @@ export interface OrderTypeCreate {
   template_filename?: string | null
   field_schema?: OrderTypeFieldSchema[]
   filename_pattern?: string | null
+  letter?: string | null
 }
 
 export interface OrderTypeUpdate {
@@ -89,6 +91,7 @@ export interface OrderTypeUpdate {
   show_in_orders_page?: boolean
   field_schema?: OrderTypeFieldSchema[]
   filename_pattern?: string | null
+  letter?: string | null
 }
 
 export interface TemplateVariable {
@@ -110,4 +113,11 @@ export interface OrderSyncResponse {
   message: string
   deleted: number
   added: number
+}
+
+export interface OrderUpdate {
+  order_number?: string | null
+  order_date?: string | null
+  notes?: string | null
+  extra_fields?: Record<string, string | number> | null
 }

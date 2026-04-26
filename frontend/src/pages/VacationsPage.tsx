@@ -863,7 +863,14 @@ export function VacationsPage() {
                   <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
                   {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                 </div>
-                <OrderNumberField value={orderNumber} onChange={setOrderNumber} required error={errors.orderNumber} />
+                <OrderNumberField
+                  value={orderNumber}
+                  onChange={setOrderNumber}
+                  orderTypeId={vacationOrderType?.id}
+                  orderTypes={orderTypes}
+                  required
+                  error={errors.orderNumber}
+                />
                 <div className="w-[130px]">
                   <DatePicker label="Дата начала *" value={startDate} onChange={setStartDate} />
                   {errors.startDate && <p className="text-xs text-red-500 mt-1">{errors.startDate}</p>}

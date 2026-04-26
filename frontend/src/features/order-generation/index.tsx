@@ -10,8 +10,7 @@ import {
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
-import { useCreateOrder, useCreateOrderPreview, useOrderTypes, useRecentOrders } from "@/entities/order/useOrders"
-import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
+import { useCreateOrder, useCreateOrderPreview, useOrderTypes } from "@/entities/order/useOrders"
 import type { Employee } from "@/entities/employee/types"
 import type { OrderCreate } from "@/entities/order/types"
 import { OrderPreviewDialog } from "@/features/order-preview/OrderPreviewDialog"
@@ -30,7 +29,6 @@ export function OrderGeneration({ open, onOpenChange, employee }: OrderGeneratio
   const [extraFields, setExtraFields] = useState<Record<string, string>>({})
 
   const { data: orderTypes = [] } = useOrderTypes(true)
-  const { data: recentOrders } = useRecentOrders(1000, new Date().getFullYear())
   const createMutation = useCreateOrder()
   const previewMutation = useCreateOrderPreview()
   const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
@@ -42,12 +40,6 @@ export function OrderGeneration({ open, onOpenChange, employee }: OrderGeneratio
     () => orderTypes.find((item) => item.id === selectedOrderTypeId) ?? null,
     [orderTypes, selectedOrderTypeId],
   )
-
-  const computedNextNumber = computeNextOrderNumber(recentOrders || [])
-
-  useEffect(() => {
-    if (computedNextNumber && !orderNumber) setOrderNumber(computedNextNumber)
-  }, [computedNextNumber, orderNumber])
 
   useEffect(() => {
     if (!open) {

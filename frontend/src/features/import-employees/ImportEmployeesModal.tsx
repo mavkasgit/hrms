@@ -218,7 +218,7 @@ export function ImportEmployeesModal({ open, onOpenChange, onImportComplete }: I
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[98vw] w-full max-h-[95vh] overflow-hidden flex flex-col">
+      <DialogContent className={`w-full max-h-[95vh] overflow-hidden flex flex-col ${step === "mapping" ? "max-w-[95vw]" : "max-w-2xl"}`}>
         <DialogHeader>
           <DialogTitle>Импорт сотрудников из Excel</DialogTitle>
           <DialogDescription>
@@ -307,7 +307,7 @@ export function ImportEmployeesModal({ open, onOpenChange, onImportComplete }: I
 
             {/* Таблица с выпадающими списками над колонками — скролл в обе стороны */}
             <div className="flex-1 overflow-auto border rounded-lg">
-              <table className="text-sm" style={{ minWidth: "1600px" }}>
+              <table className="text-sm">
                 <thead className="bg-muted sticky top-0 z-10">
                   {/* Row 1: Mapping dropdowns */}
                   <tr>
@@ -315,12 +315,12 @@ export function ImportEmployeesModal({ open, onOpenChange, onImportComplete }: I
                       const mappedField = Object.entries(mapping).find(([, v]) => v === h)?.[0]
                       const isMapped = !!mappedField
                       return (
-                        <th key={`map-${colIdx}`} className={`px-2 py-2 min-w-[140px] ${isMapped ? "bg-blue-50" : ""}`}>
+                        <th key={`map-${colIdx}`} className={`px-1 py-1 border-r last:border-r-0 ${isMapped ? "bg-blue-50" : ""}`}>
                           <Select
                             value={mappedField || ""}
                             onValueChange={(val) => handleMappingChange(val, h)}
                           >
-                            <SelectTrigger className={`h-8 text-xs ${isMapped ? "border-blue-400 bg-blue-50" : ""}`}>
+                            <SelectTrigger className={`h-7 text-xs px-1 overflow-hidden whitespace-nowrap ${isMapped ? "border-blue-400 bg-blue-50" : ""}`}>
                               <SelectValue placeholder="—" />
                             </SelectTrigger>
                             <SelectContent>
@@ -338,8 +338,8 @@ export function ImportEmployeesModal({ open, onOpenChange, onImportComplete }: I
                   {/* Row 2: Excel headers */}
                   <tr className="border-t">
                     {parsed.headers.map((h, colIdx) => (
-                      <th key={`hdr-${colIdx}`} className="px-2 py-1 text-left text-xs text-muted-foreground font-normal sticky top-[41px] bg-muted z-10 border-b">
-                        {h}
+                      <th key={`hdr-${colIdx}`} className="px-1 py-0.5 text-left text-xs text-muted-foreground font-normal sticky top-[33px] bg-muted z-10 border-b border-r last:border-r-0 overflow-hidden whitespace-nowrap">
+                        <div className="truncate max-w-[200px]">{h}</div>
                       </th>
                     ))}
                   </tr>
@@ -348,8 +348,8 @@ export function ImportEmployeesModal({ open, onOpenChange, onImportComplete }: I
                   {parsed.rows.map((row, rowIdx) => (
                     <tr key={rowIdx} className="border-t hover:bg-accent/50">
                       {row.map((cell, colIdx) => (
-                        <td key={colIdx} className="px-2 py-1 text-xs whitespace-nowrap">
-                          {cell}
+                        <td key={colIdx} className="px-1 py-0.5 text-xs border-r last:border-r-0 overflow-hidden whitespace-nowrap">
+                          <div className="truncate max-w-[200px]">{cell}</div>
                         </td>
                       ))}
                     </tr>

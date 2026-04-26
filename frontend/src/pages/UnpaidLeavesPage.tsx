@@ -370,7 +370,14 @@ export function UnpaidLeavesPage() {
                   <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
                   {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                 </div>
-                <OrderNumberField value={orderNumber} onChange={setOrderNumber} required error={errors.orderNumber} />
+                <OrderNumberField
+                  value={orderNumber}
+                  onChange={setOrderNumber}
+                  orderTypeId={unpaidLeaveType?.id}
+                  orderTypes={orderTypes}
+                  required
+                  error={errors.orderNumber}
+                />
                 <div className="w-[130px]">
                   <DatePicker label="Дата начала *" value={vacationStart} onChange={setVacationStart} />
                   {errors.vacationStart && <p className="text-xs text-red-500 mt-1">{errors.vacationStart}</p>}

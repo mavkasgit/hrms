@@ -411,7 +411,14 @@ export function WeekendCallsPage() {
                   <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
                   {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                 </div>
-                <OrderNumberField value={orderNumber} onChange={setOrderNumber} required error={errors.orderNumber} />
+                <OrderNumberField
+                  value={orderNumber}
+                  onChange={setOrderNumber}
+                  orderTypeId={weekendCallType?.id}
+                  orderTypes={orderTypes}
+                  required
+                  error={errors.orderNumber}
+                />
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Режим</label>
                   <div className="flex gap-2">

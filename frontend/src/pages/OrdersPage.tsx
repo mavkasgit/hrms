@@ -35,7 +35,6 @@ import {
   useCancelOrder,
   useDeleteOrder,
 } from "@/entities/order/useOrders"
-import { computeNextOrderNumber } from "@/entities/order/computeNextOrderNumber"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { calculateDaysBetween, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
 import { useSearchEmployees, useEmployees } from "@/entities/employee/useEmployees"
@@ -103,14 +102,6 @@ export function OrdersPage() {
     if (deleteOrderId) deleteMutation.mutate(deleteOrderId)
     setDeleteOrderId(null)
   }
-
-  const computedNextNumber = computeNextOrderNumber(data?.items || [])
-
-  useEffect(() => {
-    if (computedNextNumber && !orderNumber) {
-      setOrderNumber(computedNextNumber)
-    }
-  }, [computedNextNumber])
 
   useEffect(() => {
     const changed = lastChangedRef.current
@@ -423,7 +414,14 @@ export function OrdersPage() {
                     {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                   </div>
 
-                  <OrderNumberField value={orderNumber} onChange={setOrderNumber} required error={errors.orderNumber} />
+                  <OrderNumberField
+                    value={orderNumber}
+                    onChange={setOrderNumber}
+                    orderTypeId={selectedOrderTypeId ?? undefined}
+                    orderTypes={orderTypes}
+                    required
+                    error={errors.orderNumber}
+                  />
                 </div>
               </div>
 
