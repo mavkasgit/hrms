@@ -3,6 +3,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.department_graph import TagRef
+
 
 class EmployeeBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -96,7 +98,9 @@ class EmployeeArchive(BaseModel):
 class DepartmentInfo(BaseModel):
     id: int
     name: str
-    
+    color: Optional[str] = None
+    icon: Optional[str] = None
+
     model_config = {"from_attributes": True}
 
 
@@ -142,8 +146,20 @@ class EmployeeResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class EmployeeWithTagsResponse(EmployeeResponse):
+    tags: list[TagRef] = []
+
+
 class EmployeeListResponse(BaseModel):
     items: list[EmployeeResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+
+
+class EmployeeListWithTagsResponse(BaseModel):
+    items: list[EmployeeWithTagsResponse]
     total: int
     page: int
     per_page: int

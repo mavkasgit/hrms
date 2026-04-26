@@ -10,6 +10,9 @@ from app.services.vacation_plan_service import vacation_plan_service
 router = APIRouter(prefix="/vacation-plans", tags=["vacation-plans"])
 
 
+VacationPlanResponseOrNone = Optional[VacationPlanResponse]
+
+
 def _get_current_user_stub() -> str:
     return "admin"
 
@@ -38,7 +41,7 @@ async def get_vacation_plans_summary(
     return await vacation_plan_service.get_summary(db, year)
 
 
-@router.post("", response_model=VacationPlanResponse, status_code=201)
+@router.post("", response_model=VacationPlanResponseOrNone, status_code=200)
 async def create_or_update_vacation_plan(
     data: VacationPlanCreate,
     db: AsyncSession = Depends(get_db),

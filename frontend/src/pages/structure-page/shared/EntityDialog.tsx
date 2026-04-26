@@ -37,11 +37,11 @@ const ICON_LIST = [
   "DollarSign","CreditCard","Wallet","Receipt","Package","Truck","Box","Tag",
 ]
 
-const LUCIDE = L as unknown as Record<string, React.ComponentType<{ className?: string }>>
+const LUCIDE = L as unknown as Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>>
 
-export function renderIcon(name: string, className = "h-4 w-4"): ReactNode | null {
+export function renderIcon(name: string, className = "h-4 w-4", style?: React.CSSProperties): ReactNode | null {
   const Icon = LUCIDE[name]
-  return Icon ? <Icon className={className} /> : null
+  return Icon ? <Icon className={className} style={style} /> : null
 }
 
 /* ───────── ColorPicker ───────── */

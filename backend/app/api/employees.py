@@ -2,13 +2,18 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.database import get_db
+from app.models.tag import Tag, EmployeeTag
+from app.schemas.department_graph import TagRef
 from app.schemas.employee import (
     EmployeeArchive,
     EmployeeCreate,
     EmployeeListResponse,
+    EmployeeListWithTagsResponse,
     EmployeeResponse,
+    EmployeeWithTagsResponse,
     EmployeeUpdate,
     EmployeeAuditLogResponse,
     EmployeeWarningsResponse,
@@ -25,7 +30,32 @@ def _get_current_user_stub() -> str:
     return "admin"
 
 
-@router.get("", response_model=EmployeeListResponse)
+async def _load_employee_tags(db: AsyncSession, employee_ids: list[int]) -> dict[int, list[TagRef]]:
+    """Загружает теги для списка сотрудников."""
+    if not employee_ids:
+        return {}
+    result = await db.execute(
+        select(EmployeeTag, Tag)
+        .join(Tag, EmployeeTag.tag_id == Tag.id)
+        .where(EmployeeTag.employee_id.in_(employee_ids))
+    )
+    rows = result.all()
+    tags_map: dict[int, list[TagRef]] = {}
+    for et, tag in rows:
+        tags_map.setdefault(et.employee_id, []).append(
+            TagRef(id=tag.id, name=tag.name, color=tag.color)
+        )
+    return tags_map
+
+
+def _build_employee_with_tags(employee, tags_map: dict[int, list[TagRef]]) -> EmployeeWithTagsResponse:
+    base = EmployeeResponse.model_validate(employee)
+    data = base.model_dump()
+    data["tags"] = [t.model_dump() for t in tags_map.get(employee.id, [])]
+    return EmployeeWithTagsResponse(**data)
+
+
+@router.get("", response_model=EmployeeListWithTagsResponse)
 async def list_employees(
     q: Optional[str] = Query(None),
     department_id: Optional[int] = Query(None),
@@ -44,8 +74,10 @@ async def list_employees(
         start = (page - 1) * per_page
         items = employees[start:start + per_page]
         total_pages = max(1, (total + per_page - 1) // per_page)
+        emp_ids = [e.id for e in items]
+        tags_map = await _load_employee_tags(db, emp_ids)
         return {
-            "items": items,
+            "items": [_build_employee_with_tags(e, tags_map) for e in items],
             "total": total,
             "page": page,
             "per_page": per_page,
@@ -61,19 +93,29 @@ async def list_employees(
         sort_by=sort_by,
         sort_order=sort_order,
     )
-    return result
+    emp_ids = [e.id for e in result["items"]]
+    tags_map = await _load_employee_tags(db, emp_ids)
+    return {
+        **result,
+        "items": [_build_employee_with_tags(e, tags_map) for e in result["items"]],
+    }
 
 
-@router.get("/search")
+@router.get("/search", response_model=EmployeeListWithTagsResponse)
 async def search_employees(
     q: str = Query(..., min_length=1),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
     employees = await employee_service.search_employees(db, q)
+    emp_ids = [e.id for e in employees]
+    tags_map = await _load_employee_tags(db, emp_ids)
     return {
-        "items": [EmployeeResponse.model_validate(e) for e in employees],
+        "items": [_build_employee_with_tags(e, tags_map) for e in employees],
         "total": len(employees),
+        "page": 1,
+        "per_page": len(employees),
+        "total_pages": 1,
     }
 
 

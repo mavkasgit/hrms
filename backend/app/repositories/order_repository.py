@@ -108,11 +108,11 @@ class OrderRepository:
         if not last_order:
             return f"1-{letter}"
 
-        # Парсим числовую часть до дефиса
-        try:
-            last_num = int(last_order.split("-")[0])
-        except (ValueError, IndexError):
-            last_num = 0
+        # Парсим первое число из части до дефиса (игнорируем дроби и символы)
+        import re
+        numeric_part = last_order.split("-")[0]
+        match = re.search(r'\d+', numeric_part)
+        last_num = int(match.group()) if match else 0
 
         return f"{last_num + 1}-{letter}"
 

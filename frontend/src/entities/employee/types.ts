@@ -1,11 +1,19 @@
 export interface DepartmentInfo {
   id: number
   name: string
+  color?: string
+  icon?: string
 }
 
 export interface PositionInfo {
   id: number
   name: string
+}
+
+export interface EmployeeTag {
+  id: number
+  name: string
+  color?: string
 }
 
 export interface Employee {
@@ -16,6 +24,7 @@ export interface Employee {
   position_id: number
   department?: DepartmentInfo
   position?: PositionInfo
+  tags: EmployeeTag[]
   hire_date: string | null
   birth_date: string | null
   gender: string | null

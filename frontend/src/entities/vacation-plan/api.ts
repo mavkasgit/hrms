@@ -8,9 +8,9 @@ export async function fetchVacationPlanSummary(year: number): Promise<VacationPl
   return data
 }
 
-export async function createOrUpdateVacationPlan(data: VacationPlanCreate): Promise<VacationPlan> {
+export async function createOrUpdateVacationPlan(data: VacationPlanCreate): Promise<VacationPlan | null> {
   console.log("[createOrUpdateVacationPlan] API called with:", data)
-  const { data: result } = await api.post<VacationPlan>("/vacation-plans", data)
+  const { data: result } = await api.post<VacationPlan | null>("/vacation-plans", data)
   return result
 }
 

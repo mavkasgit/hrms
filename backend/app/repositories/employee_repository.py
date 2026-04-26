@@ -110,6 +110,19 @@ class EmployeeRepository:
             if emp:
                 results[emp.id] = emp
 
+        # Поиск по тегам
+        from app.models.tag import Tag, EmployeeTag
+        tag_result = await db.execute(
+            select(Employee)
+            .options(joinedload(Employee.department), joinedload(Employee.position))
+            .join(EmployeeTag, EmployeeTag.employee_id == Employee.id)
+            .join(Tag, Tag.id == EmployeeTag.tag_id)
+            .where(Tag.name.ilike(f"%{q}%"), Employee.is_deleted == False)
+            .order_by(Employee.name.asc())
+        )
+        for emp in tag_result.unique().scalars().all():
+            results[emp.id] = emp
+
         return sorted(results.values(), key=lambda e: e.name)
 
     async def create(self, db: AsyncSession, data: dict) -> Employee:

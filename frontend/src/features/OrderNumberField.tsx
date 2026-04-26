@@ -54,7 +54,6 @@ export function OrderNumberField({
   error,
 }: OrderNumberFieldProps) {
   const id = useId()
-  const [numericValue, setNumericValue] = useState("")
   const [letter, setLetter] = useState<string | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -70,7 +69,6 @@ export function OrderNumberField({
     if (!orderTypeId || !orderTypes) {
       setLetter(null)
       onChange("")
-      setNumericValue("")
       return
     }
     const type = orderTypes.find((t) => t.id === orderTypeId)
@@ -83,24 +81,20 @@ export function OrderNumberField({
     }
   }, [suggestedNumber, value, onChange])
 
-  useEffect(() => {
-    if (value && letter) {
-      const parts = value.split("-")
-      setNumericValue(parts[0] || "")
-    } else if (value) {
-      setNumericValue(value)
-    } else {
-      setNumericValue("")
-    }
-  }, [value, letter])
+  // Вычисляем отображаемое значение: убираем суффикс -{letter} если он есть
+  const displayValue = letter && value.endsWith(`-${letter}`)
+    ? value.slice(0, -(letter.length + 1))
+    : value
 
-  const handleNumericChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const num = e.target.value.replace(/\D/g, "")
-    setNumericValue(num)
-    if (letter) {
-      onChange(num ? `${num}-${letter}` : "")
-    } else {
-      onChange(num)
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value
+    // Передаём как есть, без модификаций
+    onChange(v)
+  }
+
+  const handleBlur = () => {
+    if (letter && value && !value.endsWith(`-${letter}`)) {
+      onChange(`${value}-${letter}`)
     }
   }
 
@@ -130,8 +124,9 @@ export function OrderNumberField({
           <div className="relative">
             <Input
               id={id}
-              value={numericValue}
-              onChange={handleNumericChange}
+              value={displayValue}
+              onChange={handleChange}
+              onBlur={handleBlur}
               className={`h-10 text-sm w-[100px] pr-7 ${hasError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
               onFocus={(e) => e.target.select()}
             />
@@ -153,8 +148,6 @@ export function OrderNumberField({
             <RecentOrdersList
               orders={recentOrders}
               onSelect={(num) => {
-                const parts = num.split("-")
-                setNumericValue(parts[0] || "")
                 onChange(num)
                 setPopoverOpen(false)
               }}

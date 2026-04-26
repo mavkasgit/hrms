@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { Plus, Search, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload, ScrollText } from "lucide-react"
+import { Plus, Search, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload, ScrollText, Tag } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
@@ -18,6 +18,7 @@ import { EmployeeForm } from "@/features/employee-form"
 import { ImportEmployeesModal } from "@/features/import-employees/ImportEmployeesModal"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 import type { Employee, EmployeeStatus } from "@/entities/employee/types"
+import { renderIcon } from "@/pages/structure-page/shared/EntityDialog"
 
 function calculateAge(birthDate: string | null): number | null {
   if (!birthDate) return null
@@ -29,7 +30,7 @@ function calculateAge(birthDate: string | null): number | null {
   return age
 }
 
-type SortField = "name" | "age" | "department" | "position" | "hire_date"
+type SortField = "name" | "age" | "department" | "tags" | "position" | "hire_date"
 type SortOrder = "asc" | "desc"
 
 interface SortConfig {
@@ -149,6 +150,9 @@ export function EmployeesPage() {
         } else if (field === "department") {
           aVal = a.department?.name ?? ""
           bVal = b.department?.name ?? ""
+        } else if (field === "tags") {
+          aVal = a.tags?.[0]?.name ?? ""
+          bVal = b.tags?.[0]?.name ?? ""
         } else if (field === "position") {
           aVal = a.position?.name ?? ""
           bVal = b.position?.name ?? ""
@@ -209,7 +213,7 @@ export function EmployeesPage() {
         <div className="relative flex-1 max-w-lg">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Поиск по ФИО или таб. номеру..."
+            placeholder="Поиск по ФИО, таб. номеру или тегу..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             className="pl-9"
@@ -293,6 +297,12 @@ export function EmployeesPage() {
               <TableHead className="px-2 py-1">Таб. №</TableHead>
               <SortHeader field="name">ФИО</SortHeader>
               <SortHeader field="department">Подразделение</SortHeader>
+              <SortHeader field="tags">
+                <div className="flex items-center gap-1">
+                  <Tag className="h-3 w-3" />
+                  Теги
+                </div>
+              </SortHeader>
               <SortHeader field="position">Должность</SortHeader>
               <SortHeader field="age">Возраст</SortHeader>
               <SortHeader field="hire_date">Конец контракта</SortHeader>
@@ -310,7 +320,31 @@ export function EmployeesPage() {
                 >
                   <TableCell className="font-mono text-sm px-2 py-0.5">{emp.tab_number ?? "—"}</TableCell>
                   <TableCell className="font-medium px-2 py-0.5">{emp.name}</TableCell>
-                  <TableCell className="px-2 py-0.5">{emp.department?.name ?? "—"}</TableCell>
+                  <TableCell className="px-2 py-0.5">
+                    <div className="flex items-center gap-1.5">
+                      {emp.department?.icon
+                        ? renderIcon(emp.department.icon, "h-4 w-4 flex-shrink-0", { color: emp.department.color })
+                        : emp.department?.color && (
+                            <span
+                              className="inline-block h-3 w-3 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: emp.department.color }}
+                            />
+                          )}
+                      <span className="truncate">{emp.department?.name ?? "—"}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-2 py-0.5">
+                    <div className="flex flex-wrap gap-1">
+                      {(emp.tags || []).map((t) => (
+                        <span
+                          key={t.id}
+                          className="inline-block h-3 w-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: t.color || "#94a3b8" }}
+                          title={t.name}
+                        />
+                      ))}
+                    </div>
+                  </TableCell>
                   <TableCell className="px-2 py-0.5">{emp.position?.name ?? "—"}</TableCell>
                   <TableCell className="px-2 py-0.5">{age !== null ? `${age} лет` : "—"}</TableCell>
                   <TableCell className="px-2 py-0.5">
