@@ -67,6 +67,7 @@ export interface OrderCreate {
   extra_fields?: Record<string, string | number> | null
   preview_id?: string | null
   edited_html?: string | null
+  draft_id?: string | null
 }
 
 export interface OrderPreviewResponse {

@@ -107,6 +107,15 @@ export async function uploadTemplate(orderTypeId: number, file: File) {
   return data
 }
 
+export async function bulkUploadTemplates(files: File[]) {
+  const formData = new FormData()
+  files.forEach((file) => formData.append("files", file))
+  const { data } = await api.post("/order-types/templates/bulk-upload", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  })
+  return data as { uploaded: number; skipped: number; errors: string[] }
+}
+
 export async function deleteTemplate(orderTypeId: number) {
   const { data } = await api.delete(`/order-types/${orderTypeId}/template`)
   return data

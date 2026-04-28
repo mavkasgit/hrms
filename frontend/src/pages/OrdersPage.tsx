@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
-import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText } from "lucide-react"
+import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -35,6 +35,7 @@ import {
   useCancelOrder,
   useDeleteOrder,
 } from "@/entities/order/useOrders"
+import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { calculateDaysBetween, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
 import { useSearchEmployees, useEmployees } from "@/entities/employee/useEmployees"
@@ -85,11 +86,15 @@ export function OrdersPage() {
   const { data: searchResult } = useSearchEmployees(searchQuery)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
   const createMutation = useCreateOrder()
+  const createDraftMutation = useCreateOrderDraft()
+  const commitDraftMutation = useCommitOrderDraft()
   const cancelMutation = useCancelOrder()
   const deleteMutation = useDeleteOrder()
 
   const [cancelOrderId, setCancelOrderId] = useState<number | null>(null)
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
+
+  const [draftId, setDraftId] = useState<string | null>(null)
 
   const selectedOrderType = orderTypes.find(item => item.id === selectedOrderTypeId) ?? null
 
@@ -225,6 +230,7 @@ export function OrdersPage() {
     setExtraFields({})
     lastChangedRef.current = null
     setErrors({})
+    setDraftId(null)
   }
 
   const validate = (): boolean => {
@@ -237,33 +243,71 @@ export function OrdersPage() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = () => {
-    if (!validate()) return
+  const buildOrderPayload = () => {
     const ef = Object.keys(extraFields).length > 0 ? extraFields : undefined
-    createMutation.mutate(
-      {
-        employee_id: selectedEmployee!.id,
-        order_type_id: selectedOrderTypeId!,
-        order_date: orderDate,
-        order_number: orderNumber || undefined,
-        extra_fields: ef,
+    return {
+      employee_id: selectedEmployee!.id,
+      order_type_id: selectedOrderTypeId!,
+      order_date: orderDate,
+      order_number: orderNumber || undefined,
+      extra_fields: ef,
+    }
+  }
+
+  const handleEditBeforeCreate = () => {
+    if (!validate()) return
+    const editorWindow = window.open("about:blank", "_blank")
+    createDraftMutation.mutate(buildOrderPayload(), {
+      onSuccess: (draft) => {
+        setDraftId(draft.draft_id)
+        const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+        if (editorWindow && !editorWindow.closed) {
+          editorWindow.location.href = url
+        } else {
+          window.open(url, "_blank", "noopener,noreferrer")
+        }
       },
+      onError: () => {
+        editorWindow?.close()
+      },
+    })
+  }
+
+  const handleCommitDraft = () => {
+    if (!draftId || !validate()) return
+    commitDraftMutation.mutate(
+      { draftId, order: buildOrderPayload() },
       {
         onSuccess: () => resetForm(),
       }
     )
   }
 
+  useEffect(() => {
+    const handleDraftSave = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+      const message = event.data as { type?: string; draftId?: string }
+      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
+      handleCommitDraft()
+    }
+
+    window.addEventListener("message", handleDraftSave)
+    return () => window.removeEventListener("message", handleDraftSave)
+  }, [draftId, selectedEmployee, selectedOrderTypeId, orderDate, orderNumber, extraFields])
+
   const handleDownload = (orderId: number) => {
     window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
   }
 
   const handlePreview = (orderId: number) => {
-    const url = `${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/print`
-    window.open(url, "_blank")
+    window.open(`/orders/${orderId}/view-docx`, "_blank", "noopener,noreferrer")
   }
 
-  const isPending = createMutation.isPending
+  const handleEditDocx = (orderId: number) => {
+    window.open(`/orders/${orderId}/edit-docx`, "_blank", "noopener,noreferrer")
+  }
+
+  const isPending = createMutation.isPending || createDraftMutation.isPending || commitDraftMutation.isPending
 
   return (
     <div className="space-y-4">
@@ -429,9 +473,18 @@ export function OrdersPage() {
                 <Button variant="outline" onClick={(e) => { e.stopPropagation(); resetForm(); }} disabled={isPending}>
                   Очистить
                 </Button>
-                <Button onClick={(e) => { e.stopPropagation(); handleSubmit(); }} disabled={isPending}>
-                  {isPending ? "Создание..." : "Создать"}
-                </Button>
+                {!draftId ? (
+                  <Button
+                    onClick={(e) => { e.stopPropagation(); handleEditBeforeCreate(); }}
+                    disabled={isPending}
+                  >
+                    {createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}
+                  </Button>
+                ) : (
+                  <Button onClick={(e) => { e.stopPropagation(); handleCommitDraft(); }} disabled={isPending}>
+                    {commitDraftMutation.isPending ? "Создание..." : "Создать приказ"}
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -551,6 +604,14 @@ export function OrdersPage() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Редактировать DOCX"
+                      onClick={() => handleEditDocx(order.id)}
+                    >
+                      <FilePen className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"

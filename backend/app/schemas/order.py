@@ -13,6 +13,7 @@ class OrderCreate(BaseModel):
     extra_fields: Optional[dict[str, Any]] = None
     preview_id: Optional[str] = None
     edited_html: Optional[str] = None
+    draft_id: Optional[str] = None
 
     @field_validator("order_date")
     @classmethod

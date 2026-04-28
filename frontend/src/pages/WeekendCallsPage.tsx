@@ -290,7 +290,7 @@ export function WeekendCallsPage() {
   }
 
   const handlePreview = (orderId: number) => {
-    window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/print`, "_blank")
+    window.open(`/orders/${orderId}/view-docx`, "_blank", "noopener,noreferrer")
   }
 
   const handleCancelOrderConfirm = () => {

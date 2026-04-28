@@ -1,8 +1,13 @@
+import shutil
+import tempfile
 from pathlib import Path
+from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from app.core.database import get_db
 from app.schemas.order_type import (
@@ -78,6 +83,16 @@ async def upload_template(
     return await order_service.upload_template(db, order_type_id, file.filename, content)
 
 
+@router.post("/templates/bulk-upload")
+async def bulk_upload_templates(
+    files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+) -> dict[str, Any]:
+    results = await order_service.bulk_upload_templates(db, files)
+    return results
+
+
 @router.delete("/{order_type_id}/template")
 async def delete_template(
     order_type_id: int,
@@ -107,7 +122,7 @@ async def download_template(
     )
 
 
-@router.get("/{order_type_id}/template/preview", response_class=HTMLResponse)
+@router.get("/{order_type_id}/template/preview")
 async def preview_template(
     order_type_id: int,
     db: AsyncSession = Depends(get_db),
@@ -116,43 +131,23 @@ async def preview_template(
     order_type = await order_service.get_order_type(db, order_type_id)
     if not order_type.template_filename:
         raise HTTPException(404, "Шаблон не найден")
-    file_path = Path(order_service._get_template_path(order_type))
-    if not file_path.exists():
+    template_path = Path(order_service._get_template_path(order_type))
+    if not template_path.exists():
         raise HTTPException(404, "Шаблон не найден")
 
+    temp_dir = Path(tempfile.mkdtemp(prefix="hrms-template-preview-"))
     try:
-        import mammoth
+        pdf_path = await order_service.generate_template_preview(db, order_type_id, temp_dir)
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
 
-        with open(file_path, "rb") as docx_file:
-            result = mammoth.convert_to_html(docx_file)
-            html_content = result.value
-
-        full_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>Превью: {order_type.name}</title>
-            <style>
-                body {{
-                    font-family: 'Times New Roman', serif;
-                    max-width: 800px;
-                    margin: 20px auto;
-                    padding: 20px;
-                    background: #f5f5f5;
-                }}
-                .container {{
-                    background: white;
-                    padding: 40px;
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">{html_content}</div>
-        </body>
-        </html>
-        """
-        return HTMLResponse(content=full_html)
-    except Exception as exc:
-        raise HTTPException(500, f"Ошибка при конвертации: {str(exc)}")
+    filename = f"{order_type.code}_preview.pdf"
+    fallback_filename = f"template-preview-{order_type_id}.pdf"
+    content_disposition = f"inline; filename=\"{fallback_filename}\"; filename*=UTF-8''{quote(filename)}"
+    return FileResponse(
+        str(pdf_path),
+        media_type="application/pdf",
+        headers={"Content-Disposition": content_disposition},
+        background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
+    )

@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import uuid
 from datetime import date, datetime
 from html import escape, unescape
@@ -171,7 +172,7 @@ class OrderService:
                 continue
 
             updates: dict[str, Any] = {}
-            for key in ("name", "show_in_orders_page", "template_filename", "field_schema", "filename_pattern"):
+            for key in ("name", "show_in_orders_page", "filename_pattern", "letter"):
                 if getattr(current, key) != item.get(key):
                     updates[key] = item.get(key)
             if updates:
@@ -240,8 +241,10 @@ class OrderService:
         order_type = await self.get_order_type(db, order_type_id)
         order_count = await self.order_type_repo.count_orders(db, order_type_id)
         if order_count > 0:
+            recent_orders = await self.order_repo.get_recent_by_order_type(db, order_type_id, limit=5)
+            numbers = [o.order_number for o in recent_orders]
             raise HRMSException(
-                "Нельзя удалить тип приказа, который уже используется",
+                f"Нельзя удалить тип приказа, который уже используется. Связанные приказы: {', '.join(numbers)}",
                 "order_type_in_use",
                 status_code=409,
             )
@@ -394,6 +397,60 @@ class OrderService:
         }
         return {"preview_id": preview_id, "html": highlighted_html}
 
+    async def generate_template_preview(self, db: AsyncSession, order_type_id: int, output_dir: Path) -> Path:
+        await self.ensure_default_order_types(db)
+        order_type = await self.order_type_repo.get_by_id(db, order_type_id)
+        if not order_type or not order_type.is_active:
+            raise HRMSException("Активный тип приказа не найден", "order_type_not_found", status_code=404)
+
+        template_path = self._get_template_path(order_type)
+        if not template_path.exists():
+            raise HRMSException("Шаблон не найден", "template_not_found", status_code=404)
+
+        employee = Employee(
+            id=1,
+            name="Иванов Иван Иванович",
+            tab_number=123,
+            gender="male",
+            hire_date=date.today(),
+            contract_start=date.today(),
+        )
+
+        extra_fields: dict[str, Any] = {}
+        for field in (order_type.field_schema or []):
+            key = field.get("key")
+            if not key:
+                continue
+            ftype = field.get("type", "text")
+            if ftype == "date":
+                extra_fields[key] = date.today().isoformat()
+            elif ftype == "number":
+                extra_fields[key] = 14
+            else:
+                extra_fields[key] = f"Пример: {field.get('label', key)}"
+
+        data = OrderCreate(
+            employee_id=1,
+            order_type_id=order_type.id,
+            order_date=date.today(),
+            order_number="PREVIEW-001",
+            notes="Демо-данные для превью шаблона",
+            extra_fields=extra_fields or None,
+        )
+
+        order_number = data.order_number or "PREVIEW"
+        doc, _ = await self._build_document(order_number, data, employee, order_type)
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        docx_path = output_dir / f"template_preview_{order_type_id}.docx"
+        await asyncio.wait_for(
+            asyncio.to_thread(doc.save, str(docx_path)),
+            timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
+        )
+
+        pdf_path = await self.convert_docx_to_pdf(docx_path, output_dir)
+        return pdf_path
+
     async def _do_create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
         order_number = data.order_number
         if not order_number:
@@ -490,6 +547,15 @@ class OrderService:
         filename = self._build_filename(order_number, order_type, replacements)
         file_path = year_dir / filename
 
+        if data.draft_id:
+            from app.services.order_draft_service import order_draft_service
+
+            draft_path = order_draft_service.get_draft_path(data.draft_id)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(draft_path), str(file_path))
+            order_draft_service.delete_draft(data.draft_id)
+            return str(file_path)
+
         await asyncio.wait_for(
             asyncio.to_thread(doc.save, str(file_path)),
             timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
@@ -547,7 +613,7 @@ class OrderService:
         position_cap = position_name.capitalize() if position_name else ""
 
         # Gender-aware acknowledgment
-        oznak = "Ознакомлена" if employee.gender == "female" else "Ознакомлен"
+        oznak = "ознакомлена" if employee.gender == "female" else "ознакомлен"
 
         replacements = {
             "{order_number}": order_number,
@@ -560,8 +626,8 @@ class OrderService:
             "{full_name_title}": full_name.title(),
             "{full_name_last_caps}": f"{last_name.upper()} {first_name} {middle_name}".strip(),
             "{last_name_upper}": last_name.upper(),
-            "{short_name}": f"{last_name} {initials_dots}".strip(),
-            "{initials_before}": f"{initials_dots} {last_name}".strip(),
+            "{short_name}": f"{last_name} {initials_nospace}".strip(),
+            "{initials_before}": f"{initials_nospace}{last_name}".strip(),
             "{last_name_then_initials}": f"{last_name} {initials_nospace}".strip(),
             "{last_name}": last_name,
             "{initials}": initials,
@@ -582,23 +648,66 @@ class OrderService:
         return replacements
 
     def _replace_placeholders(self, doc: Document, replacements: dict[str, str]) -> None:
+        """Character-by-character placeholder replacement that preserves formatting and images."""
         for paragraph in doc.paragraphs:
-            self._replace_in_runs(paragraph.runs, replacements)
+            self._replace_in_paragraph(paragraph, replacements)
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
-                        self._replace_in_runs(paragraph.runs, replacements)
+                        self._replace_in_paragraph(paragraph, replacements)
 
-    def _replace_in_runs(self, runs: list[Any], replacements: dict[str, str]) -> None:
-        if not runs:
+    def _replace_in_paragraph(self, paragraph: Any, replacements: dict[str, str]) -> None:
+        """Replace placeholders in a single paragraph using run coordinate mapping.
+        All replacements are applied in a single pass (right-to-left) so run indices stay valid."""
+        if not paragraph.runs:
             return
-        full_text = "".join(run.text for run in runs if run.text)
+
+        full_text = paragraph.text
+
+        # Collect all occurrences of all keys
+        occurrences: list[tuple[int, str, str]] = []  # (start_pos, key, value)
         for key, value in replacements.items():
-            full_text = full_text.replace(key, value)
-        runs[0].text = full_text
-        for i in range(1, len(runs)):
-            runs[i].text = ""
+            if key not in full_text:
+                continue
+            key_len = len(key)
+            for i in range(len(full_text)):
+                if full_text.startswith(key, i):
+                    occurrences.append((i, key, value))
+
+        if not occurrences:
+            return
+
+        # Sort by position descending (right-to-left) so earlier indices stay valid
+        occurrences.sort(key=lambda x: x[0], reverse=True)
+
+        # Build coordinate map once
+        p_map = []
+        for run_idx, run in enumerate(paragraph.runs):
+            for char_idx, char in enumerate(run.text):
+                p_map.append({"run": run_idx, "char": char_idx})
+
+        for start_pos, key, value in occurrences:
+            key_len = len(key)
+            key_map = p_map[start_pos : start_pos + key_len]
+            self._replace_in_runs(paragraph.runs, key_map, value)
+
+    def _replace_in_runs(self, runs: list[Any], key_map: list[dict], value: str) -> None:
+        """Apply replacement to the specific runs/characters identified by key_map."""
+        for i, position in enumerate(reversed(key_map), start=1):
+            run_idx = position["run"]
+            char_idx = position["char"]
+            run = runs[run_idx]
+            chars = list(run.text)
+
+            if i < len(key_map):
+                # Not the first character of the key — delete it
+                chars.pop(char_idx)
+            else:
+                # First character (last in reversed order) — replace with value
+                chars[char_idx] = value
+
+            run.text = "".join(chars)
 
     def _docx_to_html(self, docx_payload: bytes) -> str:
         import mammoth
@@ -720,6 +829,34 @@ class OrderService:
         await self.order_type_repo.update(db, order_type, {"template_filename": None})
         await db.commit()
 
+    async def bulk_upload_templates(self, db: AsyncSession, files: list[Any]) -> dict[str, Any]:
+        results: dict[str, Any] = {"uploaded": 0, "skipped": 0, "errors": []}
+        for file in files:
+            if not file.filename or not file.filename.endswith(".docx"):
+                results["skipped"] += 1
+                results["errors"].append(f"{file.filename or 'unknown'}: только .docx")
+                continue
+            code = Path(file.filename).stem
+            order_type = await self.order_type_repo.get_by_code(db, code)
+            if not order_type:
+                results["skipped"] += 1
+                results["errors"].append(f"{file.filename}: тип приказа с кодом '{code}' не найден")
+                continue
+            try:
+                content = await file.read()
+                safe_filename = self._normalize_template_filename(file.filename, order_type.code)
+                template_path = Path(settings.TEMPLATES_PATH) / safe_filename
+                template_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(template_path, "wb") as file_obj:
+                    file_obj.write(content)
+                await self.order_type_repo.update(db, order_type, {"template_filename": safe_filename})
+                results["uploaded"] += 1
+            except Exception as e:
+                results["errors"].append(f"{file.filename}: {str(e)}")
+                results["skipped"] += 1
+        await db.commit()
+        return results
+
     def get_template_variables(self) -> list[dict[str, str]]:
         """Возвращает список всех доступных переменных для шаблонов с описаниями"""
         return [
@@ -735,8 +872,10 @@ class OrderService:
             {"name": "{full_name_last_caps}", "description": "Фамилия заглавными, имя отчество обычными", "category": "ФИО"},
             {"name": "{last_name_upper}", "description": "Фамилия заглавными буквами", "category": "ФИО"},
             {"name": "{short_name}", "description": "Фамилия И.О.", "category": "ФИО"},
-            {"name": "{initials_before}", "description": "И.О. Фамилия", "category": "ФИО"},
+            {"name": "{initials_before}", "description": "И.О.Фамилия (без пробелов)", "category": "ФИО"},
             {"name": "{last_name_then_initials}", "description": "Фамилия И.О. (без пробела)", "category": "ФИО"},
+            {"name": "{last_name}", "description": "Фамилия", "category": "ФИО"},
+            {"name": "{initials}", "description": "Инициалы через подчеркивание (для имени файла)", "category": "ФИО"},
 
             {"name": "{position}", "description": "Должность (все строчные)", "category": "Работа"},
             {"name": "{position_cap}", "description": "Должность (с заглавной буквы)", "category": "Работа"},
@@ -758,7 +897,7 @@ class OrderService:
             {"name": "{transfer_date}", "description": "Дата перевода", "category": "Даты"},
             {"name": "{contract_new_end}", "description": "Новая дата конца контракта (для «Продление контракта»)", "category": "Даты"},
 
-            {"name": "{oznak_gender}", "description": "Ознакомлен/ознакомлена (по полу сотрудника)", "category": "Прочее"},
+            {"name": "{oznak_gender}", "description": "ознакомлен/ознакомлена (по полу сотрудника, с маленькой буквы)", "category": "Прочее"},
             {"name": "{notes}", "description": "Комментарий к приказу", "category": "Прочее"},
 
             {"name": "{<key из field_schema>}", "description": "Любое дополнительное поле типа приказа", "category": "Поля типа"},

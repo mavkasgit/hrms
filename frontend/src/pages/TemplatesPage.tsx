@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, ChevronDown, ChevronRight, Download, Eye, Plus, Trash2, Upload } from "lucide-react"
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Copy, Download, Eye, FileUp, Plus, Trash2, Upload } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
@@ -22,6 +22,14 @@ import {
   SelectValue,
 } from "@/shared/ui/select"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/ui/dialog"
+import {
   useAllOrderTypes,
   useCreateOrderType,
   useDeleteOrderType,
@@ -30,6 +38,7 @@ import {
   useUpdateOrderType,
   useUploadTemplate,
 } from "@/entities/order/useOrders"
+import { ImportTemplatesModal } from "@/features/import-templates/ImportTemplatesModal"
 import type { OrderType, OrderTypeFieldSchema } from "@/entities/order/types"
 
 const emptyField = (): OrderTypeFieldSchema => ({
@@ -48,6 +57,10 @@ export function TemplatesPage() {
   const deleteMutation = useDeleteOrderType()
   const uploadMutation = useUploadTemplate()
   const deleteTemplateMutation = useDeleteTemplate()
+  const [importOpen, setImportOpen] = useState(false)
+  const [deleteTemplateDialog, setDeleteTemplateDialog] = useState<{ open: boolean; orderTypeId: number | null }>({ open: false, orderTypeId: null })
+  const [deleteTypeDialog, setDeleteTypeDialog] = useState<{ open: boolean; orderType: OrderType | null }>({ open: false, orderType: null })
+  const [deleteTypeError, setDeleteTypeError] = useState<string | null>(null)
 
   const [newName, setNewName] = useState("")
   const [newLetter, setNewLetter] = useState<string | null>(null)
@@ -60,6 +73,17 @@ export function TemplatesPage() {
     const saved = localStorage.getItem("templatesPage.variablesExpanded")
     return saved !== null ? JSON.parse(saved) : true
   })
+  const [copiedVar, setCopiedVar] = useState<string | null>(null)
+
+  const copyVariable = async (name: string) => {
+    try {
+      await navigator.clipboard.writeText(name)
+      setCopiedVar(name)
+      setTimeout(() => setCopiedVar((current) => (current === name ? null : current)), 1200)
+    } catch {
+      // ignore
+    }
+  }
 
   const toggleVariables = () => {
     const newValue = !variablesExpanded
@@ -110,6 +134,10 @@ export function TemplatesPage() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <h1 className="text-2xl font-bold">Типы и шаблоны приказов</h1>
+        <Button variant="outline" size="sm" className="ml-auto" onClick={() => setImportOpen(true)}>
+          <FileUp className="mr-2 h-4 w-4" />
+          Импорт шаблонов
+        </Button>
       </div>
 
       <div className="border rounded-lg bg-card">
@@ -148,9 +176,20 @@ export function TemplatesPage() {
                       <h4 className="text-sm font-semibold mb-2 text-muted-foreground">{category}</h4>
                       <div className="space-y-2 text-sm">
                         {items.map((item) => (
-                          <div key={item.name}>
+                          <div key={item.name} className="flex items-center gap-1.5">
                             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{item.name}</code>
-                            <span className="ml-2 text-muted-foreground">— {item.description}</span>
+                            <button
+                              onClick={() => copyVariable(item.name)}
+                              className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                              title="Копировать"
+                            >
+                              {copiedVar === item.name ? (
+                                <Check className="h-3 w-3 text-green-600" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </button>
+                            <span className="text-muted-foreground">— {item.description}</span>
                           </div>
                         ))}
                       </div>
@@ -167,9 +206,20 @@ export function TemplatesPage() {
                       <h4 className="text-sm font-semibold mb-2 text-muted-foreground">{category}</h4>
                       <div className="space-y-2 text-sm">
                         {items.map((item) => (
-                          <div key={item.name}>
+                          <div key={item.name} className="flex items-center gap-1.5">
                             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{item.name}</code>
-                            <span className="ml-2 text-muted-foreground">— {item.description}</span>
+                            <button
+                              onClick={() => copyVariable(item.name)}
+                              className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                              title="Копировать"
+                            >
+                              {copiedVar === item.name ? (
+                                <Check className="h-3 w-3 text-green-600" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </button>
+                            <span className="text-muted-foreground">— {item.description}</span>
                           </div>
                         ))}
                       </div>
@@ -220,7 +270,7 @@ export function TemplatesPage() {
                   <TableCell>{orderType.template_filename || "—"}</TableCell>
                   <TableCell>{orderType.is_active ? "Активен" : "Архив"}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
+                    <div className="flex justify-end items-center gap-1">
                       {orderType.template_exists && (
                         <>
                           <Button variant="ghost" size="icon" title="Превью" onClick={() => openPreview(orderType.id)}>
@@ -253,9 +303,15 @@ export function TemplatesPage() {
                       >
                         <Upload className="h-4 w-4" />
                       </Button>
-                      {orderType.template_exists && (
-                        <Button variant="ghost" size="icon" title="Удалить шаблон" onClick={() => deleteTemplateMutation.mutate(orderType.id)}>
-                          <Trash2 className="h-4 w-4" />
+                        {orderType.template_exists && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                          onClick={() => setDeleteTemplateDialog({ open: true, orderTypeId: orderType.id })}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Удалить шаблон
                         </Button>
                       )}
                       <Button
@@ -273,9 +329,19 @@ export function TemplatesPage() {
                       <Button variant="outline" size="sm" onClick={() => startEdit(orderType)}>
                         Изменить
                       </Button>
-                      <Button variant="ghost" size="icon" title="Удалить тип" onClick={() => deleteMutation.mutate(orderType.id)}>
-                        <Trash2 className="h-4 w-4 text-red-600" />
-                      </Button>
+                      {!["hire", "dismissal", "transfer", "contract_extension", "vacation_paid", "vacation_unpaid", "weekend_call"].includes(orderType.code) ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => setDeleteTypeDialog({ open: true, orderType: orderType })}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Удалить тип
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground px-2">Стандартный</span>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -416,6 +482,97 @@ export function TemplatesPage() {
           </Button>
         </div>
       </div>
+
+      {/* Диалог подтверждения удаления шаблона */}
+      <Dialog open={deleteTemplateDialog.open} onOpenChange={(open) => setDeleteTemplateDialog({ open, orderTypeId: open ? deleteTemplateDialog.orderTypeId : null })}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Удалить шаблон?</DialogTitle>
+            <DialogDescription>
+              Загруженный шаблон будет удалён. Тип приказа останется — можно будет загрузить новый шаблон.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTemplateDialog({ open: false, orderTypeId: null })}>
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleteTemplateDialog.orderTypeId !== null) {
+                  deleteTemplateMutation.mutate(deleteTemplateDialog.orderTypeId)
+                }
+                setDeleteTemplateDialog({ open: false, orderTypeId: null })
+              }}
+              disabled={deleteTemplateMutation.isPending}
+            >
+              {deleteTemplateMutation.isPending ? "Удаление…" : "Удалить шаблон"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Диалог подтверждения удаления типа приказа */}
+      <Dialog
+        open={deleteTypeDialog.open}
+        onOpenChange={(open) => {
+          setDeleteTypeDialog({ open, orderType: open ? deleteTypeDialog.orderType : null })
+          if (!open) setDeleteTypeError(null)
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Удалить тип приказа?</DialogTitle>
+            <DialogDescription>
+              {deleteTypeDialog.orderType ? (
+                <>
+                  Тип приказа «<strong>{deleteTypeDialog.orderType.name}</strong>» будет удалён безвозвратно.
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteTypeError && (
+            <Alert variant="destructive">
+              <AlertDescription className="space-y-1">
+                <p className="font-medium">Нельзя удалить тип приказа</p>
+                <p className="text-xs">{deleteTypeError}</p>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteTypeDialog({ open: false, orderType: null }); setDeleteTypeError(null) }}>
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleteTypeDialog.orderType) {
+                  deleteMutation.mutate(deleteTypeDialog.orderType.id, {
+                    onSuccess: () => setDeleteTypeDialog({ open: false, orderType: null }),
+                    onError: (err: any) => {
+                      const msg = err.response?.data?.detail || err.message || "Ошибка удаления"
+                      setDeleteTypeError(msg)
+                    },
+                  })
+                }
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Удаление…" : "Удалить тип"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ImportTemplatesModal
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImportComplete={() => {
+          // список обновится через инвалидацию кэша внутри модалки
+        }}
+      />
     </div>
   )
 }

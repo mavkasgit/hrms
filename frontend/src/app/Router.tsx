@@ -14,6 +14,8 @@ import { SettingsPage } from "@/pages/SettingsPage"
 import { HolidaysPage } from "@/pages/HolidaysPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { DevPage } from "@/pages/DevPage"
+import { OrderEditorPage } from "@/pages/OrderEditorPage"
+import { DraftOrderEditorPage } from "@/pages/DraftOrderEditorPage"
 
 export const router = createBrowserRouter([
   {
@@ -38,5 +40,17 @@ export const router = createBrowserRouter([
   {
     path: "/login",
     element: <LoginPage />,
+  },
+  {
+    path: "/orders/drafts/:draftId/edit-docx",
+    element: <DraftOrderEditorPage />,
+  },
+  {
+    path: "/orders/:id/view-docx",
+    element: <OrderEditorPage />,
+  },
+  {
+    path: "/orders/:id/edit-docx",
+    element: <OrderEditorPage />,
   },
 ])

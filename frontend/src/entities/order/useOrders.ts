@@ -134,6 +134,17 @@ export function useUploadTemplate() {
   })
 }
 
+export function useBulkUploadTemplates() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (files: File[]) => api.bulkUploadTemplates(files),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["order-types-all"] })
+      queryClient.invalidateQueries({ queryKey: ["order-types"] })
+    },
+  })
+}
+
 export function useDeleteTemplate() {
   const queryClient = useQueryClient()
   return useMutation({

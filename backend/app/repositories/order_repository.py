@@ -125,6 +125,15 @@ class OrderRepository:
         )
         return [int(row[0]) for row in result.all() if row[0]]
 
+    async def get_recent_by_order_type(self, db: AsyncSession, order_type_id: int, limit: int = 5) -> list[Order]:
+        result = await db.execute(
+            select(Order)
+            .where(Order.is_deleted == False, Order.order_type_id == order_type_id)
+            .order_by(Order.created_date.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def create(self, db: AsyncSession, data: dict) -> Order:
         order = Order(**data)
         db.add(order)
