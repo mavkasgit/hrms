@@ -14,6 +14,7 @@ class VacationCreate(BaseModel):
     comment: Optional[str] = Field(None, max_length=500)
     preview_id: Optional[str] = None
     edited_html: Optional[str] = None
+    draft_id: Optional[str] = None
 
 
 class VacationUpdate(BaseModel):

@@ -63,6 +63,7 @@ class VacationService:
                 extra_fields=order_payload["extra_fields"],
                 preview_id=vacation_data.get("preview_id"),
                 edited_html=vacation_data.get("edited_html"),
+                draft_id=vacation_data.get("draft_id"),
             ),
         )
 

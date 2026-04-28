@@ -17,7 +17,12 @@ export interface VacationCreate {
   start_date: string
   end_date: string
   vacation_type: string
+  order_date?: string | null
+  order_number?: string | null
   comment?: string | null
+  preview_id?: string | null
+  edited_html?: string | null
+  draft_id?: string | null
 }
 
 export interface VacationUpdate {
@@ -53,11 +58,20 @@ export interface VacationListResponse {
   per_page: number
 }
 
+export interface EmployeeTag {
+  id: number
+  name: string
+  color: string | null
+}
+
 export interface EmployeeVacationSummary {
   id: number
   tab_number: number | null
   name: string
   department: string
+  department_id: number | null
+  department_color: string | null
+  department_icon: string | null
   position: string
   hire_date: string | null
   vacation_days_override: number | null
@@ -66,6 +80,10 @@ export interface EmployeeVacationSummary {
   total_used_days: number
   calculated_available: number | null
   remaining_days: number | null
+  current_period_remaining: number | null
+  current_period_total: number | null
+  current_period_end: string | null
+  tags: EmployeeTag[]
 }
 
 export interface VacationHistoryItem {

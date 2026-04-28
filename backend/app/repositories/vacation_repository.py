@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
 from app.models.employee import Employee
+from app.models.tag import EmployeeTag
 
 
 class VacationRepository:
@@ -315,7 +316,11 @@ class VacationRepository:
         
         query = (
             select(Employee)
-            .options(joinedload(Employee.department), joinedload(Employee.position))
+            .options(
+                joinedload(Employee.department),
+                joinedload(Employee.position),
+                selectinload(Employee.tags).selectinload(EmployeeTag.tag),
+            )
             .where(Employee.is_deleted == False)
         )
 
@@ -438,17 +443,43 @@ class VacationRepository:
                 for p in all_periods
             )
 
+            # Информация о текущем периоде (для отображения остатка по периоду)
+            current_period_remaining = None
+            current_period_total = None
+            current_period_end = None
+            if current_period:
+                current_period_total = current_period.main_days + current_period.additional_days
+                # Используем remaining_days из периода если оно задано,
+                # иначе считаем через used_days (включает vacations + закрытия)
+                if current_period.remaining_days is not None:
+                    current_period_remaining = current_period.remaining_days
+                else:
+                    current_used = current_period.used_days or 0
+                    current_period_remaining = current_period_total - current_used
+                current_period_end = str(current_period.period_end)
+
             employees_data.append({
                 "id": emp_id,
                 "tab_number": emp.tab_number,
                 "name": emp.name,
                 "department": emp.department.name if emp.department else "",
+                "department_id": emp.department.id if emp.department else None,
+                "department_color": emp.department.color if emp.department else None,
+                "department_icon": emp.department.icon if emp.department else None,
                 "position": emp.position.name if emp.position else "",
                 "hire_date": str(hire_date) if hire_date else None,
                 "additional_vacation_days": additional_days,
                 "total_used_days": total_used,
                 "calculated_available": calculated_available,
                 "remaining_days": remaining,
+                "current_period_remaining": current_period_remaining,
+                "current_period_total": current_period_total,
+                "current_period_end": current_period_end,
+                "tags": [
+                    {"id": t.tag.id, "name": t.tag.name, "color": t.tag.color}
+                    for t in (emp.tags or [])
+                    if t.tag
+                ],
             })
 
         return employees_data

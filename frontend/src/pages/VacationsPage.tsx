@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect } from "react"
-import { ChevronDown, ChevronRight, Trash2, Check, X, ScrollText, RefreshCw, Eye, Download, Pencil } from "lucide-react"
+import React, { useState, useRef, useEffect, useMemo } from "react"
+import { ChevronDown, ChevronRight, Trash2, Check, X, ScrollText, RefreshCw, Eye, Download, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Printer, FilePen } from "lucide-react"
+import { renderIcon } from "@/pages/structure-page/shared/EntityDialog"
 import {
   Tooltip,
   TooltipContent,
@@ -23,18 +24,26 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/ui/dialog"
+import {
   useCreateVacation,
   useDeleteVacation,
   useCancelVacation,
   useVacationEmployeesSummary,
   useEmployeeVacationHistory,
+  useHolidays,
 } from "@/entities/vacation"
 import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, VacationPeriodVacation } from "@/entities/vacation-period"
 import { useSearchEmployees, useEmployees, useUpdateEmployee } from "@/entities/employee/useEmployees"
-import { useAllOrderTypes, useCreateOrderPreview } from "@/entities/order/useOrders"
+import { useAllOrderTypes } from "@/entities/order/useOrders"
+import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
+import { useTags } from "@/entities/tag/useTags"
 import type { OrderCreate } from "@/entities/order/types"
 import { OrderNumberField } from "@/features/OrderNumberField"
-import { OrderPreviewDialog } from "@/features/order-preview/OrderPreviewDialog"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 import type { Employee } from "@/entities/employee/types"
 
@@ -100,7 +109,8 @@ function EmployeeHistoryRow({
   recalculatePeriodsMutation,
 }: EmployeeHistoryRowProps) {
   const { data: history, isLoading } = useEmployeeVacationHistory(employeeId)
-  const { data: periods } = useVacationPeriods(employeeId)
+  const { data: periodsRaw } = useVacationPeriods(employeeId)
+  const periods = Array.isArray(periodsRaw) ? periodsRaw : []
   const deleteVacationMutation = useDeleteVacation()
   const cancelVacationMutation = useCancelVacation()
 
@@ -111,8 +121,8 @@ function EmployeeHistoryRow({
   const [isRecalculating, setIsRecalculating] = useState(false)
 
   // Определяем, есть ли открытые периоды (до early return для соблюдения Rules of Hooks)
-  const hasOpenPeriods = periods ? periods.filter(p => p.remaining_days > 0).length > 0 : false
-  const hasClosedPeriods = periods ? periods.filter(p => p.remaining_days === 0).length > 0 : false
+  const hasOpenPeriods = periods.filter(p => p.remaining_days > 0).length > 0
+  const hasClosedPeriods = periods.filter(p => p.remaining_days === 0).length > 0
 
   useEffect(() => {
     if (periods && !hasOpenPeriods && hasClosedPeriods) {
@@ -131,7 +141,7 @@ function EmployeeHistoryRow({
   }
 
   const handleOrderPreview = (orderId: number) => {
-    window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/print`, "_blank")
+    window.open(`/orders/${orderId}/view-docx`, "_blank", "noopener,noreferrer")
   }
 
   const handleOrderDownload = (orderId: number) => {
@@ -233,7 +243,7 @@ function EmployeeHistoryRow({
                         <span className="text-muted-foreground">|</span>
                         <span className="font-medium text-blue-600 tabular-nums">{p.used_days} исп.</span>
                         <span className="text-muted-foreground">|</span>
-                        <span className={`font-semibold ${p.remaining_days < 0 ? "text-red-600" : p.remaining_days < 7 ? "text-amber-600" : "text-green-600"}`}>
+                        <span className={`font-semibold ${p.remaining_days < 7 ? "text-red-600" : p.remaining_days < 14 ? "text-amber-600" : "text-green-600"}`}>
                           {p.remaining_days}
                         </span>
                       </div>
@@ -407,7 +417,7 @@ function EmployeeHistoryRow({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Отмена</AlertDialogCancel>
-          <AlertDialogAction onClick={handleCancelConfirm} className="bg-amber-600 hover:bg-amber-700">
+          <AlertDialogAction onClick={handleCancelConfirm} className="bg-amber-600 hover:bg-amber-700" autoFocus>
             Отменить
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -424,7 +434,7 @@ function EmployeeHistoryRow({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Отмена</AlertDialogCancel>
-          <AlertDialogAction onClick={handleDeleteConfirm} className="bg-red-600 hover:bg-red-700">
+          <AlertDialogAction onClick={handleDeleteConfirm} className="bg-red-600 hover:bg-red-700" autoFocus>
             Удалить навсегда
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -485,7 +495,7 @@ function EmployeeHistoryRow({
         </div>
         <AlertDialogFooter>
           <AlertDialogCancel>Отмена</AlertDialogCancel>
-          <AlertDialogAction onClick={handlePartialClosePeriod}>
+          <AlertDialogAction onClick={handlePartialClosePeriod} autoFocus>
             Применить
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -509,25 +519,33 @@ export function VacationsPage() {
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+  // Holidays for vacation calculation
+  const startYear = startDate ? new Date(startDate).getFullYear() : undefined
+  const endYear = endDate ? new Date(endDate).getFullYear() : undefined
+  const { data: startYearHolidays } = useHolidays(startYear)
+  const { data: endYearHolidays } = useHolidays(endYear !== startYear ? endYear : undefined)
   
   // Period management state
   const [partialClosePeriodId, setPartialClosePeriodId] = useState<number | null>(null)
   const [partialCloseRemaining, setPartialCloseRemaining] = useState("")
   const [closingPeriodId, setClosingPeriodId] = useState<number | null>(null)
 
-  // Preview state
-  const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
-  const [previewId, setPreviewId] = useState<string | null>(null)
-  const [previewHtml, setPreviewHtml] = useState("")
-  const [pendingPayload, setPendingPayload] = useState<any>(null)
+  // Print preview state
+  const [printOpen, setPrintOpen] = useState(false)
+  const [printSelectedTagIds, setPrintSelectedTagIds] = useState<number[]>([])
+  const [printSelectedDeptIds, setPrintSelectedDeptIds] = useState<number[]>([])
+
+  const [draftId, setDraftId] = useState<string | null>(null)
 
   const searchRef = useRef<HTMLDivElement>(null)
 
   const { data: searchResult } = useSearchEmployees(searchQuery)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
+  const { data: allTags } = useTags()
   const { data: orderTypes = [] } = useAllOrderTypes()
   const createMutation = useCreateVacation()
-  const previewMutation = useCreateOrderPreview()
+  const createDraftMutation = useCreateOrderDraft()
   const vacationOrderType = orderTypes.find((item) => item.code === VACATION_ORDER_CODE) ?? null
 
   // Получаем остаток дней выбранного сотрудника из summary
@@ -581,6 +599,7 @@ export function VacationsPage() {
     setOrderNumber("")
     setOrderDate(new Date().toISOString().split("T")[0])
     setErrors({})
+    setDraftId(null)
   }
 
   const validate = (): boolean => {
@@ -595,68 +614,62 @@ export function VacationsPage() {
     return Object.keys(newErrors).length === 0
   }
 
-  const isPending = createMutation.isPending || previewMutation.isPending
+  const isPending = createMutation.isPending || createDraftMutation.isPending
 
-  const handleSubmit = () => {
-    console.log("[VacationsPage] handleSubmit called")
-    if (!validate() || !vacationOrderType || !selectedEmployee) {
-      console.log("[VacationsPage] validation failed or no order type")
-      return
-    }
+  const buildOrderPayload = (): OrderCreate => ({
+    employee_id: selectedEmployee!.id,
+    order_type_id: vacationOrderType!.id,
+    order_date: orderDate,
+    order_number: orderNumber || null,
+    extra_fields: {
+      vacation_start: startDate,
+      vacation_end: endDate,
+      vacation_days: 0,
+      vacation_type: DEFAULT_VACATION_TYPE,
+    },
+  })
 
-    const orderPayload: OrderCreate = {
-      employee_id: selectedEmployee.id,
-      order_type_id: vacationOrderType.id,
-      order_date: orderDate,
-      order_number: orderNumber || null,
-      extra_fields: {
-        vacation_start: startDate,
-        vacation_end: endDate,
-        vacation_days: 0, // backend will calculate
-        vacation_type: DEFAULT_VACATION_TYPE,
-      },
-    }
-    setPendingPayload(orderPayload)
-    previewMutation.mutate(orderPayload, {
-      onSuccess: (preview) => {
-        setPreviewId(preview.preview_id)
-        setPreviewHtml(preview.html)
-        setPreviewDialogOpen(true)
+  const buildVacationPayload = (overrides: Record<string, unknown> = {}) => ({
+    employee_id: selectedEmployee!.id,
+    start_date: startDate,
+    end_date: endDate,
+    vacation_type: DEFAULT_VACATION_TYPE,
+    order_date: orderDate,
+    order_number: orderNumber || undefined,
+    ...overrides,
+  })
+
+  const handleEditBeforeCreate = () => {
+    if (!validate() || !vacationOrderType || !selectedEmployee) return
+    const editorWindow = window.open("about:blank", "_blank")
+    createDraftMutation.mutate(buildOrderPayload(), {
+      onSuccess: (draft) => {
+        setDraftId(draft.draft_id)
+        const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+        if (editorWindow && !editorWindow.closed) {
+          editorWindow.location.href = url
+        } else {
+          window.open(url, "_blank", "noopener,noreferrer")
+        }
       },
       onError: (err: any) => {
-        console.error("[VacationsPage] preview error:", err)
-        setSuccessMessage("Ошибка при формировании предпросмотра")
+        editorWindow?.close()
+        console.error("[VacationsPage] draft error:", err)
+        setSuccessMessage("Ошибка при подготовке DOCX-черновика")
         setTimeout(() => setSuccessMessage(null), 3000)
       },
     })
   }
 
-  const handlePreviewConfirm = (editedHtml: string) => {
-    if (!pendingPayload || !previewId) return
-    
-    const vacationPayload = {
-      employee_id: selectedEmployee!.id,
-      start_date: startDate,
-      end_date: endDate,
-      vacation_type: DEFAULT_VACATION_TYPE,
-      order_date: orderDate,
-      order_number: orderNumber || undefined,
-      preview_id: previewId,
-      edited_html: editedHtml,
-    }
-    
+  const handleCreateFromDraft = () => {
+    if (!draftId || !validate()) return
     createMutation.mutate(
-      vacationPayload,
+      buildVacationPayload({ draft_id: draftId }),
       { 
-        onSuccess: (data) => {
-          console.log("[VacationsPage] mutation success:", data)
+        onSuccess: () => {
           setSuccessMessage("Отпуск успешно создан!")
           setTimeout(() => setSuccessMessage(null), 5000)
           resetForm()
-          setPreviewDialogOpen(false)
-          setPreviewId(null)
-          setPreviewHtml("")
-          setPendingPayload(null)
         },
         onError: (error: any) => {
           console.error("[VacationsPage] mutation error:", error)
@@ -664,6 +677,18 @@ export function VacationsPage() {
       }
     )
   }
+
+  useEffect(() => {
+    const handleDraftSave = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+      const message = event.data as { type?: string; draftId?: string }
+      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
+      handleCreateFromDraft()
+    }
+
+    window.addEventListener("message", handleDraftSave)
+    return () => window.removeEventListener("message", handleDraftSave)
+  }, [draftId, selectedEmployee, startDate, endDate, orderDate, orderNumber])
 
   // --- Vacation periods for selected employee ---
   const closePeriodMutation = useClosePeriod()
@@ -698,6 +723,33 @@ export function VacationsPage() {
   const [editingAddDaysValue, setEditingAddDaysValue] = useState("")
   const updateAddDaysMutation = useUpdateEmployee()
 
+  // Сортировка
+  type SortField = "name" | "tab_number" | "department" | "tags" | "position" | "remaining_days" | "additional_vacation_days" | "hire_date"
+  type SortOrder = "asc" | "desc"
+  interface SortConfig { field: SortField; order: SortOrder }
+  const [sortConfigs, setSortConfigs] = useState<SortConfig[]>([])
+
+  const handleSort = (field: SortField) => {
+    setSortConfigs((prev) => {
+      const existing = prev.find((c) => c.field === field)
+      if (!existing) return [...prev, { field, order: "asc" }]
+      if (existing.order === "asc") return prev.map((c) => c.field === field ? { ...c, order: "desc" } : c)
+      return prev.filter((c) => c.field !== field)
+    })
+  }
+
+  const renderSortIcon = (field: SortField) => {
+    const config = sortConfigs.find((c) => c.field === field)
+    const sortIndex = sortConfigs.findIndex((c) => c.field === field) + 1
+    if (!config) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40 inline" />
+    return (
+      <span className="inline-flex items-center ml-1">
+        <span className="text-xs text-muted-foreground">{sortIndex}</span>
+        {config.order === "asc" ? <ArrowUp className="h-3 w-3 ml-0.5" /> : <ArrowDown className="h-3 w-3 ml-0.5" />}
+      </span>
+    )
+  }
+
   const { data: employees, isLoading: employeesLoading } = useVacationEmployeesSummary(
     debouncedSearch || undefined,
     archiveFilter
@@ -728,6 +780,56 @@ export function VacationsPage() {
     )
   })
 
+  const sortedEmployees = useMemo(() => {
+    if (!filteredEmployees || sortConfigs.length === 0) return filteredEmployees ?? []
+    return [...filteredEmployees].sort((a, b) => {
+      for (const { field, order } of sortConfigs) {
+        let aVal: string | number
+        let bVal: string | number
+        if (field === "department") {
+          aVal = a.department ?? ""
+          bVal = b.department ?? ""
+        } else if (field === "tags") {
+          aVal = a.tags?.[0]?.name ?? ""
+          bVal = b.tags?.[0]?.name ?? ""
+        } else if (field === "remaining_days") {
+          aVal = a.remaining_days ?? -999999
+          bVal = b.remaining_days ?? -999999
+        } else if (field === "tab_number") {
+          aVal = a.tab_number ?? 0
+          bVal = b.tab_number ?? 0
+        } else if (field === "position") {
+          aVal = a.position ?? ""
+          bVal = b.position ?? ""
+        } else if (field === "additional_vacation_days") {
+          aVal = a.additional_vacation_days ?? 0
+          bVal = b.additional_vacation_days ?? 0
+        } else if (field === "hire_date") {
+          aVal = a.hire_date ?? ""
+          bVal = b.hire_date ?? ""
+        } else {
+          aVal = (a[field] ?? "") as string | number
+          bVal = (b[field] ?? "") as string | number
+        }
+        if (aVal < bVal) return order === "asc" ? -1 : 1
+        if (aVal > bVal) return order === "asc" ? 1 : -1
+      }
+      return 0
+    })
+  }, [filteredEmployees, sortConfigs])
+
+  const printFilteredEmployees = useMemo(() => {
+    return sortedEmployees.filter((emp) => {
+      const tagMatch =
+        printSelectedTagIds.length === 0 ||
+        printSelectedTagIds.every((tagId) => emp.tags?.some((t) => t.id === tagId))
+      const deptMatch =
+        printSelectedDeptIds.length === 0 ||
+        printSelectedDeptIds.includes(emp.department_id ?? -1)
+      return tagMatch && deptMatch
+    })
+  }, [sortedEmployees, printSelectedTagIds, printSelectedDeptIds])
+
   return (
     <div className="space-y-4">
       {/* Success Alert */}
@@ -746,6 +848,10 @@ export function VacationsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Трудовой отпуск</h1>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setPrintOpen(true)}>
+            <Printer className="mr-2 h-4 w-4" />
+            Печать
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setAuditLogOpen(true)}>
             <ScrollText className="mr-2 h-4 w-4" />
             Журнал
@@ -787,9 +893,9 @@ export function VacationsPage() {
                       </span>
                       {selectedEmployeeSummary?.remaining_days !== null && selectedEmployeeSummary?.remaining_days !== undefined && (
                         <span className={`text-sm font-semibold shrink-0 ${
-                          selectedEmployeeSummary.remaining_days < 0
+                          selectedEmployeeSummary.remaining_days < 7
                             ? "text-red-600"
-                            : selectedEmployeeSummary.remaining_days < 7
+                            : selectedEmployeeSummary.remaining_days < 14
                             ? "text-amber-600"
                             : "text-green-600"
                         }`}>
@@ -842,7 +948,7 @@ export function VacationsPage() {
                                 </div>
                                 {remaining !== null && remaining !== undefined && (
                                   <span className={`font-semibold ml-2 shrink-0 text-xs ${
-                                    remaining < 0 ? "text-red-600" : remaining < 7 ? "text-amber-600" : "text-green-600"
+                                    remaining < 7 ? "text-red-600" : remaining < 14 ? "text-amber-600" : "text-green-600"
                                   }`}>
                                     {remaining} дн.
                                   </span>
@@ -880,17 +986,47 @@ export function VacationsPage() {
                   {errors.endDate && <p className="text-xs text-red-500 mt-1">{errors.endDate}</p>}
                 </div>
                 {startDate && endDate && (
-                  <div className="w-[130px]">
-                    <label className="text-sm font-medium">Дней отпуска</label>
-                    <Input
-                      value={String(
+                  <div className="flex-1 min-w-[200px]">
+                    {(() => {
+                      const allHolidays = [...(startYearHolidays || []), ...(endYearHolidays || [])]
+                      const uniqueHolidays = allHolidays.filter((h, i, arr) =>
+                        arr.findIndex((t) => t.date === h.date) === i
+                      )
+                      const holidaysInRange = uniqueHolidays.filter((h) => {
+                        const d = h.date.slice(0, 10)
+                        return d >= startDate && d <= endDate
+                      })
+                      const calendarDays =
                         Math.round(
-                          (new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)
+                          (new Date(endDate).getTime() - new Date(startDate).getTime()) /
+                            (1000 * 60 * 60 * 24)
                         ) + 1
-                      )}
-                      readOnly
-                      className="h-10 text-sm"
-                    />
+                      const totalDays = Math.max(0, calendarDays - holidaysInRange.length)
+                      return (
+                        <div className="text-xs space-y-0.5">
+                          {holidaysInRange.length > 0 && (
+                            <>
+                              <div className="flex gap-2">
+                                <span className="text-muted-foreground">Календарных дней:</span>
+                                <span className="font-medium">{calendarDays}</span>
+                              </div>
+                              <div className="flex gap-2">
+                                <span className="text-muted-foreground">Праздники:</span>
+                                <span className="font-medium">
+                                  {holidaysInRange.map((h) => `${formatDate(h.date)} ${h.name}`).join(", ")}
+                                  {" "}
+                                  <span className="text-muted-foreground">({holidaysInRange.length} дн.)</span>
+                                </span>
+                              </div>
+                            </>
+                          )}
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground">Итого дней отпуска:</span>
+                            <span className="font-semibold text-foreground">{totalDays}</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
               </div>
@@ -908,15 +1044,28 @@ export function VacationsPage() {
                 >
                   Очистить
                 </Button>
-                <Button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleSubmit()
-                  }}
-                  disabled={isPending}
-                >
-                  {isPending ? "Создание..." : "Создать"}
-                </Button>
+                {!draftId ? (
+                  <Button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleEditBeforeCreate()
+                    }}
+                    disabled={isPending}
+                  >
+                    <FilePen className="mr-2 h-4 w-4" />
+                    {createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleCreateFromDraft()
+                    }}
+                    disabled={isPending}
+                  >
+                    {createMutation.isPending ? "Создание..." : "Создать приказ"}
+                  </Button>
+                )}
               </div>
               {createMutation.isError && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
@@ -929,13 +1078,38 @@ export function VacationsPage() {
       </div>
 
       {/* --- Main employees table --- */}
-      <div className="flex gap-3 items-center">
-        <Input
-          placeholder="Поиск по ФИО или таб.№..."
-          value={searchName}
-          onChange={(e) => setSearchName(e.target.value)}
-          className="w-64 h-9 text-sm"
-        />
+      <div className="flex gap-1 items-center">
+        <div className="relative">
+          <Input
+            placeholder="Поиск по ФИО или таб.№..."
+            value={searchName}
+            onChange={(e) => setSearchName(e.target.value)}
+            className="w-64 h-9 text-sm pr-8"
+          />
+          {searchName && (
+            <button
+              onClick={() => setSearchName("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              type="button"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 text-xs"
+          onClick={() => {
+            setSearchName("")
+            setSortConfigs([])
+            setArchiveFilter("active")
+            setSelectedEmployee(null)
+            setExpandedRows(new Set())
+          }}
+        >
+          Очистить
+        </Button>
         <div className="flex gap-1">
           {(["active", "archived", "all"] as const).map((f) => (
             <Button
@@ -957,7 +1131,7 @@ export function VacationsPage() {
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : !filteredEmployees?.length ? (
+      ) : !sortedEmployees.length ? (
         <EmptyState message="Нет сотрудников" description="Нет сотрудников, соответствующих фильтру" />
       ) : (
         <div className="border rounded-lg overflow-hidden">
@@ -965,17 +1139,58 @@ export function VacationsPage() {
             <thead className="bg-muted/50">
               <tr>
                 <th className="w-[30px] px-2 py-2"></th>
-                <th className="text-left px-4 py-2 font-medium">Таб.№</th>
-                <th className="text-left px-4 py-2 font-medium">ФИО</th>
-                <th className="text-left px-4 py-2 font-medium">Подразделение</th>
-                <th className="text-left px-4 py-2 font-medium">Должность</th>
-                <th className="text-left px-4 py-2 font-medium">Остаток дней</th>
-                <th className="text-left px-4 py-2 font-medium">Доп. дни</th>
-                <th className="text-left px-4 py-2 font-medium">Дата приема</th>
+                <th
+                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("tab_number")}
+                >
+                  Таб.№ {renderSortIcon("tab_number")}
+                </th>
+                <th
+                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("name")}
+                >
+                  ФИО {renderSortIcon("name")}
+                </th>
+                <th
+                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("department")}
+                >
+                  Подразделение {renderSortIcon("department")}
+                </th>
+                <th
+                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("tags")}
+                >
+                  Теги {renderSortIcon("tags")}
+                </th>
+                <th
+                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("position")}
+                >
+                  Должность {renderSortIcon("position")}
+                </th>
+                <th
+                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("remaining_days")}
+                >
+                  Остаток (период) {renderSortIcon("remaining_days")}
+                </th>
+                <th
+                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("additional_vacation_days")}
+                >
+                  Доп. дни {renderSortIcon("additional_vacation_days")}
+                </th>
+                <th
+                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
+                  onClick={() => handleSort("hire_date")}
+                >
+                  Дата приема {renderSortIcon("hire_date")}
+                </th>
               </tr>
             </thead>
             <tbody>
-              {filteredEmployees.map((emp) => {
+              {sortedEmployees.map((emp) => {
                 const isExpanded = expandedRows.has(emp.id)
 
                 return (
@@ -993,20 +1208,55 @@ export function VacationsPage() {
                       </td>
                       <td className="px-4 py-2 text-muted-foreground">{emp.tab_number ?? "—"}</td>
                       <td className="px-4 py-2 font-medium">{emp.name}</td>
-                      <td className="px-4 py-2">{emp.department}</td>
+                      <td className="px-4 py-2">
+                        <div className="flex items-center gap-1.5">
+                          {emp.department_icon
+                            ? renderIcon(emp.department_icon, "h-4 w-4 flex-shrink-0", { color: emp.department_color || undefined })
+                            : emp.department_color && (
+                              <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: emp.department_color }} />
+                            )}
+                          <span className="truncate">{emp.department}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="flex flex-wrap gap-1">
+                          {(emp.tags || []).map((t) => (
+                            <TooltipProvider key={t.id} delayDuration={100}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    className="inline-block h-3 w-3 rounded-full cursor-default"
+                                    style={{ backgroundColor: t.color || "#94a3b8" }}
+                                  />
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs">
+                                  {t.name}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ))}
+                        </div>
+                      </td>
                       <td className="px-4 py-2">{emp.position}</td>
                       <td className="px-4 py-2">
                         {emp.remaining_days !== null ? (
-                          <span
-                            className={
-                              emp.remaining_days < 0
-                                ? "text-red-600 font-semibold"
-                                : emp.remaining_days < 7
-                                ? "text-amber-600 font-semibold"
-                                : "text-green-600 font-semibold"
-                            }
-                          >
-                            {emp.remaining_days}
+                          <span>
+                            <span
+                              className={
+                                emp.remaining_days < 7
+                                  ? "text-red-600 font-semibold"
+                                  : emp.remaining_days < 14
+                                  ? "text-amber-600 font-semibold"
+                                  : "text-green-600 font-semibold"
+                              }
+                            >
+                              {emp.remaining_days}
+                            </span>
+                            {emp.current_period_remaining !== null && emp.current_period_total !== null && emp.current_period_end !== null && (
+                              <span className="text-foreground">
+                                -({emp.current_period_remaining}/{emp.current_period_total})-{formatDate(emp.current_period_end)}
+                              </span>
+                            )}
                           </span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
@@ -1063,7 +1313,7 @@ export function VacationsPage() {
                     </tr>
                     {isExpanded && (
                       <tr key={`${emp.id}-history`}>
-                        <td colSpan={8} className="p-0">
+                        <td colSpan={9} className="p-0">
                           <EmployeeHistoryRow 
                             employeeId={emp.id}
                             partialClosePeriodId={partialClosePeriodId}
@@ -1088,15 +1338,259 @@ export function VacationsPage() {
         </div>
       )}
 
-      <OrderPreviewDialog
-        open={previewDialogOpen}
-        html={previewHtml}
-        isSubmitting={createMutation.isPending}
-        onOpenChange={setPreviewDialogOpen}
-        onConfirm={handlePreviewConfirm}
-      />
-
       <GlobalAuditLog open={auditLogOpen} onOpenChange={setAuditLogOpen} initialActionFilter="vacation" />
+
+      {/* --- Print preview dialog --- */}
+      <Dialog open={printOpen} onOpenChange={setPrintOpen}>
+        <DialogContent className="print-preview max-w-4xl max-h-[90vh] overflow-y-auto p-4">
+          <style>{`
+            @page {
+              size: A4 portrait;
+              margin: 8mm;
+            }
+            @media print {
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: white !important;
+                height: auto !important;
+                min-height: auto !important;
+                overflow: visible !important;
+              }
+              body * {
+                visibility: hidden;
+              }
+              .print-preview, .print-preview * {
+                visibility: visible;
+              }
+              /* Скрываем всё лишнее в body */
+              body > *:not(.print-preview):not([data-radix-focus-guard]) {
+                display: none !important;
+              }
+              /* Скрываем оверлей модалки полностью */
+              [data-radix-dialog-overlay],
+              [role="presentation"] {
+                display: none !important;
+                visibility: hidden !important;
+              }
+              /* Сброс стилей модалки для печати */
+              [data-state="open"] > div,
+              .print-preview,
+              [role="dialog"] {
+                position: static !important;
+                left: auto !important;
+                top: auto !important;
+                right: auto !important;
+                bottom: auto !important;
+                transform: none !important;
+                max-width: none !important;
+                max-height: none !important;
+                min-height: auto !important;
+                width: 100% !important;
+                height: auto !important;
+                overflow: visible !important;
+                background: white !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                border: none !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                outline: none !important;
+              }
+              .print-preview button,
+              .print-preview [role="button"] {
+                display: none !important;
+              }
+              .print-preview .no-print {
+                display: none !important;
+              }
+              .print-table {
+                width: 100%;
+                border-collapse: collapse;
+                table-layout: fixed;
+                font-size: 9px;
+              }
+              .print-table th,
+              .print-table td {
+                border: 0.5px solid #000;
+                padding: 1px 3px;
+                text-align: left;
+                vertical-align: top;
+                word-wrap: break-word;
+                overflow-wrap: break-word;
+              }
+              .print-table th {
+                font-weight: bold;
+                background: #e5e5e5;
+              }
+              .print-table td {
+                line-height: 1.2;
+              }
+              .print-header {
+                margin-bottom: 4px;
+                text-align: center;
+              }
+              .print-header span {
+                display: inline;
+                font-size: 11px;
+                margin: 0;
+                padding: 0;
+              }
+            }
+          `}</style>
+          <DialogHeader className="no-print">
+            <DialogTitle className="flex items-center justify-between">
+              <span>Предпросмотр печати</span>
+              <Button size="sm" onClick={() => window.print()}>
+                <Printer className="mr-1.5 h-4 w-4" />
+                Печать
+              </Button>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-1 mt-1">
+            {/* Header */}
+            <div className="text-center print-header">
+              <span className="text-base font-bold uppercase tracking-wide">Отпуска</span>
+              {" "}
+              <span className="text-[10px] text-muted-foreground ml-2">
+                Дата формирования: {new Date().toLocaleDateString("ru-RU")}
+              </span>
+            </div>
+
+            {/* Filters (hidden in print) */}
+            <div className="no-print space-y-2">
+              {/* Department filter */}
+              {(() => {
+                const deptMap = new Map<number, string>()
+                sortedEmployees.forEach((emp) => {
+                  if (emp.department_id != null && emp.department) {
+                    deptMap.set(emp.department_id, emp.department)
+                  }
+                })
+                const depts = Array.from(deptMap.entries()).sort((a, b) => a[1].localeCompare(b[1], "ru"))
+                if (depts.length === 0) return null
+                return (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium">Фильтр по подразделениям:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {depts.map(([id, name]) => {
+                        const isSelected = printSelectedDeptIds.includes(id)
+                        return (
+                          <button
+                            key={id}
+                            onClick={() => {
+                              setPrintSelectedDeptIds((prev) =>
+                                prev.includes(id)
+                                  ? prev.filter((d) => d !== id)
+                                  : [...prev, id]
+                              )
+                            }}
+                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] transition-colors border ${
+                              isSelected
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-muted text-muted-foreground border-border hover:bg-accent"
+                            }`}
+                          >
+                            {name}
+                          </button>
+                        )
+                      })}
+                      {printSelectedDeptIds.length > 0 && (
+                        <button
+                          onClick={() => setPrintSelectedDeptIds([])}
+                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border border-dashed border-gray-400 text-muted-foreground hover:bg-accent transition-colors"
+                        >
+                          Сбросить
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Tag filter */}
+              {allTags && allTags.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium">Фильтр по тегам:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {allTags.map((tag) => {
+                      const isSelected = printSelectedTagIds.includes(tag.id)
+                      return (
+                        <button
+                          key={tag.id}
+                          onClick={() => {
+                            setPrintSelectedTagIds((prev) =>
+                              prev.includes(tag.id)
+                                ? prev.filter((id) => id !== tag.id)
+                                : [...prev, tag.id]
+                            )
+                          }}
+                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] transition-colors border ${
+                            isSelected
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-muted text-muted-foreground border-border hover:bg-accent"
+                          }`}
+                        >
+                          {tag.name}
+                        </button>
+                      )
+                    })}
+                    {printSelectedTagIds.length > 0 && (
+                      <button
+                        onClick={() => setPrintSelectedTagIds([])}
+                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border border-dashed border-gray-400 text-muted-foreground hover:bg-accent transition-colors"
+                      >
+                        Сбросить
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Table */}
+            <table className="print-table w-full text-[10px]">
+              <colgroup>
+                <col style={{ width: "30%" }} />
+                <col style={{ width: "20%" }} />
+                <col style={{ width: "20%" }} />
+                <col style={{ width: "30%" }} />
+              </colgroup>
+              <thead>
+                <tr className="border-b-2 border-black">
+                  <th className="text-left px-0.5 py-0 font-semibold">ФИО</th>
+                  <th className="text-left px-0.5 py-0 font-semibold">Остаток (период)</th>
+                  <th className="text-left px-0.5 py-0 font-semibold">Теги</th>
+                  <th className="text-left px-0.5 py-0 font-semibold">Должность</th>
+                </tr>
+              </thead>
+              <tbody>
+                {printFilteredEmployees.map((emp) => (
+                  <tr key={emp.id} className="border-b border-gray-300">
+                    <td className="px-0.5 py-0">{emp.name}</td>
+                    <td className="px-0.5 py-0">
+                      {emp.remaining_days !== null
+                        ? `${emp.remaining_days}${emp.current_period_remaining !== null && emp.current_period_total !== null && emp.current_period_end !== null
+                          ? `-${emp.current_period_remaining}/${emp.current_period_total}-${formatDate(emp.current_period_end)}`
+                          : ""}`
+                        : "—"}
+                    </td>
+                    <td className="px-0.5 py-0">
+                      {(emp.tags || []).map((t) => t.name).join(", ") || "—"}
+                    </td>
+                    <td className="px-0.5 py-0">{emp.position}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {printFilteredEmployees.length === 0 && (
+              <p className="text-center text-muted-foreground py-2 text-xs">Нет данных для печати</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

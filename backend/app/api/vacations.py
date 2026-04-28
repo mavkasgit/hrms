@@ -19,17 +19,30 @@ router = APIRouter(prefix="/vacations", tags=["vacations"])
 
 
 # --- New schemas for summary/history ---
+class TagRef(BaseModel):
+    id: int
+    name: str
+    color: Optional[str] = None
+
+
 class EmployeeVacationSummary(BaseModel):
     id: int
     tab_number: Optional[int]
     name: str
     department: str
+    department_id: Optional[int]
+    department_color: Optional[str]
+    department_icon: Optional[str]
     position: str
     hire_date: Optional[str]
     additional_vacation_days: Optional[int]
     total_used_days: int
     calculated_available: Optional[int]
     remaining_days: Optional[int]
+    current_period_remaining: Optional[int]
+    current_period_total: Optional[int]
+    current_period_end: Optional[str]
+    tags: list[TagRef] = []
 
 
 class VacationHistoryItem(BaseModel):

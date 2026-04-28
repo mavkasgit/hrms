@@ -27,17 +27,14 @@ export function useClosePeriod() {
   return useMutation({
     mutationFn: (periodId: number) => closePeriod(periodId),
     onSuccess: (data) => {
-      // Находим все кеши с периодами по period_id и обновляем
-      queryClient.setQueryData(["vacation-periods", data.period_id], data)
-      
-      // Обновляем массив периодов - ищем во всех кешах
+      // Обновляем массив периодов в кеше по employee_id
       queryClient.setQueryData(["vacation-periods"], (old: any) => {
         if (!old || !Array.isArray(old)) return old
-        return old.map((p: any) => 
+        return old.map((p: any) =>
           p.period_id === data.period_id ? data : p
         )
       })
-      
+
       // Также инвалидируем чтобы обновить другие списки
       queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
@@ -52,16 +49,14 @@ export function usePartialClosePeriod() {
     mutationFn: ({ periodId, remainingDays }: { periodId: number; remainingDays: number }) =>
       partialClosePeriod(periodId, remainingDays),
     onSuccess: (data) => {
-      // Обновляем кеш напрямую данными из ответа сервера
-      queryClient.setQueryData(["vacation-periods", data.period_id], data)
-      
+      // Обновляем массив периодов в кеше по employee_id
       queryClient.setQueryData(["vacation-periods"], (old: any) => {
         if (!old || !Array.isArray(old)) return old
-        return old.map((p: any) => 
+        return old.map((p: any) =>
           p.period_id === data.period_id ? data : p
         )
       })
-      
+
       // Также инвалидируем
       queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
@@ -74,8 +69,9 @@ export function useRecalculateVacationPeriods() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (employeeId: number) => recalculateVacationPeriods(employeeId),
-    onSuccess: (data) => {
-      queryClient.setQueryData(["vacation-periods"], data)
+    onSuccess: (_data, employeeId) => {
+      // Инвалидируем кеш конкретного сотрудника
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods", employeeId] })
       queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
