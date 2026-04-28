@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-_env_file = os.getenv("ENV_FILE", ".env.dev")
+_env_file = os.getenv("ENV_FILE") or str(BASE_DIR.parent / ".env.dev")
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_dev"
@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     LOG_FILE: str = str(BASE_DIR / "logs" / "hrms.log")
     LOG_MAX_BYTES: int = 50 * 1024 * 1024  # 50 МБ
     LOG_BACKUP_COUNT: int = 5             # 5 файлов = 250 МБ суммарно
+
+    ONLYOFFICE_ENABLED: bool = False
+    ONLYOFFICE_JWT_SECRET: str = "change-me"
+    ONLYOFFICE_PUBLIC_URL: str = "http://localhost:8085"
+    ONLYOFFICE_INTERNAL_URL: str = "http://localhost:8085"
+    APP_PUBLIC_URL: str = "http://localhost:8000"
     
     # SQL logging (set to True to see all SQL queries)
     SQL_ECHO: bool = False

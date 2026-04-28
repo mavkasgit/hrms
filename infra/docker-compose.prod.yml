@@ -9,11 +9,28 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms_pass_prod}
       POSTGRES_DB: hrms_prod
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5434:5432"
     volumes:
       - ../data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hrms_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: hrms-onlyoffice-prod
+    ports:
+      - "8087:80"
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-prod-secret-change-before-real-production}
+      JWT_HEADER: "Authorization"
+      JWT_IN_BODY: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,15 +45,22 @@ services:
       - ../data/personal_files:/app/data/personal
       - ../logs:/app/logs
     ports:
-      - "8000:8000"
+      - "8002:8000"
     env_file:
       - ../.env.prod
     environment:
       DATABASE_URL: postgresql+asyncpg://hrms_user:${POSTGRES_PASSWORD:-hrms_pass_prod}@postgres:5432/hrms_prod
       ENV: prod
       SECRET_KEY: ${SECRET_KEY:-hrms-prod-local-secret-change-before-real-production}
+      ONLYOFFICE_ENABLED: "true"
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-prod-secret-change-before-real-production}
+      ONLYOFFICE_PUBLIC_URL: ${ONLYOFFICE_PUBLIC_URL:-http://localhost:8087}
+      ONLYOFFICE_INTERNAL_URL: http://onlyoffice:80
+      APP_PUBLIC_URL: http://backend:8000
     depends_on:
       postgres:
+        condition: service_healthy
+      onlyoffice:
         condition: service_healthy
     command: >
       sh -c "until python -c 'import socket; s=socket.create_connection((\"postgres\", 5432), 3); s.close()'; do sleep 2; done &&
@@ -48,9 +72,7 @@ services:
     build: ../frontend
     container_name: hrms-frontend-prod
     ports:
-      - "5173:80"
-    environment:
-      VITE_API_URL: http://localhost:8000
+      - "5175:80"
     depends_on:
       - backend
     restart: always

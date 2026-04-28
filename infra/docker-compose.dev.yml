@@ -17,3 +17,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: hrms-onlyoffice
+    ports:
+      - "8085:80"
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: "onlyoffice-dev-secret-change-me"
+      JWT_HEADER: "Authorization"
+      JWT_IN_BODY: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

@@ -19,6 +19,22 @@ services:
       timeout: 5s
       retries: 5
 
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: hrms-onlyoffice-test
+    ports:
+      - "8086:80"
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: "onlyoffice-test-secret"
+      JWT_HEADER: "Authorization"
+      JWT_IN_BODY: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: 
       context: ../backend
@@ -38,8 +54,15 @@ services:
       ENV_FILE: .env.test
       DATABASE_URL: postgresql+asyncpg://hrms_user:hrms_pass_test@postgres:5432/hrms_test
       ENV: test
+      ONLYOFFICE_ENABLED: "true"
+      ONLYOFFICE_JWT_SECRET: onlyoffice-test-secret
+      ONLYOFFICE_PUBLIC_URL: http://localhost:8086
+      ONLYOFFICE_INTERNAL_URL: http://onlyoffice:80
+      APP_PUBLIC_URL: http://backend:8000
     depends_on:
       postgres:
+        condition: service_healthy
+      onlyoffice:
         condition: service_healthy
     command: >
       sh -c "pip install -r requirements.txt && 
