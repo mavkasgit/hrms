@@ -25,6 +25,16 @@ export function useHolidaysApi(year: number) {
     },
   })
 
+  const deleteAllMutation = useMutation({
+    mutationFn: async () => {
+      if (!holidays) return
+      await Promise.all(holidays.map((h) => api.deleteHoliday(h.id)))
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["holidays", year] })
+    },
+  })
+
   const seedMutation = useMutation({
     mutationFn: (year: number) => api.seedHolidays(year),
     onSuccess: () => {
@@ -38,9 +48,11 @@ export function useHolidaysApi(year: number) {
     refetch: () => queryClient.invalidateQueries({ queryKey: ["holidays", year] }),
     addHoliday: addMutation.mutateAsync,
     deleteHoliday: deleteMutation.mutateAsync,
+    deleteAllHolidays: deleteAllMutation.mutateAsync,
     seedHolidays: seedMutation.mutateAsync,
     isAdding: addMutation.isPending,
     isDeleting: deleteMutation.isPending,
+    isDeletingAll: deleteAllMutation.isPending,
     isSeeding: seedMutation.isPending,
   }
 }
