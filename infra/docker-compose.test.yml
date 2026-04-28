@@ -43,8 +43,9 @@ services:
         condition: service_healthy
     command: >
       sh -c "pip install -r requirements.txt && 
+             until python -c 'import socket; s=socket.create_connection((\"postgres\", 5432), 3); s.close()'; do sleep 2; done &&
              alembic upgrade head &&
-             uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
   frontend:
     build:
@@ -66,7 +67,7 @@ services:
       sh -c "echo 'Waiting for frontend...' &&
              until wget -q -O /dev/null http://127.0.0.1:80; do sleep 2; done &&
              echo 'Starting localtunnel...' &&
-             npx --yes localtunnel --port 80 --subdomain hrms-test-x7k9m2v4 2>&1"
+             npx --yes localtunnel --port 80 --subdomain hrms-test-7q2k9m4x 2>&1"
     restart: unless-stopped
 
 volumes:

@@ -1,10 +1,12 @@
+name: hrms-prod
+
 services:
   postgres:
     image: postgres:15-alpine
     container_name: hrms-postgres-prod
     environment:
       POSTGRES_USER: hrms_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms_pass_prod}
       POSTGRES_DB: hrms_prod
     ports:
       - "127.0.0.1:5432:5432"
@@ -30,12 +32,16 @@ services:
     env_file:
       - ../.env.prod
     environment:
-      DATABASE_URL: postgresql+asyncpg://hrms_user:${POSTGRES_PASSWORD}@postgres:5432/hrms_prod
+      DATABASE_URL: postgresql+asyncpg://hrms_user:${POSTGRES_PASSWORD:-hrms_pass_prod}@postgres:5432/hrms_prod
       ENV: prod
-      SECRET_KEY: ${SECRET_KEY}
+      SECRET_KEY: ${SECRET_KEY:-hrms-prod-local-secret-change-before-real-production}
     depends_on:
       postgres:
         condition: service_healthy
+    command: >
+      sh -c "until python -c 'import socket; s=socket.create_connection((\"postgres\", 5432), 3); s.close()'; do sleep 2; done &&
+             alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
     restart: always
 
   frontend:
@@ -48,3 +54,16 @@ services:
     depends_on:
       - backend
     restart: always
+
+  localtunnel:
+    image: node:20-alpine
+    container_name: hrms-localtunnel-prod
+    network_mode: "service:frontend"
+    depends_on:
+      - frontend
+    command: >
+      sh -c "echo 'Waiting for frontend...' &&
+             until wget -q -O /dev/null http://127.0.0.1:80; do sleep 2; done &&
+             echo 'Starting localtunnel...' &&
+             npx --yes localtunnel --port 80 --subdomain hrms-prod-7q2k9m4x 2>&1"
+    restart: unless-stopped
