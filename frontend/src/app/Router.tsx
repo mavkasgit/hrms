@@ -12,6 +12,7 @@ import { VacationCalendarPage } from "@/pages/VacationCalendarPage"
 import { TemplatesPage } from "@/pages/TemplatesPage"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { HolidaysPage } from "@/pages/HolidaysPage"
+import { BackupsPage } from "@/pages/BackupsPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { DevPage } from "@/pages/DevPage"
 import { OrderEditorPage } from "@/pages/OrderEditorPage"
@@ -34,6 +35,7 @@ export const router = createBrowserRouter([
       { path: "templates", element: <TemplatesPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "settings/holidays", element: <HolidaysPage /> },
+      { path: "settings/backups", element: <BackupsPage /> },
       { path: "dev", element: <DevPage /> },
     ],
   },

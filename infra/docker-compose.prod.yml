@@ -44,6 +44,7 @@ services:
       - ../data/templates:/app/data/templates
       - ../data/personal_files:/app/data/personal
       - ../logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "8002:8000"
     env_file:

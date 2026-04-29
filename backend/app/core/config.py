@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     ORDERS_PATH: str = str(BASE_DIR / "data" / "orders")
     TEMPLATES_PATH: str = str(BASE_DIR / "data" / "templates")
     PERSONAL_FILES_PATH: str = str(BASE_DIR / "data" / "personal")
+    BACKUPS_PATH: str = str(BASE_DIR / "data" / "backups")
+    POSTGRES_CONTAINER_NAME: str = "hrms-postgres"
 
     MAX_PHOTO_SIZE: int = 5 * 1024 * 1024
     MAX_DOCUMENT_SIZE: int = 10 * 1024 * 1024

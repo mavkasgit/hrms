@@ -46,6 +46,7 @@ services:
       - orders_test_data:/app/data/orders
       - templates_test_data:/app/data/templates
       - personal_files_test_data:/app/data/personal
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "8001:8000"
     env_file:
