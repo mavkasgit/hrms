@@ -20,3 +20,4 @@ from app.models.tag import Tag, EmployeeTag, DepartmentTag  # noqa: F401, E402
 from app.models.position import Position  # noqa: F401, E402
 from app.models.sick_leave import SickLeave, SickLeaveStatus  # noqa: F401, E402
 from app.models.vacation_period_transaction import VacationPeriodTransaction  # noqa: F401, E402
+from app.models.staffing_document import StaffingDocument  # noqa: F401, E402

@@ -55,9 +55,9 @@ services:
       SECRET_KEY: ${SECRET_KEY:-hrms-prod-local-secret-change-before-real-production}
       ONLYOFFICE_ENABLED: "true"
       ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-prod-secret-change-before-real-production}
-      ONLYOFFICE_PUBLIC_URL: ${ONLYOFFICE_PUBLIC_URL:-http://localhost:8087}
+      ONLYOFFICE_PUBLIC_URL: ${LAN_PUBLIC_URL:-${ONLYOFFICE_PUBLIC_URL:-http://localhost:5175}}
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice:80
-      APP_PUBLIC_URL: http://backend:8000
+      APP_PUBLIC_URL: ${LAN_PUBLIC_URL:-${APP_PUBLIC_URL:-http://localhost:5175}}
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,17 +76,6 @@ services:
       - "5175:80"
     depends_on:
       - backend
+      - onlyoffice
     restart: always
 
-  localtunnel:
-    image: node:20-alpine
-    container_name: hrms-localtunnel-prod
-    network_mode: "service:frontend"
-    depends_on:
-      - frontend
-    command: >
-      sh -c "echo 'Waiting for frontend...' &&
-             until wget -q -O /dev/null http://127.0.0.1:80; do sleep 2; done &&
-             echo 'Starting localtunnel...' &&
-             npx --yes localtunnel --port 80 --subdomain hrms-prod-7q2k9m4x 2>&1"
-    restart: unless-stopped

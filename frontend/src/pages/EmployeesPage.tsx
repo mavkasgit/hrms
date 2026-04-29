@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { Plus, Search, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload, ScrollText, Tag } from "lucide-react"
+import { Plus, Search, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload, ScrollText, Tag, Building2 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
@@ -16,6 +16,7 @@ import {
 import { useEmployees } from "@/entities/employee/useEmployees"
 import { EmployeeForm } from "@/features/employee-form"
 import { ImportEmployeesModal } from "@/features/import-employees/ImportEmployeesModal"
+import { StaffingModal } from "@/features/staffing-modal/StaffingModal"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 import type { Employee, EmployeeStatus } from "@/entities/employee/types"
 import { renderIcon } from "@/pages/structure-page/shared/EntityDialog"
@@ -63,6 +64,7 @@ export function EmployeesPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [auditLogOpen, setAuditLogOpen] = useState(false)
+  const [staffingOpen, setStaffingOpen] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
 
   const genderFilter = selectedGenders.size === 1 ? [...selectedGenders][0] : undefined
@@ -194,6 +196,10 @@ export function EmployeesPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Сотрудники</h1>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setStaffingOpen(true)}>
+            <Building2 className="mr-2 h-4 w-4" />
+            Штатное расписание
+          </Button>
           <Button variant="outline" onClick={() => setAuditLogOpen(true)}>
             <ScrollText className="mr-2 h-4 w-4" />
             Журнал
@@ -383,6 +389,7 @@ export function EmployeesPage() {
           window.location.reload()
         }}
       />
+      <StaffingModal open={staffingOpen} onOpenChange={setStaffingOpen} />
     </div>
   )
 }

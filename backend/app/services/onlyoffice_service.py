@@ -13,6 +13,16 @@ from app.core.exceptions import HRMSException
 
 
 class OnlyOfficeService:
+    _FILE_TYPE_MAP = {
+        "docx": ("docx", "word"),
+        "xlsx": ("xlsx", "cell"),
+        "pdf": ("pdf", "pdf"),
+    }
+
+    def _get_file_types(self, file_path: Path) -> tuple[str, str]:
+        ext = file_path.suffix.lower().lstrip(".")
+        return self._FILE_TYPE_MAP.get(ext, ("docx", "word"))
+
     def build_config(
         self,
         doc_type: str,
@@ -24,9 +34,10 @@ class OnlyOfficeService:
         mode: str = "edit",
     ) -> dict[str, Any]:
         can_edit = mode == "edit"
+        file_type, doc_type_oo = self._get_file_types(file_path)
         config: dict[str, Any] = {
             "document": {
-                "fileType": "docx",
+                "fileType": file_type,
                 "key": f"{self._generate_key(doc_type, doc_id, file_path)}-{mode}",
                 "title": title,
                 "url": file_url,
@@ -42,7 +53,7 @@ class OnlyOfficeService:
                     "review": can_edit,
                 },
             },
-            "documentType": "word",
+            "documentType": doc_type_oo,
             "editorConfig": {
                 "callbackUrl": callback_url,
                 "lang": "ru",
@@ -90,6 +101,8 @@ class OnlyOfficeService:
                 last_error = exc
                 continue
 
+            if result.get("error") == 4:
+                return
             if result.get("error") not in (0, None):
                 raise HRMSException(
                     f"OnlyOffice не принял команду сохранения: error={result.get('error')}",

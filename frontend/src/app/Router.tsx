@@ -17,6 +17,7 @@ import { LoginPage } from "@/pages/LoginPage"
 import { DevPage } from "@/pages/DevPage"
 import { OrderEditorPage } from "@/pages/OrderEditorPage"
 import { DraftOrderEditorPage } from "@/pages/DraftOrderEditorPage"
+import { StaffingViewPage } from "@/pages/StaffingViewPage"
 
 export const router = createBrowserRouter([
   {
@@ -46,6 +47,10 @@ export const router = createBrowserRouter([
   {
     path: "/orders/drafts/:draftId/edit-docx",
     element: <DraftOrderEditorPage />,
+  },
+  {
+    path: "/staffing/:id/view",
+    element: <StaffingViewPage />,
   },
   {
     path: "/orders/:id/view-docx",

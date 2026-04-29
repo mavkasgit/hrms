@@ -28,6 +28,7 @@ from app.api.import_employees import router as import_router
 from app.api.dev import router as dev_router
 from app.api.onlyoffice import router as onlyoffice_router
 from app.api.backups import router as backups_router
+from app.api.staffing import router as staffing_router
 
 
 @asynccontextmanager
@@ -86,6 +87,7 @@ app.include_router(import_router, prefix="/api")
 app.include_router(dev_router, prefix="/api")
 app.include_router(onlyoffice_router, prefix="/api")
 app.include_router(backups_router, prefix="/api")
+app.include_router(staffing_router, prefix="/api")
 
 
 @app.get("/api/health")

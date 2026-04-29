@@ -21,7 +21,7 @@ if config.config_file_name is not None:
 
 # target metadata for autogenerate
 from app.models.base import Base  # noqa: E402
-from app.models import Employee, EmployeeAuditLog, Order, OrderSequence, OrderType, Vacation, Reference, User  # noqa: E402
+from app.models import Employee, EmployeeAuditLog, Order, OrderSequence, OrderType, Vacation, Reference, User, StaffingDocument  # noqa: E402
 
 target_metadata = Base.metadata
 
