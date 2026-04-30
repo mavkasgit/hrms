@@ -1,16 +1,27 @@
 import { useRef, useState } from "react"
-import { FileText, Upload, Eye, Clock } from "lucide-react"
+import { FileText, Upload, Eye, Clock, Trash2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/alert-dialog"
 import { Button } from "@/shared/ui/button"
 import {
   useCurrentStaffing,
   useStaffingHistory,
   useUploadStaffingDocument,
+  useDeleteStaffingDocument,
 } from "@/entities/staffing/useStaffing"
 import type { StaffingDocument } from "@/entities/staffing/types"
 
@@ -24,7 +35,9 @@ export function StaffingModal({ open, onOpenChange }: StaffingModalProps) {
   const { data: currentData } = useCurrentStaffing()
   const { data: history, isLoading: historyLoading } = useStaffingHistory()
   const uploadMutation = useUploadStaffingDocument()
+  const deleteMutation = useDeleteStaffingDocument()
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [deleteDocId, setDeleteDocId] = useState<number | null>(null)
 
   const currentDoc = currentData?.document
 
@@ -42,6 +55,16 @@ export function StaffingModal({ open, onOpenChange }: StaffingModalProps) {
 
   const handleOpenDocument = (doc: StaffingDocument) => {
     window.open(`/staffing/${doc.id}/view`, "_blank", "noopener,noreferrer")
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (deleteDocId === null) return
+    try {
+      await deleteMutation.mutateAsync(deleteDocId)
+      setDeleteDocId(null)
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Не удалось удалить файл")
+    }
   }
 
   const formatDate = (iso: string) => {
@@ -155,13 +178,23 @@ export function StaffingModal({ open, onOpenChange }: StaffingModalProps) {
                           {formatDate(doc.uploaded_at)}
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleOpenDocument(doc)}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenDocument(doc)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => setDeleteDocId(doc.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -172,6 +205,27 @@ export function StaffingModal({ open, onOpenChange }: StaffingModalProps) {
           </div>
         </div>
       </DialogContent>
+
+      <AlertDialog open={deleteDocId !== null} onOpenChange={(open) => !open && setDeleteDocId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить файл?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Это действие нельзя отменить. Файл будет удалён безвозвратно.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Удаление..." : "Удалить"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

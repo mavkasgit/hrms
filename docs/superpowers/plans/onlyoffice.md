@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Integrate self-hosted OnlyOffice Document Server for real DOCX editing of orders and pre-creation drafts, while keeping PDF via LibreOffice as the canonical view/print path.
+**Goal:** Integrate self-hosted OnlyOffice Document Server for real DOCX editing of orders and pre-creation drafts.
+
+> **Update (2026-04-30):** LibreOffice has been fully removed from the project. PDF conversion via `soffice` is no longer used. Templates and orders are now viewed and edited directly in OnlyOffice. The `/orders/{id}/print` endpoint and `/order-types/{id}/template/preview` endpoint have been replaced with OnlyOffice view modes.
 
 **Architecture:** Add an OnlyOffice Document Server container to dev/test Docker Compose. Backend provides JWT-signed `DocsAPI.DocEditor` configs, dedicated file/callback endpoints for both persisted orders and ephemeral drafts, and atomic DOCX replacement on save. Frontend adds a dedicated editor page that loads the OnlyOffice JS API and renders the editor for both existing orders and draft flows.
 

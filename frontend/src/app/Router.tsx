@@ -18,6 +18,7 @@ import { DevPage } from "@/pages/DevPage"
 import { OrderEditorPage } from "@/pages/OrderEditorPage"
 import { DraftOrderEditorPage } from "@/pages/DraftOrderEditorPage"
 import { StaffingViewPage } from "@/pages/StaffingViewPage"
+import { TemplateEditorPage } from "@/pages/TemplateEditorPage"
 
 export const router = createBrowserRouter([
   {
@@ -59,5 +60,13 @@ export const router = createBrowserRouter([
   {
     path: "/orders/:id/edit-docx",
     element: <OrderEditorPage />,
+  },
+  {
+    path: "/templates/:id/view",
+    element: <TemplateEditorPage />,
+  },
+  {
+    path: "/templates/:id/edit",
+    element: <TemplateEditorPage />,
   },
 ])

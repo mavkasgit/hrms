@@ -21,6 +21,10 @@ export async function uploadStaffingDocument(file: File): Promise<StaffingDocume
   return data
 }
 
+export async function deleteStaffingDocument(docId: number): Promise<void> {
+  await axios.delete(`/staffing/${docId}`)
+}
+
 export async function fetchStaffingOnlyOfficeConfig(
   docId: number,
   mode: "edit" | "view" = "view"

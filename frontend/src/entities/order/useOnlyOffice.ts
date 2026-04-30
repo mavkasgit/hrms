@@ -41,3 +41,11 @@ export function useCommitOrderDraft() {
     },
   })
 }
+
+export function useTemplateOnlyOfficeConfig(orderTypeId: number, mode: "edit" | "view" = "edit") {
+  return useQuery({
+    queryKey: ["onlyoffice-config", "template", orderTypeId, mode],
+    queryFn: () => api.fetchTemplateOnlyOfficeConfig(orderTypeId, mode),
+    enabled: orderTypeId > 0,
+  })
+}

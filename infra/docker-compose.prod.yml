@@ -5,15 +5,15 @@ services:
     image: postgres:15-alpine
     container_name: hrms-postgres-prod
     environment:
-      POSTGRES_USER: hrms_user
+      POSTGRES_USER: ${POSTGRES_USER:-hrms_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms_pass_prod}
-      POSTGRES_DB: hrms_prod
+      POSTGRES_DB: ${POSTGRES_DB:-hrms_prod}
     ports:
-      - "127.0.0.1:5434:5432"
+      - "${PROD_POSTGRES_BIND:-127.0.0.1}:${PROD_POSTGRES_PORT:-5434}:5432"
     volumes:
-      - ../data/postgres:/var/lib/postgresql/data
+      - ${PROD_POSTGRES_DATA_PATH:-../data/postgres}:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hrms_user"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,7 +23,7 @@ services:
     image: onlyoffice/documentserver:latest
     container_name: hrms-onlyoffice-prod
     ports:
-      - "8087:80"
+      - "${PROD_ONLYOFFICE_PORT:-8087}:80"
     environment:
       JWT_ENABLED: "true"
       JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-prod-secret-change-before-real-production}
@@ -41,23 +41,24 @@ services:
     container_name: hrms-backend-prod
     volumes:
       - ../data/orders:/app/data/orders
+      - ../data/staffing:/app/data/staffing
       - ../data/templates:/app/data/templates
       - ../data/personal_files:/app/data/personal
+      - ../data/backups:/app/data/backups
       - ../logs:/app/logs
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
-      - "8002:8000"
+      - "${PROD_BACKEND_PORT:-8002}:8000"
     env_file:
       - ../.env.prod
     environment:
-      DATABASE_URL: postgresql+asyncpg://hrms_user:${POSTGRES_PASSWORD:-hrms_pass_prod}@postgres:5432/hrms_prod
-      ENV: prod
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-hrms_user}:${POSTGRES_PASSWORD:-hrms_pass_prod}@postgres:5432/${POSTGRES_DB:-hrms_prod}
+      ENV: ${ENV:-prod}
       SECRET_KEY: ${SECRET_KEY:-hrms-prod-local-secret-change-before-real-production}
       ONLYOFFICE_ENABLED: "true"
       ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-prod-secret-change-before-real-production}
-      ONLYOFFICE_PUBLIC_URL: ${LAN_PUBLIC_URL:-${ONLYOFFICE_PUBLIC_URL:-http://localhost:5175}}
+      ONLYOFFICE_PUBLIC_URL: ${LAN_PUBLIC_URL:-http://localhost:5175}
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice:80
-      APP_PUBLIC_URL: ${LAN_PUBLIC_URL:-${APP_PUBLIC_URL:-http://localhost:5175}}
+      APP_PUBLIC_URL: ${LAN_PUBLIC_URL:-http://localhost:5175}
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,9 +74,23 @@ services:
     build: ../frontend
     container_name: hrms-frontend-prod
     ports:
-      - "5175:80"
+      - "${PROD_FRONTEND_PORT:-5175}:80"
     depends_on:
       - backend
       - onlyoffice
     restart: always
+
+  localtunnel:
+    profiles: ["tunnel"]
+    image: node:20-alpine
+    container_name: hrms-localtunnel-prod
+    network_mode: "service:frontend"
+    depends_on:
+      - frontend
+    command: >
+      sh -c "echo 'Waiting for frontend...' &&
+             until wget -q -O /dev/null http://127.0.0.1:80; do sleep 2; done &&
+             echo 'Starting localtunnel...' &&
+             npx --yes localtunnel --port 80 --subdomain ${LOCALTUNNEL_SUBDOMAIN:-hrms-prod-7q2k9m4x} 2>&1"
+    restart: unless-stopped
 

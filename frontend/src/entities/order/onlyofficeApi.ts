@@ -37,3 +37,17 @@ export async function commitOrderDraft(draftId: string, order: OrderCreate) {
   const { data } = await api.post<CommitOrderDraftResponse>(`/orders/drafts/${draftId}/commit`, order)
   return data
 }
+
+export async function fetchTemplateOnlyOfficeConfig(orderTypeId: number, mode: "edit" | "view" = "edit") {
+  const { data } = await api.get<OnlyOfficeConfig>(`/order-types/${orderTypeId}/onlyoffice/config`, {
+    params: { mode },
+  })
+  return data
+}
+
+export async function forceSaveTemplate(orderTypeId: number, documentKey: string) {
+  const { data } = await api.post<{ message: string }>(`/order-types/${orderTypeId}/onlyoffice/forcesave`, {
+    document_key: documentKey,
+  })
+  return data
+}

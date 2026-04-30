@@ -26,6 +26,17 @@ export function useUploadStaffingDocument() {
   })
 }
 
+export function useDeleteStaffingDocument() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: api.deleteStaffingDocument,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staffing", "history"] })
+      queryClient.invalidateQueries({ queryKey: ["staffing", "current"] })
+    },
+  })
+}
+
 export function useStaffingOnlyOfficeConfig(docId: number, mode: "edit" | "view" = "view") {
   return useQuery({
     queryKey: ["onlyoffice-config", "staffing", docId, mode],

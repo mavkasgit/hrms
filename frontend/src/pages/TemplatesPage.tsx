@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Copy, Download, Eye, FileUp, Plus, Trash2, Upload } from "lucide-react"
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Copy, Download, Eye, FilePen, FileUp, Plus, Trash2, Upload } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
@@ -123,8 +123,11 @@ export function TemplatesPage() {
   }
 
   const openPreview = (orderTypeId: number) => {
-    const url = `${import.meta.env.VITE_API_URL || "/api"}/order-types/${orderTypeId}/template/preview`
-    window.open(url, "_blank")
+    window.open(`/templates/${orderTypeId}/view`, "_blank", "noopener,noreferrer")
+  }
+
+  const handleEditTemplate = (orderTypeId: number) => {
+    window.open(`/templates/${orderTypeId}/edit`, "_blank", "noopener,noreferrer")
   }
 
   return (
@@ -275,6 +278,9 @@ export function TemplatesPage() {
                         <>
                           <Button variant="ghost" size="icon" title="Превью" onClick={() => openPreview(orderType.id)}>
                             <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" title="Редактировать" onClick={() => handleEditTemplate(orderType.id)}>
+                            <FilePen className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"

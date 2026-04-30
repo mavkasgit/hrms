@@ -5,15 +5,15 @@ services:
     image: postgres:15-alpine
     container_name: hrms-postgres
     environment:
-      POSTGRES_USER: hrms_user
-      POSTGRES_PASSWORD: hrms_pass
-      POSTGRES_DB: hrms_dev
+      POSTGRES_USER: ${POSTGRES_USER:-hrms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-hrms_dev}
     ports:
-      - "5432:5432"
+      - "${DEV_POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ../data/postgres:/var/lib/postgresql/data
+      - ${DEV_POSTGRES_DATA_PATH:-../data/postgres-dev}:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hrms_user -d hrms_dev"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,10 +22,10 @@ services:
     image: onlyoffice/documentserver:latest
     container_name: hrms-onlyoffice
     ports:
-      - "8085:80"
+      - "${DEV_ONLYOFFICE_PORT:-8085}:80"
     environment:
       JWT_ENABLED: "true"
-      JWT_SECRET: "onlyoffice-dev-secret-change-me"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-dev-secret-change-me}
       JWT_HEADER: "Authorization"
       JWT_IN_BODY: "true"
     healthcheck:

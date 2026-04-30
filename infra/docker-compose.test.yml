@@ -5,16 +5,16 @@ services:
     image: postgres:15-alpine
     container_name: hrms-postgres-test
     environment:
-      POSTGRES_USER: hrms_user
-      POSTGRES_PASSWORD: hrms_pass_test
-      POSTGRES_DB: hrms_test
+      POSTGRES_USER: ${POSTGRES_USER:-hrms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms_pass_test}
+      POSTGRES_DB: ${POSTGRES_DB:-hrms_test}
     ports:
-      - "5433:5432"
+      - "${TEST_POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_test_data:/var/lib/postgresql/data
       - ../data/db_init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hrms_user -d hrms_test"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,10 +23,10 @@ services:
     image: onlyoffice/documentserver:latest
     container_name: hrms-onlyoffice-test
     ports:
-      - "8086:80"
+      - "${TEST_ONLYOFFICE_PORT:-8086}:80"
     environment:
       JWT_ENABLED: "true"
-      JWT_SECRET: "onlyoffice-test-secret"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-test-secret}
       JWT_HEADER: "Authorization"
       JWT_IN_BODY: "true"
     healthcheck:
@@ -44,22 +44,22 @@ services:
       - ../backend:/app
       - ../.env.test:/app/.env.test
       - orders_test_data:/app/data/orders
+      - staffing_test_data:/app/data/staffing
       - templates_test_data:/app/data/templates
       - personal_files_test_data:/app/data/personal
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
-      - "8001:8000"
+      - "${TEST_BACKEND_PORT:-8001}:8000"
     env_file:
       - ../.env.test
     environment:
       ENV_FILE: .env.test
-      DATABASE_URL: postgresql+asyncpg://hrms_user:hrms_pass_test@postgres:5432/hrms_test
-      ENV: test
-      ONLYOFFICE_ENABLED: "true"
-      ONLYOFFICE_JWT_SECRET: onlyoffice-test-secret
-      ONLYOFFICE_PUBLIC_URL: ${LAN_PUBLIC_URL:-${ONLYOFFICE_PUBLIC_URL:-http://localhost:5174}}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-hrms_user}:${POSTGRES_PASSWORD:-hrms_pass_test}@postgres:5432/${POSTGRES_DB:-hrms_test}
+      ENV: ${ENV:-test}
+      ONLYOFFICE_ENABLED: ${ONLYOFFICE_ENABLED:-true}
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-test-secret}
+      ONLYOFFICE_PUBLIC_URL: ${LAN_PUBLIC_URL:-http://localhost:5174}
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice:80
-      APP_PUBLIC_URL: ${LAN_PUBLIC_URL:-${APP_PUBLIC_URL:-http://localhost:5174}}
+      APP_PUBLIC_URL: ${LAN_PUBLIC_URL:-http://localhost:5174}
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,13 +77,28 @@ services:
       dockerfile: Dockerfile
     container_name: hrms-frontend-test
     ports:
-      - "5174:80"
+      - "${TEST_FRONTEND_PORT:-5174}:80"
     depends_on:
       - backend
       - onlyoffice
 
+  localtunnel:
+    profiles: ["tunnel"]
+    image: node:20-alpine
+    container_name: hrms-localtunnel
+    network_mode: "service:frontend"
+    depends_on:
+      - frontend
+    command: >
+      sh -c "echo 'Waiting for frontend...' &&
+             until wget -q -O /dev/null http://127.0.0.1:80; do sleep 2; done &&
+             echo 'Starting localtunnel...' &&
+             npx --yes localtunnel --port 80 --subdomain ${LOCALTUNNEL_SUBDOMAIN:-hrms-test-7q2k9m4x} 2>&1"
+    restart: unless-stopped
+
 volumes:
   postgres_test_data:
   orders_test_data:
+  staffing_test_data:
   templates_test_data:
   personal_files_test_data:
