@@ -1,14 +1,10 @@
-import asyncio
-import subprocess
 from datetime import date
 from io import BytesIO
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from docx import Document
 
-from app.api.orders import print_order
 from app.core.exceptions import HRMSException
 from app.schemas.order import OrderCreate
 from app.services.order_service import order_service
@@ -97,103 +93,6 @@ def test_style_missing_template_warning_html_marks_warning_paragraph():
     styled = order_service._style_missing_template_warning_html(html)
 
     assert '<p class="missing-template-warning"><strong>ВНИМАНИЕ: документ сгенерирован без шаблона.</strong></p>' in styled
-
-
-def test_convert_docx_to_pdf_reports_missing_libreoffice(monkeypatch, tmp_path):
-    docx_path = tmp_path / "order.docx"
-    docx_path.write_bytes(_docx_bytes("Order"))
-    monkeypatch.setattr("app.services.order_service.shutil.which", lambda _name: None)
-
-    with pytest.raises(HRMSException) as exc_info:
-        order_service._convert_docx_to_pdf_sync(docx_path, tmp_path / "out")
-
-    assert exc_info.value.status_code == 503
-    assert exc_info.value.error_code == "pdf_conversion_unavailable"
-
-
-def test_convert_docx_to_pdf_reports_failed_conversion(monkeypatch, tmp_path):
-    docx_path = tmp_path / "order.docx"
-    docx_path.write_bytes(b"not a real docx")
-    monkeypatch.setattr("app.services.order_service.shutil.which", lambda _name: "soffice")
-
-    def fake_run(*_args, **_kwargs):
-        return subprocess.CompletedProcess(args=[], returncode=1, stderr="bad input")
-
-    monkeypatch.setattr("app.services.order_service.subprocess.run", fake_run)
-
-    with pytest.raises(HRMSException) as exc_info:
-        order_service._convert_docx_to_pdf_sync(docx_path, tmp_path / "out")
-
-    assert exc_info.value.status_code == 503
-    assert exc_info.value.error_code == "pdf_conversion_failed"
-
-
-@pytest.mark.asyncio
-async def test_convert_docx_to_pdf_serializes_parallel_requests(monkeypatch, tmp_path):
-    active = 0
-    max_active = 0
-
-    def fake_convert(docx_path: Path, output_dir: Path) -> Path:
-        nonlocal active, max_active
-        active += 1
-        max_active = max(max_active, active)
-        import time
-
-        time.sleep(0.05)
-        active -= 1
-        output_dir.mkdir(parents=True, exist_ok=True)
-        pdf_path = output_dir / f"{docx_path.stem}.pdf"
-        pdf_path.write_bytes(b"%PDF-1.4")
-        return pdf_path
-
-    monkeypatch.setattr(order_service, "_convert_docx_to_pdf_sync", fake_convert)
-
-    await asyncio.gather(
-        order_service.convert_docx_to_pdf(tmp_path / "a.docx", tmp_path / "out-a"),
-        order_service.convert_docx_to_pdf(tmp_path / "b.docx", tmp_path / "out-b"),
-    )
-
-    assert max_active == 1
-
-
-@pytest.mark.asyncio
-async def test_print_order_returns_inline_pdf(monkeypatch, tmp_path):
-    docx_path = tmp_path / "Приказ №1.docx"
-    docx_path.write_bytes(_docx_bytes("Order"))
-    pdf_path = tmp_path / "Приказ №1.pdf"
-    pdf_path.write_bytes(b"%PDF-1.4")
-
-    async def fake_get_by_id(_db, order_id):
-        return SimpleNamespace(id=order_id, file_path=str(docx_path))
-
-    async def fake_convert(_docx_path, _output_dir):
-        return pdf_path
-
-    monkeypatch.setattr(order_service, "get_by_id", fake_get_by_id)
-    monkeypatch.setattr(order_service, "convert_docx_to_pdf", fake_convert)
-
-    response = await print_order(1, db=None)
-
-    assert response.media_type == "application/pdf"
-    disposition = response.headers["content-disposition"]
-    assert disposition.startswith("inline")
-    assert 'filename="order-1.pdf"' in disposition
-    assert "filename*=UTF-8''" in disposition
-
-
-@pytest.mark.asyncio
-async def test_print_order_missing_file_returns_404(monkeypatch, tmp_path):
-    missing_path = tmp_path / "missing.docx"
-
-    async def fake_get_by_id(_db, order_id):
-        return SimpleNamespace(id=order_id, file_path=str(missing_path))
-
-    monkeypatch.setattr(order_service, "get_by_id", fake_get_by_id)
-
-    with pytest.raises(HRMSException) as exc_info:
-        await print_order(1, db=None)
-
-    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio

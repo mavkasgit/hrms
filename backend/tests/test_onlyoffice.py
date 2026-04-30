@@ -103,6 +103,8 @@ def test_order_draft_service_rejects_unknown_draft(tmp_path):
 async def test_order_service_uses_draft_docx(monkeypatch, tmp_path):
     from app.services.order_service import order_service
 
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+
     draft_service = OrderDraftService()
     draft_service._drafts_dir = tmp_path / ".drafts"
     draft_service.ensure_drafts_dir()
@@ -127,5 +129,5 @@ async def test_order_service_uses_draft_docx(monkeypatch, tmp_path):
         tmp_path,
     )
 
-    assert Path(result).read_bytes() == b"draft"
+    assert (tmp_path / result).read_bytes() == b"draft"
     assert not draft_path.exists()

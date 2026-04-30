@@ -1,13 +1,9 @@
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.background import BackgroundTask
 
 from app.core.database import get_db
 from app.schemas.order_type import (
@@ -122,32 +118,4 @@ async def download_template(
     )
 
 
-@router.get("/{order_type_id}/template/preview")
-async def preview_template(
-    order_type_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
-):
-    order_type = await order_service.get_order_type(db, order_type_id)
-    if not order_type.template_filename:
-        raise HTTPException(404, "Шаблон не найден")
-    template_path = Path(order_service._get_template_path(order_type))
-    if not template_path.exists():
-        raise HTTPException(404, "Шаблон не найден")
 
-    temp_dir = Path(tempfile.mkdtemp(prefix="hrms-template-preview-"))
-    try:
-        pdf_path = await order_service.generate_template_preview(db, order_type_id, temp_dir)
-    except Exception:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        raise
-
-    filename = f"{order_type.code}_preview.pdf"
-    fallback_filename = f"template-preview-{order_type_id}.pdf"
-    content_disposition = f"inline; filename=\"{fallback_filename}\"; filename*=UTF-8''{quote(filename)}"
-    return FileResponse(
-        str(pdf_path),
-        media_type="application/pdf",
-        headers={"Content-Disposition": content_disposition},
-        background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
-    )

@@ -1,9 +1,6 @@
 import asyncio
-import os
 import re
 import shutil
-import subprocess
-import tempfile
 import uuid
 from datetime import date, datetime
 from html import escape, unescape
@@ -19,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.exceptions import DuplicateError, EmployeeNotFoundError, HRMSException, OrderNotFoundError
 from app.core.logging import get_audit_logger
+from app.core.paths import storage_key, storage_path
 from app.models.employee import Employee
 from app.models.order import Order
 from app.models.order_type import OrderType
@@ -29,7 +27,6 @@ from app.schemas.order import OrderCreate, OrderUpdate
 from app.schemas.order_type import OrderTypeCreate, OrderTypeUpdate
 
 audit_logger = get_audit_logger()
-_soffice_lock = asyncio.Semaphore(1)
 MISSING_TEMPLATE_WARNING = "ВНИМАНИЕ: документ сгенерирован без шаблона."
 
 
@@ -300,64 +297,6 @@ class OrderService:
             raise OrderNotFoundError(order_id)
         return order
 
-    async def convert_docx_to_pdf(self, docx_path: Path, output_dir: Path) -> Path:
-        async with _soffice_lock:
-            return await asyncio.to_thread(self._convert_docx_to_pdf_sync, docx_path, output_dir)
-
-    def _convert_docx_to_pdf_sync(self, docx_path: Path, output_dir: Path) -> Path:
-        soffice = shutil.which("soffice") or shutil.which("libreoffice")
-        if not soffice:
-            raise HRMSException(
-                "PDF-конвертация недоступна: LibreOffice не установлен",
-                "pdf_conversion_unavailable",
-                status_code=503,
-            )
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        expected_pdf = output_dir / f"{docx_path.stem}.pdf"
-        command = [
-            soffice,
-            "--headless",
-            "--nologo",
-            "--nofirststartwizard",
-            "--norestore",
-            "--convert-to",
-            "pdf",
-            "--outdir",
-            str(output_dir),
-            str(docx_path),
-        ]
-
-        try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise HRMSException(
-                "PDF-конвертация не завершилась за отведенное время",
-                "pdf_conversion_timeout",
-                status_code=503,
-            ) from exc
-        except OSError as exc:
-            raise HRMSException(
-                f"PDF-конвертация недоступна: {exc}",
-                "pdf_conversion_unavailable",
-                status_code=503,
-            ) from exc
-
-        if result.returncode != 0 or not expected_pdf.exists():
-            details = (result.stderr or result.stdout or "").strip()
-            message = "Не удалось подготовить PDF для печати"
-            if details:
-                message = f"{message}: {details}"
-            raise HRMSException(message, "pdf_conversion_failed", status_code=503)
-
-        return expected_pdf
-
     async def create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
         await self.ensure_default_order_types(db)
         if db.in_transaction():
@@ -396,60 +335,6 @@ class OrderService:
             "created_at": datetime.utcnow(),
         }
         return {"preview_id": preview_id, "html": highlighted_html}
-
-    async def generate_template_preview(self, db: AsyncSession, order_type_id: int, output_dir: Path) -> Path:
-        await self.ensure_default_order_types(db)
-        order_type = await self.order_type_repo.get_by_id(db, order_type_id)
-        if not order_type or not order_type.is_active:
-            raise HRMSException("Активный тип приказа не найден", "order_type_not_found", status_code=404)
-
-        template_path = self._get_template_path(order_type)
-        if not template_path.exists():
-            raise HRMSException("Шаблон не найден", "template_not_found", status_code=404)
-
-        employee = Employee(
-            id=1,
-            name="Иванов Иван Иванович",
-            tab_number=123,
-            gender="male",
-            hire_date=date.today(),
-            contract_start=date.today(),
-        )
-
-        extra_fields: dict[str, Any] = {}
-        for field in (order_type.field_schema or []):
-            key = field.get("key")
-            if not key:
-                continue
-            ftype = field.get("type", "text")
-            if ftype == "date":
-                extra_fields[key] = date.today().isoformat()
-            elif ftype == "number":
-                extra_fields[key] = 14
-            else:
-                extra_fields[key] = f"Пример: {field.get('label', key)}"
-
-        data = OrderCreate(
-            employee_id=1,
-            order_type_id=order_type.id,
-            order_date=date.today(),
-            order_number="PREVIEW-001",
-            notes="Демо-данные для превью шаблона",
-            extra_fields=extra_fields or None,
-        )
-
-        order_number = data.order_number or "PREVIEW"
-        doc, _ = await self._build_document(order_number, data, employee, order_type)
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        docx_path = output_dir / f"template_preview_{order_type_id}.docx"
-        await asyncio.wait_for(
-            asyncio.to_thread(doc.save, str(docx_path)),
-            timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
-        )
-
-        pdf_path = await self.convert_docx_to_pdf(docx_path, output_dir)
-        return pdf_path
 
     async def _do_create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
         order_number = data.order_number
@@ -554,13 +439,13 @@ class OrderService:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(str(draft_path), str(file_path))
             order_draft_service.delete_draft(data.draft_id)
-            return str(file_path)
+            return storage_key(file_path, "ORDERS_PATH")
 
         await asyncio.wait_for(
             asyncio.to_thread(doc.save, str(file_path)),
             timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
         )
-        return str(file_path)
+        return storage_key(file_path, "ORDERS_PATH")
 
     async def _build_document(
         self,
@@ -800,10 +685,10 @@ class OrderService:
 
             files_on_disk = {f.name for f in year_dir.iterdir() if f.is_file() and f.suffix == ".docx"}
             orders_in_db = await self.order_repo.get_all(db, page=1, per_page=10000, year=y)
-            db_files = {Path(o.file_path).name for o in orders_in_db[0] if o.file_path}
+            db_files = {Path(storage_key(o.file_path, "ORDERS_PATH")).name for o in orders_in_db[0] if o.file_path}
             missing_files = db_files - files_on_disk
             for order in orders_in_db[0]:
-                if order.file_path and Path(order.file_path).name in missing_files:
+                if order.file_path and Path(storage_key(order.file_path, "ORDERS_PATH")).name in missing_files:
                     await self.order_repo.soft_delete(db, order.id, "sync")
                     deleted += 1
 
@@ -919,7 +804,7 @@ class OrderService:
         employee = await self.employee_repo.get_by_id(db, order.employee_id)
         if order.file_path:
             try:
-                os.remove(order.file_path)
+                storage_path(order.file_path, "ORDERS_PATH").unlink()
             except OSError:
                 pass
 
@@ -979,7 +864,7 @@ class OrderService:
     def _get_template_path(self, order_type: OrderType) -> Path:
         if not order_type.template_filename:
             return Path(settings.TEMPLATES_PATH) / "__missing__.docx"
-        return Path(settings.TEMPLATES_PATH) / order_type.template_filename
+        return storage_path(order_type.template_filename, "TEMPLATES_PATH")
 
     def _normalize_template_filename(self, original_filename: str, code: str) -> str:
         ext = Path(original_filename).suffix or ".docx"
