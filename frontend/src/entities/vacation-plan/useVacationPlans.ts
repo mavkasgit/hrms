@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { fetchVacationPlanSummary, createOrUpdateVacationPlan, deleteVacationPlan } from "./api"
+import { fetchVacationPlanSummary, createOrUpdateVacationPlan, deleteVacationPlan, importVacationPlans } from "./api"
 import type { VacationPlanCreate } from "./types"
 
 export function useVacationPlanSummary(year: number) {
@@ -54,6 +54,19 @@ export function useDeleteVacationPlan() {
     mutationFn: (planId: number) => deleteVacationPlan(planId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vacation-plan-summary"] })
+    },
+  })
+}
+
+export function useImportVacationPlans() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ file, year, sheetIndex, previewOnly }: { file: File; year: number; sheetIndex?: number; previewOnly?: boolean }) =>
+      importVacationPlans(file, year, sheetIndex, previewOnly),
+    onSuccess: (_data, variables) => {
+      if (!variables.previewOnly) {
+        queryClient.invalidateQueries({ queryKey: ["vacation-plan-summary", variables.year] })
+      }
     },
   })
 }

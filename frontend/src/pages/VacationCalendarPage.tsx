@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Search,
   Tag,
+  Upload,
   X,
 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
@@ -29,6 +30,7 @@ import { useTags } from "@/entities/tag/useTags"
 import type { VacationPlanSummary } from "@/entities/vacation-plan/types"
 import type { EmployeeTag } from "@/entities/employee/types"
 import { renderIcon } from "@/pages/structure-page/shared/EntityDialog"
+import { ImportVacationPlansModal } from "@/features/import-vacation-plans/ImportVacationPlansModal"
 
 interface CalendarRow {
   employee_id: number
@@ -88,7 +90,9 @@ export function VacationCalendarPage() {
   const [tagSort, setTagSort] = useState<SortDir>("none")
   const [employeeSort, setEmployeeSort] = useState<SortDir>("none")
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
-  const [activeMonthFilter, setActiveMonthFilter] = useState<number | null>(null)
+  const [activeMonthFilters, setActiveMonthFilters] = useState<number[]>([])
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [importSuccess, setImportSuccess] = useState(false)
 
   const { data: summaries, isLoading: plansLoading } = useVacationPlanSummary(year)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000, status: "active" })
@@ -144,19 +148,21 @@ export function VacationCalendarPage() {
   const filtered = useMemo(() => {
     let rows = combinedData
 
-    // Фильтр по тегам (AND)
+    // Фильтр по тегам (OR — объединение)
     if (selectedTagIds.length > 0) {
       rows = rows.filter((r) =>
-        selectedTagIds.every((id) => r.tags.some((t) => t.id === id))
+        selectedTagIds.some((id) => r.tags.some((t) => t.id === id))
       )
     }
 
-    // Фильтр по месяцу (только с запланированными днями)
-    if (activeMonthFilter !== null) {
-      rows = rows.filter((r) => {
-        const val = r.months[activeMonthFilter]
-        return val !== null && val !== undefined && val !== ""
-      })
+    // Фильтр по месяцам (OR — объединение)
+    if (activeMonthFilters.length > 0) {
+      rows = rows.filter((r) =>
+        activeMonthFilters.some((monthNum) => {
+          const val = r.months[monthNum]
+          return val !== null && val !== undefined && val !== ""
+        })
+      )
     }
 
     // Поиск по тексту
@@ -201,7 +207,7 @@ export function VacationCalendarPage() {
     tagSort,
     employeeSort,
     selectedTagIds,
-    activeMonthFilter,
+    activeMonthFilters,
   ])
 
   const groupedRows = useMemo(() => {
@@ -244,10 +250,18 @@ export function VacationCalendarPage() {
     )
   }
 
-  const clearTags = () => setSelectedTagIds([])
+  const toggleMonthFilter = (monthNum: number) => {
+    setActiveMonthFilters((prev) =>
+      prev.includes(monthNum)
+        ? prev.filter((m) => m !== monthNum)
+        : [...prev, monthNum]
+    )
+  }
 
-  const handleMonthHeaderClick = (monthNum: number) => {
-    setActiveMonthFilter((prev) => (prev === monthNum ? null : monthNum))
+  const handleClearAll = () => {
+    setSearch("")
+    setSelectedTagIds([])
+    setActiveMonthFilters([])
   }
 
   const SortButton = ({
@@ -283,6 +297,10 @@ export function VacationCalendarPage() {
           </Button>
           <h1 className="text-2xl font-bold">Календарь отпусков</h1>
         </div>
+        <Button variant="outline" size="sm" onClick={() => setImportModalOpen(true)}>
+          <Upload className="mr-2 h-4 w-4" />
+          Загрузить график
+        </Button>
       </div>
 
       {/* Фильтры */}
@@ -310,19 +328,30 @@ export function VacationCalendarPage() {
           />
         </div>
 
+        <Button
+          variant="outline"
+          className="h-10 text-sm"
+          onClick={handleClearAll}
+        >
+          Сбросить
+        </Button>
       </div>
 
-      {/* Фильтр по тегам и месяцу */}
-      {(allTags && allTags.length > 0) || activeMonthFilter !== null ? (
+      {/* Фильтр по тегам и месяцам */}
+      {(allTags && allTags.length > 0) || activeMonthFilters.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
-          {activeMonthFilter !== null && (
-            <Badge variant="secondary" className="gap-1 mr-1">
-              Месяц: {MONTHS[activeMonthFilter - 1]}
-              <X
-                className="h-3 w-3 cursor-pointer"
-                onClick={() => setActiveMonthFilter(null)}
-              />
-            </Badge>
+          {activeMonthFilters.length > 0 && (
+            <>
+              {activeMonthFilters.map((monthNum) => (
+                <Badge key={monthNum} variant="secondary" className="gap-1">
+                  {MONTHS[monthNum - 1]}
+                  <X
+                    className="h-3 w-3 cursor-pointer"
+                    onClick={() => toggleMonthFilter(monthNum)}
+                  />
+                </Badge>
+              ))}
+            </>
           )}
           {allTags && allTags.length > 0 && (
             <>
@@ -345,16 +374,6 @@ export function VacationCalendarPage() {
                 )
               })}
             </>
-          )}
-          {selectedTagIds.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 text-xs px-2"
-              onClick={clearTags}
-            >
-              Сбросить
-            </Button>
           )}
         </div>
       ) : null}
@@ -396,11 +415,11 @@ export function VacationCalendarPage() {
                 {MONTHS.map((m, i) => {
                   const monthNum = i + 1
                   const isActive = activeMonth === monthNum
-                  const isFiltered = activeMonthFilter === monthNum
+                  const isFiltered = activeMonthFilters.includes(monthNum)
                   return (
                     <th
                       key={i}
-                      onClick={() => handleMonthHeaderClick(monthNum)}
+                      onClick={() => toggleMonthFilter(monthNum)}
                       className={`text-center font-medium py-2 px-1 w-[70px] border border-zinc-300 transition-colors cursor-pointer select-none ${
                         isFiltered
                           ? "bg-blue-200 text-blue-900"
@@ -408,7 +427,7 @@ export function VacationCalendarPage() {
                           ? "bg-blue-100"
                           : "bg-background hover:bg-muted"
                       }`}
-                      title={`Нажмите, чтобы показать только сотрудников с днями в ${m}`}
+                      title={`Нажмите, чтобы отфильтровать по ${m}`}
                     >
                       {m.substring(0, 3)}
                     </th>
@@ -529,6 +548,26 @@ export function VacationCalendarPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      <ImportVacationPlansModal
+        open={importModalOpen}
+        onOpenChange={setImportModalOpen}
+        year={year}
+        onImportComplete={() => {
+          setImportSuccess(true)
+          setTimeout(() => setImportSuccess(false), 3000)
+        }}
+      />
+
+      {/* Success icon bottom-right */}
+      {importSuccess && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-green-50 border border-green-200 px-4 py-2 shadow-lg animate-in slide-in-from-bottom fade-in duration-300">
+          <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          <span className="text-sm font-medium text-green-800">Импорт завершён</span>
         </div>
       )}
     </div>

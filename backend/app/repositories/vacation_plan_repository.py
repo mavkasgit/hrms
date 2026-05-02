@@ -78,6 +78,25 @@ class VacationPlanRepository:
         )
         return list(result.scalars().all())
 
+    async def delete_by_employee_and_year(self, db: AsyncSession, employee_id: int, year: int) -> int:
+        """Удаляет все планы отпусков сотрудника за указанный год. Возвращает количество удалённых записей."""
+        result = await db.execute(
+            select(VacationPlan).where(
+                and_(
+                    VacationPlan.employee_id == employee_id,
+                    VacationPlan.year == year,
+                )
+            )
+        )
+        plans = result.scalars().all()
+        count = 0
+        for plan in plans:
+            await db.delete(plan)
+            count += 1
+        if count > 0:
+            await db.flush()
+        return count
+
     async def delete(self, db: AsyncSession, plan_id: int) -> bool:
         plan = await self.get_by_id(db, plan_id)
         if not plan:
