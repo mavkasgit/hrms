@@ -20,8 +20,6 @@ export interface VacationCreate {
   order_date?: string | null
   order_number?: string | null
   comment?: string | null
-  preview_id?: string | null
-  edited_html?: string | null
   draft_id?: string | null
 }
 
@@ -111,4 +109,26 @@ export interface EmployeeVacationHistory {
   hire_date: string | null
   vacation_days_correction: number | null
   years: YearGroup[]
+}
+
+export interface VacationRecallRequest {
+  recall_date: string
+  order_date: string
+  order_number?: string | null
+  comment?: string | null
+  reason?: string | null
+  draft_id?: string | null
+}
+
+export interface VacationRecallResponse {
+  id: number
+  employee_id: number
+  employee_name: string | null
+  start_date: string
+  end_date: string
+  days_count: number
+  order_id: number | null
+  order_number: string | null
+  recall_order_id: number | null
+  recall_order_number: string | null
 }

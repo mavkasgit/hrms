@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import * as api from "./api"
-import type { VacationCreate, VacationUpdate } from "./types"
+import type { VacationCreate, VacationUpdate, VacationRecallRequest } from "./types"
 
 export function useVacations(params: {
   employee_id?: number
@@ -130,5 +130,48 @@ export function useHolidays(year?: number) {
   return useQuery({
     queryKey: ["holidays", year],
     queryFn: () => api.getHolidays(year),
+  })
+}
+
+export function useActiveVacations(employeeId: number | null) {
+  return useQuery({
+    queryKey: ["active-vacations", employeeId],
+    queryFn: () => api.getActiveVacations(employeeId!),
+    enabled: !!employeeId,
+  })
+}
+
+export function useAllActiveVacations() {
+  return useQuery({
+    queryKey: ["active-vacations-all"],
+    queryFn: () => api.getAllActiveVacations(),
+    staleTime: 1000 * 60 * 5, // 5 минут
+  })
+}
+
+export function useEmployeeAllVacations(employeeId: number | null) {
+  return useQuery({
+    queryKey: ["employee-all-vacations", employeeId],
+    queryFn: () => api.getEmployeeAllVacations(employeeId!),
+    enabled: !!employeeId,
+  })
+}
+
+export function useRecallVacation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ vacationId, data }: { vacationId: number; data: VacationRecallRequest }) =>
+      api.recallVacation(vacationId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-balance"] })
+      queryClient.invalidateQueries({ queryKey: ["active-vacations"] })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
+    },
   })
 }

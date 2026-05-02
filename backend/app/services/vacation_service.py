@@ -307,6 +307,105 @@ class VacationService:
         await db.commit()
         return result
 
+    async def recall_vacation(self, db: AsyncSession, vacation_id: int, data: dict, user_id: str) -> dict:
+        from datetime import date as date_type
+
+        vacation = await vacation_repository.get_by_id(db, vacation_id)
+        if not vacation:
+            raise VacationNotFoundError(vacation_id)
+
+        recall_date = data["recall_date"]
+        if recall_date < vacation.start_date:
+            raise InsufficientVacationDaysError("Дата отзыва раньше даты начала отпуска")
+        if recall_date >= vacation.end_date:
+            raise InsufficientVacationDaysError("Дата отзыва должна быть раньше даты окончания отпуска")
+
+        employee_repo = EmployeeRepository()
+        employee = await employee_repo.get_by_id(db, vacation.employee_id)
+        if not employee:
+            raise EmployeeNotFoundError(vacation.employee_id)
+
+        # Пересчитываем дни отпуска
+        holidays = await references_repository.get_holidays_for_year(db, vacation.start_date.year)
+        if recall_date.year != vacation.start_date.year:
+            holidays += await references_repository.get_holidays_for_year(db, recall_date.year)
+
+        holidays_count = count_holidays_in_range(holidays, vacation.start_date, recall_date)
+        new_days_count = calculate_vacation_days(vacation.start_date, recall_date, holidays_count)
+
+        if new_days_count <= 0:
+            raise InsufficientVacationDaysError("Нет дней отпуска в выбранном диапазоне")
+
+        # Обновляем отпуск
+        update_data = {
+            "end_date": recall_date,
+            "days_count": new_days_count,
+        }
+        if "comment" in data and data["comment"]:
+            update_data["comment"] = data["comment"]
+
+        updated = await vacation_repository.update(db, vacation_id, update_data)
+
+        # Создаём приказ об отзыве
+        order_type = await order_service.get_order_type_by_code(db, "vacation_recall")
+        order_payload = OrderCreate(
+            employee_id=vacation.employee_id,
+            order_type_id=order_type.id,
+            order_date=data["order_date"],
+            order_number=data.get("order_number"),
+            notes=data.get("comment"),
+            extra_fields={
+                "recall_date": recall_date.isoformat(),
+                "old_vacation_start": vacation.start_date.isoformat(),
+                "old_vacation_end": vacation.end_date.isoformat(),
+                "old_vacation_days": vacation.days_count,
+                "reason": data.get("reason", ""),
+            },
+            preview_id=data.get("preview_id"),
+            edited_html=data.get("edited_html"),
+            draft_id=data.get("draft_id"),
+        )
+        recall_order = await order_service.create_order(db, order_payload)
+
+        # Пересчитываем периоды
+        await vacation_period_service.recalculate_periods(db, vacation.employee_id)
+
+        await db.commit()
+
+        audit_logger.info(
+            f"VACATION RECALLED: id={vacation.id}, employee_id={vacation.employee_id}, "
+            f"employee_name={employee.name}, old_end={vacation.end_date}, new_end={recall_date}, "
+            f"old_days={vacation.days_count}, new_days={new_days_count}, order_id={recall_order.id}",
+            extra={
+                "employee_id": vacation.employee_id,
+                "employee_name": employee.name,
+                "action": "vacation_recalled",
+                "user_id": user_id,
+                "vacation_id": vacation.id,
+                "order_id": recall_order.id,
+                "details": {
+                    "old_end_date": str(vacation.end_date),
+                    "new_end_date": str(recall_date),
+                    "old_days_count": vacation.days_count,
+                    "new_days_count": new_days_count,
+                    "recall_order_number": recall_order.order_number,
+                },
+            },
+        )
+
+        return {
+            "id": updated.id,
+            "employee_id": updated.employee_id,
+            "employee_name": employee.name,
+            "start_date": str(updated.start_date),
+            "end_date": str(updated.end_date),
+            "days_count": updated.days_count,
+            "order_id": updated.order_id,
+            "order_number": vacation.order.order_number if getattr(vacation, "order", None) else None,
+            "recall_order_id": recall_order.id,
+            "recall_order_number": recall_order.order_number,
+        }
+
     async def get_vacation_balance(self, db: AsyncSession, employee_id: int, year: Optional[int] = None) -> dict:
         employee = await EmployeeRepository().get_by_id(db, employee_id)
         if employee and employee.hire_date:

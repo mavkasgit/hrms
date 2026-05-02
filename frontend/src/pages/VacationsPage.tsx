@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo } from "react"
-import { ChevronDown, ChevronRight, Trash2, Check, X, ScrollText, RefreshCw, Eye, Download, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Printer, FilePen } from "lucide-react"
+import { useState, useEffect, useMemo, Fragment } from "react"
+import { ChevronDown, ChevronRight, Trash2, X, ScrollText, RefreshCw, Eye, Download, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Printer, FilePen } from "lucide-react"
 import { renderIcon } from "@/pages/structure-page/shared/EntityDialog"
 import {
   Tooltip,
@@ -30,6 +30,12 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog"
 import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/shared/ui/tabs"
+import {
   useCreateVacation,
   useDeleteVacation,
   useCancelVacation,
@@ -38,7 +44,8 @@ import {
   useHolidays,
 } from "@/entities/vacation"
 import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, VacationPeriodVacation } from "@/entities/vacation-period"
-import { useSearchEmployees, useEmployees, useUpdateEmployee } from "@/entities/employee/useEmployees"
+import { useUpdateEmployee } from "@/entities/employee/useEmployees"
+import { EmployeeSearch } from "@/features/employee-search"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { useTags } from "@/entities/tag/useTags"
@@ -46,6 +53,8 @@ import type { OrderCreate } from "@/entities/order/types"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 import type { Employee } from "@/entities/employee/types"
+import { VacationRecallForm } from "./VacationRecallForm"
+import { VacationPostponeForm } from "./VacationPostponeForm"
 
 const VACATION_ORDER_CODE = "vacation_paid"
 
@@ -507,12 +516,9 @@ function EmployeeHistoryRow({
 
 export function VacationsPage() {
   // --- Form state ---
-  const [collapsed, setCollapsed] = useState(false)
+  const [activeTab, setActiveTab] = useState<"vacation" | "recall" | "postpone">("vacation")
   const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<Employee[]>([])
-  const [searchOpen, setSearchOpen] = useState(false)
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [orderNumber, setOrderNumber] = useState("")
@@ -537,63 +543,30 @@ export function VacationsPage() {
   const [printSelectedDeptIds, setPrintSelectedDeptIds] = useState<number[]>([])
 
   const [draftId, setDraftId] = useState<string | null>(null)
+  const [preselectedRecallVacationId, setPreselectedRecallVacationId] = useState<number | null>(null)
 
-  const searchRef = useRef<HTMLDivElement>(null)
-
-  const { data: searchResult } = useSearchEmployees(searchQuery)
-  const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
   const { data: allTags } = useTags()
   const { data: orderTypes = [] } = useAllOrderTypes()
   const createMutation = useCreateVacation()
   const createDraftMutation = useCreateOrderDraft()
   const vacationOrderType = orderTypes.find((item) => item.code === VACATION_ORDER_CODE) ?? null
 
-  // Получаем остаток дней выбранного сотрудника из summary
+  // Получаем остаток дней сотрудников для поиска
   const { data: employeesSummary } = useVacationEmployeesSummary()
-  const selectedEmployeeSummary = selectedEmployee
-    ? employeesSummary?.find((e) => e.id === selectedEmployee.id)
-    : null
 
-  useEffect(() => {
-    if (searchResult?.items) setSearchResults(searchResult.items)
-  }, [searchResult])
-
-  useEffect(() => {
-    if (searchOpen && !searchQuery && allEmployees?.items) setSearchResults(allEmployees.items)
-  }, [searchOpen, searchQuery, allEmployees])
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setSearchResults([])
-        setSearchOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [])
-
-
-  const selectEmployee = (emp: Employee) => {
+  const handleEmployeeChange = (emp: Employee | null) => {
     setSelectedEmployee(emp)
-    setSearchQuery("")
-    setSearchResults([])
-    setSearchOpen(false)
     setErrors({})
-    // Раскрываем выбранного сотрудника
-    setExpandedRows(new Set([emp.id]))
-  }
-
-  const clearEmployee = () => {
-    setSelectedEmployee(null)
-    setSearchQuery("")
-    setErrors({})
-    setExpandedRows(new Set())
+    setPreselectedRecallVacationId(null)
+    if (emp) {
+      setExpandedRows(new Set([emp.id]))
+    } else {
+      setExpandedRows(new Set())
+    }
   }
 
   const resetForm = () => {
     setSelectedEmployee(null)
-    setSearchQuery("")
     setStartDate("")
     setEndDate("")
     setOrderNumber("")
@@ -822,7 +795,7 @@ export function VacationsPage() {
     return sortedEmployees.filter((emp) => {
       const tagMatch =
         printSelectedTagIds.length === 0 ||
-        printSelectedTagIds.every((tagId) => emp.tags?.some((t) => t.id === tagId))
+        printSelectedTagIds.some((tagId) => emp.tags?.some((t) => t.id === tagId))
       const deptMatch =
         printSelectedDeptIds.length === 0 ||
         printSelectedDeptIds.includes(emp.department_id ?? -1)
@@ -862,107 +835,49 @@ export function VacationsPage() {
 {/* --- Vacation periods block removed --- */}
       {/* removed: periods now shown in employee table */}
 
-      {/* --- Create vacation form --- */}
+      {/* --- Create vacation form with tabs --- */}
       <div className="border rounded-lg bg-card">
-        <div
-          className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
-          onClick={() => setCollapsed(!collapsed)}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-          <h2 className="text-lg font-semibold">Создать трудовой отпуск</h2>
-        </div>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "vacation" | "recall" | "postpone")}>
+          <div className="px-4 py-3 border-b">
+            <TabsList>
+              <TabsTrigger value="vacation">Создать трудовой отпуск</TabsTrigger>
+              <TabsTrigger value="recall">Отзыв из отпуска</TabsTrigger>
+              <TabsTrigger value="postpone">Перенос отпуска</TabsTrigger>
+            </TabsList>
+          </div>
 
-        {!collapsed && (
-          <div className="border-t px-4 py-4">
+          <TabsContent value="vacation" className="px-4 py-4 m-0">
             <div className="grid gap-4">
-              <div className="flex gap-4">
-                <div className="w-[40%]" ref={searchRef}>
-                  <label className="text-sm font-medium">Сотрудник *</label>
-                  {selectedEmployee ? (
-                    <div className="flex items-center gap-2 border rounded-md px-3 h-10 bg-muted/50">
-                      <Check className="h-4 w-4 text-green-600 shrink-0" />
-                      <span className="text-sm flex-1 truncate">
-                        {selectedEmployee.name}
-                        {selectedEmployee.tab_number && (
-                          <span className="text-muted-foreground ml-1">(таб. {selectedEmployee.tab_number})</span>
-                        )}
-                      </span>
-                      {selectedEmployeeSummary?.remaining_days !== null && selectedEmployeeSummary?.remaining_days !== undefined && (
-                        <span className={`text-sm font-semibold shrink-0 ${
-                          selectedEmployeeSummary.remaining_days < 7
-                            ? "text-red-600"
-                            : selectedEmployeeSummary.remaining_days < 14
-                            ? "text-amber-600"
-                            : "text-green-600"
-                        }`}>
-                          {selectedEmployeeSummary.remaining_days} дн.
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={clearEmployee}
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <Input
-                        placeholder="Поиск по ФИО..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onFocus={() => {
-                          setSearchOpen(true)
-                          if (!searchQuery && allEmployees?.items) setSearchResults(allEmployees.items)
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && searchResults.length > 0) {
-                            e.preventDefault()
-                            selectEmployee(searchResults[0])
-                          }
-                        }}
-                        className={errors.employee ? "border-red-500" : ""}
-                      />
-                      {searchResults.length > 0 && (
-                        <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
-                          {searchResults.map((emp) => {
-                            const summary = employeesSummary?.find((e) => e.id === emp.id)
-                            const remaining = summary?.remaining_days
-                            return (
-                              <button
-                                key={emp.id}
-                                type="button"
-                                className="w-full text-left px-3 py-2 hover:bg-muted text-sm border-b last:border-b-0 flex items-center justify-between"
-                                onClick={() => selectEmployee(emp)}
-                              >
-                                <div className="truncate">
-                                  <span className="font-medium">{emp.name}</span>
-                                  {emp.tab_number && (
-                                    <span className="text-muted-foreground ml-2">таб. {emp.tab_number}</span>
-                                  )}
-                                </div>
-                                {remaining !== null && remaining !== undefined && (
-                                  <span className={`font-semibold ml-2 shrink-0 text-xs ${
-                                    remaining < 7 ? "text-red-600" : remaining < 14 ? "text-amber-600" : "text-green-600"
-                                  }`}>
-                                    {remaining} дн.
-                                  </span>
-                                )}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {errors.employee && <p className="text-xs text-red-500 mt-1">{errors.employee}</p>}
-                </div>
-              </div>
+              <EmployeeSearch
+                value={selectedEmployee}
+                onChange={handleEmployeeChange}
+                error={errors.employee}
+                required
+                renderOptionExtra={(emp) => {
+                  const summary = employeesSummary?.find((e) => e.id === emp.id)
+                  const remaining = summary?.remaining_days
+                  if (remaining === null || remaining === undefined) return null
+                  return (
+                    <span className={`font-semibold text-xs ${
+                      remaining < 7 ? "text-red-600" : remaining < 14 ? "text-amber-600" : "text-green-600"
+                    }`}>
+                      {remaining} дн.
+                    </span>
+                  )
+                }}
+                renderValueExtra={(emp) => {
+                  const summary = employeesSummary?.find((e) => e.id === emp.id)
+                  const remaining = summary?.remaining_days
+                  if (remaining === null || remaining === undefined) return null
+                  return (
+                    <span className={`text-sm font-semibold shrink-0 ${
+                      remaining < 7 ? "text-red-600" : remaining < 14 ? "text-amber-600" : "text-green-600"
+                    }`}>
+                      {remaining} дн.
+                    </span>
+                  )
+                }}
+              />
 
               <div className="flex gap-4 items-end">
                 <div className="w-[130px]">
@@ -1036,20 +951,14 @@ export function VacationsPage() {
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    resetForm()
-                  }}
+                  onClick={() => resetForm()}
                   disabled={isPending}
                 >
                   Очистить
                 </Button>
                 {!draftId ? (
                   <Button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleEditBeforeCreate()
-                    }}
+                    onClick={() => handleEditBeforeCreate()}
                     disabled={isPending}
                   >
                     <FilePen className="mr-2 h-4 w-4" />
@@ -1057,10 +966,7 @@ export function VacationsPage() {
                   </Button>
                 ) : (
                   <Button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleCreateFromDraft()
-                    }}
+                    onClick={() => handleCreateFromDraft()}
                     disabled={isPending}
                   >
                     {createMutation.isPending ? "Создание..." : "Создать приказ"}
@@ -1073,8 +979,101 @@ export function VacationsPage() {
                 </div>
               )}
             </div>
-          </div>
-        )}
+          </TabsContent>
+
+          <TabsContent value="recall" className="m-0">
+            <div className="px-4 py-4">
+              <EmployeeSearch
+                value={selectedEmployee}
+                onChange={handleEmployeeChange}
+                error={errors.employee}
+                required
+                renderOptionExtra={(emp) => {
+                  const summary = employeesSummary?.find((e) => e.id === emp.id)
+                  const remaining = summary?.remaining_days
+                  if (remaining === null || remaining === undefined) return null
+                  return (
+                    <span className={`font-semibold text-xs ${
+                      remaining < 7 ? "text-red-600" : remaining < 14 ? "text-amber-600" : "text-green-600"
+                    }`}>
+                      {remaining} дн.
+                    </span>
+                  )
+                }}
+                renderValueExtra={(emp) => {
+                  const summary = employeesSummary?.find((e) => e.id === emp.id)
+                  const remaining = summary?.remaining_days
+                  if (remaining === null || remaining === undefined) return null
+                  return (
+                    <span className={`text-sm font-semibold shrink-0 ${
+                      remaining < 7 ? "text-red-600" : remaining < 14 ? "text-amber-600" : "text-green-600"
+                    }`}>
+                      {remaining} дн.
+                    </span>
+                  )
+                }}
+              />
+              <div className="mt-4">
+                <VacationRecallForm
+                  employee={selectedEmployee}
+                  orderTypes={orderTypes}
+                  onSuccess={() => {
+                    setActiveTab("vacation")
+                    setPreselectedRecallVacationId(null)
+                  }}
+                  onSelectEmployee={(emp) => {
+                    handleEmployeeChange(emp)
+                  }}
+                  preselectedVacationId={preselectedRecallVacationId}
+                />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="postpone" className="m-0">
+            <div className="px-4 py-4">
+              <EmployeeSearch
+                value={selectedEmployee}
+                onChange={handleEmployeeChange}
+                error={errors.employee}
+                required
+                renderOptionExtra={(emp) => {
+                  const summary = employeesSummary?.find((e) => e.id === emp.id)
+                  const remaining = summary?.remaining_days
+                  if (remaining === null || remaining === undefined) return null
+                  return (
+                    <span className={`font-semibold text-xs ${
+                      remaining < 7 ? "text-red-600" : remaining < 14 ? "text-amber-600" : "text-green-600"
+                    }`}>
+                      {remaining} дн.
+                    </span>
+                  )
+                }}
+                renderValueExtra={(emp) => {
+                  const summary = employeesSummary?.find((e) => e.id === emp.id)
+                  const remaining = summary?.remaining_days
+                  if (remaining === null || remaining === undefined) return null
+                  return (
+                    <span className={`text-sm font-semibold shrink-0 ${
+                      remaining < 7 ? "text-red-600" : remaining < 14 ? "text-amber-600" : "text-green-600"
+                    }`}>
+                      {remaining} дн.
+                    </span>
+                  )
+                }}
+              />
+              <div className="mt-4">
+                <VacationPostponeForm
+                  employee={selectedEmployee}
+                  orderTypes={orderTypes}
+                  onSuccess={() => {
+                    setActiveTab("vacation")
+                  }}
+                />
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* --- Main employees table --- */}
@@ -1194,7 +1193,7 @@ export function VacationsPage() {
                 const isExpanded = expandedRows.has(emp.id)
 
                 return (
-                  <React.Fragment key={emp.id}>
+                  <Fragment key={emp.id}>
                     <tr
                       className="border-t hover:bg-muted/30 cursor-pointer transition-colors"
                       onClick={() => toggleRow(emp.id)}
@@ -1330,7 +1329,7 @@ export function VacationsPage() {
                         </td>
                       </tr>
                     )}
-                  </React.Fragment>
+                  </Fragment>
                 )
               })}
             </tbody>
@@ -1566,22 +1565,57 @@ export function VacationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {printFilteredEmployees.map((emp) => (
-                  <tr key={emp.id} className="border-b border-gray-300">
-                    <td className="px-0.5 py-0">{emp.name}</td>
-                    <td className="px-0.5 py-0">
-                      {emp.remaining_days !== null
-                        ? `${emp.remaining_days}${emp.current_period_remaining !== null && emp.current_period_total !== null && emp.current_period_end !== null
-                          ? `-${emp.current_period_remaining}/${emp.current_period_total}-${formatDate(emp.current_period_end)}`
-                          : ""}`
-                        : "—"}
-                    </td>
-                    <td className="px-0.5 py-0">
-                      {(emp.tags || []).map((t) => t.name).join(", ") || "—"}
-                    </td>
-                    <td className="px-0.5 py-0">{emp.position}</td>
-                  </tr>
-                ))}
+                {printSelectedTagIds.length > 0 ? (
+                  printSelectedTagIds.map((tagId) => {
+                    const tag = allTags?.find((t) => t.id === tagId)
+                    const tagEmployees = printFilteredEmployees.filter((emp) =>
+                      emp.tags?.some((t) => t.id === tagId)
+                    )
+                    if (tagEmployees.length === 0) return null
+                    return (
+                      <Fragment key={tagId}>
+                        <tr className="border-b border-gray-300 bg-gray-100">
+                          <td colSpan={4} className="px-0.5 py-0 font-bold text-[10px]">
+                            {tag?.name}
+                          </td>
+                        </tr>
+                        {tagEmployees.map((emp) => (
+                          <tr key={`${tagId}-${emp.id}`} className="border-b border-gray-300">
+                            <td className="px-0.5 py-0">{emp.name}</td>
+                            <td className="px-0.5 py-0">
+                              {emp.remaining_days !== null
+                                ? `${emp.remaining_days}${emp.current_period_remaining !== null && emp.current_period_total !== null && emp.current_period_end !== null
+                                  ? `-${emp.current_period_remaining}/${emp.current_period_total}-${formatDate(emp.current_period_end)}`
+                                  : ""}`
+                                : "—"}
+                            </td>
+                            <td className="px-0.5 py-0">
+                              {(emp.tags || []).map((t) => t.name).join(", ") || "—"}
+                            </td>
+                            <td className="px-0.5 py-0">{emp.position}</td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    )
+                  })
+                ) : (
+                  printFilteredEmployees.map((emp) => (
+                    <tr key={emp.id} className="border-b border-gray-300">
+                      <td className="px-0.5 py-0">{emp.name}</td>
+                      <td className="px-0.5 py-0">
+                        {emp.remaining_days !== null
+                          ? `${emp.remaining_days}${emp.current_period_remaining !== null && emp.current_period_total !== null && emp.current_period_end !== null
+                            ? `-${emp.current_period_remaining}/${emp.current_period_total}-${formatDate(emp.current_period_end)}`
+                            : ""}`
+                          : "—"}
+                      </td>
+                      <td className="px-0.5 py-0">
+                        {(emp.tags || []).map((t) => t.name).join(", ") || "—"}
+                      </td>
+                      <td className="px-0.5 py-0">{emp.position}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
 

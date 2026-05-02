@@ -11,6 +11,8 @@ from app.schemas.vacation import (
     VacationResponse,
     VacationListResponse,
     VacationBalanceResponse,
+    VacationRecallRequest,
+    VacationRecallResponse,
 )
 from app.services.vacation_service import vacation_service
 from app.repositories.vacation_repository import vacation_repository
@@ -158,6 +160,31 @@ async def get_vacation_balance(
     return await vacation_service.get_vacation_balance(db, employee_id, year)
 
 
+@router.get("/active-all", response_model=list[VacationResponse])
+async def get_all_active_vacations(
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Возвращает все действующие на сегодня отпуски всех сотрудников."""
+    items = await vacation_repository.get_active_all(db)
+    return [
+        {
+            "id": v.id,
+            "employee_id": v.employee_id,
+            "employee_name": v.employee.name if v.employee else None,
+            "start_date": v.start_date,
+            "end_date": v.end_date,
+            "vacation_type": v.vacation_type,
+            "days_count": v.days_count,
+            "comment": v.comment,
+            "created_at": str(v.created_at) if v.created_at else None,
+            "order_id": v.order_id,
+            "order_number": v.order.order_number if getattr(v, "order", None) else None,
+        }
+        for v in items
+    ]
+
+
 @router.get("/{vacation_id}", response_model=VacationResponse)
 async def get_vacation(
     vacation_id: int,
@@ -214,3 +241,45 @@ async def cancel_vacation(
 ):
     await vacation_service.cancel_vacation(db, vacation_id, current_user)
     return {"message": "Отпуск отменён"}
+
+
+@router.get("/employees/{employee_id}/active", response_model=list[VacationResponse])
+async def get_active_vacations(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Возвращает активные (не удалённые, не отменённые) отпуски сотрудника."""
+    items, _ = await vacation_repository.get_all(
+        db, employee_id=employee_id, page=1, per_page=1000
+    )
+    active = [v for v in items if not v.is_cancelled]
+    return [
+        {
+            "id": v.id,
+            "employee_id": v.employee_id,
+            "employee_name": v.employee.name if v.employee else None,
+            "start_date": v.start_date,
+            "end_date": v.end_date,
+            "vacation_type": v.vacation_type,
+            "days_count": v.days_count,
+            "comment": v.comment,
+            "created_at": str(v.created_at) if v.created_at else None,
+            "order_id": v.order_id,
+            "order_number": v.order.order_number if getattr(v, "order", None) else None,
+        }
+        for v in active
+    ]
+
+
+@router.post("/{vacation_id}/recall", response_model=VacationRecallResponse)
+async def recall_vacation(
+    vacation_id: int,
+    data: VacationRecallRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    result = await vacation_service.recall_vacation(
+        db, vacation_id, data.model_dump(), current_user
+    )
+    return result

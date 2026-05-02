@@ -72,3 +72,26 @@ class PositionVacationUpsert(BaseModel):
 class HolidayCreate(BaseModel):
     date: date
     name: str = Field(..., min_length=1, max_length=200)
+
+
+class VacationRecallRequest(BaseModel):
+    recall_date: date
+    order_date: date
+    order_number: Optional[str] = Field(None, max_length=50)
+    comment: Optional[str] = Field(None, max_length=500)
+    preview_id: Optional[str] = None
+    edited_html: Optional[str] = None
+    draft_id: Optional[str] = None
+
+
+class VacationRecallResponse(BaseModel):
+    id: int
+    employee_id: int
+    employee_name: Optional[str] = None
+    start_date: date
+    end_date: date
+    days_count: int
+    order_id: Optional[int] = None
+    order_number: Optional[str] = None
+    recall_order_id: Optional[int] = None
+    recall_order_number: Optional[str] = None

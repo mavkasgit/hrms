@@ -9,6 +9,8 @@ import type {
   VacationListResponse,
   EmployeeVacationSummary,
   EmployeeVacationHistory,
+  VacationRecallRequest,
+  VacationRecallResponse,
 } from "./types"
 
 export async function getVacations(params: {
@@ -105,5 +107,30 @@ export async function updateEmployeeCorrection(
 
 export async function cancelVacation(id: number): Promise<{ message: string }> {
   const response = await api.put(`/vacations/${id}/cancel`)
+  return response.data
+}
+
+export async function getActiveVacations(employeeId: number): Promise<Vacation[]> {
+  const response = await api.get(`/vacations/employees/${employeeId}/active`)
+  return response.data
+}
+
+export async function getEmployeeAllVacations(employeeId: number): Promise<Vacation[]> {
+  const response = await api.get("/vacations", {
+    params: { employee_id: employeeId, per_page: 1000 },
+  })
+  return response.data.items || []
+}
+
+export async function getAllActiveVacations(): Promise<Vacation[]> {
+  const response = await api.get("/vacations/active-all")
+  return response.data
+}
+
+export async function recallVacation(
+  vacationId: number,
+  data: VacationRecallRequest
+): Promise<VacationRecallResponse> {
+  const response = await api.post(`/vacations/${vacationId}/recall`, data)
   return response.data
 }

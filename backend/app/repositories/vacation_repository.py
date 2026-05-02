@@ -115,6 +115,27 @@ class VacationRepository:
         await db.flush()
         return True
 
+    async def get_active_all(
+        self,
+        db: AsyncSession,
+    ) -> list[Vacation]:
+        """Возвращает все действующие на сегодня отпуски (не удалённые, не отменённые)."""
+        from datetime import date as date_type
+        today = date_type.today()
+        query = (
+            select(Vacation)
+            .options(selectinload(Vacation.employee), selectinload(Vacation.order))
+            .where(
+                Vacation.is_deleted == False,
+                Vacation.is_cancelled == False,
+                Vacation.start_date <= today,
+                Vacation.end_date >= today,
+            )
+            .order_by(Vacation.start_date.desc())
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
     async def check_overlap(
         self,
         db: AsyncSession,
