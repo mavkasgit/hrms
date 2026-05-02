@@ -1,17 +1,16 @@
-import { useEffect, useRef, useState } from "react"
-import { Check, ChevronDown, ChevronRight, Download, Eye, Trash2, X } from "lucide-react"
+import { useEffect, useState } from "react"
+import { ChevronDown, ChevronRight, Download, Eye, FilePen, Trash2, X } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { EmptyState } from "@/shared/ui/empty-state"
 import { Input } from "@/shared/ui/input"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table"
-import { useEmployees, useSearchEmployees } from "@/entities/employee/useEmployees"
-import { useAllOrderTypes, useCancelOrder, useCreateOrder, useCreateOrderPreview, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
+import { EmployeeSearch } from "@/features/employee-search"
+import { useAllOrderTypes, useCancelOrder, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
+import { useCommitOrderDraft, useCreateOrderDraft, useDeleteOrderDraft } from "@/entities/order/useOnlyOffice"
 import { OrderNumberField } from "@/features/OrderNumberField"
-import { OrderPreviewDialog } from "@/features/order-preview/OrderPreviewDialog"
 import type { Employee } from "@/entities/employee/types"
-import type { OrderCreate } from "@/entities/order/types"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -91,9 +90,6 @@ function overlapDays(range: DateRange, periodStart: string, periodEnd: string): 
 export function UnpaidLeavesPage() {
   const [collapsed, setCollapsed] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<Employee[]>([])
-  const [searchOpen, setSearchOpen] = useState(false)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
   const [orderNumber, setOrderNumber] = useState("")
   const [vacationStart, setVacationStart] = useState("")
@@ -105,22 +101,15 @@ export function UnpaidLeavesPage() {
   const [periodEnd, setPeriodEnd] = useState(defaultPeriodEndIso())
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const searchRef = useRef<HTMLDivElement>(null)
-
-  const { data: searchResult } = useSearchEmployees(searchQuery)
-  const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
   const { data: orderTypes = [] } = useAllOrderTypes()
-  const createMutation = useCreateOrder()
-  const previewMutation = useCreateOrderPreview()
+  const createDraftMutation = useCreateOrderDraft()
+  const commitDraftMutation = useCommitOrderDraft()
+  const deleteDraftMutation = useDeleteOrderDraft()
   const cancelMutation = useCancelOrder()
   const deleteMutation = useDeleteOrder()
   const [cancelOrderId, setCancelOrderId] = useState<number | null>(null)
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
-  const [previewDialogOpen, setPreviewDialogOpen] = useState(false)
-  const [previewId, setPreviewId] = useState<string | null>(null)
-  const [previewHtml, setPreviewHtml] = useState("")
-  const [pendingPayload, setPendingPayload] = useState<OrderCreate | null>(null)
-  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [draftId, setDraftId] = useState<string | null>(null)
   const { data, isLoading } = useOrders({
     page: 1,
     per_page: 1000,
@@ -130,61 +119,23 @@ export function UnpaidLeavesPage() {
   const unpaidLeaveType = orderTypes.find((item) => item.code === UNPAID_LEAVE_CODE) ?? null
 
   useEffect(() => {
-    if (searchResult?.items) setSearchResults(searchResult.items)
-  }, [searchResult])
-
-  useEffect(() => {
-    if (searchOpen && !searchQuery && allEmployees?.items) setSearchResults(allEmployees.items)
-  }, [searchOpen, searchQuery, allEmployees])
-
-  useEffect(() => {
-    const onDocumentClick = (event: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-        setSearchResults([])
-        setSearchOpen(false)
-      }
-    }
-
-    document.addEventListener("mousedown", onDocumentClick)
-    return () => document.removeEventListener("mousedown", onDocumentClick)
-  }, [])
-
-  useEffect(() => {
     if (!vacationStart || !vacationEnd) return
     const computed = calcDays(vacationStart, vacationEnd)
     if (computed) setVacationDays(computed)
   }, [vacationStart, vacationEnd])
 
   const resetForm = () => {
+    if (draftId) {
+      deleteDraftMutation.mutate(draftId)
+    }
     setSelectedEmployee(null)
-    setSearchQuery("")
     setOrderDate(new Date().toISOString().split("T")[0])
     setOrderNumber("")
     setVacationStart("")
     setVacationEnd("")
     setVacationDays("")
+    setDraftId(null)
     setErrors({})
-  }
-
-  const resetPreviewState = () => {
-    setPreviewDialogOpen(false)
-    setPreviewId(null)
-    setPreviewHtml("")
-    setPendingPayload(null)
-    setPreviewError(null)
-  }
-
-  const selectEmployee = (employee: Employee) => {
-    setSelectedEmployee(employee)
-    setSearchQuery("")
-    setSearchResults([])
-    setSearchOpen(false)
-    setErrors((prev) => ({ ...prev, employee: "" }))
-  }
-
-  const clearEmployee = () => {
-    setSelectedEmployee(null)
-    setSearchQuery("")
   }
 
   const validate = (): boolean => {
@@ -203,50 +154,72 @@ export function UnpaidLeavesPage() {
     return Object.keys(nextErrors).length === 0
   }
 
-  const handleSubmit = () => {
+  const handleEditBeforeCreate = () => {
     if (!validate() || !unpaidLeaveType || !selectedEmployee) return
-
-    const payload: OrderCreate = {
-      employee_id: selectedEmployee.id,
-      order_type_id: unpaidLeaveType.id,
-      order_date: orderDate,
-      order_number: orderNumber,
-      extra_fields: {
-        vacation_start: vacationStart,
-        vacation_end: vacationEnd,
-        vacation_days: Number(vacationDays),
-      },
-    }
-    setPendingPayload(payload)
-    setPreviewError(null)
-    previewMutation.mutate(payload, {
-      onSuccess: (preview) => {
-        setPreviewId(preview.preview_id)
-        setPreviewHtml(preview.html)
-        setPreviewDialogOpen(true)
-      },
-      onError: (err: any) => {
-        setPreviewError(err?.response?.data?.detail || err?.message || "Ошибка при формировании предпросмотра")
-      },
-    })
-  }
-
-  const handlePreviewConfirm = (editedHtml: string) => {
-    if (!pendingPayload || !previewId) return
-    createMutation.mutate(
+    const editorWindow = window.open("about:blank", "_blank")
+    createDraftMutation.mutate(
       {
-        ...pendingPayload,
-        preview_id: previewId,
-        edited_html: editedHtml,
+        employee_id: selectedEmployee.id,
+        order_type_id: unpaidLeaveType.id,
+        order_date: orderDate,
+        order_number: orderNumber,
+        extra_fields: {
+          vacation_start: vacationStart,
+          vacation_end: vacationEnd,
+          vacation_days: Number(vacationDays),
+        },
       },
       {
-        onSuccess: () => {
-          resetForm()
-          resetPreviewState()
+        onSuccess: (draft) => {
+          setDraftId(draft.draft_id)
+          const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+          if (editorWindow && !editorWindow.closed) {
+            editorWindow.location.href = url
+          } else {
+            window.open(url, "_blank", "noopener,noreferrer")
+          }
+        },
+        onError: () => {
+          editorWindow?.close()
         },
       }
     )
   }
+
+  const handleCommitDraft = () => {
+    if (!draftId || !validate() || !unpaidLeaveType || !selectedEmployee) return
+    commitDraftMutation.mutate(
+      {
+        draftId,
+        order: {
+          employee_id: selectedEmployee.id,
+          order_type_id: unpaidLeaveType.id,
+          order_date: orderDate,
+          order_number: orderNumber,
+          extra_fields: {
+            vacation_start: vacationStart,
+            vacation_end: vacationEnd,
+            vacation_days: Number(vacationDays),
+          },
+        },
+      },
+      {
+        onSuccess: () => resetForm(),
+      }
+    )
+  }
+
+  useEffect(() => {
+    const handleDraftSave = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+      const message = event.data as { type?: string; draftId?: string }
+      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
+      handleCommitDraft()
+    }
+
+    window.addEventListener("message", handleDraftSave)
+    return () => window.removeEventListener("message", handleDraftSave)
+  }, [draftId, selectedEmployee, orderDate, orderNumber, vacationStart, vacationEnd, vacationDays])
 
   const handleDownload = (orderId: number) => {
     window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
@@ -281,6 +254,8 @@ export function UnpaidLeavesPage() {
       return intersectsPeriod(range, periodStart, periodEnd)
     })
 
+  const totalOrders = filteredOrders.length
+
   const totalUnpaidDays = filteredOrders.reduce((sum, order) => {
     const extra = (order.extra_fields || {}) as Record<string, unknown>
     const range = parseUnpaidRange(extra)
@@ -289,6 +264,25 @@ export function UnpaidLeavesPage() {
     if (!Number.isNaN(explicitDays) && explicitDays > 0 && !periodStart && !periodEnd) return sum + explicitDays
     return sum + overlapDays(range, periodStart, periodEnd)
   }, 0)
+
+  const employeesMap = new Map<string, { name: string; orders: number; days: number }>()
+  for (const order of filteredOrders) {
+    const name = order.employee_name || "Неизвестный сотрудник"
+    const extra = (order.extra_fields || {}) as Record<string, unknown>
+    const range = parseUnpaidRange(extra)
+    const current = employeesMap.get(name) || { name, orders: 0, days: 0 }
+    current.orders += 1
+    if (range) {
+      const explicitDays = typeof extra.vacation_days === "number" ? extra.vacation_days : Number(extra.vacation_days)
+      if (!Number.isNaN(explicitDays) && explicitDays > 0 && !periodStart && !periodEnd) {
+        current.days += explicitDays
+      } else {
+        current.days += overlapDays(range, periodStart, periodEnd)
+      }
+    }
+    employeesMap.set(name, current)
+  }
+  const employeesSummary = Array.from(employeesMap.values()).sort((a, b) => b.orders - a.orders)
 
   const setCalendarYearPeriod = () => {
     setPeriodMode("calendarYear")
@@ -322,47 +316,15 @@ export function UnpaidLeavesPage() {
           <div className="border-t px-4 py-4">
             <div className="grid gap-4">
               <div className="flex gap-4">
-                <div className="w-[29%]" ref={searchRef}>
-                  <label className="text-sm font-medium">Сотрудник *</label>
-                  {selectedEmployee ? (
-                    <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50">
-                      <Check className="h-4 w-4 text-green-600 shrink-0" />
-                      <span className="text-sm flex-1 truncate">{selectedEmployee.name}</span>
-                      <button type="button" onClick={clearEmployee} className="shrink-0 text-muted-foreground hover:text-foreground">
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <Input
-                        placeholder="Поиск по ФИО..."
-                        value={searchQuery}
-                        onChange={(event) => setSearchQuery(event.target.value)}
-                        onFocus={() => {
-                          setSearchOpen(true)
-                          if (!searchQuery && allEmployees?.items) setSearchResults(allEmployees.items)
-                        }}
-                        className={errors.employee ? "border-red-500" : ""}
-                      />
-                      {searchResults.length > 0 && (
-                        <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
-                          {searchResults.map((employee) => (
-                            <button
-                              key={employee.id}
-                              type="button"
-                              className="w-full text-left px-3 py-2 hover:bg-muted text-sm border-b last:border-b-0"
-                              onClick={() => selectEmployee(employee)}
-                            >
-                              <span className="font-medium">{employee.name}</span>
-                              {employee.tab_number && <span className="text-muted-foreground ml-2">таб. {employee.tab_number}</span>}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {errors.employee && <p className="text-xs text-red-500 mt-1">{errors.employee}</p>}
-                </div>
+                <EmployeeSearch
+                  value={selectedEmployee}
+                  onChange={(emp) => {
+                    setSelectedEmployee(emp)
+                    if (emp) setErrors((prev) => ({ ...prev, employee: "" }))
+                  }}
+                  error={errors.employee}
+                  required
+                />
               </div>
 
               <div className="flex gap-4">
@@ -400,20 +362,31 @@ export function UnpaidLeavesPage() {
               </div>
 
               {errors.orderType && <p className="text-sm text-red-600">{errors.orderType}</p>}
-              {previewError && <p className="text-sm text-red-600">{previewError}</p>}
-              {createMutation.isError && (
+              {createDraftMutation.isError && (
                 <p className="text-sm text-red-600">
-                  {(createMutation.error as any)?.response?.data?.detail || (createMutation.error as any)?.message || "Ошибка создания приказа"}
+                  {(createDraftMutation.error as any)?.response?.data?.detail || (createDraftMutation.error as any)?.message || "Ошибка подготовки приказа"}
+                </p>
+              )}
+              {commitDraftMutation.isError && (
+                <p className="text-sm text-red-600">
+                  {(commitDraftMutation.error as any)?.response?.data?.detail || (commitDraftMutation.error as any)?.message || "Ошибка создания приказа"}
                 </p>
               )}
 
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={resetForm} disabled={createMutation.isPending || previewMutation.isPending}>
+                <Button variant="outline" size="sm" onClick={resetForm} disabled={createDraftMutation.isPending || commitDraftMutation.isPending || deleteDraftMutation.isPending}>
                   Очистить
                 </Button>
-                <Button size="sm" onClick={handleSubmit} disabled={createMutation.isPending || previewMutation.isPending || !unpaidLeaveType}>
-                  {previewMutation.isPending ? "Формирование..." : createMutation.isPending ? "Создание..." : "Создать"}
-                </Button>
+                {!draftId ? (
+                  <Button size="sm" onClick={handleEditBeforeCreate} disabled={createDraftMutation.isPending || !unpaidLeaveType}>
+                    <FilePen className="mr-2 h-4 w-4" />
+                    {createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={handleCommitDraft} disabled={commitDraftMutation.isPending}>
+                    {commitDraftMutation.isPending ? "Создание..." : "Создать"}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -437,14 +410,17 @@ export function UnpaidLeavesPage() {
             <Button size="sm" variant={periodMode === "all" ? "default" : "outline"} onClick={setAllPeriod}>
               Весь период
             </Button>
-            <div className="w-[200px]">
+            <div className="w-[220px]">
               <Input
                 placeholder="Поиск сотрудника"
                 value={employeeFilter}
                 onChange={(event) => setEmployeeFilter(event.target.value)}
               />
             </div>
-            <div className="w-[132px]">
+          </div>
+
+          <div className="flex flex-wrap lg:flex-nowrap items-end gap-2">
+            <div data-testid="unpaid-period-from" className="w-[132px]">
               <DatePicker
                 placeholder="Период с"
                 value={periodStart}
@@ -454,7 +430,7 @@ export function UnpaidLeavesPage() {
                 }}
               />
             </div>
-            <div className="w-[132px]">
+            <div data-testid="unpaid-period-to" className="w-[132px]">
               <DatePicker
                 placeholder="Период по"
                 value={periodEnd}
@@ -465,11 +441,37 @@ export function UnpaidLeavesPage() {
               />
             </div>
             <div className="px-3 h-10 border rounded-md bg-card flex items-center min-w-[250px]">
-              <p className="text-sm font-medium">Дней отпуска за период: {totalUnpaidDays}</p>
+              <p data-testid="unpaid-total-orders" className="text-sm font-medium">Всего отпусков за период: {totalOrders}</p>
+            </div>
+            <div className="px-3 h-10 border rounded-md bg-card flex items-center min-w-[220px]">
+              <p data-testid="unpaid-total-days" className="text-sm font-medium">Всего дней отпуска: {totalUnpaidDays}</p>
             </div>
           </div>
 
           {periodError && <p className="text-xs text-red-500">{periodError}</p>}
+
+          {employeesSummary.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Сотрудник</TableHead>
+                  <TableHead>Отпусков</TableHead>
+                  <TableHead>Дней отпуска</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {employeesSummary.map((employee) => (
+                  <TableRow key={employee.name}>
+                    <TableCell className="font-medium">{employee.name}</TableCell>
+                    <TableCell>{employee.orders}</TableCell>
+                    <TableCell>{employee.days}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <EmptyState message="Нет сотрудников с отпусками" description="За выбранный период отпуски отсутствуют" />
+          )}
 
           {filteredOrders.length === 0 ? (
             <EmptyState message="Нет отпусков за выбранный период" description="Измените фильтры периода или сотрудника" />
@@ -568,16 +570,7 @@ export function UnpaidLeavesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <OrderPreviewDialog
-        open={previewDialogOpen}
-        html={previewHtml}
-        isSubmitting={createMutation.isPending}
-        onOpenChange={(open) => {
-          if (!open) resetPreviewState()
-          else setPreviewDialogOpen(true)
-        }}
-        onConfirm={handlePreviewConfirm}
-      />
+
     </div>
   )
 }

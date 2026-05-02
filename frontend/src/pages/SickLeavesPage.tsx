@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState } from "react"
 import { ChevronDown, ChevronRight, Trash2, X } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
@@ -22,7 +22,7 @@ import {
   useCancelSickLeave,
   useSickLeaves,
 } from "@/entities/sick-leave/useSickLeaves"
-import { useSearchEmployees, useEmployees } from "@/entities/employee/useEmployees"
+import { EmployeeSearch } from "@/features/employee-search"
 import type { Employee } from "@/entities/employee/types"
 import type { SickLeave } from "@/entities/sick-leave/types"
 
@@ -37,9 +37,6 @@ function formatDate(dateStr: string | null): string {
 export function SickLeavesPage() {
   const [collapsed, setCollapsed] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<Employee[]>([])
-  const [searchOpen, setSearchOpen] = useState(false)
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [comment, setComment] = useState("")
@@ -50,11 +47,6 @@ export function SickLeavesPage() {
 
   const [statusFilter, setStatusFilter] = useState<string | undefined>("active")
   const [nameFilter, setNameFilter] = useState("")
-
-  const searchRef = useRef<HTMLDivElement>(null)
-
-  const { data: searchResult } = useSearchEmployees(searchQuery)
-  const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
 
   const { data: sickLeavesData, isLoading } = useSickLeaves({
     q: nameFilter || undefined,
@@ -67,42 +59,8 @@ export function SickLeavesPage() {
   const cancelMutation = useCancelSickLeave()
   const deleteMutation = useDeleteSickLeave()
 
-  useEffect(() => {
-    if (searchResult?.items) setSearchResults(searchResult.items)
-  }, [searchResult])
-
-  useEffect(() => {
-    if (searchOpen && !searchQuery && allEmployees?.items) setSearchResults(allEmployees.items)
-  }, [searchOpen, searchQuery, allEmployees])
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setSearchResults([])
-        setSearchOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [])
-
-  const selectEmployee = (emp: Employee) => {
-    setSelectedEmployee(emp)
-    setSearchQuery("")
-    setSearchResults([])
-    setSearchOpen(false)
-    setErrors({})
-  }
-
-  const clearEmployee = () => {
-    setSelectedEmployee(null)
-    setSearchQuery("")
-    setErrors({})
-  }
-
   const resetForm = () => {
     setSelectedEmployee(null)
-    setSearchQuery("")
     setStartDate("")
     setEndDate("")
     setComment("")
@@ -199,58 +157,15 @@ export function SickLeavesPage() {
           <div className="border-t px-4 py-4">
             <div className="grid gap-4">
               <div className="flex gap-4">
-                <div className="w-[29%]" ref={searchRef}>
-                  <label className="text-sm font-medium">Сотрудник *</label>
-                  {selectedEmployee ? (
-                    <div className="flex items-center gap-2 border rounded-md px-3 h-10 bg-muted/50">
-                      <span className="text-green-600">✓</span>
-                      <span className="text-sm flex-1 truncate">
-                        {selectedEmployee.name}
-                        {selectedEmployee.tab_number && (
-                          <span className="text-muted-foreground ml-1">(таб. {selectedEmployee.tab_number})</span>
-                        )}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={clearEmployee}
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <Input
-                        placeholder="Поиск по ФИО..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onFocus={() => {
-                          setSearchOpen(true)
-                          if (!searchQuery && allEmployees?.items) setSearchResults(allEmployees.items)
-                        }}
-                        className={errors.employee ? "border-red-500" : ""}
-                      />
-                      {searchResults.length > 0 && (
-                        <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
-                          {searchResults.map((emp) => (
-                            <button
-                              key={emp.id}
-                              type="button"
-                              className="w-full text-left px-3 py-2 hover:bg-muted text-sm border-b last:border-b-0"
-                              onClick={() => selectEmployee(emp)}
-                            >
-                              <span className="font-medium">{emp.name}</span>
-                              {emp.tab_number && (
-                                <span className="text-muted-foreground ml-2">таб. {emp.tab_number}</span>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {errors.employee && <p className="text-xs text-red-500 mt-1">{errors.employee}</p>}
-                </div>
+                <EmployeeSearch
+                  value={selectedEmployee}
+                  onChange={(emp) => {
+                    setSelectedEmployee(emp)
+                    if (emp) setErrors({})
+                  }}
+                  error={errors.employee}
+                  required
+                />
               </div>
 
               <div className="flex gap-4">

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { Plus, Search, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload, ScrollText, Tag, Building2 } from "lucide-react"
+import { Plus, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload, ScrollText, Tag, Building2 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
-import { Input } from "@/shared/ui/input"
+
 import { Alert, AlertDescription } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/shared/ui/table"
 import { useEmployees } from "@/entities/employee/useEmployees"
+import { EmployeeTableFilter } from "@/features/employee-search/EmployeeTableFilter"
 import { EmployeeForm } from "@/features/employee-form"
 import { ImportEmployeesModal } from "@/features/import-employees/ImportEmployeesModal"
 import { StaffingModal } from "@/features/staffing-modal/StaffingModal"
@@ -55,7 +56,6 @@ function getGenderButtonClass(gender: string, active: boolean): string {
 export function EmployeesPage() {
   const [status, setStatus] = useState<EmployeeStatus>("active")
   const [q, setQ] = useState("")
-  const [searchInput, setSearchInput] = useState("")
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [selectedGenders, setSelectedGenders] = useState<Set<string>>(new Set())
   const [sortConfigs, setSortConfigs] = useState<SortConfig[]>([])
@@ -78,15 +78,6 @@ export function EmployeesPage() {
   })
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (searchInput !== q) {
-        setQ(searchInput)
-      }
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [searchInput])
-
-  useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) {
         setFiltersOpen(false)
@@ -106,7 +97,6 @@ export function EmployeesPage() {
   }
 
   const resetFilters = () => {
-    setSearchInput("")
     setQ("")
     setSelectedGenders(new Set())
     setSortConfigs([])
@@ -216,15 +206,12 @@ export function EmployeesPage() {
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-lg">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Поиск по ФИО, таб. номеру или тегу..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <EmployeeTableFilter
+          value={q}
+          onChange={setQ}
+          placeholder="Поиск по ФИО, таб. номеру или тегу..."
+          className="flex-1 max-w-lg"
+        />
 
         {/* Toggle М/Ж */}
         <div className="flex gap-2">

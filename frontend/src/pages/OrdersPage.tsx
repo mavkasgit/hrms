@@ -38,7 +38,7 @@ import {
 import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { calculateDaysBetween, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
-import { useSearchEmployees, useEmployees } from "@/entities/employee/useEmployees"
+import { EmployeeSearch } from "@/features/employee-search"
 import type { Employee } from "@/entities/employee/types"
 import type { OrderType } from "@/entities/order/types"
 
@@ -60,9 +60,6 @@ export function OrdersPage() {
   const [auditLogOpen, setAuditLogOpen] = useState(false)
 
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<Employee[]>([])
-  const [searchOpen, setSearchOpen] = useState(false)
   const [selectedOrderTypeId, setSelectedOrderTypeId] = useState<number | null>(null)
   const [orderTypeSearch, setOrderTypeSearch] = useState("")
   const [orderTypeOpen, setOrderTypeOpen] = useState(false)
@@ -73,7 +70,6 @@ export function OrdersPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const orderTypeRef = useRef<HTMLDivElement>(null)
-  const searchRef = useRef<HTMLDivElement>(null)
 
   const { data, isLoading, error } = useOrders({
     page: 1,
@@ -83,8 +79,6 @@ export function OrdersPage() {
 
   const { data: years } = useOrderYears()
   const { data: orderTypes = [] } = useOrderTypes(true)
-  const { data: searchResult } = useSearchEmployees(searchQuery)
-  const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000 })
   const createMutation = useCreateOrder()
   const createDraftMutation = useCreateOrderDraft()
   const commitDraftMutation = useCommitOrderDraft()
@@ -152,25 +146,9 @@ export function OrdersPage() {
   }, [extraFields])
 
   useEffect(() => {
-    if (searchResult?.items) {
-      setSearchResults(searchResult.items)
-    }
-  }, [searchResult])
-
-  useEffect(() => {
-    if (searchOpen && !searchQuery && allEmployees?.items) {
-      setSearchResults(allEmployees.items)
-    }
-  }, [searchOpen, searchQuery, allEmployees])
-
-  useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (orderTypeRef.current && !orderTypeRef.current.contains(e.target as Node)) {
         setOrderTypeOpen(false)
-      }
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setSearchResults([])
-        setSearchOpen(false)
       }
     }
     document.addEventListener("mousedown", handleClickOutside)
@@ -181,13 +159,6 @@ export function OrdersPage() {
     t.name.toLowerCase().includes(orderTypeSearch.toLowerCase())
   )
 
-  const selectEmployee = (emp: Employee) => {
-    setSelectedEmployee(emp)
-    setSearchQuery("")
-    setSearchResults([])
-    setSearchOpen(false)
-  }
-
   const selectOrderType = (type: OrderType) => {
     setSelectedOrderTypeId(type.id)
     setOrderTypeSearch(type.name)
@@ -195,22 +166,10 @@ export function OrdersPage() {
     setExtraFields({})
   }
 
-  const clearEmployee = () => {
-    setSelectedEmployee(null)
-    setSearchQuery("")
-  }
-
   const clearOrderType = () => {
     setSelectedOrderTypeId(null)
     setOrderTypeSearch("")
     setExtraFields({})
-  }
-
-  const handleEmployeeKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && searchResults.length > 0 && !selectedEmployee) {
-      e.preventDefault()
-      selectEmployee(searchResults[0])
-    }
   }
 
   const handleOrderTypeKeyDown = (e: React.KeyboardEvent) => {
@@ -222,7 +181,6 @@ export function OrdersPage() {
 
   const resetForm = () => {
     setSelectedEmployee(null)
-    setSearchQuery("")
     setSelectedOrderTypeId(null)
     setOrderTypeSearch("")
     setOrderDate(new Date().toISOString().split("T")[0])
@@ -343,58 +301,12 @@ export function OrdersPage() {
             <div>
               <div className="grid gap-4">
                 <div className="flex gap-4">
-                  <div className="w-[29%]" ref={searchRef}>
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium">Сотрудник *</label>
-                    </div>
-                    {selectedEmployee ? (
-                      <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50">
-                        <Check className="h-4 w-4 text-green-600 shrink-0" />
-                        <span className="text-sm flex-1 truncate">
-                          {selectedEmployee.name}
-                          {selectedEmployee.tab_number && (
-                            <span className="text-muted-foreground ml-1">(таб. {selectedEmployee.tab_number})</span>
-                          )}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={clearEmployee}
-                          className="shrink-0 text-muted-foreground hover:text-foreground"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="relative">
-                        <Input
-                          placeholder="Поиск по ФИО..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          onKeyDown={handleEmployeeKeyDown}
-                          onFocus={() => { setSearchOpen(true); if (!searchQuery && allEmployees?.items) setSearchResults(allEmployees.items) }}
-                          className={errors.employee ? "border-red-500" : ""}
-                        />
-                        {searchResults.length > 0 && (
-                          <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
-                            {searchResults.map((emp) => (
-                              <button
-                                key={emp.id}
-                                type="button"
-                                className="w-full text-left px-3 py-2 hover:bg-muted text-sm border-b last:border-b-0"
-                                onClick={() => selectEmployee(emp)}
-                              >
-                                <span className="font-medium">{emp.name}</span>
-                                {emp.tab_number && (
-                                  <span className="text-muted-foreground ml-2">таб. {emp.tab_number}</span>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {errors.employee && <p className="text-xs text-red-500 mt-1">{errors.employee}</p>}
-                  </div>
+                  <EmployeeSearch
+                    value={selectedEmployee}
+                    onChange={setSelectedEmployee}
+                    error={errors.employee}
+                    required
+                  />
 
                   <div className="w-[17%] relative" ref={orderTypeRef}>
                     <div className="flex items-center justify-between">
