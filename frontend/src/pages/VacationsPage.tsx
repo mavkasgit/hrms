@@ -24,12 +24,6 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/dialog"
-import {
   Tabs,
   TabsList,
   TabsTrigger,
@@ -48,13 +42,15 @@ import { useUpdateEmployee } from "@/entities/employee/useEmployees"
 import { EmployeeSearch } from "@/features/employee-search"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
-import { useTags } from "@/entities/tag/useTags"
 import type { OrderCreate } from "@/entities/order/types"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { GlobalAuditLog } from "@/features/global-audit-log"
+import { useTags } from "@/entities/tag/useTags"
+import { PrintPreviewDialog } from "@/features/print-preview"
 import type { Employee } from "@/entities/employee/types"
 import { VacationRecallForm } from "./VacationRecallForm"
 import { VacationPostponeForm } from "./VacationPostponeForm"
+import type { EmployeeVacationSummary } from "@/entities/vacation/types"
 
 const VACATION_ORDER_CODE = "vacation_paid"
 
@@ -539,13 +535,12 @@ export function VacationsPage() {
 
   // Print preview state
   const [printOpen, setPrintOpen] = useState(false)
-  const [printSelectedTagIds, setPrintSelectedTagIds] = useState<number[]>([])
-  const [printSelectedDeptIds, setPrintSelectedDeptIds] = useState<number[]>([])
+
+  const { data: allTags } = useTags()
 
   const [draftId, setDraftId] = useState<string | null>(null)
   const [preselectedRecallVacationId, setPreselectedRecallVacationId] = useState<number | null>(null)
 
-  const { data: allTags } = useTags()
   const { data: orderTypes = [] } = useAllOrderTypes()
   const createMutation = useCreateVacation()
   const createDraftMutation = useCreateOrderDraft()
@@ -790,18 +785,6 @@ export function VacationsPage() {
       return 0
     })
   }, [filteredEmployees, sortConfigs])
-
-  const printFilteredEmployees = useMemo(() => {
-    return sortedEmployees.filter((emp) => {
-      const tagMatch =
-        printSelectedTagIds.length === 0 ||
-        printSelectedTagIds.some((tagId) => emp.tags?.some((t) => t.id === tagId))
-      const deptMatch =
-        printSelectedDeptIds.length === 0 ||
-        printSelectedDeptIds.includes(emp.department_id ?? -1)
-      return tagMatch && deptMatch
-    })
-  }, [sortedEmployees, printSelectedTagIds, printSelectedDeptIds])
 
   return (
     <div className="space-y-4">
@@ -1340,291 +1323,35 @@ export function VacationsPage() {
       <GlobalAuditLog open={auditLogOpen} onOpenChange={setAuditLogOpen} initialActionFilter="vacation" />
 
       {/* --- Print preview dialog --- */}
-      <Dialog open={printOpen} onOpenChange={setPrintOpen}>
-        <DialogContent className="print-preview max-w-4xl max-h-[90vh] overflow-y-auto p-4">
-          <style>{`
-            @page {
-              size: A4 portrait;
-              margin: 8mm;
-            }
-            @media print {
-              html, body {
-                margin: 0 !important;
-                padding: 0 !important;
-                background: white !important;
-                height: auto !important;
-                min-height: auto !important;
-                overflow: visible !important;
-              }
-              body * {
-                visibility: hidden;
-              }
-              .print-preview, .print-preview * {
-                visibility: visible;
-              }
-              /* Скрываем всё лишнее в body */
-              body > *:not(.print-preview):not([data-radix-focus-guard]) {
-                display: none !important;
-              }
-              /* Скрываем оверлей модалки полностью */
-              [data-radix-dialog-overlay],
-              [role="presentation"] {
-                display: none !important;
-                visibility: hidden !important;
-              }
-              /* Сброс стилей модалки для печати */
-              [data-state="open"] > div,
-              .print-preview,
-              [role="dialog"] {
-                position: static !important;
-                left: auto !important;
-                top: auto !important;
-                right: auto !important;
-                bottom: auto !important;
-                transform: none !important;
-                max-width: none !important;
-                max-height: none !important;
-                min-height: auto !important;
-                width: 100% !important;
-                height: auto !important;
-                overflow: visible !important;
-                background: white !important;
-                padding: 0 !important;
-                margin: 0 !important;
-                border: none !important;
-                border-radius: 0 !important;
-                box-shadow: none !important;
-                outline: none !important;
-              }
-              .print-preview button,
-              .print-preview [role="button"] {
-                display: none !important;
-              }
-              .print-preview .no-print {
-                display: none !important;
-              }
-              .print-table {
-                width: 100%;
-                border-collapse: collapse;
-                table-layout: fixed;
-                font-size: 9px;
-              }
-              .print-table th,
-              .print-table td {
-                border: 0.5px solid #000;
-                padding: 1px 3px;
-                text-align: left;
-                vertical-align: top;
-                word-wrap: break-word;
-                overflow-wrap: break-word;
-              }
-              .print-table th {
-                font-weight: bold;
-                background: #e5e5e5;
-              }
-              .print-table td {
-                line-height: 1.2;
-              }
-              .print-header {
-                margin-bottom: 4px;
-                text-align: center;
-              }
-              .print-header span {
-                display: inline;
-                font-size: 11px;
-                margin: 0;
-                padding: 0;
-              }
-            }
-          `}</style>
-          <DialogHeader className="no-print">
-            <DialogTitle className="flex items-center justify-between">
-              <span>Предпросмотр печати</span>
-              <Button size="sm" onClick={() => window.print()}>
-                <Printer className="mr-1.5 h-4 w-4" />
-                Печать
-              </Button>
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-1 mt-1">
-            {/* Header */}
-            <div className="text-center print-header">
-              <span className="text-base font-bold uppercase tracking-wide">Отпуска</span>
-              {" "}
-              <span className="text-[10px] text-muted-foreground ml-2">
-                Дата формирования: {new Date().toLocaleDateString("ru-RU")}
-              </span>
-            </div>
-
-            {/* Filters (hidden in print) */}
-            <div className="no-print space-y-2">
-              {/* Department filter */}
-              {(() => {
-                const deptMap = new Map<number, string>()
-                sortedEmployees.forEach((emp) => {
-                  if (emp.department_id != null && emp.department) {
-                    deptMap.set(emp.department_id, emp.department)
-                  }
-                })
-                const depts = Array.from(deptMap.entries()).sort((a, b) => a[1].localeCompare(b[1], "ru"))
-                if (depts.length === 0) return null
-                return (
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium">Фильтр по подразделениям:</p>
-                    <div className="flex flex-wrap gap-1">
-                      {depts.map(([id, name]) => {
-                        const isSelected = printSelectedDeptIds.includes(id)
-                        return (
-                          <button
-                            key={id}
-                            onClick={() => {
-                              setPrintSelectedDeptIds((prev) =>
-                                prev.includes(id)
-                                  ? prev.filter((d) => d !== id)
-                                  : [...prev, id]
-                              )
-                            }}
-                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] transition-colors border ${
-                              isSelected
-                                ? "bg-primary text-primary-foreground border-primary"
-                                : "bg-muted text-muted-foreground border-border hover:bg-accent"
-                            }`}
-                          >
-                            {name}
-                          </button>
-                        )
-                      })}
-                      {printSelectedDeptIds.length > 0 && (
-                        <button
-                          onClick={() => setPrintSelectedDeptIds([])}
-                          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border border-dashed border-gray-400 text-muted-foreground hover:bg-accent transition-colors"
-                        >
-                          Сбросить
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })()}
-
-              {/* Tag filter */}
-              {allTags && allTags.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium">Фильтр по тегам:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {allTags.map((tag) => {
-                      const isSelected = printSelectedTagIds.includes(tag.id)
-                      return (
-                        <button
-                          key={tag.id}
-                          onClick={() => {
-                            setPrintSelectedTagIds((prev) =>
-                              prev.includes(tag.id)
-                                ? prev.filter((id) => id !== tag.id)
-                                : [...prev, tag.id]
-                            )
-                          }}
-                          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] transition-colors border ${
-                            isSelected
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "bg-muted text-muted-foreground border-border hover:bg-accent"
-                          }`}
-                        >
-                          {tag.name}
-                        </button>
-                      )
-                    })}
-                    {printSelectedTagIds.length > 0 && (
-                      <button
-                        onClick={() => setPrintSelectedTagIds([])}
-                        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border border-dashed border-gray-400 text-muted-foreground hover:bg-accent transition-colors"
-                      >
-                        Сбросить
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Table */}
-            <table className="print-table w-full text-[10px]">
-              <colgroup>
-                <col style={{ width: "30%" }} />
-                <col style={{ width: "20%" }} />
-                <col style={{ width: "20%" }} />
-                <col style={{ width: "30%" }} />
-              </colgroup>
-              <thead>
-                <tr className="border-b-2 border-black">
-                  <th className="text-left px-0.5 py-0 font-semibold">ФИО</th>
-                  <th className="text-left px-0.5 py-0 font-semibold">Остаток (период)</th>
-                  <th className="text-left px-0.5 py-0 font-semibold">Теги</th>
-                  <th className="text-left px-0.5 py-0 font-semibold">Должность</th>
-                </tr>
-              </thead>
-              <tbody>
-                {printSelectedTagIds.length > 0 ? (
-                  printSelectedTagIds.map((tagId) => {
-                    const tag = allTags?.find((t) => t.id === tagId)
-                    const tagEmployees = printFilteredEmployees.filter((emp) =>
-                      emp.tags?.some((t) => t.id === tagId)
-                    )
-                    if (tagEmployees.length === 0) return null
-                    return (
-                      <Fragment key={tagId}>
-                        <tr className="border-b border-gray-300 bg-gray-100">
-                          <td colSpan={4} className="px-0.5 py-0 font-bold text-[10px]">
-                            {tag?.name}
-                          </td>
-                        </tr>
-                        {tagEmployees.map((emp) => (
-                          <tr key={`${tagId}-${emp.id}`} className="border-b border-gray-300">
-                            <td className="px-0.5 py-0">{emp.name}</td>
-                            <td className="px-0.5 py-0">
-                              {emp.remaining_days !== null
-                                ? `${emp.remaining_days}${emp.current_period_remaining !== null && emp.current_period_total !== null && emp.current_period_end !== null
-                                  ? `-${emp.current_period_remaining}/${emp.current_period_total}-${formatDate(emp.current_period_end)}`
-                                  : ""}`
-                                : "—"}
-                            </td>
-                            <td className="px-0.5 py-0">
-                              {(emp.tags || []).map((t) => t.name).join(", ") || "—"}
-                            </td>
-                            <td className="px-0.5 py-0">{emp.position}</td>
-                          </tr>
-                        ))}
-                      </Fragment>
-                    )
-                  })
-                ) : (
-                  printFilteredEmployees.map((emp) => (
-                    <tr key={emp.id} className="border-b border-gray-300">
-                      <td className="px-0.5 py-0">{emp.name}</td>
-                      <td className="px-0.5 py-0">
-                        {emp.remaining_days !== null
-                          ? `${emp.remaining_days}${emp.current_period_remaining !== null && emp.current_period_total !== null && emp.current_period_end !== null
-                            ? `-${emp.current_period_remaining}/${emp.current_period_total}-${formatDate(emp.current_period_end)}`
-                            : ""}`
-                          : "—"}
-                      </td>
-                      <td className="px-0.5 py-0">
-                        {(emp.tags || []).map((t) => t.name).join(", ") || "—"}
-                      </td>
-                      <td className="px-0.5 py-0">{emp.position}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-
-            {printFilteredEmployees.length === 0 && (
-              <p className="text-center text-muted-foreground py-2 text-xs">Нет данных для печати</p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PrintPreviewDialog<EmployeeVacationSummary>
+        open={printOpen}
+        onOpenChange={setPrintOpen}
+        title="Отпуска"
+        data={sortedEmployees}
+        columns={[
+          { title: "ФИО", width: "25%", render: (emp) => emp.name },
+          {
+            title: "Остаток (период)",
+            width: "15%",
+            render: (emp) =>
+              emp.remaining_days !== null
+                ? `${emp.remaining_days}${
+                    emp.current_period_remaining !== null &&
+                    emp.current_period_total !== null &&
+                    emp.current_period_end !== null
+                      ? `-${emp.current_period_remaining}/${emp.current_period_total}-${formatDate(emp.current_period_end)}`
+                      : ""
+                  }`
+                : "—",
+          },
+          { title: "Теги", width: "20%", render: (emp) => (emp.tags || []).map((t) => t.name).join(", ") || "—" },
+          { title: "Должность", width: "30%", render: (emp) => emp.position },
+        ]}
+        getDepartmentId={(emp) => emp.department_id ?? -1}
+        getDepartmentName={(emp) => emp.department ?? "Без подразделения"}
+        getTags={(emp) => emp.tags || []}
+        allTags={allTags}
+      />
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { Plus, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload, ScrollText, Tag, Building2 } from "lucide-react"
+import { Plus, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload, ScrollText, Tag, Building2, Printer } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 
 import { Alert, AlertDescription } from "@/shared/ui/alert"
@@ -19,6 +19,8 @@ import { EmployeeForm } from "@/features/employee-form"
 import { ImportEmployeesModal } from "@/features/import-employees/ImportEmployeesModal"
 import { StaffingModal } from "@/features/staffing-modal/StaffingModal"
 import { GlobalAuditLog } from "@/features/global-audit-log"
+import { useTags } from "@/entities/tag/useTags"
+import { PrintPreviewDialog } from "@/features/print-preview"
 import type { Employee, EmployeeStatus } from "@/entities/employee/types"
 import { renderIcon } from "@/pages/structure-page/shared/EntityDialog"
 
@@ -66,6 +68,11 @@ export function EmployeesPage() {
   const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [staffingOpen, setStaffingOpen] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
+
+  // Print preview state
+  const [printOpen, setPrintOpen] = useState(false)
+
+  const { data: allTags } = useTags()
 
   const genderFilter = selectedGenders.size === 1 ? [...selectedGenders][0] : undefined
 
@@ -186,6 +193,10 @@ export function EmployeesPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Сотрудники</h1>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setPrintOpen(true)}>
+            <Printer className="mr-2 h-4 w-4" />
+            Печать
+          </Button>
           <Button variant="outline" onClick={() => setStaffingOpen(true)}>
             <Building2 className="mr-2 h-4 w-4" />
             Штатное расписание
@@ -377,6 +388,23 @@ export function EmployeesPage() {
         }}
       />
       <StaffingModal open={staffingOpen} onOpenChange={setStaffingOpen} />
+
+      {/* --- Print preview dialog --- */}
+      <PrintPreviewDialog<Employee>
+        open={printOpen}
+        onOpenChange={setPrintOpen}
+        title="Сотрудники"
+        data={sortedItems}
+        columns={[
+          { title: "ФИО", width: "25%", render: (emp) => emp.name },
+          { title: "Теги", width: "30%", render: (emp) => (emp.tags || []).map((t) => t.name).join(", ") || "—" },
+          { title: "Должность", width: "30%", render: (emp) => emp.position?.name ?? "—" },
+        ]}
+        getDepartmentId={(emp) => emp.department_id ?? -1}
+        getDepartmentName={(emp) => emp.department?.name ?? "Без подразделения"}
+        getTags={(emp) => emp.tags || []}
+        allTags={allTags}
+      />
     </div>
   )
 }
