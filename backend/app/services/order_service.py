@@ -1,10 +1,7 @@
 import asyncio
 import re
 import shutil
-import uuid
 from datetime import date, datetime
-from html import escape, unescape
-from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional
@@ -29,33 +26,6 @@ from app.schemas.order_type import OrderTypeCreate, OrderTypeUpdate
 audit_logger = get_audit_logger()
 MISSING_TEMPLATE_WARNING = "ВНИМАНИЕ: документ сгенерирован без шаблона."
 
-
-class _ParagraphHTMLParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.paragraphs: list[str] = []
-        self._current: list[str] | None = None
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"p", "div"} and self._current is None:
-            self._current = []
-        elif tag == "br" and self._current is not None:
-            self._current.append("\n")
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in {"p", "div"} and self._current is not None:
-            self.paragraphs.append(unescape("".join(self._current)).strip())
-            self._current = None
-
-    def handle_data(self, data: str) -> None:
-        if self._current is not None:
-            self._current.append(data)
-
-    def close(self) -> None:
-        super().close()
-        if self._current is not None:
-            self.paragraphs.append(unescape("".join(self._current)).strip())
-            self._current = None
 
 DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
     {
@@ -145,6 +115,37 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
         "letter": "к",
     },
+    {
+        "code": "vacation_recall",
+        "name": "Отзыв из отпуска",
+        "show_in_orders_page": False,
+        "template_filename": "prikaz_otzyv_iz_otpuska.docx",
+        "field_schema": [
+            {"key": "recall_date", "label": "Дата отзыва", "type": "date", "required": True},
+            {"key": "old_vacation_start", "label": "Дата начала отпуска", "type": "date", "required": True},
+            {"key": "old_vacation_end", "label": "Дата окончания отпуска", "type": "date", "required": True},
+            {"key": "old_vacation_days", "label": "Количество дней отпуска", "type": "number", "required": True},
+            {"key": "reason", "label": "Основание", "type": "text", "required": False},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "к",
+    },
+    {
+        "code": "vacation_postpone",
+        "name": "Перенос отпуска",
+        "show_in_orders_page": False,
+        "template_filename": "prikaz_perenos_otpuska.docx",
+        "field_schema": [
+            {"key": "old_vacation_start", "label": "Старая дата начала", "type": "date", "required": True},
+            {"key": "old_vacation_end", "label": "Старая дата окончания", "type": "date", "required": True},
+            {"key": "new_vacation_start", "label": "Новая дата начала", "type": "date", "required": True},
+            {"key": "new_vacation_end", "label": "Новая дата окончания", "type": "date", "required": True},
+            {"key": "vacation_days", "label": "Количество дней", "type": "number", "required": True},
+            {"key": "reason", "label": "Основание", "type": "text", "required": False},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "к",
+    },
 ]
 
 
@@ -153,7 +154,6 @@ class OrderService:
         self.order_repo = OrderRepository()
         self.order_type_repo = OrderTypeRepository()
         self.employee_repo = EmployeeRepository()
-        self._preview_cache: dict[str, dict[str, Any]] = {}
 
     async def ensure_default_order_types(self, db: AsyncSession) -> list[OrderType]:
         existing = await self.order_type_repo.list_all(db)
@@ -304,38 +304,6 @@ class OrderService:
         async with db.begin():
             return await self._do_create_order(db, data)
 
-    async def generate_order_preview(self, db: AsyncSession, data: OrderCreate) -> dict[str, str]:
-        await self.ensure_default_order_types(db)
-        order_number = data.order_number.strip() if data.order_number else await self.order_repo.get_next_order_number(db, data.order_type_id)
-
-        employee = await self.employee_repo.get_by_id(db, data.employee_id)
-        if not employee:
-            raise EmployeeNotFoundError(data.employee_id)
-
-        order_type = await self.order_type_repo.get_by_id(db, data.order_type_id)
-        if not order_type or not order_type.is_active:
-            raise HRMSException("Активный тип приказа не найден", "order_type_not_found", status_code=404)
-
-        doc, replacements = await self._build_document(order_number, data, employee, order_type)
-        docx_stream = BytesIO()
-        await asyncio.wait_for(
-            asyncio.to_thread(doc.save, docx_stream),
-            timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
-        )
-        docx_payload = docx_stream.getvalue()
-        html = await asyncio.wait_for(
-            asyncio.to_thread(self._docx_to_html, docx_payload),
-            timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
-        )
-        highlighted_html = self._style_missing_template_warning_html(self._highlight_placeholder_values(html, replacements))
-        preview_id = str(uuid.uuid4())
-        self._preview_cache[preview_id] = {
-            "docx": docx_payload,
-            "html": highlighted_html,
-            "created_at": datetime.utcnow(),
-        }
-        return {"preview_id": preview_id, "html": highlighted_html}
-
     async def _do_create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
         order_number = data.order_number
         if not order_number:
@@ -422,12 +390,6 @@ class OrderService:
         year_dir: Path,
     ) -> str:
         doc, replacements = await self._build_document(order_number, data, employee, order_type)
-
-        if data.preview_id and data.edited_html:
-            preview = self._preview_cache.get(data.preview_id)
-            if preview:
-                docx_payload = self._apply_edited_html_to_docx(preview["docx"], preview["html"], data.edited_html)
-                doc = Document(BytesIO(docx_payload))
 
         filename = self._build_filename(order_number, order_type, replacements)
         file_path = year_dir / filename
@@ -593,84 +555,6 @@ class OrderService:
                 chars[char_idx] = value
 
             run.text = "".join(chars)
-
-    def _docx_to_html(self, docx_payload: bytes) -> str:
-        import mammoth
-
-        with BytesIO(docx_payload) as docx_file:
-            result = mammoth.convert_to_html(docx_file)
-        return self._style_missing_template_warning_html(result.value)
-
-    def _style_missing_template_warning_html(self, html: str) -> str:
-        def replace_warning(match: re.Match[str]) -> str:
-            paragraph = match.group(0)
-            text = unescape(re.sub(r"<[^>]+>", "", paragraph)).strip()
-            if text == MISSING_TEMPLATE_WARNING or "ВНИМАНИЕ" in text or "ВНИМАНИЕ" in paragraph:
-                return f'<p class="missing-template-warning"><strong>{escape(text)}</strong></p>'
-            return paragraph
-
-        return re.sub(r"<p\b[^>]*>.*?</p>", replace_warning, html, flags=re.IGNORECASE | re.DOTALL)
-
-    def _highlight_placeholder_values(self, html: str, replacements: dict[str, str]) -> str:
-        highlighted = html
-        items = sorted(replacements.items(), key=lambda item: len(item[1]), reverse=True)
-        for placeholder, value in items:
-            if not value or value not in highlighted:
-                continue
-            key = placeholder.strip("{}")
-            marked = (
-                f'<mark class="order-placeholder" data-placeholder-key="{escape(key, quote=True)}">'
-                f"{escape(value)}"
-                "</mark>"
-            )
-            escaped_value = escape(value)
-            highlighted = self._replace_outside_marks(highlighted, escaped_value, marked)
-            if escaped_value != value:
-                highlighted = self._replace_outside_marks(highlighted, value, marked)
-        return highlighted
-
-    def _replace_outside_marks(self, html: str, needle: str, replacement: str) -> str:
-        if not needle:
-            return html
-        parts = re.split(r"(<mark\b[^>]*>.*?</mark>)", html, flags=re.IGNORECASE | re.DOTALL)
-        for index, part in enumerate(parts):
-            if not part.lower().startswith("<mark"):
-                parts[index] = part.replace(needle, replacement)
-        return "".join(parts)
-
-    def _extract_paragraph_texts_from_html(self, html: str) -> list[str]:
-        parser = _ParagraphHTMLParser()
-        parser.feed(html)
-        parser.close()
-        return parser.paragraphs
-
-    def _iter_document_paragraphs(self, doc: Document) -> list[Any]:
-        paragraphs = list(doc.paragraphs)
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    paragraphs.extend(cell.paragraphs)
-        return paragraphs
-
-    def _clean_preview_html(self, html: str) -> str:
-        return re.sub(r"</?mark\b[^>]*>", "", html)
-
-    def _apply_edited_html_to_docx(self, original_docx: bytes, original_html: str, edited_html: str) -> bytes:
-        original_texts = self._extract_paragraph_texts_from_html(self._clean_preview_html(original_html))
-        edited_texts = self._extract_paragraph_texts_from_html(self._clean_preview_html(edited_html))
-        doc = Document(BytesIO(original_docx))
-        paragraphs = self._iter_document_paragraphs(doc)
-
-        for index, edited_text in enumerate(edited_texts):
-            if index >= len(paragraphs):
-                break
-            original_text = original_texts[index] if index < len(original_texts) else None
-            if original_text is None or edited_text != original_text:
-                paragraphs[index].text = edited_text
-
-        stream = BytesIO()
-        doc.save(stream)
-        return stream.getvalue()
 
     async def sync_orders(self, db: AsyncSession, year: Optional[int] = None) -> dict[str, Any]:
         years_to_check = [year] if year else await self.order_repo.get_years(db)

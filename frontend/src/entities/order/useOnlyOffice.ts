@@ -42,6 +42,12 @@ export function useCommitOrderDraft() {
   })
 }
 
+export function useDeleteOrderDraft() {
+  return useMutation({
+    mutationFn: (draftId: string) => api.deleteOrderDraft(draftId),
+  })
+}
+
 export function useTemplateOnlyOfficeConfig(orderTypeId: number, mode: "edit" | "view" = "edit") {
   return useQuery({
     queryKey: ["onlyoffice-config", "template", orderTypeId, mode],

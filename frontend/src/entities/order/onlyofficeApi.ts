@@ -51,3 +51,8 @@ export async function forceSaveTemplate(orderTypeId: number, documentKey: string
   })
   return data
 }
+
+export async function deleteOrderDraft(draftId: string) {
+  const { data } = await api.delete<{ message: string }>(`/orders/drafts/${draftId}`)
+  return data
+}

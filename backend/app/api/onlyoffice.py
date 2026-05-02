@@ -251,3 +251,88 @@ async def commit_order_draft(
     order_draft_service.get_draft_path(draft_id)
     order = await order_service.create_order(db, data.model_copy(update={"draft_id": draft_id}))
     return order_service._serialize_order(order)
+
+
+@router.delete("/orders/drafts/{draft_id}")
+async def delete_order_draft(
+    draft_id: str,
+    current_user: str = Depends(_get_current_user_stub),
+):
+    order_draft_service.delete_draft(draft_id)
+    return {"message": "Черновик удален"}
+
+
+@router.get("/order-types/{order_type_id}/onlyoffice/config")
+async def template_onlyoffice_config(
+    order_type_id: int,
+    mode: str = Query("edit", pattern="^(edit|view)$"),
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    order_type = await order_service.order_type_repo.get_by_id(db, order_type_id)
+    if not order_type:
+        raise HRMSException("Тип приказа не найден", "order_type_not_found", status_code=404)
+    file_path = order_service._get_template_path(order_type)
+    if not file_path.exists():
+        raise HRMSException("Шаблон не найден", "template_not_found", status_code=404)
+
+    config = onlyoffice_service.build_config(
+        doc_type="template",
+        doc_id=order_type_id,
+        file_path=file_path,
+        title=file_path.name,
+        callback_url=_public_api_url(f"/order-types/{order_type_id}/onlyoffice/callback"),
+        file_url=_public_api_url(f"/order-types/{order_type_id}/onlyoffice/file"),
+        mode=mode,
+    )
+    config["documentServerUrl"] = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
+    return config
+
+
+@router.get("/order-types/{order_type_id}/onlyoffice/file")
+async def template_onlyoffice_file(
+    order_type_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    order_type = await order_service.order_type_repo.get_by_id(db, order_type_id)
+    if not order_type:
+        raise HRMSException("Тип приказа не найден", "order_type_not_found", status_code=404)
+    file_path = order_service._get_template_path(order_type)
+    if not file_path.exists():
+        raise HRMSException("Шаблон не найден", "template_not_found", status_code=404)
+    return _file_response(file_path)
+
+
+@router.post("/order-types/{order_type_id}/onlyoffice/callback")
+async def template_onlyoffice_callback(
+    order_type_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    if not settings.ONLYOFFICE_ENABLED:
+        return JSONResponse(content={"error": 0})
+    body = await request.json()
+    _assert_valid_callback_token(request, body)
+
+    if body.get("status") in (2, 6) and body.get("url"):
+        order_type = await order_service.order_type_repo.get_by_id(db, order_type_id)
+        if order_type:
+            file_path = order_service._get_template_path(order_type)
+            await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
+    return {"error": 0}
+
+
+@router.post("/order-types/{order_type_id}/onlyoffice/forcesave")
+async def template_onlyoffice_forcesave(
+    order_type_id: int,
+    data: OnlyOfficeForceSaveRequest,
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    if not data.document_key.startswith(f"template-{order_type_id}-"):
+        raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
+    await onlyoffice_service.force_save(data.document_key)
+    return {"message": "save_requested"}

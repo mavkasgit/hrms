@@ -10,7 +10,6 @@ import type {
   OrderTypeCreate,
   OrderTypeListResponse,
   OrderTypeUpdate,
-  OrderPreviewResponse,
   TemplateVariablesResponse,
   OrderUpdate,
 } from "./types"
@@ -76,11 +75,6 @@ export async function updateOrder(orderId: number, payload: OrderUpdate) {
 
 export async function createOrder(order: OrderCreate) {
   const { data } = await api.post<Order>("/orders", order)
-  return data
-}
-
-export async function createOrderPreview(order: OrderCreate) {
-  const { data } = await api.post<OrderPreviewResponse>("/orders/preview", order)
   return data
 }
 
