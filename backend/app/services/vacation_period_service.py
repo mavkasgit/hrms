@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
 from app.repositories.vacation_period_repository import VacationPeriodRepository
+from app.repositories.hire_date_adjustment_repository import HireDateAdjustmentRepository
 from app.schemas.vacation_period import VacationPeriodBalance
 
 MAIN_VACATION_DAYS = 24
@@ -17,6 +18,12 @@ MAIN_VACATION_DAYS = 24
 class VacationPeriodService:
     def __init__(self):
         self._repo = VacationPeriodRepository()
+        self._adjustment_repo = HireDateAdjustmentRepository()
+
+    async def get_effective_start_date(self, db: AsyncSession, employee_id: int, hire_date: date) -> date:
+        """Возвращает дату начала для создания периодов: последнюю adjustment_date или hire_date."""
+        latest = await self._adjustment_repo.get_latest(db, employee_id)
+        return latest.adjustment_date if latest else hire_date
 
     async def create_period(
         self,
@@ -60,6 +67,53 @@ class VacationPeriodService:
             vacations=[],
         )
 
+    async def _get_series_boundaries(self, db: AsyncSession, employee_id: int, hire_date: date) -> list[date]:
+        """Возвращает упорядоченные точки начала серий: [hire_date, adjustment1, adjustment2, ...]."""
+        adjustments = await self._adjustment_repo.get_by_employee(db, employee_id)
+        return [hire_date] + [adj.adjustment_date for adj in adjustments]
+
+    async def _find_series_start(self, period_start: date, boundaries: list[date]) -> date:
+        """Определяет к какой серии относится период по его period_start."""
+        result = boundaries[0]
+        for boundary in boundaries:
+            if period_start >= boundary:
+                result = boundary
+            else:
+                break
+        return result
+
+    async def _trim_periods_before_boundary(self, db: AsyncSession, employee_id: int, cutoff_date: date) -> None:
+        """Обрезать period_end и закрыть все периоды которые заканчиваются после cutoff_date."""
+        from datetime import timedelta
+        from dateutil.relativedelta import relativedelta
+
+        all_periods = await self._repo.get_by_employee(db, employee_id)
+        max_end = cutoff_date - timedelta(days=1)
+
+        for p in all_periods:
+            if p.period_end > max_end and p.period_start < cutoff_date:
+                # Обрезаем период до cutoff_date - 1 day
+                p.period_end = max_end
+                
+                # Закрываем период — списываем все оставшиеся дни
+                total = p.main_days + p.additional_days
+                current_used = p.used_days or 0
+                remaining = total - current_used
+                if remaining > 0:
+                    # Добавляем транзакцию ручного закрытия
+                    await self._repo.add_transaction(
+                        db,
+                        period_id=p.id,
+                        days_count=remaining,
+                        transaction_type="manual_close",
+                        description=f"Автоматическое закрытие при корректировке от {cutoff_date}",
+                    )
+                    p.used_days_manual = (p.used_days_manual or 0) + remaining
+                    p.used_days = total
+                    p.remaining_days = 0
+                
+                await db.flush()
+
     async def ensure_periods_for_employee(
         self,
         db: AsyncSession,
@@ -72,30 +126,86 @@ class VacationPeriodService:
         today = date.today()
         existing = await self._repo.get_by_employee(db, employee_id)
 
-        # Проверяем наличие дублей по year_number или несоответствие hire_date
-        if existing:
-            first_period = min(existing, key=lambda p: p.year_number)
-            expected_start = hire_date + relativedelta(months=12 * (first_period.year_number - 1))
-            year_numbers = [p.year_number for p in existing]
-            has_duplicates = len(year_numbers) != len(set(year_numbers))
-            if has_duplicates or first_period.period_start != expected_start:
-                await self._repo.delete_all_by_employee(db, employee_id)
-                existing = []
+        # Получаем все точки начала серий
+        boundaries = await self._get_series_boundaries(db, employee_id, hire_date)
 
-        existing_years = {p.year_number for p in existing}
-        last_year = max(existing_years, default=0)
+        if len(boundaries) > 1:
+            # Обрезаем периоды предыдущих серий чтобы не пересекались со следующей
+            for i, boundary in enumerate(boundaries[:-1]):
+                next_boundary = boundaries[i + 1]
+                await self._trim_periods_before_boundary(db, employee_id, next_boundary)
 
-        for period in existing:
-            if period.additional_days != additional_days:
-                await self._repo.update_additional_days(db, period.id, additional_days)
+            # Перечитываем периоды после обрезки
+            existing = await self._repo.get_by_employee(db, employee_id)
 
-        rd = relativedelta(today, hire_date)
-        years_passed = rd.years
-        current_year_number = years_passed + 1 if rd.months > 0 or rd.days > 0 else years_passed
+            # Группируем периоды по сериям
+            series_periods: dict[date, list] = {b: [] for b in boundaries}
+            for p in existing:
+                series_start = await self._find_series_start(p.period_start, boundaries)
+                series_periods[series_start].append(p)
 
-        for year_number in range(last_year + 1, current_year_number + 1):
-            if year_number not in existing_years:
-                await self.create_period(db, employee_id, hire_date, year_number, additional_days)
+            # Все серии кроме последней — только обновляем additional_days
+            for series_start in boundaries[:-1]:
+                for period in series_periods[series_start]:
+                    if period.additional_days != additional_days:
+                        await self._repo.update_additional_days(db, period.id, additional_days)
+
+            # Последняя серия — создаём/обновляем
+            latest_boundary = boundaries[-1]
+            latest_periods = series_periods[latest_boundary]
+
+            # Проверяем дубли в последней серии
+            if latest_periods:
+                year_numbers = [p.year_number for p in latest_periods]
+                has_duplicates = len(year_numbers) != len(set(year_numbers))
+                first_period = min(latest_periods, key=lambda p: p.year_number)
+                expected_start = latest_boundary + relativedelta(months=12 * (first_period.year_number - 1))
+                if has_duplicates or first_period.period_start != expected_start:
+                    # Удаляем только периоды последней серии
+                    for p in latest_periods:
+                        await db.delete(p)
+                    await db.flush()
+                    latest_periods = []
+
+            existing_years = {p.year_number for p in latest_periods}
+            last_year = max(existing_years, default=0)
+
+            for period in latest_periods:
+                if period.additional_days != additional_days:
+                    await self._repo.update_additional_days(db, period.id, additional_days)
+
+            rd = relativedelta(today, latest_boundary)
+            years_passed = rd.years
+            current_year_number = years_passed + 1 if rd.months > 0 or rd.days > 0 else years_passed
+
+            for year_number in range(last_year + 1, current_year_number + 1):
+                if year_number not in existing_years:
+                    await self.create_period(db, employee_id, latest_boundary, year_number, additional_days)
+        else:
+            # Нет корректировок — единственная серия от hire_date
+            if existing:
+                first_period = min(existing, key=lambda p: p.year_number)
+                expected_start = hire_date + relativedelta(months=12 * (first_period.year_number - 1))
+                year_numbers = [p.year_number for p in existing]
+                has_duplicates = len(year_numbers) != len(set(year_numbers))
+                if has_duplicates or first_period.period_start != expected_start:
+                    await self._repo.delete_all_by_employee(db, employee_id)
+                    existing = []
+
+            existing_years = {p.year_number for p in existing}
+            last_year = max(existing_years, default=0)
+
+            for period in existing:
+                if period.additional_days != additional_days:
+                    await self._repo.update_additional_days(db, period.id, additional_days)
+
+            rd = relativedelta(today, hire_date)
+            years_passed = rd.years
+            current_year_number = years_passed + 1 if rd.months > 0 or rd.days > 0 else years_passed
+
+            for year_number in range(last_year + 1, current_year_number + 1):
+                if year_number not in existing_years:
+                    await self.create_period(db, employee_id, hire_date, year_number, additional_days)
 
     async def check_periods_mismatch(self, db: AsyncSession, employee_id: int, hire_date: date) -> bool:
         """Проверяет, соответствуют ли существующие периоды текущему hire_date."""
@@ -139,7 +249,8 @@ class VacationPeriodService:
         today = date.today()
         result: list[VacationPeriodBalance] = []
 
-        for period in sorted(periods, key=lambda p: p.year_number, reverse=True):
+        # Сортируем по period_start от новых к старым (корректно для двух серий)
+        for period in sorted(periods, key=lambda p: p.period_start, reverse=True):
             used_days = period.used_days or 0
             total_days_full = period.main_days + period.additional_days
 
@@ -354,7 +465,7 @@ class VacationPeriodService:
         )
 
     async def recalculate_periods(self, db: AsyncSession, employee_id: int) -> list[VacationPeriodBalance]:
-        """Пересоздать периоды и заново распределить дни отпусков по порядку."""
+        """Пересоздать последнюю серию периодов и заново распределить дни отпусков по порядку."""
         from app.repositories.employee_repository import EmployeeRepository
         from app.models.vacation import Vacation
 
@@ -363,10 +474,21 @@ class VacationPeriodService:
         if not employee or not employee.hire_date:
             raise HTTPException(status_code=400, detail="У сотрудника не указана дата приёма")
 
-        # Удаляем все периоды (cascade удалит транзакции)
-        await self._repo.delete_all_by_employee(db, employee_id)
+        # Получаем границы серий
+        boundaries = await self._get_series_boundaries(db, employee_id, employee.hire_date)
 
-        # Создаём периоды заново
+        if len(boundaries) > 1:
+            # Удаляем только периоды последней серии
+            latest_boundary = boundaries[-1]
+            all_periods = await self._repo.get_by_employee(db, employee_id)
+            for p in all_periods:
+                if p.period_start >= latest_boundary:
+                    await db.delete(p)
+        else:
+            # Нет корректировок — удаляем все периоды как раньше
+            await self._repo.delete_all_by_employee(db, employee_id)
+
+        # Создаём периоды заново (все серии кроме последней уже сохранены)
         await self.ensure_periods_for_employee(
             db,
             employee_id,
@@ -426,7 +548,7 @@ async def auto_use_days(
     result = await db.execute(
         select(VacationPeriod)
         .where(VacationPeriod.employee_id == employee_id)
-        .order_by(VacationPeriod.year_number)
+        .order_by(VacationPeriod.period_start.asc())
     )
     periods_sorted = list(result.scalars().all())
 
@@ -457,12 +579,18 @@ async def auto_use_days(
             )
             remaining_to_use -= days_to_take
 
-    # Если остались непокрытые дни — создаём будущие периоды
-    while remaining_to_use > 0 and hire_date is not None:
+    # Если остались непокрытые дни — создаём будущие периоды от последней серии
+    # Определяем последнюю границу серии
+    from app.repositories.hire_date_adjustment_repository import HireDateAdjustmentRepository
+    adjustment_repo = HireDateAdjustmentRepository()
+    latest_adj = await adjustment_repo.get_latest(db, employee_id)
+    effective_start = latest_adj.adjustment_date if latest_adj else hire_date
+
+    while remaining_to_use > 0 and effective_start is not None:
         last_year = max((p.year_number for p in periods_sorted), default=0)
         next_year = last_year + 1
 
-        period_start = hire_date + relativedelta(months=12 * (next_year - 1))
+        period_start = effective_start + relativedelta(months=12 * (next_year - 1))
         period_end = period_start + relativedelta(months=12) - relativedelta(days=1)
 
         new_period = await repo.create(

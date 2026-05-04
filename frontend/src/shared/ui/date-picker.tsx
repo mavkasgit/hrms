@@ -12,6 +12,7 @@ interface DatePickerProps {
   required?: boolean
   className?: string
   disabled?: boolean
+  autoFocus?: boolean
 }
 
 const MONTH_NAMES = [
@@ -35,7 +36,7 @@ function formatDateForStorage(displayDate: string): string {
   return `${year}-${month}-${day}`
 }
 
-export function DatePicker({ value, onChange, label, placeholder, required = false, className, disabled = false }: DatePickerProps) {
+export function DatePicker({ value, onChange, label, placeholder, required = false, className, disabled = false, autoFocus = false }: DatePickerProps) {
   const id = useId()
   const [open, setOpen] = useState(false)
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -165,6 +166,7 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
           className="flex h-10 w-full rounded-l-md border-0 bg-background px-3 py-2 text-sm ring-offset-0 placeholder:text-muted-foreground focus-visible:outline-none"
           maxLength={10}
           disabled={disabled}
+          autoFocus={autoFocus}
         />
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>

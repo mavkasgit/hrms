@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
@@ -35,6 +35,7 @@ import {
   useCancelOrder,
   useDeleteOrder,
 } from "@/entities/order/useOrders"
+import { useEmployee } from "@/entities/employee/useEmployees"
 import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { calculateDaysBetween, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
@@ -55,6 +56,7 @@ const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
 
 export function OrdersPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [year, setYear] = useState<number | undefined>(undefined)
   const [collapsed, setCollapsed] = useState(false)
   const [auditLogOpen, setAuditLogOpen] = useState(false)
@@ -90,7 +92,27 @@ export function OrdersPage() {
 
   const [draftId, setDraftId] = useState<string | null>(null)
 
+  // Read query params for pre-filtering
+  const employeeIdParam = searchParams.get("employeeId")
+  const orderTypeParam = searchParams.get("orderType")
+  const { data: preselectedEmployeeData } = useEmployee(
+    employeeIdParam ? Number.parseInt(employeeIdParam, 10) : 0
+  )
   const selectedOrderType = orderTypes.find(item => item.id === selectedOrderTypeId) ?? null
+
+  // Initialize from query params on mount
+  useEffect(() => {
+    if (preselectedEmployeeData) {
+      setSelectedEmployee(preselectedEmployeeData)
+    }
+    if (orderTypeParam && orderTypes.length > 0) {
+      const found = orderTypes.find(t => t.code === orderTypeParam)
+      if (found) {
+        setSelectedOrderTypeId(found.id)
+        setOrderTypeSearch(found.name)
+      }
+    }
+  }, [preselectedEmployeeData, orderTypeParam, orderTypes])
 
   const handleCancelOrderConfirm = () => {
     if (cancelOrderId) cancelMutation.mutate(cancelOrderId)

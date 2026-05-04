@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { Plus, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload, ScrollText, Tag, Building2, Printer } from "lucide-react"
+import { Plus, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload, ScrollText, Tag, Building2, Printer, Users } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 
 import { Alert, AlertDescription } from "@/shared/ui/alert"
@@ -17,7 +17,7 @@ import { useEmployees } from "@/entities/employee/useEmployees"
 import { EmployeeTableFilter } from "@/features/employee-search/EmployeeTableFilter"
 import { EmployeeForm } from "@/features/employee-form"
 import { ImportEmployeesModal } from "@/features/import-employees/ImportEmployeesModal"
-import { StaffingModal } from "@/features/staffing-modal/StaffingModal"
+import { DocumentModal } from "@/features/document-modal/DocumentModal"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 import { useTags } from "@/entities/tag/useTags"
 import { PrintPreviewDialog } from "@/features/print-preview"
@@ -67,6 +67,7 @@ export function EmployeesPage() {
   const [importOpen, setImportOpen] = useState(false)
   const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [staffingOpen, setStaffingOpen] = useState(false)
+  const [childrenOpen, setChildrenOpen] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
 
   // Print preview state
@@ -193,13 +194,17 @@ export function EmployeesPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Сотрудники</h1>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setPrintOpen(true)}>
+          <Button variant="outline" onClick={() => setPrintOpen(true)}>
             <Printer className="mr-2 h-4 w-4" />
             Печать
           </Button>
           <Button variant="outline" onClick={() => setStaffingOpen(true)}>
             <Building2 className="mr-2 h-4 w-4" />
             Штатное расписание
+          </Button>
+          <Button variant="outline" onClick={() => setChildrenOpen(true)}>
+            <Users className="mr-2 h-4 w-4" />
+            Дети
           </Button>
           <Button variant="outline" onClick={() => setAuditLogOpen(true)}>
             <ScrollText className="mr-2 h-4 w-4" />
@@ -387,7 +392,8 @@ export function EmployeesPage() {
           window.location.reload()
         }}
       />
-      <StaffingModal open={staffingOpen} onOpenChange={setStaffingOpen} />
+      <DocumentModal docCode="staffing" title="Штатное расписание" open={staffingOpen} onOpenChange={setStaffingOpen} />
+      <DocumentModal docCode="children" title="Дети" open={childrenOpen} onOpenChange={setChildrenOpen} />
 
       {/* --- Print preview dialog --- */}
       <PrintPreviewDialog<Employee>

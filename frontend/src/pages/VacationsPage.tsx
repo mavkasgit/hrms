@@ -38,6 +38,7 @@ import {
   useHolidays,
 } from "@/entities/vacation"
 import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, VacationPeriodVacation } from "@/entities/vacation-period"
+import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
 import { useUpdateEmployee } from "@/entities/employee/useEmployees"
 import { EmployeeSearch } from "@/features/employee-search"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
@@ -115,6 +116,7 @@ function EmployeeHistoryRow({
 }: EmployeeHistoryRowProps) {
   const { data: history, isLoading } = useEmployeeVacationHistory(employeeId)
   const { data: periodsRaw } = useVacationPeriods(employeeId)
+  const { data: adjustments } = useHireDateAdjustments(employeeId)
   const periods = Array.isArray(periodsRaw) ? periodsRaw : []
   const deleteVacationMutation = useDeleteVacation()
   const cancelVacationMutation = useCancelVacation()
@@ -176,12 +178,28 @@ function EmployeeHistoryRow({
     })
   }
 
+  // Точки перехода между сериями (до early return — useMemo хук!)
+  const adjustmentDates = useMemo(() => {
+    if (!adjustments) return []
+    return adjustments.map(a => a.adjustment_date).sort()
+  }, [adjustments])
+
+  const getSeriesDivider = (periodStart: string, prevPeriodStart: string | null): string | null => {
+    if (!prevPeriodStart) return null
+    for (const adjDate of adjustmentDates) {
+      if (prevPeriodStart >= adjDate && periodStart < adjDate) {
+        return adjDate
+      }
+    }
+    return null
+  }
+
   if (isLoading) return <div className="px-4 py-3"><Skeleton className="h-20 w-full" /></div>
   if (!history || !periods) return <div className="px-4 py-3 text-sm text-muted-foreground">Нет данных</div>
   
   // Разделяем периоды на открытые и закрытые
-  // Сортируем от новых к старым (год по убыванию)
-  const sortedPeriods = [...periods].sort((a, b) => b.year_number - a.year_number)
+  // Сортируем от новых к старым по period_start (корректно для N серий)
+  const sortedPeriods = [...periods].sort((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime())
   const openPeriods = sortedPeriods.filter(p => p.remaining_days > 0)
   const closedPeriods = sortedPeriods.filter(p => p.remaining_days === 0)
 
@@ -218,27 +236,43 @@ function EmployeeHistoryRow({
           Пересоздать трудовые периоды
         </Button>
       </div>
-      
-      {displayedPeriods.map((p) => {
+
+      {displayedPeriods.map((p, idx) => {
         const periodVacations = p.vacations || []
         const isClosed = p.remaining_days === 0
         const isClosing = closingPeriodId === p.period_id
         
+        // Определяем нужен ли разделитель перед этим периодом
+        const prevPeriod = idx > 0 ? displayedPeriods[idx - 1] : null
+        const dividerDate = prevPeriod ? getSeriesDivider(p.period_start, prevPeriod.period_start) : null
+        
         return (
-          <div key={p.period_id} className={`flex gap-2 border border-muted/30 rounded ${isClosed ? 'opacity-60' : ''} ${isClosing ? 'border-blue-400 bg-blue-50' : ''}`}>
-            {/* Левая часть — период */}
-<div className="w-1/2 min-w-[280px] bg-card py-1.5 px-2 flex items-center gap-2">
-              <TooltipProvider delayDuration={200}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="flex-1 cursor-help rounded hover:ring-1 hover:ring-gray-300 hover:ring-inset transition-shadow">
-                      <div className="flex items-center gap-2 text-xs">
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
-                            <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
-                            {isClosed && <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>}
-                          </div>
+          <Fragment key={p.period_id}>
+            {/* Разделитель между сериями */}
+            {dividerDate && (
+              <div className="flex items-center gap-3 my-2">
+                <div className="flex-1 h-px bg-amber-300" />
+                <span className="text-[10px] font-medium text-amber-600 whitespace-nowrap bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                  Периоды до корректировки от {formatDate(dividerDate)}
+                </span>
+                <div className="flex-1 h-px bg-amber-300" />
+              </div>
+            )}
+            
+            <div className={`flex gap-2 border border-muted/30 rounded ${isClosed ? 'opacity-60' : ''} ${isClosing ? 'border-blue-400 bg-blue-50' : ''}`}>
+              {/* Левая часть — период */}
+              <div className="w-1/2 min-w-[280px] bg-card py-1.5 px-2 flex items-center gap-2">
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex-1 cursor-help rounded hover:ring-1 hover:ring-gray-300 hover:ring-inset transition-shadow">
+                        <div className="flex items-center gap-2 text-xs">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
+                              <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
+                              {isClosed && <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>}
+                            </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 text-xs mt-1">
@@ -408,6 +442,7 @@ function EmployeeHistoryRow({
               )}
             </div>
           </div>
+          </Fragment>
         )
       })}
     </div>
