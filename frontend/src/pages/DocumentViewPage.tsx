@@ -1,11 +1,12 @@
 import { useParams } from "react-router-dom"
-import { useStaffingOnlyOfficeConfig } from "@/entities/staffing/useStaffing"
+import { useDocumentOnlyOfficeConfig } from "@/entities/document/useDocuments"
 import { OrderEditor } from "@/features/onlyoffice-editor/OrderEditor"
 
-export function StaffingViewPage() {
-  const { id } = useParams<{ id: string }>()
+export function DocumentViewPage() {
+  const { docCode, id } = useParams<{ docCode: string; id: string }>()
   const docId = id ? Number.parseInt(id, 10) : 0
-  const { data, isLoading, error } = useStaffingOnlyOfficeConfig(
+  const { data, isLoading, error } = useDocumentOnlyOfficeConfig(
+    docCode ?? null,
     Number.isFinite(docId) ? docId : 0,
     "view"
   )

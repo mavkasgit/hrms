@@ -17,7 +17,7 @@ import { LoginPage } from "@/pages/LoginPage"
 import { DevPage } from "@/pages/DevPage"
 import { OrderEditorPage } from "@/pages/OrderEditorPage"
 import { DraftOrderEditorPage } from "@/pages/DraftOrderEditorPage"
-import { StaffingViewPage } from "@/pages/StaffingViewPage"
+import { DocumentViewPage } from "@/pages/DocumentViewPage"
 import { TemplateEditorPage } from "@/pages/TemplateEditorPage"
 
 export const router = createBrowserRouter([
@@ -50,8 +50,8 @@ export const router = createBrowserRouter([
     element: <DraftOrderEditorPage />,
   },
   {
-    path: "/staffing/:id/view",
-    element: <StaffingViewPage />,
+    path: "/documents/:docCode/:id/view",
+    element: <DocumentViewPage />,
   },
   {
     path: "/orders/:id/view-docx",

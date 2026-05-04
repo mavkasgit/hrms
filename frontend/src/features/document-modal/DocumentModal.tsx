@@ -18,24 +18,26 @@ import {
 } from "@/shared/ui/alert-dialog"
 import { Button } from "@/shared/ui/button"
 import {
-  useCurrentStaffing,
-  useStaffingHistory,
-  useUploadStaffingDocument,
-  useDeleteStaffingDocument,
-} from "@/entities/staffing/useStaffing"
-import type { StaffingDocument } from "@/entities/staffing/types"
+  useCurrentDocument,
+  useDocuments,
+  useUploadDocument,
+  useDeleteDocument,
+} from "@/entities/document/useDocuments"
+import type { Document } from "@/entities/document/types"
 
-interface StaffingModalProps {
+interface DocumentModalProps {
+  docCode: string
+  title: string
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-export function StaffingModal({ open, onOpenChange }: StaffingModalProps) {
+export function DocumentModal({ docCode, title, open, onOpenChange }: DocumentModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const { data: currentData } = useCurrentStaffing()
-  const { data: history, isLoading: historyLoading } = useStaffingHistory()
-  const uploadMutation = useUploadStaffingDocument()
-  const deleteMutation = useDeleteStaffingDocument()
+  const { data: currentData } = useCurrentDocument(docCode)
+  const { data: history, isLoading: historyLoading } = useDocuments(docCode)
+  const uploadMutation = useUploadDocument(docCode)
+  const deleteMutation = useDeleteDocument(docCode)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [deleteDocId, setDeleteDocId] = useState<number | null>(null)
 
@@ -53,8 +55,8 @@ export function StaffingModal({ open, onOpenChange }: StaffingModalProps) {
     }
   }
 
-  const handleOpenDocument = (doc: StaffingDocument) => {
-    window.open(`/staffing/${doc.id}/view`, "_blank", "noopener,noreferrer")
+  const handleOpenDocument = (doc: Document) => {
+    window.open(`/documents/${docCode}/${doc.id}/view`, "_blank", "noopener,noreferrer")
   }
 
   const handleDeleteConfirm = async () => {
@@ -83,7 +85,7 @@ export function StaffingModal({ open, onOpenChange }: StaffingModalProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            Штатное расписание
+            {title}
           </DialogTitle>
         </DialogHeader>
 
@@ -105,13 +107,13 @@ export function StaffingModal({ open, onOpenChange }: StaffingModalProps) {
                 <div className="pt-1">
                   <Button className="w-full" onClick={() => handleOpenDocument(currentDoc)}>
                     <Eye className="mr-2 h-4 w-4" />
-                    Открыть штатное расписание
+                    Открыть {title.toLowerCase()}
                   </Button>
                 </div>
               </>
             ) : (
               <p className="text-sm text-muted-foreground">
-                Штатное расписание ещё не загружено.
+                {title} ещё не загружено.
               </p>
             )}
           </div>

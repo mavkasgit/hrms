@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import HRMSException
-from app.models.staffing_document import StaffingDocument
+from app.models.document import Document
 from app.services.onlyoffice_service import onlyoffice_service
 
-router = APIRouter(prefix="/staffing", tags=["staffing"])
+router = APIRouter(prefix="/documents/{doc_code}", tags=["documents"])
 
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -30,8 +30,9 @@ def _public_api_url(path: str) -> str:
     return f"{settings.APP_PUBLIC_URL.rstrip('/')}/api{path}"
 
 
-def _staffing_dir() -> Path:
-    path = Path(settings.STAFFING_PATH)
+def _documents_dir(doc_code: str) -> Path:
+    base = Path(settings.STAFFING_PATH)
+    path = base / doc_code
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -64,8 +65,9 @@ def _assert_valid_callback_token(request: Request, body: dict[str, Any]) -> None
         raise HRMSException("Невалидный JWT OnlyOffice", "invalid_onlyoffice_jwt", status_code=403)
 
 
-class StaffingDocumentResponse(BaseModel):
+class DocumentResponse(BaseModel):
     id: int
+    doc_code: str
     original_filename: str
     file_type: str
     uploaded_at: datetime
@@ -76,41 +78,45 @@ class StaffingDocumentResponse(BaseModel):
         from_attributes = True
 
 
-class StaffingCurrentResponse(BaseModel):
-    document: StaffingDocumentResponse | None
+class DocumentCurrentResponse(BaseModel):
+    document: DocumentResponse | None
 
 
-@router.get("", response_model=list[StaffingDocumentResponse])
-async def list_staffing_documents(
+@router.get("", response_model=list[DocumentResponse])
+async def list_documents(
+    doc_code: str,
     limit: int = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
     result = await db.execute(
-        select(StaffingDocument)
-        .order_by(StaffingDocument.uploaded_at.desc())
+        select(Document)
+        .where(Document.doc_code == doc_code)
+        .order_by(Document.uploaded_at.desc())
         .limit(limit)
     )
     return result.scalars().all()
 
 
-@router.get("/current", response_model=StaffingCurrentResponse)
-async def get_current_staffing_document(
+@router.get("/current", response_model=DocumentCurrentResponse)
+async def get_current_document(
+    doc_code: str,
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
     result = await db.execute(
-        select(StaffingDocument)
-        .where(StaffingDocument.is_current == True)
-        .order_by(StaffingDocument.uploaded_at.desc())
+        select(Document)
+        .where(Document.doc_code == doc_code, Document.is_current == True)
+        .order_by(Document.uploaded_at.desc())
         .limit(1)
     )
     doc = result.scalar_one_or_none()
     return {"document": doc}
 
 
-@router.post("/upload", response_model=StaffingDocumentResponse, status_code=201)
-async def upload_staffing_document(
+@router.post("/upload", response_model=DocumentResponse, status_code=201)
+async def upload_document(
+    doc_code: str,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
@@ -134,22 +140,23 @@ async def upload_staffing_document(
             status_code=413,
         )
 
-    staffing_dir = _staffing_dir()
+    documents_dir = _documents_dir(doc_code)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_name = Path(file.filename).stem.replace(" ", "_")
     storage_filename = f"{timestamp}_{safe_name}.{ext}"
-    file_path = staffing_dir / storage_filename
+    file_path = documents_dir / storage_filename
 
     file_path.write_bytes(content)
 
     # Mark previous current as non-current
     await db.execute(
-        update(StaffingDocument)
-        .where(StaffingDocument.is_current == True)
+        update(Document)
+        .where(Document.doc_code == doc_code, Document.is_current == True)
         .values(is_current=False)
     )
 
-    doc = StaffingDocument(
+    doc = Document(
+        doc_code=doc_code,
         file_path=str(file_path),
         original_filename=file.filename,
         file_type=ext,
@@ -163,7 +170,8 @@ async def upload_staffing_document(
 
 
 @router.get("/{doc_id}/onlyoffice/config")
-async def staffing_onlyoffice_config(
+async def document_onlyoffice_config(
+    doc_code: str,
     doc_id: int,
     mode: str = Query("view", pattern="^(edit|view)$"),
     db: AsyncSession = Depends(get_db),
@@ -172,22 +180,24 @@ async def staffing_onlyoffice_config(
     if not settings.ONLYOFFICE_ENABLED:
         raise HRMSException("OnlyOffice отключен", "onlyoffice_disabled", status_code=503)
 
-    result = await db.execute(select(StaffingDocument).where(StaffingDocument.id == doc_id))
+    result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.doc_code == doc_code)
+    )
     doc = result.scalar_one_or_none()
     if not doc:
-        raise HRMSException("Документ не найден", "staffing_doc_not_found", status_code=404)
+        raise HRMSException("Документ не найден", "doc_not_found", status_code=404)
 
     file_path = Path(doc.file_path)
     if not file_path.exists():
-        raise HRMSException("Файл отсутствует на диске", "staffing_file_missing", status_code=404)
+        raise HRMSException("Файл отсутствует на диске", "doc_file_missing", status_code=404)
 
     config = onlyoffice_service.build_config(
-        doc_type="staffing",
+        doc_type=doc_code,
         doc_id=doc_id,
         file_path=file_path,
         title=doc.original_filename,
-        callback_url=_public_api_url(f"/staffing/{doc_id}/onlyoffice/callback"),
-        file_url=_public_api_url(f"/staffing/{doc_id}/file"),
+        callback_url=_public_api_url(f"/documents/{doc_code}/{doc_id}/onlyoffice/callback"),
+        file_url=_public_api_url(f"/documents/{doc_code}/{doc_id}/file"),
         mode=mode,
     )
     config["documentServerUrl"] = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
@@ -195,19 +205,22 @@ async def staffing_onlyoffice_config(
 
 
 @router.get("/{doc_id}/file")
-async def staffing_file(
+async def document_file(
+    doc_code: str,
     doc_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    result = await db.execute(select(StaffingDocument).where(StaffingDocument.id == doc_id))
+    result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.doc_code == doc_code)
+    )
     doc = result.scalar_one_or_none()
     if not doc:
-        raise HRMSException("Документ не найден", "staffing_doc_not_found", status_code=404)
+        raise HRMSException("Документ не найден", "doc_not_found", status_code=404)
 
     file_path = Path(doc.file_path)
     if not file_path.exists():
-        raise HRMSException("Файл отсутствует на диске", "staffing_file_missing", status_code=404)
+        raise HRMSException("Файл отсутствует на диске", "doc_file_missing", status_code=404)
 
     return FileResponse(
         str(file_path),
@@ -217,7 +230,8 @@ async def staffing_file(
 
 
 @router.post("/{doc_id}/onlyoffice/callback")
-async def staffing_onlyoffice_callback(
+async def document_onlyoffice_callback(
+    doc_code: str,
     doc_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -228,10 +242,34 @@ async def staffing_onlyoffice_callback(
     body = await request.json()
     _assert_valid_callback_token(request, body)
 
-    # Staffing docs are view-only; no saving needed, but handle gracefully
     if body.get("status") in (2, 6) and body.get("url"):
-        result = await db.execute(select(StaffingDocument).where(StaffingDocument.id == doc_id))
+        result = await db.execute(
+            select(Document).where(Document.id == doc_id, Document.doc_code == doc_code)
+        )
         doc = result.scalar_one_or_none()
         if doc:
             await onlyoffice_service.download_and_replace(str(body["url"]), Path(doc.file_path))
     return {"error": 0}
+
+
+@router.delete("/{doc_id}", status_code=204)
+async def delete_document(
+    doc_code: str,
+    doc_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.doc_code == doc_code)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HRMSException("Документ не найден", "doc_not_found", status_code=404)
+
+    # Delete file from disk
+    file_path = Path(doc.file_path)
+    if file_path.exists():
+        file_path.unlink()
+
+    await db.delete(doc)
+    await db.commit()
