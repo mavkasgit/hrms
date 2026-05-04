@@ -6,6 +6,8 @@ from sqlalchemy import select
 
 from app.core.database import get_db
 from app.models.tag import Tag, EmployeeTag
+from app.models.hire_date_adjustment import HireDateAdjustment
+from app.models.order import Order
 from app.schemas.department_graph import TagRef
 from app.schemas.employee import (
     EmployeeArchive,
@@ -19,9 +21,24 @@ from app.schemas.employee import (
     EmployeeWarningsResponse,
 )
 from app.schemas.vacation_period import VacationPeriodBalance
+from app.schemas.hire_date_adjustment import HireDateAdjustmentCreate, HireDateAdjustmentResponse
 from app.services.employee_service import employee_service
 from app.services.vacation_period_service import vacation_period_service
 from app.services.audit_log_service import read_audit_logs
+from app.repositories.hire_date_adjustment_repository import HireDateAdjustmentRepository
+from pydantic import BaseModel
+from datetime import date
+from typing import Optional
+
+
+class HireOrderResponse(BaseModel):
+    id: int
+    order_number: str
+    order_date: date
+    file_path: str | None
+
+    class Config:
+        from_attributes = True
 
 router = APIRouter(prefix="/employees", tags=["employees"])
 
@@ -288,6 +305,119 @@ async def get_archive_warnings(
 ):
     warnings = await employee_service.get_archive_warnings(db, employee_id)
     return {"warnings": warnings}
+
+
+@router.post(
+    "/{employee_id}/hire-date-adjustments",
+    response_model=HireDateAdjustmentResponse,
+    status_code=201,
+)
+async def create_hire_date_adjustment(
+    employee_id: int,
+    data: HireDateAdjustmentCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Создать запись корректировки даты начала периодов."""
+    employee = await employee_service.get_by_id(db, employee_id)
+    if not employee or not employee.hire_date:
+        raise HTTPException(status_code=400, detail="У сотрудника не указана дата приёма")
+
+    adjustment_repo = HireDateAdjustmentRepository()
+    adjustment = await adjustment_repo.create(
+        db,
+        {
+            "employee_id": employee_id,
+            "adjustment_date": data.adjustment_date,
+            "reason": data.reason,
+            "created_by": current_user,
+        },
+    )
+
+    # Пересоздаём периоды от новой даты, сохраняя старые
+    await vacation_period_service.ensure_periods_for_employee(
+        db,
+        employee_id,
+        employee.hire_date,
+        employee.additional_vacation_days or 0,
+    )
+    await db.commit()
+    await db.refresh(adjustment)
+
+    return adjustment
+
+
+@router.get(
+    "/{employee_id}/hire-date-adjustments",
+    response_model=list[HireDateAdjustmentResponse],
+)
+async def list_hire_date_adjustments(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Получить историю всех корректировок сотрудника."""
+    adjustment_repo = HireDateAdjustmentRepository()
+    adjustments = await adjustment_repo.get_by_employee(db, employee_id)
+    return [HireDateAdjustmentResponse.model_validate(a) for a in adjustments]
+
+
+@router.delete(
+    "/{employee_id}/hire-date-adjustments/{adjustment_id}",
+    status_code=204,
+)
+async def delete_hire_date_adjustment(
+    employee_id: int,
+    adjustment_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Удалить запись корректировки и пересоздать периоды."""
+    result = await db.execute(
+        select(HireDateAdjustment).where(
+            HireDateAdjustment.id == adjustment_id,
+            HireDateAdjustment.employee_id == employee_id,
+        )
+    )
+    adjustment = result.scalar_one_or_none()
+    if not adjustment:
+        raise HTTPException(status_code=404, detail="Корректировка не найдена")
+
+    await db.delete(adjustment)
+
+    # Пересоздаём периоды без этой корректировки
+    employee = await employee_service.get_by_id(db, employee_id)
+    if employee and employee.hire_date:
+        await vacation_period_service.ensure_periods_for_employee(
+            db,
+            employee_id,
+            employee.hire_date,
+            employee.additional_vacation_days or 0,
+        )
+    await db.commit()
+
+
+@router.get("/{employee_id}/hire-order", response_model=Optional[HireOrderResponse])
+async def get_hire_order(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Получить приказ приёма сотрудника (тип order_type.code = 'hire')."""
+    result = await db.execute(
+        select(Order)
+        .join(Order.order_type)
+        .where(
+            Order.employee_id == employee_id,
+            Order.is_deleted == False,
+            Order.is_cancelled == False,
+            Order.order_type.has(code="hire"),
+        )
+        .order_by(Order.order_date.asc())
+        .limit(1)
+    )
+    order = result.scalar_one_or_none()
+    return order
 
 
 @router.delete("/{employee_id}", status_code=204)

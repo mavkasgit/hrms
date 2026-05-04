@@ -89,3 +89,15 @@ export async function fetchDepartments() {
   const { data } = await api.get<{ departments: string[] }>("/employees/departments")
   return data.departments
 }
+
+export interface HireOrder {
+  id: number
+  order_number: string
+  order_date: string
+  file_path: string | null
+}
+
+export async function fetchHireOrder(employeeId: number): Promise<HireOrder | null> {
+  const { data } = await api.get<HireOrder | null>(`/employees/${employeeId}/hire-order`)
+  return data
+}

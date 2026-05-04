@@ -136,6 +136,14 @@ export function useDepartments() {
   })
 }
 
+export function useHireOrder(employeeId: number | null) {
+  return useQuery({
+    queryKey: ["hire-order", employeeId],
+    queryFn: () => api.fetchHireOrder(employeeId!),
+    enabled: !!employeeId,
+  })
+}
+
 /* Теги сотрудников */
 export function useAssignTag() {
   const qc = useQueryClient()

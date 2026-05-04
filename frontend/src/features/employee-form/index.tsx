@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
+import { useNavigate } from "react-router-dom"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -21,15 +22,8 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
 import type { Employee, EmployeeCreate, EmployeeUpdate } from "@/entities/employee/types"
-import {
-  useCreateEmployee,
-  useUpdateEmployee,
-  useArchiveEmployee,
-  useRestoreEmployee,
-  useDeleteEmployee,
-  useResetEmployeePeriods,
-} from "@/entities/employee/useEmployees"
-import { Archive, Trash2, RotateCcw, Building, Briefcase } from "lucide-react"
+import { useCreateEmployee, useUpdateEmployee, useArchiveEmployee, useRestoreEmployee, useDeleteEmployee, useResetEmployeePeriods, useHireOrder } from "@/entities/employee/useEmployees"
+import { Archive, Trash2, RotateCcw, Building, Briefcase, CalendarClock } from "lucide-react"
 import { useDepartments, useCreateDepartment } from "@/entities/department"
 import { usePositions, useCreatePosition } from "@/entities/position"
 import { ComboboxCreate } from "@/shared/ui/combobox-create"
@@ -40,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select"
+import { HireDateAdjustmentDialog } from "./HireDateAdjustmentDialog"
 
 interface EmployeeFormProps {
   open: boolean
@@ -76,6 +71,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
   const [showHireDateDialog, setShowHireDateDialog] = useState(false)
   const [pendingUpdateData, setPendingUpdateData] = useState<EmployeeUpdate | null>(null)
   const [isRecalculating, setIsRecalculating] = useState(false)
+  const [showAdjustmentDialog, setShowAdjustmentDialog] = useState(false)
 
   const createMutation = useCreateEmployee()
   const updateMutation = useUpdateEmployee()
@@ -87,6 +83,8 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
   const createPos = useCreatePosition()
   const { data: departments = [] } = useDepartments()
   const { data: positions = [] } = usePositions()
+  const { data: hireOrder } = useHireOrder(employee?.id ?? null)
+  const navigate = useNavigate()
 
   // Приводим к общему виду { id, name }
   const deptItems = useMemo(
@@ -476,13 +474,52 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
           </div>
 
-          <div className="grid grid-cols-[130px_140px_80px] gap-4">
-            <div>
+          <div className="grid grid-cols-[165px_1fr_140px_80px] gap-4 items-center">
+            <div className="flex items-end">
               <DatePicker
                 label="Дата приёма"
                 value={form.hire_date || ""}
                 onChange={(value) => updateField("hire_date", value || null)}
+                className="w-[130px]"
               />
+              {isEdit && employee && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-10 w-7 px-0 shrink-0 ml-0.5"
+                  title="Корректировка рабочего года"
+                  onClick={() => setShowAdjustmentDialog(true)}
+                >
+                  <CalendarClock className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+            <div>
+              {isEdit && hireOrder ? (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground hover:underline cursor-pointer whitespace-nowrap leading-relaxed"
+                  onClick={() => {
+                    if (hireOrder.file_path) {
+                      window.open(`/orders/${hireOrder.id}/view-docx`, "_blank", "noopener,noreferrer")
+                    } else {
+                      alert("Файл приказа ещё не сгенерирован. Создайте приказ через страницу приказов.")
+                    }
+                  }}
+                  title="Открыть приказ"
+                >
+                  Приказ №{hireOrder.order_number} от {new Date(hireOrder.order_date).toLocaleDateString("ru-RU")}
+                </button>
+              ) : isEdit ? (
+                <button
+                  type="button"
+                  className="text-xs text-amber-600 hover:text-amber-700 hover:underline cursor-pointer whitespace-nowrap leading-relaxed"
+                  onClick={() => navigate(`/orders?employeeId=${employee.id}&orderType=hire`)}
+                  title="Добавить приказ о приёме"
+                >
+                  Приказ о приёме не добавлен
+                </button>
+              ) : null}
             </div>
             <div>
               <label className="text-sm font-medium">Форма оплаты</label>
@@ -682,6 +719,17 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    <HireDateAdjustmentDialog
+      open={showAdjustmentDialog}
+      onOpenChange={setShowAdjustmentDialog}
+      employeeId={employee?.id ?? 0}
+      hireDate={form.hire_date}
+      onSuccess={() => {
+        // После успешной корректировки закрываем форму
+        onOpenChange(false)
+      }}
+    />
   </>
   )
 }
