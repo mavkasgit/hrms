@@ -56,9 +56,9 @@ services:
       SECRET_KEY: ${SECRET_KEY:-hrms-prod-local-secret-change-before-real-production}
       ONLYOFFICE_ENABLED: "true"
       ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-prod-secret-change-before-real-production}
-      ONLYOFFICE_PUBLIC_URL: ${LAN_PUBLIC_URL:-http://localhost:5175}
+      ONLYOFFICE_PUBLIC_URL: http://host.docker.internal:5175
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice:80
-      APP_PUBLIC_URL: ${LAN_PUBLIC_URL:-http://localhost:5175}
+      APP_PUBLIC_URL: http://localhost:5175
     depends_on:
       postgres:
         condition: service_healthy

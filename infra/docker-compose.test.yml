@@ -4,6 +4,8 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: hrms-postgres-test
+    env_file:
+      - ../.env.test
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-hrms_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms_pass_test}
@@ -12,7 +14,6 @@ services:
       - "${TEST_POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_test_data:/var/lib/postgresql/data
-      - ../data/db_init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -57,9 +58,9 @@ services:
       ENV: ${ENV:-test}
       ONLYOFFICE_ENABLED: ${ONLYOFFICE_ENABLED:-true}
       ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-test-secret}
-      ONLYOFFICE_PUBLIC_URL: ${LAN_PUBLIC_URL:-http://localhost:5174}
+      ONLYOFFICE_PUBLIC_URL: http://host.docker.internal:5174
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice:80
-      APP_PUBLIC_URL: ${LAN_PUBLIC_URL:-http://localhost:5174}
+      APP_PUBLIC_URL: http://localhost:5174
     depends_on:
       postgres:
         condition: service_healthy
