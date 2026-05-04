@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import EmployeeNotFoundError, HRMSException
+from app.core.paths import storage_path
 from app.schemas.order import OrderCreate
 from app.services.onlyoffice_service import onlyoffice_service
 from app.services.order_draft_service import order_draft_service
@@ -72,7 +73,7 @@ async def order_onlyoffice_config(
     order = await order_service.get_by_id(db, order_id)
     if not order.file_path:
         raise HRMSException("Файл приказа не найден", "order_file_not_found", status_code=404)
-    file_path = Path(order.file_path)
+    file_path = storage_path(order.file_path, "ORDERS_PATH")
     if not file_path.exists():
         raise HRMSException("Файл приказа отсутствует на диске", "order_file_missing", status_code=404)
 
@@ -80,7 +81,7 @@ async def order_onlyoffice_config(
         doc_type="order",
         doc_id=order_id,
         file_path=file_path,
-        title=file_path.name,
+        title=order.file_path.split("/")[-1],
         callback_url=_public_api_url(f"/orders/{order_id}/onlyoffice/callback"),
         file_url=_public_api_url(f"/orders/{order_id}/onlyoffice/file"),
         mode=mode,
@@ -98,7 +99,7 @@ async def order_onlyoffice_file(
     order = await order_service.get_by_id(db, order_id)
     if not order.file_path:
         raise HRMSException("Файл приказа не найден", "order_file_not_found", status_code=404)
-    file_path = Path(order.file_path)
+    file_path = storage_path(order.file_path, "ORDERS_PATH")
     if not file_path.exists():
         raise HRMSException("Файл приказа отсутствует на диске", "order_file_missing", status_code=404)
     return _file_response(file_path)
@@ -119,7 +120,7 @@ async def order_onlyoffice_callback(
     if body.get("status") in (2, 6) and body.get("url"):
         order = await order_service.get_by_id(db, order_id)
         if order.file_path:
-            await onlyoffice_service.download_and_replace(str(body["url"]), Path(order.file_path))
+            await onlyoffice_service.download_and_replace(str(body["url"]), storage_path(order.file_path, "ORDERS_PATH"))
     return {"error": 0}
 
 
