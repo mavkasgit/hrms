@@ -84,6 +84,7 @@ htmlcov/
 
 # AI tools
 .qwen/
+.qoder/
 
 # Backend data
 backend/data/
