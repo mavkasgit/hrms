@@ -269,14 +269,18 @@ class VacationPeriodService:
 
             vac_result = await db.execute(
                 select(Vacation)
-                .options(selectinload(Vacation.order))
+                .options(
+                    selectinload(Vacation.order),
+                    selectinload(Vacation.recall_order),
+                    selectinload(Vacation.postpone_order),
+                )
                 .where(
                     Vacation.employee_id == employee_id,
                     Vacation.start_date >= period.period_start,
                     Vacation.start_date <= period.period_end,
                     Vacation.is_deleted == False,
                 )
-.order_by(Vacation.start_date.desc())
+            .order_by(Vacation.start_date.desc())
             )
             period_vacations = [
                 {
@@ -289,6 +293,15 @@ class VacationPeriodService:
                     "order_number": vacation.order.order_number if getattr(vacation, "order", None) else None,
                     "comment": vacation.comment,
                     "is_cancelled": vacation.is_cancelled,
+                    "is_recalled": vacation.is_recalled,
+                    "recall_date": str(vacation.recall_date) if vacation.recall_date else None,
+                    "recall_order_id": vacation.recall_order_id,
+                    "recall_order_number": vacation.recall_order.order_number if getattr(vacation, "recall_order", None) else None,
+                    "original_days": vacation.days_count if vacation.recall_date else None,
+                    "actual_days": (vacation.recall_order.extra_fields or {}).get("actual_days_used") if getattr(vacation, "recall_order", None) else None,
+                    "is_postponed": vacation.is_postponed,
+                    "postpone_order_number": vacation.postpone_order.order_number if getattr(vacation, "postpone_order", None) else None,
+                    "postponed_days": vacation.days_count if vacation.is_postponed else None,
                 }
                 for vacation in vac_result.scalars().all()
             ]
@@ -464,6 +477,94 @@ class VacationPeriodService:
             vacations=[],
         )
 
+    async def recalculate_vacation_days_only(self, db: AsyncSession, employee_id: int) -> list[VacationPeriodBalance]:
+        """Пересчитать только дни отпусков без удаления периодов и ручных закрытий."""
+        from app.repositories.employee_repository import EmployeeRepository
+        from app.models.vacation import Vacation
+        from app.repositories.order_repository import OrderRepository
+        from app.repositories.references_repository import references_repository
+        from app.utils.working_days import calculate_vacation_days, count_holidays_in_range
+        from datetime import timedelta
+
+        employee_repo = EmployeeRepository()
+        employee = await employee_repo.get_by_id(db, employee_id)
+        if not employee or not employee.hire_date:
+            raise HTTPException(status_code=400, detail="У сотрудника не указана дата приёма")
+
+        # Сбрасываем использованные дни во ВСЕХ периодах (но сохраняем транзакции ручного закрытия)
+        all_periods = await self._repo.get_by_employee(db, employee_id)
+        for period in all_periods:
+            # Сохраняем used_days_manual (ручные закрытия)
+            manual = period.used_days_manual or 0
+            period.used_days = manual  # Сбрасываем только авто-дни
+            period.used_days_auto = 0
+            period.remaining_days = (period.main_days + period.additional_days) - period.used_days
+            period.order_ids = None
+            period.order_numbers = None
+            await db.flush()
+
+        # Получаем все отпуска сотрудника
+        result = await db.execute(
+            select(Vacation)
+            .where(
+                Vacation.employee_id == employee_id,
+                Vacation.is_deleted == False,
+                Vacation.is_cancelled == False,
+                Vacation.is_postponed == False,
+                Vacation.is_extended == False,
+                Vacation.order_id.isnot(None),
+            )
+            .order_by(Vacation.start_date.asc())
+        )
+        vacations = list(result.scalars().all())
+
+        # Получаем праздники
+        vacation_years = set()
+        for v in vacations:
+            vacation_years.add(v.start_date.year)
+            if v.end_date.year != v.start_date.year:
+                vacation_years.add(v.end_date.year)
+        
+        holidays_by_year = {}
+        for year in vacation_years:
+            holidays_by_year[year] = await references_repository.get_holidays_for_year(db, year)
+
+        # Распределяем дни отпусков по периодам
+        for vacation in vacations:
+            order = await OrderRepository().get_by_id(db, vacation.order_id)
+            order_number = order.order_number if order else str(vacation.order_id)
+
+            # Считаем дни
+            days_to_use = vacation.days_count
+            
+            # Если отпуск был отозван — пересчитываем дни до recall_date - 1
+            if vacation.recall_date:
+                actual_end = vacation.recall_date - timedelta(days=1)
+                
+                holidays_in_range = (
+                    holidays_by_year.get(vacation.start_date.year, []) +
+                    (holidays_by_year.get(actual_end.year, []) if actual_end.year != vacation.start_date.year else [])
+                )
+                
+                days_to_use = calculate_vacation_days(vacation.start_date, actual_end, count_holidays_in_range(holidays_in_range, vacation.start_date, actual_end))
+                if days_to_use <= 0:
+                    days_to_use = 0
+
+            # Списываем дни по периодам
+            await auto_use_days(
+                db,
+                employee_id=employee_id,
+                days_to_use=days_to_use,
+                hire_date=employee.hire_date,
+                additional_days=employee.additional_vacation_days or 0,
+                order_id=vacation.order_id,
+                order_number=order_number,
+                is_recalc=True,
+            )
+
+        await db.commit()
+        return await self.get_employee_periods(db, employee_id)
+
     async def recalculate_periods(self, db: AsyncSession, employee_id: int) -> list[VacationPeriodBalance]:
         """Пересоздать последнюю серию периодов и заново распределить дни отпусков по порядку."""
         from app.repositories.employee_repository import EmployeeRepository
@@ -496,18 +597,35 @@ class VacationPeriodService:
             employee.additional_vacation_days or 0,
         )
 
-        # Получаем все отпуска сотрудника (не удалённые, не отменённые, с приказом)
+        # Получаем все отпуска сотрудника (не удалённые, не отменённые, не перенесенные, не продленные, с приказом)
+        # Включаем также отозванные отпуска - для них пересчитаем дни по recall_date
         result = await db.execute(
             select(Vacation)
             .where(
                 Vacation.employee_id == employee_id,
                 Vacation.is_deleted == False,
                 Vacation.is_cancelled == False,
+                Vacation.is_postponed == False,
+                Vacation.is_extended == False,
                 Vacation.order_id.isnot(None),
             )
             .order_by(Vacation.start_date.asc())
         )
         vacations = list(result.scalars().all())
+
+        # Получаем все праздники для всех годов отпусков
+        from app.repositories.references_repository import references_repository
+        from app.utils.working_days import calculate_vacation_days, count_holidays_in_range
+        
+        vacation_years = set()
+        for v in vacations:
+            vacation_years.add(v.start_date.year)
+            if v.end_date.year != v.start_date.year:
+                vacation_years.add(v.end_date.year)
+        
+        all_holidays = []
+        for year in vacation_years:
+            all_holidays.extend(await references_repository.get_holidays_for_year(db, year))
 
         # По порядку от самого старого отпуска распределяем дни по периодам
         for vacation in vacations:
@@ -517,10 +635,31 @@ class VacationPeriodService:
             order = await order_repo.get_by_id(db, vacation.order_id)
             order_number = order.order_number if order else str(vacation.order_id)
 
+            # Определяем сколько дней списать
+            days_to_use = vacation.days_count
+            
+            # Если отпуск был отозван — пересчитываем дни до recall_date - 1
+            if vacation.recall_date:
+                from datetime import timedelta
+                actual_end = vacation.recall_date - timedelta(days=1)
+                
+                # Считаем праздники в новом диапазоне
+                holidays_for_start = await references_repository.get_holidays_for_year(db, vacation.start_date.year)
+                holidays_for_end = []
+                if actual_end.year != vacation.start_date.year:
+                    holidays_for_end = await references_repository.get_holidays_for_year(db, actual_end.year)
+                holidays_in_range = holidays_for_start + holidays_for_end
+                
+                days_to_use = calculate_vacation_days(vacation.start_date, actual_end, count_holidays_in_range(holidays_in_range, vacation.start_date, actual_end))
+                
+                # Если days_to_use <= 0, значит сотрудник не был в отпуске ни одного дня
+                if days_to_use <= 0:
+                    days_to_use = 0
+
             await auto_use_days(
                 db,
                 employee_id=employee_id,
-                days_to_use=vacation.days_count,
+                days_to_use=days_to_use,
                 hire_date=employee.hire_date,
                 additional_days=employee.additional_vacation_days or 0,
                 order_id=vacation.order_id,

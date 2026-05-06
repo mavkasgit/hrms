@@ -28,5 +28,18 @@ class Vacation(Base):
     cancelled_at = Column(DateTime(timezone=True))
     cancelled_by = Column(String(100))
 
+    is_recalled = Column(Boolean, default=False, nullable=False, index=True)
+    recall_date = Column(Date, nullable=True)
+    recall_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    
+    is_postponed = Column(Boolean, default=False, nullable=False, index=True)
+    postpone_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    
+    is_extended = Column(Boolean, default=False, nullable=False, index=True)
+    extension_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+
     employee = relationship("Employee", back_populates="vacations")
-    order = relationship("Order")
+    order = relationship("Order", foreign_keys=[order_id])
+    recall_order = relationship("Order", foreign_keys=[recall_order_id])
+    postpone_order = relationship("Order", foreign_keys=[postpone_order_id])
+    extension_order = relationship("Order", foreign_keys=[extension_order_id])

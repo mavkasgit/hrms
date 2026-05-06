@@ -119,7 +119,7 @@ class VacationRepository:
         self,
         db: AsyncSession,
     ) -> list[Vacation]:
-        """Возвращает все действующие на сегодня отпуски (не удалённые, не отменённые)."""
+        """Возвращает все действующие на сегодня отпуски (не удалённые, не отменённые, не отозванные, не перенесенные, не продленные)."""
         from datetime import date as date_type
         today = date_type.today()
         query = (
@@ -128,6 +128,9 @@ class VacationRepository:
             .where(
                 Vacation.is_deleted == False,
                 Vacation.is_cancelled == False,
+                Vacation.is_recalled == False,
+                Vacation.is_postponed == False,
+                Vacation.is_extended == False,
                 Vacation.start_date <= today,
                 Vacation.end_date >= today,
             )
@@ -167,7 +170,7 @@ class VacationRepository:
         Считает использованные дни отпуска за год.
         Только для указанного типа (по умолчанию "Трудовой").
         Если отпуск переходит через январь — считает только дни в этом году.
-        НЕ считает отменённые отпуска.
+        НЕ считает отменённые, отозванные, перенесенные и продленные отпуска.
         """
         query = (
             select(Vacation)
@@ -176,6 +179,9 @@ class VacationRepository:
                 Vacation.vacation_type == vacation_type,
                 Vacation.is_deleted == False,
                 Vacation.is_cancelled == False,
+                Vacation.is_recalled == False,
+                Vacation.is_postponed == False,
+                Vacation.is_extended == False,
                 Vacation.start_date <= date(year, 12, 31),
                 Vacation.end_date >= date(year, 1, 1),
             )
@@ -217,6 +223,9 @@ class VacationRepository:
                 Vacation.employee_id == period.employee_id,
                 Vacation.is_deleted == False,
                 Vacation.is_cancelled == False,
+                Vacation.is_recalled == False,
+                Vacation.is_postponed == False,
+                Vacation.is_extended == False,
                 Vacation.start_date >= period.period_start,
                 Vacation.start_date <= end_date,
             )
@@ -371,7 +380,14 @@ class VacationRepository:
             # 1. Реальные отпуска (из таблицы vacations)
             used_result = await db.execute(
                 select(func.sum(Vacation.days_count))
-                .where(Vacation.employee_id == emp_id, Vacation.is_deleted == False, Vacation.is_cancelled == False)
+                .where(
+                    Vacation.employee_id == emp_id, 
+                    Vacation.is_deleted == False, 
+                    Vacation.is_cancelled == False, 
+                    Vacation.is_recalled == False,
+                    Vacation.is_postponed == False,
+                    Vacation.is_extended == False
+                )
             )
             total_used_from_vacations = used_result.scalar() or 0
             
@@ -441,7 +457,10 @@ class VacationRepository:
                 .where(
                     Vacation.employee_id == emp_id,
                     Vacation.is_deleted == False,
-                    Vacation.is_cancelled == False
+                    Vacation.is_cancelled == False,
+                    Vacation.is_recalled == False,
+                    Vacation.is_postponed == False,
+                    Vacation.is_extended == False
                 )
             )
             total_used = total_used_result.scalar() or 0
@@ -530,7 +549,11 @@ class VacationRepository:
         # Получаем все отпуска сотрудника (включая отменённые)
         vac_result = await db.execute(
             select(Vacation)
-            .options(selectinload(Vacation.order))
+            .options(
+                selectinload(Vacation.order),
+                selectinload(Vacation.recall_order),
+                selectinload(Vacation.postpone_order),
+            )
             .where(Vacation.employee_id == employee_id, Vacation.is_deleted == False)
             .order_by(Vacation.start_date.desc())
         )
@@ -560,6 +583,12 @@ class VacationRepository:
                             "order_number": v.order.order_number if getattr(v, "order", None) else None,
                             "comment": v.comment,
                             "is_cancelled": v.is_cancelled,
+                            "is_recalled": v.is_recalled,
+                            "recall_date": str(v.recall_date) if v.recall_date else None,
+                            "recall_order_number": v.recall_order.order_number if getattr(v, "recall_order", None) else None,
+                            "is_postponed": v.is_postponed,
+                            "postpone_order_number": v.postpone_order.order_number if getattr(v, "postpone_order", None) else None,
+                            "postponed_days": v.days_count if v.is_postponed else None,
                         })
 
             # Определяем available дней за год

@@ -13,6 +13,10 @@ from app.schemas.vacation import (
     VacationBalanceResponse,
     VacationRecallRequest,
     VacationRecallResponse,
+    VacationExtensionRequest,
+    VacationExtensionResponse,
+    VacationPostponeRequest,
+    VacationPostponeResponse,
 )
 from app.services.vacation_service import vacation_service
 from app.repositories.vacation_repository import vacation_repository
@@ -280,6 +284,32 @@ async def recall_vacation(
     current_user: str = Depends(_get_current_user_stub),
 ):
     result = await vacation_service.recall_vacation(
+        db, vacation_id, data.model_dump(), current_user
+    )
+    return result
+
+
+@router.post("/{vacation_id}/extend", response_model=VacationExtensionResponse)
+async def extend_vacation(
+    vacation_id: int,
+    data: VacationExtensionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    result = await vacation_service.extend_vacation(
+        db, vacation_id, data.model_dump(), current_user
+    )
+    return result
+
+
+@router.post("/{vacation_id}/postpone", response_model=VacationPostponeResponse)
+async def postpone_vacation(
+    vacation_id: int,
+    data: VacationPostponeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    result = await vacation_service.postpone_vacation(
         db, vacation_id, data.model_dump(), current_user
     )
     return result
