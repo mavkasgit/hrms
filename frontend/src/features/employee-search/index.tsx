@@ -15,6 +15,7 @@ interface EmployeeSearchProps {
   disabled?: boolean
   width?: string
   className?: string
+  inputClassName?: string
   renderOptionExtra?: (emp: Employee) => ReactNode
   renderValueExtra?: (emp: Employee) => ReactNode
   showTabNumber?: boolean
@@ -123,6 +124,7 @@ export function EmployeeSearch({
             }}
             disabled={disabled}
             className={error ? "border-red-500" : ""}
+            autoComplete="off"
           />
           {searchResults.length > 0 && (
             <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">

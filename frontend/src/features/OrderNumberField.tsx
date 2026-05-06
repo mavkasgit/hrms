@@ -10,7 +10,7 @@ function formatOrderDate(dateStr: string): string {
 }
 
 function RecentOrdersList({ orders, onSelect }: { orders: Order[]; onSelect: (num: string) => void }) {
-  const recentOrders = [...orders].sort((a, b) => (b.id ?? 0) - (a.id ?? 0)).slice(0, 5)
+  const recentOrders = [...orders].sort((a, b) => (b.id ?? 0) - (a.id ?? 0)).slice(0, 8)
   if (!recentOrders.length) return <p className="text-xs text-muted-foreground py-2">Приказов пока нет</p>
   return (
     <div className="flex flex-col gap-1">
@@ -56,6 +56,7 @@ export function OrderNumberField({
   const id = useId()
   const [letter, setLetter] = useState<string | null>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const [userModified, setUserModified] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { data: suggestedNumber } = useNextOrderNumber(orderTypeId)
@@ -66,20 +67,26 @@ export function OrderNumberField({
   })
 
   useEffect(() => {
-    if (!orderTypeId || !orderTypes) {
+    if (!orderTypes || orderTypes.length === 0) {
       setLetter(null)
-      onChange("")
+      return
+    }
+    if (!orderTypeId) {
+      setLetter(null)
       return
     }
     const type = orderTypes.find((t) => t.id === orderTypeId)
     setLetter(type?.letter ?? null)
+    // Сбрасываем флаг при смене типа приказа
+    setUserModified(false)
   }, [orderTypeId, orderTypes, onChange])
 
   useEffect(() => {
-    if (suggestedNumber && !value) {
+    // Автозаполняем только если пользователь еще не менял значение вручную
+    if (!userModified && suggestedNumber && !value) {
       onChange(suggestedNumber)
     }
-  }, [suggestedNumber, value, onChange])
+  }, [suggestedNumber, value, onChange, userModified, orderTypeId])
 
   // Вычисляем отображаемое значение: убираем суффикс -{letter} если он есть
   const displayValue = letter && value.endsWith(`-${letter}`)
@@ -88,12 +95,13 @@ export function OrderNumberField({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value
+    setUserModified(true)
     // Передаём как есть, без модификаций
     onChange(v)
   }
 
   const handleBlur = () => {
-    if (letter && value && !value.endsWith(`-${letter}`)) {
+    if (letter && value && value.trim() && !value.endsWith(`-${letter}`)) {
       onChange(`${value}-${letter}`)
     }
   }

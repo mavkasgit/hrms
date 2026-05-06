@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen } from "lucide-react"
+import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen, Search, Filter } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -38,7 +38,6 @@ import {
 import { useEmployee } from "@/entities/employee/useEmployees"
 import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { OrderNumberField } from "@/features/OrderNumberField"
-import { calculateDaysBetween, calculateEndDate, calculateStartDate } from "@/entities/order/orderTypeFields"
 import { EmployeeSearch } from "@/features/employee-search"
 import type { Employee } from "@/entities/employee/types"
 import type { OrderType } from "@/entities/order/types"
@@ -54,12 +53,33 @@ const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
   "Продление контракта": "bg-yellow-100 text-yellow-800 border-yellow-200",
 }
 
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(timer)
+  }, [value, delay])
+  return debounced
+}
+
 export function OrdersPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [year, setYear] = useState<number | undefined>(undefined)
   const [collapsed, setCollapsed] = useState(false)
   const [auditLogOpen, setAuditLogOpen] = useState(false)
+  const [filterCollapsed, setFilterCollapsed] = useState(true)
+
+  // Filter state
+  const [filterEmployee, setFilterEmployee] = useState<Employee | null>(null)
+  const [filterOrderType, setFilterOrderType] = useState<OrderType | null>(null)
+  const [filterOrderTypeSearch, setFilterOrderTypeSearch] = useState("")
+  const [filterOrderTypeOpen, setFilterOrderTypeOpen] = useState(false)
+  const [filterOrderNumber, setFilterOrderNumber] = useState("")
+  const [filterDateFrom, setFilterDateFrom] = useState("")
+  const [filterDateTo, setFilterDateTo] = useState("")
+  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "cancelled">("all")
+  const filterOrderTypeRef = useRef<HTMLDivElement>(null)
 
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [selectedOrderTypeId, setSelectedOrderTypeId] = useState<number | null>(null)
@@ -67,16 +87,23 @@ export function OrdersPage() {
   const [orderTypeOpen, setOrderTypeOpen] = useState(false)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
   const [orderNumber, setOrderNumber] = useState("")
-  const [extraFields, setExtraFields] = useState<Record<string, string>>({})
-  const lastChangedRef = useRef<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const orderTypeRef = useRef<HTMLDivElement>(null)
+
+  // Debounce text search fields
+  const debouncedOrderNumber = useDebounce(filterOrderNumber, 300)
+  const debouncedFilterEmployeeId = useDebounce(filterEmployee?.id ?? null, 300)
 
   const { data, isLoading, error } = useOrders({
     page: 1,
     per_page: 1000,
     year,
+    order_type_code: filterOrderType?.code,
+    employee_id: debouncedFilterEmployeeId ?? undefined,
+    date_from: filterDateFrom || undefined,
+    date_to: filterDateTo || undefined,
+    order_number: debouncedOrderNumber || undefined,
   })
 
   const { data: years } = useOrderYears()
@@ -89,6 +116,7 @@ export function OrdersPage() {
 
   const [cancelOrderId, setCancelOrderId] = useState<number | null>(null)
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
+  const [showDismissalDialog, setShowDismissalDialog] = useState(false)
 
   const [draftId, setDraftId] = useState<string | null>(null)
 
@@ -125,49 +153,6 @@ export function OrdersPage() {
   }
 
   useEffect(() => {
-    const changed = lastChangedRef.current
-    if (!changed) return
-
-    const configs = [
-      { start: "vacation_start", end: "vacation_end", days: "vacation_days" },
-      { start: "sick_leave_start", end: "sick_leave_end", days: "sick_leave_days" },
-    ]
-
-    for (const cfg of configs) {
-      const s = extraFields[cfg.start] || ""
-      const e = extraFields[cfg.end] || ""
-      const d = extraFields[cfg.days] || ""
-
-      if (changed === cfg.start || changed === cfg.end) {
-        if (s && e) {
-          const days = calculateDaysBetween(cfg.start, cfg.end, extraFields)
-          if (days !== null && String(days) !== d) {
-            setExtraFields((prev) => ({ ...prev, [cfg.days]: String(days) }))
-          }
-        }
-      }
-
-      if (changed === cfg.days) {
-        const daysNum = parseInt(d, 10)
-        if (!isNaN(daysNum) && daysNum > 0) {
-          if (s && !e) {
-            const endDate = calculateEndDate(cfg.start, cfg.days, extraFields)
-            if (endDate) setExtraFields((prev) => ({ ...prev, [cfg.end]: endDate }))
-          } else if (!s && e) {
-            const startDate = calculateStartDate(cfg.end, cfg.days, extraFields)
-            if (startDate) setExtraFields((prev) => ({ ...prev, [cfg.start]: startDate }))
-          } else if (s && e) {
-            const expectedDays = calculateDaysBetween(cfg.start, cfg.end, extraFields)
-            if (expectedDays !== null && expectedDays !== daysNum) {
-              setExtraFields((prev) => ({ ...prev, [cfg.end]: calculateEndDate(cfg.start, cfg.days, extraFields)! }))
-            }
-          }
-        }
-      }
-    }
-  }, [extraFields])
-
-  useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (orderTypeRef.current && !orderTypeRef.current.contains(e.target as Node)) {
         setOrderTypeOpen(false)
@@ -185,13 +170,11 @@ export function OrdersPage() {
     setSelectedOrderTypeId(type.id)
     setOrderTypeSearch(type.name)
     setOrderTypeOpen(false)
-    setExtraFields({})
   }
 
   const clearOrderType = () => {
     setSelectedOrderTypeId(null)
     setOrderTypeSearch("")
-    setExtraFields({})
   }
 
   const handleOrderTypeKeyDown = (e: React.KeyboardEvent) => {
@@ -207,8 +190,6 @@ export function OrdersPage() {
     setOrderTypeSearch("")
     setOrderDate(new Date().toISOString().split("T")[0])
     setOrderNumber("")
-    setExtraFields({})
-    lastChangedRef.current = null
     setErrors({})
     setDraftId(null)
   }
@@ -224,18 +205,39 @@ export function OrdersPage() {
   }
 
   const buildOrderPayload = () => {
-    const ef = Object.keys(extraFields).length > 0 ? extraFields : undefined
     return {
       employee_id: selectedEmployee!.id,
       order_type_id: selectedOrderTypeId!,
       order_date: orderDate,
       order_number: orderNumber || undefined,
-      extra_fields: ef,
     }
   }
 
   const handleEditBeforeCreate = () => {
     if (!validate()) return
+    if (selectedOrderType?.name === "Увольнение") {
+      setShowDismissalDialog(true)
+      return
+    }
+    const editorWindow = window.open("about:blank", "_blank")
+    createDraftMutation.mutate(buildOrderPayload(), {
+      onSuccess: (draft) => {
+        setDraftId(draft.draft_id)
+        const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+        if (editorWindow && !editorWindow.closed) {
+          editorWindow.location.href = url
+        } else {
+          window.open(url, "_blank", "noopener,noreferrer")
+        }
+      },
+      onError: () => {
+        editorWindow?.close()
+      },
+    })
+  }
+
+  const handleConfirmDismissal = () => {
+    setShowDismissalDialog(false)
     const editorWindow = window.open("about:blank", "_blank")
     createDraftMutation.mutate(buildOrderPayload(), {
       onSuccess: (draft) => {
@@ -273,7 +275,7 @@ export function OrdersPage() {
 
     window.addEventListener("message", handleDraftSave)
     return () => window.removeEventListener("message", handleDraftSave)
-  }, [draftId, selectedEmployee, selectedOrderTypeId, orderDate, orderNumber, extraFields])
+  }, [draftId, selectedEmployee, selectedOrderTypeId, orderDate, orderNumber])
 
   const handleDownload = (orderId: number) => {
     window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
@@ -288,6 +290,41 @@ export function OrdersPage() {
   }
 
   const isPending = createMutation.isPending || createDraftMutation.isPending || commitDraftMutation.isPending
+
+  // Compute active filter count for badge
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (filterEmployee) count++
+    if (filterOrderType) count++
+    if (filterOrderNumber) count++
+    if (filterDateFrom) count++
+    if (filterDateTo) count++
+    if (filterStatus !== "all") count++
+    if (year) count++
+    return count
+  }, [filterEmployee, filterOrderType, filterOrderNumber, filterDateFrom, filterDateTo, filterStatus, year])
+
+  const clearFilters = () => {
+    setFilterEmployee(null)
+    setFilterOrderType(null)
+    setFilterOrderTypeSearch("")
+    setFilterOrderNumber("")
+    setFilterDateFrom("")
+    setFilterDateTo("")
+    setFilterStatus("all")
+    setYear(undefined)
+  }
+
+  // Close filter type dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filterOrderTypeRef.current && !filterOrderTypeRef.current.contains(e.target as Node)) {
+        setFilterOrderTypeOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   return (
     <div className="space-y-4">
@@ -319,64 +356,65 @@ export function OrdersPage() {
         </div>
 
         {!collapsed && (
-          <div className="border-t px-4 py-4 relative">
-            <div>
-              <div className="grid gap-4">
+          <div className="border-t px-4 py-4">
+            <div className="grid gap-4">
                 <div className="flex gap-4">
-                  <EmployeeSearch
-                    value={selectedEmployee}
-                    onChange={setSelectedEmployee}
-                    error={errors.employee}
-                    required
-                  />
-
-                  <div className="w-[17%] relative" ref={orderTypeRef}>
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium">Тип приказа *</label>
+                  <div>
+                    <label className="text-sm font-medium">Сотрудник <span className="text-red-500">*</span></label>
+                    <div className="mt-1">
+                      <EmployeeSearch
+                        value={selectedEmployee}
+                        onChange={setSelectedEmployee}
+                        error={errors.employee}
+                        label=" "
+                        width="w-96"
+                      />
                     </div>
-                    {selectedOrderType ? (
-                      <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50">
-                        <Check className="h-4 w-4 text-green-600 shrink-0" />
-                        <span className="text-sm flex-1 truncate">{selectedOrderType.name}</span>
-                        <button
-                          type="button"
-                          onClick={clearOrderType}
-                          className="shrink-0 text-muted-foreground hover:text-foreground"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="relative">
-                          <Input
-                            placeholder="Выберите тип..."
-                            value={orderTypeSearch}
-                            onChange={(e) => {
-                              setOrderTypeSearch(e.target.value)
-                              setOrderTypeOpen(true)
-                            }}
-                            onKeyDown={handleOrderTypeKeyDown}
-                            onFocus={() => setOrderTypeOpen(true)}
-                            className={errors.orderType ? "border-red-500" : ""}
-                          />
-                          {orderTypeOpen && filteredTypes.length > 0 && (
-                            <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
-                              {filteredTypes.map((t) => (
-                                <button
-                                  key={t.id}
-                                  type="button"
-                                  className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0"
-                                  onClick={() => selectOrderType(t)}
-                                >
-                                  {t.name}
-                                </button>
-                              ))}
-                            </div>
-                          )}
+                  </div>
+
+                  <div className="w-[17%]" ref={orderTypeRef}>
+                    <label className="text-sm font-medium">Тип приказа <span className="text-red-500">*</span></label>
+                    <div className="mt-1 relative">
+                      {selectedOrderType ? (
+                        <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50 h-10">
+                          <Check className="h-4 w-4 text-green-600 shrink-0" />
+                          <span className="text-sm flex-1 truncate">{selectedOrderType.name}</span>
+                          <button
+                            type="button"
+                            onClick={clearOrderType}
+                            className="shrink-0 text-muted-foreground hover:text-foreground"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
                         </div>
-                      </>
-                    )}
+                      ) : (
+                        <Input
+                          placeholder="Выберите тип..."
+                          value={orderTypeSearch}
+                          onChange={(e) => {
+                            setOrderTypeSearch(e.target.value)
+                            setOrderTypeOpen(true)
+                          }}
+                          onKeyDown={handleOrderTypeKeyDown}
+                          onFocus={() => setOrderTypeOpen(true)}
+                          className={`h-10 ${errors.orderType ? "border-red-500" : ""}`}
+                        />
+                      )}
+                      {orderTypeOpen && filteredTypes.length > 0 && (
+                        <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
+                          {filteredTypes.map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0"
+                              onClick={() => selectOrderType(t)}
+                            >
+                              {t.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     {errors.orderType && <p className="text-xs text-red-500 mt-1">{errors.orderType}</p>}
                   </div>
                 </div>
@@ -421,69 +459,130 @@ export function OrdersPage() {
                 )}
               </div>
             </div>
-
-            <div className="absolute right-0 top-0 bottom-0 w-[600px] border rounded-lg p-4 bg-muted/20 m-4">
-              <h3 className="text-sm font-semibold mb-3">Дополнительные поля</h3>
-              {!selectedOrderType?.field_schema?.length ? (
-                <p className="text-xs text-muted-foreground">Выберите тип приказа</p>
-              ) : (
-                <div className="flex flex-wrap gap-x-3 gap-y-3">
-                  {selectedOrderType.field_schema.map((field) => (
-                    <div key={field.key}>
-                      {field.type === "date" ? (
-                        <div className="w-[130px]">
-                        <DatePicker
-                          label={field.label}
-                          value={extraFields[field.key] || ""}
-                          onChange={(v) => {
-                            lastChangedRef.current = field.key
-                            setExtraFields((prev) => ({ ...prev, [field.key]: v }))
-                          }}
-                        />
-                        </div>
-                      ) : (
-                        <>
-                          <label className="text-xs font-medium text-muted-foreground">{field.label}</label>
-                          <Input
-                            type="number"
-                            value={extraFields[field.key] || ""}
-                            onChange={(e) => {
-                              lastChangedRef.current = field.key
-                              setExtraFields((prev) => ({ ...prev, [field.key]: e.target.value }))
-                            }}
-                            className="h-10 w-[130px]"
-                          />
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="flex gap-1">
-          <Button
-            variant={!year ? "default" : "outline"}
-            size="sm"
-            onClick={() => setYear(undefined)}
-          >
-            Все года
-          </Button>
-          {years?.map((y) => (
-            <Button
-              key={y}
-              variant={year === y ? "default" : "outline"}
-              size="sm"
-              onClick={() => setYear(y)}
-            >
-              {y}
-            </Button>
-          ))}
+      {/* Filter panel */}
+      <div className="border rounded-lg bg-card">
+        <div
+          className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
+          onClick={() => setFilterCollapsed(!filterCollapsed)}
+        >
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-medium">Фильтры</h2>
+            {activeFilterCount > 0 && (
+              <Badge variant="secondary" className="text-xs">{activeFilterCount}</Badge>
+            )}
+          </div>
+          {filterCollapsed ? (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
         </div>
+
+        {!filterCollapsed && (
+          <div className="border-t px-4 py-4 space-y-4">
+            {/* Row 1: Order number, Employee, Order type */}
+            <div className="flex flex-wrap gap-6 items-end">
+              <div className="w-[130px]">
+                <label className="text-sm font-medium">Номер приказа</label>
+                <div className="relative mt-1">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Поиск..."
+                    value={filterOrderNumber}
+                    onChange={(e) => setFilterOrderNumber(e.target.value)}
+                    className="pl-8 h-10 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="w-[280px]">
+                <label className="text-sm font-medium">Сотрудник</label>
+                <div className="mt-1">
+                  <EmployeeSearch
+                    value={filterEmployee}
+                    onChange={(v) => { setFilterEmployee(v); }}
+                    placeholder="Выберите сотрудника"
+                    label=" "
+                    width="w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="w-[220px]" ref={filterOrderTypeRef}>
+                <label className="text-sm font-medium">Тип приказа</label>
+                <div className="mt-1 relative">
+                  {filterOrderType ? (
+                    <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50 h-10 text-sm">
+                      <Check className="h-4 w-4 text-green-600 shrink-0" />
+                      <span className="flex-1 truncate">{filterOrderType.name}</span>
+                      <button type="button" onClick={() => { setFilterOrderType(null); setFilterOrderTypeSearch(""); }} className="shrink-0 text-muted-foreground hover:text-foreground">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <Input
+                        placeholder="Выберите тип..."
+                        value={filterOrderTypeSearch}
+                        onChange={(e) => { setFilterOrderTypeSearch(e.target.value); setFilterOrderTypeOpen(true); }}
+                        onFocus={() => setFilterOrderTypeOpen(true)}
+                        className="h-10 text-sm"
+                      />
+                      {filterOrderTypeOpen && (
+                        <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
+                          {orderTypes.filter((t) => t.name.toLowerCase().includes(filterOrderTypeSearch.toLowerCase())).map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0"
+                              onClick={() => { setFilterOrderType(t); setFilterOrderTypeSearch(t.name); setFilterOrderTypeOpen(false); }}
+                            >
+                              {t.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Row 2: Date range, Status */}
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="w-[130px]">
+                <DatePicker label="Дата с" value={filterDateFrom} onChange={setFilterDateFrom} />
+              </div>
+              <div className="w-[130px]">
+                <DatePicker label="Дата по" value={filterDateTo} onChange={setFilterDateTo} />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Статус</label>
+                <div className="flex gap-1 mt-1">
+                  <Button variant={filterStatus === "all" ? "default" : "outline"} size="sm" onClick={() => setFilterStatus("all")}>Все</Button>
+                  <Button variant={filterStatus === "active" ? "default" : "outline"} size="sm" onClick={() => setFilterStatus("active")}>Активные</Button>
+                  <Button variant={filterStatus === "cancelled" ? "default" : "outline"} size="sm" onClick={() => setFilterStatus("cancelled")}>Отменённые</Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Row 3: Year buttons + Clear */}
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="flex gap-1">
+                <Button variant={!year ? "default" : "outline"} size="sm" onClick={() => setYear(undefined)}>Все года</Button>
+                {years?.map((y) => (
+                  <Button key={y} variant={year === y ? "default" : "outline"} size="sm" onClick={() => setYear(y)}>{y}</Button>
+                ))}
+              </div>
+              <Button variant="outline" size="sm" onClick={clearFilters} className="ml-auto">Сбросить фильтры</Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -587,6 +686,23 @@ export function OrdersPage() {
           </TableBody>
         </Table>
       )}
+
+      <AlertDialog open={showDismissalDialog} onOpenChange={setShowDismissalDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Уволить сотрудника?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Сотрудник {selectedEmployee?.name} будет уволен. Приказ об увольнении будет создан.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDismissal} className="bg-amber-600 hover:bg-amber-700">
+              Уволить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={cancelOrderId !== null} onOpenChange={(open) => !open && setCancelOrderId(null)}>
         <AlertDialogContent>

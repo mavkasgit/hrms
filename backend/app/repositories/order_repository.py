@@ -19,6 +19,10 @@ class OrderRepository:
         sort_order: str = "desc",
         year: Optional[int] = None,
         order_type_code: Optional[str] = None,
+        employee_id: Optional[int] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        order_number: Optional[str] = None,
     ) -> tuple[list[Order], int]:
         conditions = [Order.is_deleted == False, Order.is_cancelled == False]
         joins = []
@@ -29,6 +33,18 @@ class OrderRepository:
         if order_type_code:
             joins.append(OrderType)
             conditions.append(OrderType.code == order_type_code)
+
+        if employee_id:
+            conditions.append(Order.employee_id == employee_id)
+
+        if date_from:
+            conditions.append(Order.order_date >= date_from)
+
+        if date_to:
+            conditions.append(Order.order_date <= date_to)
+
+        if order_number:
+            conditions.append(Order.order_number.ilike(f"%{order_number}%"))
 
         where_clause = and_(*conditions) if conditions else True
 

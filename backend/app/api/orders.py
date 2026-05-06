@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -79,6 +80,10 @@ async def get_all_orders(
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
     year: Optional[int] = Query(None),
     order_type_code: Optional[str] = Query(None),
+    employee_id: Optional[int] = Query(None),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    order_number: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
@@ -90,6 +95,10 @@ async def get_all_orders(
         sort_order=sort_order,
         year=year,
         order_type_code=order_type_code,
+        employee_id=employee_id,
+        date_from=date_from,
+        date_to=date_to,
+        order_number=order_number,
     )
 
 

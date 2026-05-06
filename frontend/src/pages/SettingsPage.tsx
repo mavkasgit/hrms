@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { FileText, Calendar, ArrowRight, ScrollText, Database } from "lucide-react"
+import { FileText, Cake, ArrowRight, ScrollText, Database } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 
@@ -25,7 +25,7 @@ export function SettingsPage() {
         >
           <div className="flex items-start gap-4">
             <div className="p-2 rounded-md bg-primary/10">
-              <Calendar className="h-5 w-5 text-primary" />
+              <Cake className="h-5 w-5 text-primary" />
             </div>
             <div className="flex-1">
               <h3 className="font-semibold mb-1 flex items-center gap-2">
@@ -59,23 +59,22 @@ export function SettingsPage() {
           </div>
         </div>
 
-        <div className="border rounded-lg p-4 hover:bg-accent/50 transition-colors">
+        <div
+          className="border rounded-lg p-4 hover:bg-accent/50 transition-colors cursor-pointer"
+          onClick={() => navigate("/templates")}
+        >
           <div className="flex items-start gap-4">
             <div className="p-2 rounded-md bg-primary/10">
               <FileText className="h-5 w-5 text-primary" />
             </div>
             <div className="flex-1">
-              <h3 className="font-semibold mb-1">Шаблоны приказов</h3>
+              <h3 className="font-semibold mb-1 flex items-center gap-2">
+                Шаблоны приказов
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </h3>
               <p className="text-sm text-muted-foreground mb-3">
                 Управление шаблонами документов для создания приказов. Загрузка, редактирование и удаление шаблонов.
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate("/templates")}
-              >
-                Открыть
-              </Button>
             </div>
           </div>
         </div>

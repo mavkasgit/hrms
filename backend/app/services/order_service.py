@@ -87,7 +87,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "vacation_days", "label": "Количество дней", "type": "number", "required": True},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
-        "letter": "к",
+        "letter": "л",
     },
     {
         "code": "vacation_unpaid",
@@ -128,7 +128,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "reason", "label": "Основание", "type": "text", "required": False},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
-        "letter": "к",
+        "letter": "л",
     },
     {
         "code": "vacation_postpone",
@@ -144,7 +144,23 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "reason", "label": "Основание", "type": "text", "required": False},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
-        "letter": "к",
+        "letter": "л",
+    },
+    {
+        "code": "vacation_extension",
+        "name": "Продление отпуска",
+        "show_in_orders_page": False,
+        "template_filename": "prikaz_prodlenie_otpuska.docx",
+        "field_schema": [
+            {"key": "vacation_start", "label": "Дата начала отпуска", "type": "date", "required": True},
+            {"key": "vacation_end", "label": "Дата окончания отпуска", "type": "date", "required": True},
+            {"key": "vacation_days", "label": "Количество дней отпуска", "type": "number", "required": True},
+            {"key": "sick_start_date", "label": "Дата начала больничного", "type": "date", "required": True},
+            {"key": "sick_end_date", "label": "Дата окончания больничного", "type": "date", "required": True},
+            {"key": "comment", "label": "Комментарий", "type": "text", "required": False},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "л",
     },
 ]
 
@@ -268,6 +284,10 @@ class OrderService:
         sort_order: str = "desc",
         year: Optional[int] = None,
         order_type_code: Optional[str] = None,
+        employee_id: Optional[int] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        order_number: Optional[str] = None,
     ) -> dict[str, Any]:
         items, total = await self.order_repo.get_all(
             db,
@@ -277,6 +297,10 @@ class OrderService:
             sort_order=sort_order,
             year=year,
             order_type_code=order_type_code,
+            employee_id=employee_id,
+            date_from=date_from,
+            date_to=date_to,
+            order_number=order_number,
         )
         total_pages = max(1, (total + per_page - 1) // per_page)
         return {

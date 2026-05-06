@@ -259,7 +259,7 @@ export function EmployeesPage() {
             <div className="absolute right-0 top-full mt-1 bg-popover border rounded-md shadow-lg p-3 z-50 w-56">
               <p className="text-xs font-medium text-muted-foreground mb-2">Статус</p>
               <div className="flex flex-col gap-1">
-                {(["active", "archived", "all", "deleted"] as EmployeeStatus[]).map((s) => (
+                {(["active", "archived", "all"] as EmployeeStatus[]).map((s) => (
                   <button
                     key={s}
                     className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
@@ -267,7 +267,7 @@ export function EmployeesPage() {
                     }`}
                     onClick={() => setStatus(s)}
                   >
-                    {s === "active" ? "Активные" : s === "archived" ? "В архиве" : s === "all" ? "Все" : "Удалённые"}
+                    {s === "active" ? "Активные" : s === "archived" ? "Уволенные" : "Все"}
                   </button>
                 ))}
               </div>

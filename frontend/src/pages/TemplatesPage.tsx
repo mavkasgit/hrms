@@ -2,7 +2,6 @@ import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { ArrowLeft, Check, ChevronDown, ChevronRight, Copy, Download, Eye, FilePen, FileUp, Plus, Trash2, Upload } from "lucide-react"
 import { Button } from "@/shared/ui/button"
-import { Input } from "@/shared/ui/input"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
@@ -15,13 +14,6 @@ import {
   TableRow,
 } from "@/shared/ui/table"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/ui/select"
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -31,29 +23,19 @@ import {
 } from "@/shared/ui/dialog"
 import {
   useAllOrderTypes,
-  useCreateOrderType,
   useDeleteOrderType,
   useDeleteTemplate,
   useTemplateVariables,
-  useUpdateOrderType,
   useUploadTemplate,
 } from "@/entities/order/useOrders"
 import { ImportTemplatesModal } from "@/features/import-templates/ImportTemplatesModal"
-import type { OrderType, OrderTypeFieldSchema } from "@/entities/order/types"
-
-const emptyField = (): OrderTypeFieldSchema => ({
-  key: "",
-  label: "",
-  type: "text",
-  required: false,
-})
+import { OrderTypeForm } from "@/features/order-type-form"
+import type { OrderType } from "@/entities/order/types"
 
 export function TemplatesPage() {
   const navigate = useNavigate()
   const { data: orderTypes = [], isLoading, error } = useAllOrderTypes()
   const { data: variables = [] } = useTemplateVariables()
-  const createMutation = useCreateOrderType()
-  const updateMutation = useUpdateOrderType()
   const deleteMutation = useDeleteOrderType()
   const uploadMutation = useUploadTemplate()
   const deleteTemplateMutation = useDeleteTemplate()
@@ -62,13 +44,8 @@ export function TemplatesPage() {
   const [deleteTypeDialog, setDeleteTypeDialog] = useState<{ open: boolean; orderType: OrderType | null }>({ open: false, orderType: null })
   const [deleteTypeError, setDeleteTypeError] = useState<string | null>(null)
 
-  const [newName, setNewName] = useState("")
-  const [newLetter, setNewLetter] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [draftName, setDraftName] = useState("")
-  const [draftPattern, setDraftPattern] = useState("")
-  const [draftLetter, setDraftLetter] = useState<string | null>(null)
-  const [draftFields, setDraftFields] = useState<OrderTypeFieldSchema[]>([])
+  const [formOpen, setFormOpen] = useState(false)
+  const [editingOrderType, setEditingOrderType] = useState<OrderType | null>(null)
   const [variablesExpanded, setVariablesExpanded] = useState(() => {
     const saved = localStorage.getItem("templatesPage.variablesExpanded")
     return saved !== null ? JSON.parse(saved) : true
@@ -100,28 +77,6 @@ export function TemplatesPage() {
     return grouped
   }, [variables])
 
-  const startEdit = (orderType: OrderType) => {
-    setEditingId(orderType.id)
-    setDraftName(orderType.name)
-    setDraftPattern(orderType.filename_pattern || "")
-    setDraftLetter(orderType.letter || null)
-    setDraftFields(orderType.field_schema.length ? orderType.field_schema : [emptyField()])
-  }
-
-  const saveEdit = () => {
-    if (!editingId) return
-    updateMutation.mutate({
-      orderTypeId: editingId,
-      payload: {
-        name: draftName,
-        filename_pattern: draftPattern || null,
-        letter: draftLetter,
-        field_schema: draftFields.filter((field) => field.key.trim() && field.label.trim()),
-      },
-    })
-    setEditingId(null)
-  }
-
   const openPreview = (orderTypeId: number) => {
     window.open(`/templates/${orderTypeId}/view`, "_blank", "noopener,noreferrer")
   }
@@ -137,10 +92,16 @@ export function TemplatesPage() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <h1 className="text-2xl font-bold">Типы и шаблоны приказов</h1>
-        <Button variant="outline" size="sm" className="ml-auto" onClick={() => setImportOpen(true)}>
-          <FileUp className="mr-2 h-4 w-4" />
-          Импорт шаблонов
-        </Button>
+        <div className="flex items-center gap-3 ml-auto">
+          <Button onClick={() => { setEditingOrderType(null); setFormOpen(true); }} size="sm">
+            <Plus className="mr-2 h-4 w-4" />
+            Создать тип
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <FileUp className="mr-2 h-4 w-4" />
+            Импорт шаблонов
+          </Button>
+        </div>
       </div>
 
       <div className="border rounded-lg bg-card">
@@ -250,244 +211,143 @@ export function TemplatesPage() {
       ) : !orderTypes.length ? (
         <EmptyState message="Типы приказов не найдены" description="Создайте первый тип приказа." />
       ) : (
-        <div className="space-y-4">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Название</TableHead>
-                <TableHead>Code</TableHead>
-                <TableHead>Литера</TableHead>
-                <TableHead>Где показывается</TableHead>
-                <TableHead>Шаблон</TableHead>
-                <TableHead>Статус</TableHead>
-                <TableHead className="text-right">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {orderTypes.map((orderType) => (
-                <TableRow key={orderType.id}>
-                  <TableCell>{orderType.name}</TableCell>
-                  <TableCell className="font-mono text-sm">{orderType.code}</TableCell>
-                  <TableCell className="font-mono text-sm">{orderType.letter ?? "—"}</TableCell>
-                  <TableCell>{orderType.show_in_orders_page ? "Общий журнал" : "Только в отпусках"}</TableCell>
-                  <TableCell>{orderType.template_filename || "—"}</TableCell>
-                  <TableCell>{orderType.is_active ? "Активен" : "Архив"}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end items-center gap-1">
-                      {orderType.template_exists && (
-                        <>
-                          <Button variant="ghost" size="icon" title="Превью" onClick={() => openPreview(orderType.id)}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" title="Редактировать" onClick={() => handleEditTemplate(orderType.id)}>
-                            <FilePen className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Скачать шаблон"
-                            onClick={() => window.open(`${import.meta.env.VITE_API_URL || "/api"}/order-types/${orderType.id}/template`, "_blank")}
-                          >
-                            <Download className="h-4 w-4" />
-                          </Button>
-                        </>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Загрузить шаблон"
-                        onClick={() => {
-                          const input = document.createElement("input")
-                          input.type = "file"
-                          input.accept = ".docx"
-                          input.onchange = (e) => {
-                            const file = (e.target as HTMLInputElement).files?.[0]
-                            if (file) uploadMutation.mutate({ orderTypeId: orderType.id, file })
-                          }
-                          input.click()
-                        }}
-                      >
-                        <Upload className="h-4 w-4" />
-                      </Button>
-                        {orderType.template_exists && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                          onClick={() => setDeleteTemplateDialog({ open: true, orderTypeId: orderType.id })}
-                        >
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Удалить шаблон
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          updateMutation.mutate({
-                            orderTypeId: orderType.id,
-                            payload: { show_in_orders_page: !orderType.show_in_orders_page },
-                          })
-                        }
-                      >
-                        {orderType.show_in_orders_page ? "Скрыть" : "Показать"}
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => startEdit(orderType)}>
-                        Изменить
-                      </Button>
-                      {!["hire", "dismissal", "transfer", "contract_extension", "vacation_paid", "vacation_unpaid", "weekend_call"].includes(orderType.code) ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => setDeleteTypeDialog({ open: true, orderType: orderType })}
-                        >
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Удалить тип
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground px-2">Стандартный</span>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          {editingId !== null && (
-            <div className="rounded-lg border bg-card p-4 space-y-4">
-              <h2 className="text-lg font-semibold">Редактирование типа</h2>
-              <div className="grid gap-3 md:grid-cols-3">
-                <Input value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Название" />
-                <select
-                  value={draftLetter || ""}
-                  onChange={(e) => setDraftLetter(e.target.value || null)}
-                  className="h-10 px-3 border rounded-md text-sm bg-background"
-                >
-                  <option value="">—</option>
-                  <option value="л">л</option>
-                  <option value="к">к</option>
-                </select>
-                <Input
-                  value={draftPattern}
-                  onChange={(e) => setDraftPattern(e.target.value)}
-                  placeholder="Паттерн имени файла, например Приказ_{order_number}_{last_name}.docx"
-                />
-              </div>
-
-              <div className="space-y-3">
-                <h3 className="font-medium">Дополнительные поля</h3>
-                {draftFields.map((field, index) => (
-                  <div key={index} className="grid gap-2 md:grid-cols-[1fr_1fr_120px_100px_40px]">
-                    <Input
-                      value={field.key}
-                      onChange={(e) =>
-                        setDraftFields((prev) => prev.map((item, idx) => (idx === index ? { ...item, key: e.target.value } : item)))
-                      }
-                      placeholder="key"
-                    />
-                    <Input
-                      value={field.label}
-                      onChange={(e) =>
-                        setDraftFields((prev) => prev.map((item, idx) => (idx === index ? { ...item, label: e.target.value } : item)))
-                      }
-                      placeholder="label"
-                    />
-                    <select
-                      className="h-10 rounded-md border bg-background px-3 text-sm"
-                      value={field.type}
-                      onChange={(e) =>
-                        setDraftFields((prev) =>
-                          prev.map((item, idx) =>
-                            idx === index ? { ...item, type: e.target.value as OrderTypeFieldSchema["type"] } : item,
-                          ),
-                        )
-                      }
-                    >
-                      <option value="text">text</option>
-                      <option value="date">date</option>
-                      <option value="number">number</option>
-                      <option value="textarea">textarea</option>
-                    </select>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={field.required}
-                        onChange={(e) =>
-                          setDraftFields((prev) => prev.map((item, idx) => (idx === index ? { ...item, required: e.target.checked } : item)))
-                        }
-                      />
-                      required
-                    </label>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDraftFields((prev) => prev.filter((_, idx) => idx !== index))}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+        <div className="space-y-6">
+          {(() => {
+            const grouped: Record<string, OrderType[]> = {}
+            const order = ["л", "к", ""]
+            for (const ot of orderTypes) {
+              const key = ot.letter || ""
+              if (!grouped[key]) grouped[key] = []
+              grouped[key].push(ot)
+            }
+            const renderGroup = (letter: string, label: string) => {
+              const items = grouped[letter]
+              if (!items?.length) return null
+              return (
+                <div key={letter} className="space-y-2">
+                  <div className="flex items-center gap-2 px-1">
+                    <h3 className="text-base font-semibold">
+                      {label} <span className="text-muted-foreground font-normal">({items.length})</span>
+                    </h3>
                   </div>
-                ))}
-                <Button variant="outline" onClick={() => setDraftFields((prev) => [...prev, emptyField()])}>
-                  Добавить поле
-                </Button>
-              </div>
-
-              <div className="flex gap-2">
-                <Button onClick={saveEdit} disabled={updateMutation.isPending}>
-                  Сохранить
-                </Button>
-                <Button variant="outline" onClick={() => setEditingId(null)}>
-                  Отмена
-                </Button>
-              </div>
-            </div>
-          )}
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Название</TableHead>
+                        <TableHead>Code</TableHead>
+                        <TableHead>Литера</TableHead>
+                        <TableHead>Где показывается</TableHead>
+                        <TableHead>Шаблон</TableHead>
+                        <TableHead>Статус</TableHead>
+                        <TableHead className="text-right">Действия</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {items.map((orderType) => (
+                        <TableRow
+                          key={orderType.id}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => { setEditingOrderType(orderType); setFormOpen(true); }}
+                        >
+                          <TableCell>{orderType.name}</TableCell>
+                          <TableCell className="font-mono text-sm">{orderType.code}</TableCell>
+                          <TableCell className="font-mono text-sm">{orderType.letter ?? "—"}</TableCell>
+                          <TableCell>{orderType.show_in_orders_page ? "Общий журнал" : "Только в отпусках"}</TableCell>
+                          <TableCell>{orderType.template_filename || "—"}</TableCell>
+                          <TableCell>{orderType.is_active ? "Активен" : "Архив"}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end items-center gap-1">
+                              {orderType.template_exists && (
+                                <>
+                                  <Button variant="ghost" size="icon" title="Превью" onClick={(e) => { e.stopPropagation(); openPreview(orderType.id); }}>
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" title="Редактировать" onClick={(e) => { e.stopPropagation(); handleEditTemplate(orderType.id); }}>
+                                    <FilePen className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Скачать шаблон"
+                                    onClick={(e) => { e.stopPropagation(); window.open(`${import.meta.env.VITE_API_URL || "/api"}/order-types/${orderType.id}/template`, "_blank"); }}
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Загрузить шаблон"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const input = document.createElement("input")
+                                  input.type = "file"
+                                  input.accept = ".docx"
+                                  input.onchange = (ev) => {
+                                    const file = (ev.target as HTMLInputElement).files?.[0]
+                                    if (file) uploadMutation.mutate({ orderTypeId: orderType.id, file })
+                                  }
+                                  input.click()
+                                }}
+                              >
+                                <Upload className="h-4 w-4" />
+                              </Button>
+                              {orderType.template_exists && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                  onClick={(e) => { e.stopPropagation(); setDeleteTemplateDialog({ open: true, orderTypeId: orderType.id }); }}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-1" />
+                                  Удалить шаблон
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  updateMutation.mutate({
+                                    orderTypeId: orderType.id,
+                                    payload: { show_in_orders_page: !orderType.show_in_orders_page },
+                                  })
+                                }}
+                              >
+                                {orderType.show_in_orders_page ? "Скрыть" : "Показать"}
+                              </Button>
+                              {!["hire", "dismissal", "transfer", "contract_extension", "vacation_paid", "vacation_unpaid", "weekend_call"].includes(orderType.code) ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  onClick={(e) => { e.stopPropagation(); setDeleteTypeDialog({ open: true, orderType: orderType }); }}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-1" />
+                                  Удалить тип
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-muted-foreground px-2">Стандартный</span>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )
+            }
+            return order.map((letter) => {
+              const label = letter === "" ? "Без литеры" : `Литера "${letter}"`
+              return renderGroup(letter, label)
+            }).filter(Boolean)
+          })()}
         </div>
       )}
 
-      <div className="rounded-lg border bg-card p-4">
-        <div className="flex items-center gap-3">
-          <Input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Название"
-            className="max-w-[200px]"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && newName.trim() && newLetter) {
-                createMutation.mutate({ code: newName.trim().toLowerCase().replace(/\s+/g, "_"), name: newName, field_schema: [], letter: newLetter })
-                setNewName("")
-                setNewLetter(null)
-              }
-            }}
-          />
-          <Select
-            value={newLetter || ""}
-            onValueChange={(v) => setNewLetter(v || null)}
-          >
-            <SelectTrigger className="w-[100px]">
-              <SelectValue placeholder="Литера" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="л">л</SelectItem>
-              <SelectItem value="к">к</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            onClick={() => {
-              if (!newLetter) return
-              createMutation.mutate({ code: newName.trim().toLowerCase().replace(/\s+/g, "_"), name: newName, field_schema: [], letter: newLetter })
-              setNewName("")
-              setNewLetter(null)
-            }}
-            disabled={!newName.trim() || !newLetter || createMutation.isPending}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Создать тип
-          </Button>
-        </div>
-      </div>
+      <OrderTypeForm open={formOpen} onOpenChange={setFormOpen} orderType={editingOrderType} />
 
       {/* Диалог подтверждения удаления шаблона */}
       <Dialog open={deleteTemplateDialog.open} onOpenChange={(open) => setDeleteTemplateDialog({ open, orderTypeId: open ? deleteTemplateDialog.orderTypeId : null })}>
