@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import {
@@ -14,35 +14,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/shared/ui/popover"
-import * as L from "lucide-react"
+import { Loader2 } from "lucide-react"
+import { ICON_LIST, renderIcon } from "./iconCatalog"
 
 const COLOR_PRESETS = [
   "#065F46", "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
   "#EC4899", "#06B6D4", "#84CC16", "#F97316", "#6B7280", "#1D4ED8",
 ]
-
-const ICON_LIST = [
-  "Building2","Briefcase","Building","Hospital","School","Factory",
-  "Store","Warehouse","Landmark","Hotel","Home","BriefcaseBusiness",
-  "Users","User","UserCog","UserCheck","UserPlus","UsersRound","UserRound",
-  "IdCard","Contact","GraduationCap","Target","Award","Shield","ShieldCheck",
-  "Verified","BadgeCheck","Medal","Trophy","Crown","Gem","Star",
-  "ChartBar","ChartLine","ChartPie","BarChart3","TrendingUp","TrendingDown",
-  "Activity","PieChart","Percent","FileText","FileCheck","FileCode",
-  "FileBarChart","Folder","FolderOpen","Archive","Notebook","BookOpen",
-  "Clipboard","Mail","Phone","MessageSquare","Bell","BellRing","Send",
-  "Megaphone","Radio","Globe","MapPin","Navigation","Compass","Link",
-  "Share2","Search","Settings","Wrench","Cog","Key","Lock","Eye",
-  "Edit","Trash2","Copy","Plus","Save","RefreshCw","Upload",
-  "DollarSign","CreditCard","Wallet","Receipt","Package","Truck","Box","Tag",
-]
-
-const LUCIDE = L as unknown as Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>>
-
-export function renderIcon(name: string, className = "h-4 w-4", style?: React.CSSProperties): ReactNode | null {
-  const Icon = LUCIDE[name]
-  return Icon ? <Icon className={className} style={style} /> : null
-}
 
 /* ───────── ColorPicker ───────── */
 
@@ -545,7 +523,7 @@ export function EntityDialog({
             <Button onClick={handleSave} disabled={isSaving}>
               {isSaving ? (
                 <>
-                  <L.Loader2 className="mr-2 size-4 animate-spin" />
+                  <Loader2 className="mr-2 size-4 animate-spin" />
                   Сохранение...
                 </>
               ) : (

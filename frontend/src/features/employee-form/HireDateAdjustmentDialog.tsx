@@ -53,7 +53,7 @@ export function HireDateAdjustmentDialog({
     if (open) {
       // Фокусим input внутри DatePicker после открытия диалога
       setTimeout(() => {
-        const input = dialogContentRef.current?.querySelector('input[type="text"]')
+        const input = dialogContentRef.current?.querySelector<HTMLInputElement>('input[type="text"]')
         input?.focus()
       }, 100)
     }

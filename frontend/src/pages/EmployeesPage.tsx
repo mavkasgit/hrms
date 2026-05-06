@@ -22,7 +22,7 @@ import { GlobalAuditLog } from "@/features/global-audit-log"
 import { useTags } from "@/entities/tag/useTags"
 import { PrintPreviewDialog } from "@/features/print-preview"
 import type { Employee, EmployeeStatus } from "@/entities/employee/types"
-import { renderIcon } from "@/pages/structure-page/shared/EntityDialog"
+import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
 
 function calculateAge(birthDate: string | null): number | null {
   if (!birthDate) return null

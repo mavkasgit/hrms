@@ -6,7 +6,6 @@ import {
   deleteDocument,
   fetchDocumentOnlyOfficeConfig,
 } from "./api"
-import type { Document } from "./types"
 
 export function useDocuments(docCode: string | null) {
   return useQuery({

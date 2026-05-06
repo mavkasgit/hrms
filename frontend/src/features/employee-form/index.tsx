@@ -724,7 +724,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
       open={showAdjustmentDialog}
       onOpenChange={setShowAdjustmentDialog}
       employeeId={employee?.id ?? 0}
-      hireDate={form.hire_date}
+      hireDate={form.hire_date ?? null}
       onSuccess={() => {
         // После успешной корректировки закрываем форму
         onOpenChange(false)

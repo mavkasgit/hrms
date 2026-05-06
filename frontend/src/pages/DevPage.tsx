@@ -4,6 +4,7 @@ import { Input } from "@/shared/ui/input"
 import { Button } from "@/shared/ui/button"
 import { Trash2 } from "lucide-react"
 import { OrderNumberField } from "@/features/OrderNumberField"
+import api from "@/shared/api/axios"
 
 const CELL = "w-16 h-8 text-sm text-center rounded-md border border-input transition-colors"
 
@@ -73,7 +74,6 @@ export function DevPage() {
           variant="destructive" 
           onClick={async () => {
             if (confirm('Очистить ВСЕ данные? Это удалит все отпуска, приказы, периоды и сотрудников!')) {
-              const { default: api } = await import('@/shared/api/axios')
               try {
                 await api.post('/dev/clear-all')
                 alert('Данные очищены! Обновите страницу.')

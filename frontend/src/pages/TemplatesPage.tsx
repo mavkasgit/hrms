@@ -23,6 +23,7 @@ import {
 } from "@/shared/ui/dialog"
 import {
   useAllOrderTypes,
+  useUpdateOrderType,
   useDeleteOrderType,
   useDeleteTemplate,
   useTemplateVariables,
@@ -39,6 +40,7 @@ export function TemplatesPage() {
   const deleteMutation = useDeleteOrderType()
   const uploadMutation = useUploadTemplate()
   const deleteTemplateMutation = useDeleteTemplate()
+  const updateMutation = useUpdateOrderType()
   const [importOpen, setImportOpen] = useState(false)
   const [deleteTemplateDialog, setDeleteTemplateDialog] = useState<{ open: boolean; orderTypeId: number | null }>({ open: false, orderTypeId: null })
   const [deleteTypeDialog, setDeleteTypeDialog] = useState<{ open: boolean; orderType: OrderType | null }>({ open: false, orderType: null })

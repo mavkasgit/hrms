@@ -1,78 +1,87 @@
 import { createBrowserRouter } from "react-router-dom"
+import { Suspense, lazy } from "react"
+import type { ReactNode } from "react"
 import { Layout } from "./Layout"
-import { DashboardPage } from "@/pages/DashboardPage"
-import { EmployeesPage } from "@/pages/EmployeesPage"
-import { StructurePage } from "@/pages/StructurePage"
-import { OrdersPage } from "@/pages/OrdersPage"
-import { VacationsPage } from "@/pages/vacations/VacationsPage"
-import { VacationRecallPage } from "@/pages/vacations/VacationRecallPage"
-import { VacationPostponePage } from "@/pages/vacations/VacationPostponePage"
-import { VacationExtensionPage } from "@/pages/vacations/VacationExtensionPage"
-import { UnpaidLeavesPage } from "@/pages/UnpaidLeavesPage"
-import { WeekendCallsPage } from "@/pages/WeekendCallsPage"
-import { SickLeavesPage } from "@/pages/SickLeavesPage"
-import { VacationCalendarPage } from "@/pages/VacationCalendarPage"
-import { TemplatesPage } from "@/pages/TemplatesPage"
-import { SettingsPage } from "@/pages/SettingsPage"
-import { HolidaysPage } from "@/pages/HolidaysPage"
-import { BackupsPage } from "@/pages/BackupsPage"
-import { LoginPage } from "@/pages/LoginPage"
-import { DevPage } from "@/pages/DevPage"
-import { OrderEditorPage } from "@/pages/OrderEditorPage"
-import { DraftOrderEditorPage } from "@/pages/DraftOrderEditorPage"
-import { DocumentViewPage } from "@/pages/DocumentViewPage"
-import { TemplateEditorPage } from "@/pages/TemplateEditorPage"
+
+const DashboardPage = lazy(async () => ({ default: (await import("@/pages/DashboardPage")).DashboardPage }))
+const EmployeesPage = lazy(async () => ({ default: (await import("@/pages/EmployeesPage")).EmployeesPage }))
+const StructurePage = lazy(async () => ({ default: (await import("@/pages/StructurePage")).StructurePage }))
+const OrdersPage = lazy(async () => ({ default: (await import("@/pages/OrdersPage")).OrdersPage }))
+const VacationsPage = lazy(async () => ({ default: (await import("@/pages/vacations/VacationsPage")).VacationsPage }))
+const VacationRecallPage = lazy(async () => ({ default: (await import("@/pages/vacations/VacationRecallPage")).VacationRecallPage }))
+const VacationPostponePage = lazy(async () => ({ default: (await import("@/pages/vacations/VacationPostponePage")).VacationPostponePage }))
+const VacationExtensionPage = lazy(async () => ({ default: (await import("@/pages/vacations/VacationExtensionPage")).VacationExtensionPage }))
+const UnpaidLeavesPage = lazy(async () => ({ default: (await import("@/pages/UnpaidLeavesPage")).UnpaidLeavesPage }))
+const WeekendCallsPage = lazy(async () => ({ default: (await import("@/pages/WeekendCallsPage")).WeekendCallsPage }))
+const SickLeavesPage = lazy(async () => ({ default: (await import("@/pages/SickLeavesPage")).SickLeavesPage }))
+const VacationCalendarPage = lazy(async () => ({ default: (await import("@/pages/VacationCalendarPage")).VacationCalendarPage }))
+const TemplatesPage = lazy(async () => ({ default: (await import("@/pages/TemplatesPage")).TemplatesPage }))
+const SettingsPage = lazy(async () => ({ default: (await import("@/pages/SettingsPage")).SettingsPage }))
+const HolidaysPage = lazy(async () => ({ default: (await import("@/pages/HolidaysPage")).HolidaysPage }))
+const BackupsPage = lazy(async () => ({ default: (await import("@/pages/BackupsPage")).BackupsPage }))
+const LoginPage = lazy(async () => ({ default: (await import("@/pages/LoginPage")).LoginPage }))
+const DevPage = lazy(async () => ({ default: (await import("@/pages/DevPage")).DevPage }))
+const OrderEditorPage = lazy(async () => ({ default: (await import("@/pages/OrderEditorPage")).OrderEditorPage }))
+const DraftOrderEditorPage = lazy(async () => ({ default: (await import("@/pages/DraftOrderEditorPage")).DraftOrderEditorPage }))
+const DocumentViewPage = lazy(async () => ({ default: (await import("@/pages/DocumentViewPage")).DocumentViewPage }))
+const TemplateEditorPage = lazy(async () => ({ default: (await import("@/pages/TemplateEditorPage")).TemplateEditorPage }))
+
+const withSuspense = (component: ReactNode) => (
+  <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Загрузка...</div>}>
+    {component}
+  </Suspense>
+)
 
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <Layout />,
     children: [
-      { index: true, element: <DashboardPage /> },
-      { path: "employees", element: <EmployeesPage /> },
-      { path: "structure", element: <StructurePage /> },
-      { path: "orders", element: <OrdersPage /> },
-      { path: "vacations", element: <VacationsPage /> },
-      { path: "vacations/recall", element: <VacationRecallPage /> },
-      { path: "vacations/postpone", element: <VacationPostponePage /> },
-      { path: "vacations/extension", element: <VacationExtensionPage /> },
-      { path: "unpaid-leaves", element: <UnpaidLeavesPage /> },
-      { path: "weekend-calls", element: <WeekendCallsPage /> },
-      { path: "sick-leaves", element: <SickLeavesPage /> },
-      { path: "vacation-calendar", element: <VacationCalendarPage /> },
-      { path: "templates", element: <TemplatesPage /> },
-      { path: "settings", element: <SettingsPage /> },
-      { path: "settings/holidays", element: <HolidaysPage /> },
-      { path: "settings/backups", element: <BackupsPage /> },
-      { path: "dev", element: <DevPage /> },
+      { index: true, element: withSuspense(<DashboardPage />) },
+      { path: "employees", element: withSuspense(<EmployeesPage />) },
+      { path: "structure", element: withSuspense(<StructurePage />) },
+      { path: "orders", element: withSuspense(<OrdersPage />) },
+      { path: "vacations", element: withSuspense(<VacationsPage />) },
+      { path: "vacations/recall", element: withSuspense(<VacationRecallPage />) },
+      { path: "vacations/postpone", element: withSuspense(<VacationPostponePage />) },
+      { path: "vacations/extension", element: withSuspense(<VacationExtensionPage />) },
+      { path: "unpaid-leaves", element: withSuspense(<UnpaidLeavesPage />) },
+      { path: "weekend-calls", element: withSuspense(<WeekendCallsPage />) },
+      { path: "sick-leaves", element: withSuspense(<SickLeavesPage />) },
+      { path: "vacation-calendar", element: withSuspense(<VacationCalendarPage />) },
+      { path: "templates", element: withSuspense(<TemplatesPage />) },
+      { path: "settings", element: withSuspense(<SettingsPage />) },
+      { path: "settings/holidays", element: withSuspense(<HolidaysPage />) },
+      { path: "settings/backups", element: withSuspense(<BackupsPage />) },
+      { path: "dev", element: withSuspense(<DevPage />) },
     ],
   },
   {
     path: "/login",
-    element: <LoginPage />,
+    element: withSuspense(<LoginPage />),
   },
   {
     path: "/orders/drafts/:draftId/edit-docx",
-    element: <DraftOrderEditorPage />,
+    element: withSuspense(<DraftOrderEditorPage />),
   },
   {
     path: "/documents/:docCode/:id/view",
-    element: <DocumentViewPage />,
+    element: withSuspense(<DocumentViewPage />),
   },
   {
     path: "/orders/:id/view-docx",
-    element: <OrderEditorPage />,
+    element: withSuspense(<OrderEditorPage />),
   },
   {
     path: "/orders/:id/edit-docx",
-    element: <OrderEditorPage />,
+    element: withSuspense(<OrderEditorPage />),
   },
   {
     path: "/templates/:id/view",
-    element: <TemplateEditorPage />,
+    element: withSuspense(<TemplateEditorPage />),
   },
   {
     path: "/templates/:id/edit",
-    element: <TemplateEditorPage />,
+    element: withSuspense(<TemplateEditorPage />),
   },
 ])

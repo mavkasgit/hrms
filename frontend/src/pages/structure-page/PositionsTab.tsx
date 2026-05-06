@@ -33,7 +33,8 @@ import {
   useAssignTag,
   useUnassignTag,
 } from "@/entities/employee/useEmployees"
-import { EntityDialog, type EntityDialogField, renderIcon } from "./shared/EntityDialog"
+import { EntityDialog, type EntityDialogField } from "./shared/EntityDialog"
+import { renderIcon } from "./shared/iconCatalog"
 import { SearchInput } from "./shared/SearchInput"
 import { buildEmployeesByPosition } from "./positions-helpers"
 
