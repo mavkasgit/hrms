@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { useNavigate } from "react-router-dom"
-import { ChevronDown, ChevronRight, Trash2, X, ScrollText, RefreshCw, Eye, Download, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Printer, FilePen, Cake } from "lucide-react"
-import { renderIcon } from "@/pages/structure-page/shared/EntityDialog"
+import { ChevronDown, ChevronRight, X, ScrollText, RefreshCw, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Printer, FilePen, Cake } from "lucide-react"
+import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
 import {
   Tooltip,
   TooltipContent,
@@ -38,7 +38,8 @@ import {
   useEmployeeVacationHistory,
   useHolidays,
 } from "@/entities/vacation"
-import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, VacationPeriodVacation } from "@/entities/vacation-period"
+import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods } from "@/entities/vacation-period"
+import { VacationPeriodVacationRow } from "@/entities/vacation-period/ui/VacationPeriodVacationRow"
 import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
 import { useUpdateEmployee } from "@/entities/employee/useEmployees"
 import { EmployeeSearch } from "@/features/employee-search"
@@ -65,13 +66,39 @@ function formatDate(dateStr: string | null): string {
   return `${parts[2]}.${parts[1]}.${parts[0]}`
 }
 
+function formatDateTime(dateStr: string | null): string {
+  if (!dateStr) return "—"
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return formatDate(dateStr)
+  const dd = String(d.getDate()).padStart(2, "0")
+  const mm = String(d.getMonth() + 1).padStart(2, "0")
+  const yyyy = d.getFullYear()
+  const hh = String(d.getHours()).padStart(2, "0")
+  const min = String(d.getMinutes()).padStart(2, "0")
+  return `${dd}.${mm}.${yyyy} ${hh}:${min}`
+}
+
 function formatTransactionType(type: string): string {
   switch (type) {
-    case "auto_use": return "Автосписание"
+    case "vacation_use": return "Списание отпуска"
+    case "vacation_use_adjusted": return "Списание после корректировки"
+    case "recalculate_use": return "Списание при пересчете"
+    case "vacation_restore": return "Восстановление дней"
     case "manual_close": return "Ручное закрытие"
     case "partial_close": return "Частичное закрытие"
-    case "restore": return "Восстановление"
     default: return type
+  }
+}
+
+function transactionPriority(type: string): number {
+  switch (type) {
+    case "vacation_use": return 1
+    case "vacation_restore": return 2
+    case "vacation_use_adjusted": return 3
+    case "recalculate_use": return 4
+    case "manual_close": return 5
+    case "partial_close": return 6
+    default: return 99
   }
 }
 
@@ -258,66 +285,65 @@ function EmployeeHistoryRow({
               </div>
             )}
             
-            <div className={`flex gap-2 border border-muted/30 rounded ${isClosed ? 'opacity-60' : ''} ${isClosing ? 'border-blue-400 bg-blue-50' : ''}`}>
+            <div className={`flex gap-3 border border-muted/30 rounded ${isClosed ? 'opacity-60' : ''} ${isClosing ? 'border-blue-400 bg-blue-50' : ''}`}>
               {/* Левая часть — период */}
-              <div className="w-1/2 min-w-[280px] bg-card py-1.5 px-2 flex items-center gap-2">
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="flex-1 cursor-help rounded hover:ring-1 hover:ring-gray-300 hover:ring-inset transition-shadow">
-                        <div className="flex items-center gap-2 text-xs">
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
-                              <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
-                              {isClosed && <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>}
-                            </div>
+              <div className="basis-[50%] min-w-[320px] bg-card py-1.5 px-2">
+                <div className="flex items-start gap-1">
+                  <div className="shrink-0 min-w-[185px]">
+                    <div className="flex items-center gap-2 text-xs">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                          <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
+                          <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
+                          {isClosed && <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 text-xs mt-1">
-                        <span className="text-muted-foreground">
-                          {p.main_days}+{p.additional_days}
-                        </span>
-                        <span className="text-muted-foreground">|</span>
-                        <span className="font-medium text-blue-600 tabular-nums">{p.used_days} исп.</span>
-                        <span className="text-muted-foreground">|</span>
-                        <span className={`font-semibold ${p.remaining_days < 7 ? "text-red-600" : p.remaining_days < 14 ? "text-amber-600" : "text-green-600"}`}>
-                          {p.remaining_days}
-                        </span>
-                      </div>
                     </div>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    align="start"
-                    sideOffset={4}
-                    avoidCollisions={true}
-                    className="bg-white text-gray-900 border border-gray-200 shadow-xl w-max"
-                  >
-                    {p.transactions && p.transactions.length > 0 ? (
-                      <div className="space-y-1">
-                        {p.transactions.map((tx) => (
-                          <div key={tx.id} className="text-xs whitespace-nowrap">
-                            <span className="font-medium">{formatTransactionType(tx.transaction_type)}</span>
-                            {tx.order_number && (
-                              <span className="text-muted-foreground"> по приказу №{tx.order_number}</span>
-                            )}
-                            {!tx.order_number && tx.order_id && (
-                              <span className="text-muted-foreground"> (приказ #{tx.order_id})</span>
-                            )}
-                            <span className="tabular-nums"> — {tx.days_count > 0 ? `+${tx.days_count}` : tx.days_count} дн.</span>
-                            {tx.created_at && (
-                              <span className="text-muted-foreground ml-1">({formatDate(tx.created_at)})</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Нет операций</span>
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+                    <div className="flex items-center gap-2 text-xs mt-1">
+                      <span className="text-muted-foreground">
+                        {p.main_days}+{p.additional_days}
+                      </span>
+                      <span className="text-muted-foreground">|</span>
+                      <span className="font-medium text-blue-600 tabular-nums">{p.used_days} исп.</span>
+                      <span className="text-muted-foreground">|</span>
+                      <span className={`font-semibold ${p.remaining_days < 7 ? "text-red-600" : p.remaining_days < 14 ? "text-amber-600" : "text-green-600"}`}>
+                        {p.remaining_days}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0 border-l border-muted/40 pl-2">
+                  {p.transactions && p.transactions.length > 0 ? (
+                    <div className="space-y-1">
+                      {[...p.transactions]
+                        .sort((a, b) => {
+                          const ta = a.created_at ? new Date(a.created_at).getTime() : 0
+                          const tb = b.created_at ? new Date(b.created_at).getTime() : 0
+                          if (ta !== tb) return ta - tb
+                          const pa = transactionPriority(a.transaction_type)
+                          const pb = transactionPriority(b.transaction_type)
+                          if (pa !== pb) return pa - pb
+                          return a.id - b.id
+                        })
+                        .map((tx, txIndex) => (
+                        <div key={tx.id} className="text-[11px] leading-tight">
+                          <span className="text-muted-foreground mr-1">{txIndex + 1}.</span>
+                          <span className="font-medium">{formatTransactionType(tx.transaction_type)}</span>
+                          {tx.order_number && (
+                            <span className="text-muted-foreground"> по приказу №{tx.order_number}</span>
+                          )}
+                          <span className="tabular-nums"> — {tx.days_count > 0 ? `+${tx.days_count}` : tx.days_count} дн.</span>
+                          {tx.created_at && (
+                            <span className="text-muted-foreground ml-1">({formatDateTime(tx.created_at)})</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">Нет операций</span>
+                  )}
+                  </div>
+                </div>
+              </div>
               {/* Кнопки управления периодом */}
               {
                 <>
@@ -386,10 +412,9 @@ function EmployeeHistoryRow({
                   )}
                 </>
               }
-            </div>
 
             {/* Правая часть — отпуска за период */}
-            <div className="flex-1 bg-muted/30">
+            <div className="basis-[50%] min-w-0 bg-muted/30">
               {periodVacations.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-xs text-muted-foreground py-2">Нет отпусков</div>
               ) : (
@@ -405,66 +430,16 @@ function EmployeeHistoryRow({
                     </tr>
                   </thead>
                   <tbody>
-                    {periodVacations.map((v: VacationPeriodVacation) => {
-                      const wasRecalled = v.recall_order_id || v.recall_date || v.recall_order_number
-                      return (
-                      <tr key={v.id} className={`border-b border-muted/30 ${v.is_cancelled ? "opacity-40" : ""} ${wasRecalled ? "bg-amber-50" : ""}`}>
-                        <td className="px-2 py-1">{formatDate(v.start_date)}</td>
-                        <td className="px-2 py-1">
-                          {formatDate(v.end_date)}
-                          {wasRecalled && v.recall_date && (
-                            <div className="text-[9px] text-amber-600 mt-0.5">
-                              Отозван {formatDate(v.recall_date)}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-2 py-1">
-                          {wasRecalled && v.actual_days ? v.actual_days : v.days_count}
-                          {wasRecalled && v.original_days && (
-                            <>
-                              <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1 bg-amber-100 text-amber-700 border-amber-200">
-                                Отозван
-                              </Badge>
-                              <div className="text-[9px] text-muted-foreground mt-0.5">
-                                Было {v.original_days} → стало {v.actual_days} (вернулось {v.original_days - (v.actual_days || 0)})
-                              </div>
-                            </>
-                          )}
-                        </td>
-                        <td className="px-2 py-1">
-                          {v.order_number || "—"}
-                          {wasRecalled && v.recall_order_number && (
-                            <div className="text-[9px] text-amber-600 mt-0.5">
-                              Отзыв: №{v.recall_order_number}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-2 py-1 text-muted-foreground text-[10px]">{v.comment || "—"}</td>
-                        <td className="px-1 py-1">
-                          <div className="flex gap-0.5">
-                            {v.order_id && (
-                              <>
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-400 hover:text-blue-600" onClick={() => handleOrderPreview(v.order_id!)} title="Просмотр приказа">
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-400 hover:text-green-600" onClick={() => handleOrderDownload(v.order_id!)} title="Скачать приказ">
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                              </>
-                            )}
-                            {!v.is_cancelled && !wasRecalled && (
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-amber-500 hover:text-amber-700" onClick={() => setCancelId(v.id)} title="Отменить">
-                                <X className="h-4 w-4" />
-                              </Button>
-                            )}
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-400 hover:text-red-600" onClick={() => setDeleteId(v.id)} title="Удалить">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                      )
-                    })}
+                    {periodVacations.map((v) => (
+                      <VacationPeriodVacationRow
+                        key={v.id}
+                        vacation={v}
+                        onPreview={handleOrderPreview}
+                        onDownload={handleOrderDownload}
+                        onCancel={setCancelId}
+                        onDelete={setDeleteId}
+                      />
+                    ))}
                   </tbody>
                 </table>
               )}

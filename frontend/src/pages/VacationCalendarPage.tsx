@@ -29,7 +29,7 @@ import { useEmployees } from "@/entities/employee/useEmployees"
 import { useTags } from "@/entities/tag/useTags"
 import type { VacationPlanSummary } from "@/entities/vacation-plan/types"
 import type { EmployeeTag } from "@/entities/employee/types"
-import { renderIcon } from "@/pages/structure-page/shared/EntityDialog"
+import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
 import { ImportVacationPlansModal } from "@/features/import-vacation-plans/ImportVacationPlansModal"
 
 interface CalendarRow {

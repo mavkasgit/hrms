@@ -3,7 +3,7 @@ import { EmptyState } from "@/shared/ui/empty-state"
 import { Skeleton } from "@/shared/ui/skeleton"
 import type { Birthday } from "../types"
 import { Cake, Building2 } from "lucide-react"
-import { renderIcon } from "@/pages/structure-page/shared/EntityDialog"
+import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
 
 interface BirthdaysListProps {
   birthdays: Birthday[]

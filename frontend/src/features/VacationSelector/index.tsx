@@ -1,10 +1,14 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef, type UIEvent } from "react"
 import { Search, X, Check } from "lucide-react"
 import { Input } from "@/shared/ui/input"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { useVacations } from "@/entities/vacation"
+import { getVacations } from "@/entities/vacation/api"
 import type { Vacation } from "@/entities/vacation/types"
+import { useQuery } from "@tanstack/react-query"
+
+const TABLE_PAGE_SIZE = 25
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "—"
@@ -30,6 +34,11 @@ export function VacationSelector({
   const [search, setSearch] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
   const [showDropdown, setShowDropdown] = useState(false)
+  const [isShowAllMode, setIsShowAllMode] = useState(false)
+  const [tablePage, setTablePage] = useState(1)
+  const [tableRows, setTableRows] = useState<Vacation[]>([])
+  const [tableTotal, setTableTotal] = useState(0)
+  const loadingNextPageRef = useRef(false)
 
   // Sync search with selected vacation
   useEffect(() => {
@@ -44,30 +53,63 @@ export function VacationSelector({
     return () => clearTimeout(timer)
   }, [search])
 
-  // Fetch data - get last 10 vacations
-  const { data: vacationData, isLoading: isLoadingAll } = useVacations({ per_page: 10 })
-  const allVacations = vacationData?.items || []
+  const searchQuery = debouncedSearch.trim()
+  const searchEmployeeId = selectedVacation?.employee_id
 
-  const isLoading = isLoadingAll
-  const vacations = allVacations
+  const {
+    data: tablePageData,
+    isLoading: isLoadingTableFirstPage,
+    isFetching: isFetchingTablePage,
+  } = useVacations({
+    page: tablePage,
+    per_page: TABLE_PAGE_SIZE,
+  })
 
-  // Filter for dropdown search
-  const filteredVacations = useMemo(() => {
-    if (!debouncedSearch.trim()) return vacations
-    const q = debouncedSearch.trim().toLowerCase()
-    return vacations.filter((v) =>
-      (v.employee_name || "").toLowerCase().includes(q) ||
-      String(v.employee_id).includes(q) ||
-      (v.vacation_type || "").toLowerCase().includes(q) ||
-      (v.order_number || "").toLowerCase().includes(q)
-    )
-  }, [vacations, debouncedSearch])
+  const {
+    data: searchData,
+    isLoading: isSearching,
+  } = useQuery({
+    queryKey: ["vacation-selector-search", searchQuery, searchEmployeeId],
+    enabled: searchQuery.length > 0,
+    queryFn: () =>
+      getVacations({
+        q: searchQuery,
+        employee_id: searchEmployeeId,
+        page: 1,
+        per_page: searchEmployeeId ? 1000 : 100,
+      }),
+  })
 
-  // Table display: show only selected vacation if one is picked
+  useEffect(() => {
+    const items = tablePageData?.items || []
+    setTableTotal(tablePageData?.total || 0)
+    setTableRows((prev) => {
+      const merged = tablePage === 1 ? items : [...prev, ...items]
+      const seen = new Set<number>()
+      return merged.filter((v) => {
+        if (seen.has(v.id)) return false
+        seen.add(v.id)
+        return true
+      })
+    })
+  }, [tablePageData, tablePage])
+
+  useEffect(() => {
+    loadingNextPageRef.current = false
+  }, [tablePageData?.page, isFetchingTablePage])
+
+  const hasMoreTableRows = tableRows.length < tableTotal
+  const isLoading = isLoadingTableFirstPage && tableRows.length === 0
+
+  const dropdownVacations = useMemo(() => {
+    if (searchQuery.length > 0) return searchData?.items || []
+    return tableRows
+  }, [searchQuery, searchData, tableRows])
+
   const tableVacations = useMemo(() => {
     if (selectedVacation) return [selectedVacation]
-    return filteredVacations
-  }, [selectedVacation, filteredVacations])
+    return tableRows
+  }, [selectedVacation, tableRows])
 
   const handleSelect = (v: Vacation) => {
     setSearch(`${v.employee_name} • ${formatDate(v.start_date)} — ${formatDate(v.end_date)}`)
@@ -79,6 +121,16 @@ export function VacationSelector({
     setSearch("")
     setDebouncedSearch("")
     onSelect(null)
+  }
+
+  const handleTableScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (!isShowAllMode || selectedVacation) return
+    if (!hasMoreTableRows || isFetchingTablePage || loadingNextPageRef.current) return
+    const target = event.currentTarget
+    const nearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 48
+    if (!nearBottom) return
+    loadingNextPageRef.current = true
+    setTablePage((prev) => prev + 1)
   }
 
   return (
@@ -111,14 +163,17 @@ export function VacationSelector({
         )}
 
         {/* Dropdown */}
-        {showDropdown && filteredVacations.length > 0 && (
+        {showDropdown && (dropdownVacations.length > 0 || isSearching) && (
           <div
             className="absolute z-50 mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto"
             style={{ width: 500 }}
             onMouseDown={(e) => e.preventDefault()}
             onBlur={() => setShowDropdown(false)}
           >
-            {filteredVacations.slice(0, 10).map((v) => (
+            {isSearching && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">Поиск отпусков...</div>
+            )}
+            {!isSearching && dropdownVacations.slice(0, 10).map((v) => (
               <div
                 key={v.id}
                 className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted/50 text-sm ${
@@ -157,42 +212,69 @@ export function VacationSelector({
         ) : tableVacations.length === 0 ? (
           <div className="px-6 py-6 text-sm text-muted-foreground">Нет отпусков</div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                {showEmployeeColumn && <th className="text-left px-4 py-3 font-medium">Сотрудник</th>}
-                <th className="text-left px-4 py-3 font-medium">Начало</th>
-                <th className="text-left px-4 py-3 font-medium">Конец</th>
-                <th className="text-left px-4 py-3 font-medium">Тип</th>
-                <th className="text-left px-4 py-3 font-medium">Приказ</th>
-                <th className="text-left px-4 py-3 font-medium">Дней</th>
-                <th className="w-[50px]"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableVacations.map((v) => (
-                <tr
-                  key={v.id}
-                  className={`border-t cursor-pointer hover:bg-muted/30 ${selectedVacation?.id === v.id ? "bg-blue-50" : ""}`}
-                  onClick={() => handleSelect(v)}
+          <>
+            {!selectedVacation && !isShowAllMode && tableTotal > TABLE_PAGE_SIZE && (
+              <div className="mb-2 flex justify-end">
+                <button
+                  type="button"
+                  className="text-xs text-blue-600 hover:text-blue-700"
+                  onClick={() => setIsShowAllMode(true)}
                 >
-                  {showEmployeeColumn && <td className="px-4 py-3 font-medium">{v.employee_name || "—"}</td>}
-                  <td className="px-4 py-3">{formatDate(v.start_date)}</td>
-                  <td className="px-4 py-3">{formatDate(v.end_date)}</td>
-                  <td className="px-4 py-3">
-                    <Badge variant="outline">{v.vacation_type}</Badge>
-                  </td>
-                  <td className="px-4 py-3">{v.order_number || "—"}</td>
-                  <td className="px-4 py-3">{v.days_count}</td>
-                  <td className="px-4 py-3">
-                    {selectedVacation?.id === v.id && (
-                      <Check className="h-4 w-4 text-green-600" />
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  Показать все
+                </button>
+              </div>
+            )}
+            <div
+              className={isShowAllMode && !selectedVacation ? "max-h-[460px] overflow-auto border rounded-md" : ""}
+              onScroll={handleTableScroll}
+            >
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    {showEmployeeColumn && <th className="text-left px-4 py-3 font-medium">Сотрудник</th>}
+                    <th className="text-left px-4 py-3 font-medium">Начало</th>
+                    <th className="text-left px-4 py-3 font-medium">Конец</th>
+                    <th className="text-left px-4 py-3 font-medium">Тип</th>
+                    <th className="text-left px-4 py-3 font-medium">Приказ</th>
+                    <th className="text-left px-4 py-3 font-medium">Дней</th>
+                    <th className="w-[50px]"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableVacations.map((v) => (
+                    <tr
+                      key={v.id}
+                      className={`border-t cursor-pointer hover:bg-muted/30 ${selectedVacation?.id === v.id ? "bg-blue-50" : ""}`}
+                      onClick={() => handleSelect(v)}
+                    >
+                      {showEmployeeColumn && <td className="px-4 py-3 font-medium">{v.employee_name || "—"}</td>}
+                      <td className="px-4 py-3">{formatDate(v.start_date)}</td>
+                      <td className="px-4 py-3">{formatDate(v.end_date)}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline">{v.vacation_type}</Badge>
+                      </td>
+                      <td className="px-4 py-3">{v.order_number || "—"}</td>
+                      <td className="px-4 py-3">{v.days_count}</td>
+                      <td className="px-4 py-3">
+                        {selectedVacation?.id === v.id && (
+                          <Check className="h-4 w-4 text-green-600" />
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {isShowAllMode && !selectedVacation && (
+                <div className="px-4 py-2 text-xs text-muted-foreground">
+                  {isFetchingTablePage && hasMoreTableRows
+                    ? "Загрузка следующих отпусков..."
+                    : hasMoreTableRows
+                      ? "Прокрутите вниз для подгрузки"
+                      : "Загружены все отпуска"}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>

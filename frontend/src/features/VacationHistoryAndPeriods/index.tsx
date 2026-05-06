@@ -1,20 +1,14 @@
 import { useState, useEffect, useMemo, Fragment } from "react"
-import { RefreshCw, Eye, Download } from "lucide-react"
+import { RefreshCw } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { Badge } from "@/shared/ui/badge"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/shared/ui/tooltip"
 import {
   useEmployeeVacationHistory,
 } from "@/entities/vacation"
 import { useVacationPeriods, useRecalculateVacationPeriods } from "@/entities/vacation-period"
 import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
-import type { VacationPeriodVacation } from "@/entities/vacation-period/types"
+import { VacationPeriodVacationRow } from "@/entities/vacation-period/ui/VacationPeriodVacationRow"
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "—"
@@ -24,13 +18,39 @@ function formatDate(dateStr: string | null): string {
   return `${parts[2]}.${parts[1]}.${parts[0]}`
 }
 
+function formatDateTime(dateStr: string | null): string {
+  if (!dateStr) return "—"
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return formatDate(dateStr)
+  const dd = String(d.getDate()).padStart(2, "0")
+  const mm = String(d.getMonth() + 1).padStart(2, "0")
+  const yyyy = d.getFullYear()
+  const hh = String(d.getHours()).padStart(2, "0")
+  const min = String(d.getMinutes()).padStart(2, "0")
+  return `${dd}.${mm}.${yyyy} ${hh}:${min}`
+}
+
 function formatTransactionType(type: string): string {
   switch (type) {
-    case "auto_use": return "Автосписание"
+    case "vacation_use": return "Списание отпуска"
+    case "vacation_use_adjusted": return "Списание после корректировки"
+    case "recalculate_use": return "Списание при пересчете"
+    case "vacation_restore": return "Восстановление дней"
     case "manual_close": return "Ручное закрытие"
     case "partial_close": return "Частичное закрытие"
-    case "restore": return "Восстановление"
     default: return type
+  }
+}
+
+function transactionPriority(type: string): number {
+  switch (type) {
+    case "vacation_use": return 1
+    case "vacation_restore": return 2
+    case "vacation_use_adjusted": return 3
+    case "recalculate_use": return 4
+    case "manual_close": return 5
+    case "partial_close": return 6
+    default: return 99
   }
 }
 
@@ -130,52 +150,58 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
               </div>
             )}
 
-            <div className={`flex gap-2 border border-muted/30 rounded ${isClosed ? 'opacity-60' : ''}`}>
-              <div className="w-1/2 min-w-[280px] bg-card py-1.5 px-2 flex items-center gap-2">
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="flex-1 cursor-help rounded hover:ring-1 hover:ring-gray-300 hover:ring-inset transition-shadow">
-                        <div className="flex items-center gap-2 text-xs">
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
-                              <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
-                              {isClosed && <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs mt-1">
-                          <span className="text-muted-foreground">{p.main_days}+{p.additional_days}</span>
-                          <span className="text-muted-foreground">|</span>
-                          <span className="font-medium text-blue-600 tabular-nums">{p.used_days} исп.</span>
-                          <span className="text-muted-foreground">|</span>
-                          <span className={`font-semibold ${p.remaining_days < 7 ? "text-red-600" : p.remaining_days < 14 ? "text-amber-600" : "text-green-600"}`}>
-                            {p.remaining_days}
-                          </span>
+            <div className={`flex gap-3 border border-muted/30 rounded ${isClosed ? 'opacity-60' : ''}`}>
+              <div className="basis-[50%] min-w-[320px] bg-card py-1.5 px-2">
+                <div className="flex items-start gap-1">
+                  <div className="shrink-0 min-w-[185px]">
+                    <div className="flex items-center gap-2 text-xs">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                          <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
+                          <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
+                          {isClosed && <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>}
                         </div>
                       </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" align="start" sideOffset={4} avoidCollisions={true} className="bg-white text-gray-900 border border-gray-200 shadow-xl w-max">
-                      {p.transactions && p.transactions.length > 0 ? (
-                        <div className="space-y-1">
-                          {p.transactions.map((tx) => (
-                            <div key={tx.id} className="text-xs whitespace-nowrap">
-                              <span className="font-medium">{formatTransactionType(tx.transaction_type)}</span>
-                              {tx.order_number && <span className="text-muted-foreground"> по приказу №{tx.order_number}</span>}
-                              {!tx.order_number && tx.order_id && <span className="text-muted-foreground"> (приказ #{tx.order_id})</span>}
-                              <span className="tabular-nums"> — {tx.days_count > 0 ? `+${tx.days_count}` : tx.days_count} дн.</span>
-                              {tx.created_at && <span className="text-muted-foreground ml-1">({formatDate(tx.created_at)})</span>}
-                            </div>
-                          ))}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs mt-1">
+                      <span className="text-muted-foreground">{p.main_days}+{p.additional_days}</span>
+                      <span className="text-muted-foreground">|</span>
+                      <span className="font-medium text-blue-600 tabular-nums">{p.used_days} исп.</span>
+                      <span className="text-muted-foreground">|</span>
+                      <span className={`font-semibold ${p.remaining_days < 7 ? "text-red-600" : p.remaining_days < 14 ? "text-amber-600" : "text-green-600"}`}>
+                        {p.remaining_days}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-w-0 border-l border-muted/40 pl-2">
+                  {p.transactions && p.transactions.length > 0 ? (
+                    <div className="space-y-1">
+                      {[...p.transactions]
+                        .sort((a, b) => {
+                          const ta = a.created_at ? new Date(a.created_at).getTime() : 0
+                          const tb = b.created_at ? new Date(b.created_at).getTime() : 0
+                          if (ta !== tb) return ta - tb
+                          const pa = transactionPriority(a.transaction_type)
+                          const pb = transactionPriority(b.transaction_type)
+                          if (pa !== pb) return pa - pb
+                          return a.id - b.id
+                        })
+                        .map((tx, txIndex) => (
+                        <div key={tx.id} className="text-[11px] leading-tight">
+                          <span className="text-muted-foreground mr-1">{txIndex + 1}.</span>
+                          <span className="font-medium">{formatTransactionType(tx.transaction_type)}</span>
+                          {tx.order_number && <span className="text-muted-foreground"> по приказу №{tx.order_number}</span>}
+                          <span className="tabular-nums"> — {tx.days_count > 0 ? `+${tx.days_count}` : tx.days_count} дн.</span>
+                          {tx.created_at && <span className="text-muted-foreground ml-1">({formatDateTime(tx.created_at)})</span>}
                         </div>
-                      ) : <span className="text-xs text-muted-foreground">Нет операций</span>}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                      ))}
+                    </div>
+                  ) : <span className="text-[11px] text-muted-foreground">Нет операций</span>}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex-1 bg-muted/30">
+              <div className="basis-[50%] min-w-0 bg-muted/30">
                 {periodVacations.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-xs text-muted-foreground py-2">Нет отпусков</div>
                 ) : (
@@ -191,31 +217,13 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
                       </tr>
                     </thead>
                     <tbody>
-                      {periodVacations.map((v: VacationPeriodVacation) => (
-                        <tr key={v.id} className={`border-b border-muted/30 ${v.is_cancelled ? "opacity-40" : ""} ${v.is_recalled ? "bg-amber-50" : ""}`}>
-                          <td className="px-2 py-1">{formatDate(v.start_date)}</td>
-                          <td className="px-2 py-1">
-                            {formatDate(v.end_date)}
-                            {v.is_recalled && v.recall_date && <div className="text-[9px] text-amber-600 mt-0.5">Отозван {formatDate(v.recall_date)}</div>}
-                          </td>
-                          <td className="px-2 py-1">
-                            {v.days_count}
-                            {v.is_recalled && <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-1 bg-amber-100 text-amber-700 border-amber-200">Отозван</Badge>}
-                          </td>
-                          <td className="px-2 py-1">
-                            {v.order_number || "—"}
-                            {v.is_recalled && v.recall_order_number && <div className="text-[9px] text-amber-600 mt-0.5">Отзыв: №{v.recall_order_number}</div>}
-                          </td>
-                          <td className="px-2 py-1 text-muted-foreground text-[10px]">{v.comment || "—"}</td>
-                          <td className="px-1 py-1">
-                            {v.order_id && (
-                              <div className="flex gap-0.5">
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-400 hover:text-blue-600" onClick={() => handleOrderPreview(v.order_id!)} title="Просмотр приказа"><Eye className="h-4 w-4" /></Button>
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-400 hover:text-green-600" onClick={() => handleOrderDownload(v.order_id!)} title="Скачать приказ"><Download className="h-4 w-4" /></Button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
+                      {periodVacations.map((v) => (
+                        <VacationPeriodVacationRow
+                          key={v.id}
+                          vacation={v}
+                          onPreview={handleOrderPreview}
+                          onDownload={handleOrderDownload}
+                        />
                       ))}
                     </tbody>
                   </table>

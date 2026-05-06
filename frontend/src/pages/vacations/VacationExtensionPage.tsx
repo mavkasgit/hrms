@@ -3,10 +3,9 @@ import { useState, useEffect } from "react"
 import { X, FilePen } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/tabs"
 import { Button } from "@/shared/ui/button"
-import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
-import { useHolidays } from "@/entities/vacation"
+import { useExtendVacation } from "@/entities/vacation"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { VacationSelector } from "@/features/VacationSelector"
@@ -24,6 +23,11 @@ function formatDate(dateStr: string | null): string {
   return `${parts[2]}.${parts[1]}.${parts[0]}`
 }
 
+function parseIsoDate(value: string): Date | null {
+  const d = new Date(`${value}T00:00:00`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 export function VacationExtensionPage() {
   const navigate = useNavigate()
   const { data: orderTypes = [] } = useAllOrderTypes()
@@ -39,23 +43,31 @@ export function VacationExtensionPage() {
   const [draftId, setDraftId] = useState<string | null>(null)
 
   const createDraftMutation = useCreateOrderDraft()
-
-  const periodStartYear = periodStart ? new Date(periodStart).getFullYear() : undefined
-  const periodEndYear = periodEnd ? new Date(periodEnd).getFullYear() : undefined
-  const { data: periodStartYearHolidays } = useHolidays(periodStartYear)
-  const { data: periodEndYearHolidays } = useHolidays(periodEndYear !== periodStartYear ? periodEndYear : undefined)
+  const extendMutation = useExtendVacation()
 
   useEffect(() => {
     setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setErrors({}); setDraftId(null)
   }, [selectedVacation?.id])
 
+  const getNextDayAfterVacation = (vacationEnd: string): string => {
+    const d = parseIsoDate(vacationEnd)
+    if (!d) return ""
+    d.setDate(d.getDate() + 1)
+    return d.toISOString().split("T")[0]
+  }
+
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
     if (!selectedVacation) newErrors.vacation = "Выберите отпуск"
-    if (!periodStart) newErrors.periodStart = "Укажите начало периода"
-    if (!periodEnd) newErrors.periodEnd = "Укажите конец периода"
+    if (!periodStart) newErrors.periodStart = "Укажите начало периода продления"
+    if (!periodEnd) newErrors.periodEnd = "Укажите конец периода продления"
     if (periodStart && periodEnd && periodEnd < periodStart) newErrors.periodEnd = "Дата конца раньше даты начала"
-    if (selectedVacation && periodStart && periodStart < selectedVacation.start_date) newErrors.periodStart = "Начало периода раньше начала отпуска"
+    if (selectedVacation && periodStart) {
+      const minStart = getNextDayAfterVacation(selectedVacation.end_date)
+      if (minStart && periodStart < minStart) {
+        newErrors.periodStart = "Период продления должен начинаться после окончания отпуска"
+      }
+    }
     if (!orderDate) newErrors.orderDate = "Укажите дату приказа"
     if (!orderNumber) newErrors.orderNumber = "Укажите номер приказа"
     setErrors(newErrors)
@@ -85,12 +97,30 @@ export function VacationExtensionPage() {
     })
   }
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!draftId || !validate() || !selectedVacation) return
-    setSuccessMessage("Продление отпуска оформлено успешно!")
-    setTimeout(() => setSuccessMessage(null), 5000)
-    setSelectedVacation(null); setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setDraftId(null)
-    navigate("/vacations")
+    try {
+      await extendMutation.mutateAsync({
+        vacationId: selectedVacation.id,
+        data: {
+          vacation_id: selectedVacation.id,
+          order_date: orderDate,
+          order_number: orderNumber || null,
+          start_date: periodStart,
+          end_date: periodEnd,
+          sick_start_date: periodStart,
+          sick_end_date: periodEnd,
+          draft_id: draftId,
+        },
+      })
+      setSuccessMessage("Продление отпуска оформлено успешно!")
+      setTimeout(() => setSuccessMessage(null), 5000)
+      setSelectedVacation(null); setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setDraftId(null)
+      navigate("/vacations")
+    } catch {
+      setSuccessMessage("Ошибка при оформлении продления")
+      setTimeout(() => setSuccessMessage(null), 5000)
+    }
   }
 
   useEffect(() => {
@@ -98,30 +128,23 @@ export function VacationExtensionPage() {
       if (event.origin !== window.location.origin) return
       const message = event.data as { type?: string; draftId?: string }
       if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
-      handleCreate()
+      void handleCreate()
     }
     window.addEventListener("message", handleDraftSave)
     return () => window.removeEventListener("message", handleDraftSave)
   }, [draftId, selectedVacation, periodStart, periodEnd, orderDate, orderNumber])
 
-  const isPending = createDraftMutation.isPending
+  const isPending = createDraftMutation.isPending || extendMutation.isPending
 
   const calculateExtensionInfo = () => {
     if (!selectedVacation || !periodStart || !periodEnd) return null
-    const vacationStart = new Date(selectedVacation.start_date)
-    const vacationEnd = new Date(selectedVacation.end_date)
-    const pStart = new Date(periodStart)
-    const pEnd = new Date(periodEnd)
-    const effectiveStart = pStart > vacationStart ? pStart : vacationStart
-    const effectiveEnd = pEnd < vacationEnd ? pEnd : vacationEnd
-    if (effectiveStart > effectiveEnd) return null
-    const allHolidays = [...(periodStartYearHolidays || []), ...(periodEndYearHolidays || [])]
-    const uniqueHolidays = allHolidays.filter((h, i, arr) => arr.findIndex((t) => t.date === h.date) === i)
-    const holidaysInRange = uniqueHolidays.filter((h) => { const d = new Date(h.date); return d >= effectiveStart && d <= effectiveEnd })
-    const calendarDays = Math.max(0, Math.round((effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1)
-    const netDays = Math.max(0, calendarDays - holidaysInRange.length)
-    const newVacationEnd = new Date(vacationEnd.getTime() + netDays * 24 * 60 * 60 * 1000)
-    return { netDays, holidaysInRange, calendarDays, newVacationEnd: formatDate(newVacationEnd.toISOString().split("T")[0]) }
+    const vacationEnd = parseIsoDate(selectedVacation.end_date)
+    const pStart = parseIsoDate(periodStart)
+    const pEnd = parseIsoDate(periodEnd)
+    if (!vacationEnd || !pStart || !pEnd) return null
+    const calendarDays = Math.max(0, Math.round((pEnd.getTime() - pStart.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+    const extensionDays = calendarDays
+    return { extensionDays, calendarDays, newVacationEnd: formatDate(periodEnd) }
   }
 
   const extensionInfo = calculateExtensionInfo()
@@ -149,7 +172,15 @@ export function VacationExtensionPage() {
               )}
               <VacationSelector
                 selectedVacation={selectedVacation}
-                onSelect={(v) => { if (!v) { setSelectedVacation(null); return } setSelectedVacation(v); setPeriodStart(""); setPeriodEnd(""); setErrors({}); setDraftId(null) }}
+                onSelect={(v) => {
+                  if (!v) { setSelectedVacation(null); return }
+                  setSelectedVacation(v)
+                  const defaultStart = getNextDayAfterVacation(v.end_date)
+                  setPeriodStart(defaultStart)
+                  setPeriodEnd(defaultStart)
+                  setErrors({})
+                  setDraftId(null)
+                }}
                 showEmployeeColumn={true}
               >
                 <div className="border rounded-lg bg-card px-6 py-6 mt-4">
@@ -160,14 +191,14 @@ export function VacationExtensionPage() {
                         <OrderNumberField value={orderNumber} onChange={setOrderNumber} orderTypeId={extensionOrderType?.id} orderTypes={orderTypes} required error={errors.orderNumber} />
                       </div>
                       <div className="flex flex-wrap gap-4">
-                        <div className="w-[130px]"><DatePicker label="Начало периода *" value={periodStart} onChange={setPeriodStart} />{errors.periodStart && <p className="text-xs text-red-500 mt-1">{errors.periodStart}</p>}</div>
-                        <div className="w-[130px]"><DatePicker label="Конец периода *" value={periodEnd} onChange={setPeriodEnd} />{errors.periodEnd && <p className="text-xs text-red-500 mt-1">{errors.periodEnd}</p>}</div>
+                        <div className="w-[130px]"><DatePicker label="Начало продления *" value={periodStart} onChange={setPeriodStart} />{errors.periodStart && <p className="text-xs text-red-500 mt-1">{errors.periodStart}</p>}</div>
+                        <div className="w-[130px]"><DatePicker label="Конец продления *" value={periodEnd} onChange={setPeriodEnd} />{errors.periodEnd && <p className="text-xs text-red-500 mt-1">{errors.periodEnd}</p>}</div>
                       </div>
                       <div className="flex gap-3 pt-2">
                         <Button variant="outline" onClick={() => { setSelectedVacation(null); setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setDraftId(null); setErrors({}) }} disabled={isPending}>Очистить</Button>
-                        {!draftId ? (<Button onClick={handleEditBeforeCreate} disabled={isPending || !selectedVacation}><FilePen className="mr-2 h-4 w-4" />{createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}</Button>) : (<Button onClick={handleCreate} disabled={isPending || !selectedVacation}>{isPending ? "Оформление..." : "Оформить продление"}</Button>)}
+                        {!draftId ? (<Button onClick={handleEditBeforeCreate} disabled={isPending || !selectedVacation}><FilePen className="mr-2 h-4 w-4" />{createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}</Button>) : (<Button onClick={() => void handleCreate()} disabled={isPending || !selectedVacation}>{extendMutation.isPending ? "Оформление..." : "Оформить продление"}</Button>)}
                       </div>
-                      {createDraftMutation.isError && (<div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-4 py-3">Ошибка при создании приказа</div>)}
+                      {(createDraftMutation.isError || extendMutation.isError) && (<div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-4 py-3">Ошибка при создании приказа</div>)}
                     </div>
                     <div className="bg-muted/30 border rounded-md p-4 space-y-2 text-sm">
                       {selectedVacation ? (<>
@@ -175,16 +206,15 @@ export function VacationExtensionPage() {
                         <div className="flex gap-2"><span className="text-muted-foreground">Дней в отпуске:</span><span className="font-medium">{selectedVacation.days_count}</span></div>
                         {periodStart && periodEnd && (<>
                           <div className="border-t pt-2 mt-2" />
-                          <div className="flex gap-2"><span className="text-muted-foreground">Период:</span><span className="font-medium">{formatDate(periodStart)} — {formatDate(periodEnd)}</span></div>
+                          <div className="flex gap-2"><span className="text-muted-foreground">Период продления:</span><span className="font-medium">{formatDate(periodStart)} — {formatDate(periodEnd)}</span></div>
                           {extensionInfo && (<>
-                            {extensionInfo.holidaysInRange.length > 0 && (<div className="flex gap-2"><span className="text-muted-foreground">Праздники:</span><span className="font-medium">{extensionInfo.holidaysInRange.map((h) => `${formatDate(h.date)} ${h.name}`).join(", ")} <span className="text-muted-foreground">({extensionInfo.holidaysInRange.length} дн.)</span></span></div>)}
-                            <div className="flex gap-2"><span className="text-muted-foreground">Дней периода (в зачет):</span><span className="font-medium">{extensionInfo.netDays}</span></div>
-                            <div className="flex gap-2"><span className="text-muted-foreground">Новая дата окончания:</span><span className="font-semibold text-foreground">{extensionInfo.newVacationEnd}</span></div>
+                            <div className="flex gap-2"><span className="text-muted-foreground">Дней продления:</span><span className="font-medium">{extensionInfo.extensionDays}</span></div>
+                            <div className="flex gap-2"><span className="text-muted-foreground">Конец продленного периода:</span><span className="font-semibold text-foreground">{extensionInfo.newVacationEnd}</span></div>
                           </>)}
                         </>)}
-                        {!periodStart && !periodEnd && (<div className="text-muted-foreground text-xs pt-2">Введите даты периода, чтобы увидеть расчет продления</div>)}
+                        {!periodStart && !periodEnd && (<div className="text-muted-foreground text-xs pt-2">Укажите период продления</div>)}
                       </>) : (
-                        <div className="text-muted-foreground text-sm">Выберите отпуск из списка выше</div>
+                        <div className="text-muted-foreground text-sm">Выберите отпуск</div>
                       )}
                     </div>
                   </div>

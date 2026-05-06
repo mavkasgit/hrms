@@ -3,7 +3,6 @@ import { useState, useEffect } from "react"
 import { X, FilePen } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/tabs"
 import { Button } from "@/shared/ui/button"
-import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useRecallVacation, useHolidays } from "@/entities/vacation"
@@ -236,7 +235,7 @@ export function VacationRecallPage() {
                         })()}
                         {!recallDate && (<div className="text-muted-foreground text-xs pt-2">Введите дату отзыва, чтобы увидеть пересчет</div>)}
                       </>) : (
-                        <div className="text-muted-foreground text-sm">Выберите отпуск из списка выше</div>
+                        <div className="text-muted-foreground text-sm">Выберите отпуск</div>
                       )}
                     </div>
                   </div>
