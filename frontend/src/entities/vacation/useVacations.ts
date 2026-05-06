@@ -1,11 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import * as api from "./api"
-import type { VacationCreate, VacationUpdate, VacationRecallRequest } from "./types"
+import type {
+  VacationCreate,
+  VacationUpdate,
+  VacationRecallRequest,
+  VacationPostponeRequest,
+  VacationExtensionRequest,
+} from "./types"
 
 export function useVacations(params: {
   employee_id?: number
   year?: number
   vacation_type?: string
+  q?: string
   page?: number
   per_page?: number
 }) {
@@ -162,6 +169,44 @@ export function useRecallVacation() {
   return useMutation({
     mutationFn: ({ vacationId, data }: { vacationId: number; data: VacationRecallRequest }) =>
       api.recallVacation(vacationId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-balance"] })
+      queryClient.invalidateQueries({ queryKey: ["active-vacations"] })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
+    },
+  })
+}
+
+export function usePostponeVacation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ vacationId, data }: { vacationId: number; data: VacationPostponeRequest }) =>
+      api.postponeVacation(vacationId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacation-balance"] })
+      queryClient.invalidateQueries({ queryKey: ["active-vacations"] })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
+    },
+  })
+}
+
+export function useExtendVacation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ vacationId, data }: { vacationId: number; data: VacationExtensionRequest }) =>
+      api.extendVacation(vacationId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
       queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })

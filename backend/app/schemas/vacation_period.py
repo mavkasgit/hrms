@@ -29,10 +29,17 @@ class VacationPeriodTransactionResponse(BaseModel):
     id: int
     vacation_id: Optional[int] = None
     order_id: Optional[int] = None
+    original_order_id: Optional[int] = None
+    adjustment_order_id: Optional[int] = None
+    adjustment_id: Optional[int] = None
+    reversed_transaction_id: Optional[int] = None
+    is_reversal: bool = False
+    source_type: Optional[str] = None
     order_number: Optional[str] = None
     days_count: int
     transaction_type: str
     description: Optional[str] = None
+    details: Optional[dict] = None
     created_at: Optional[datetime] = None
     created_by: Optional[str] = None
 

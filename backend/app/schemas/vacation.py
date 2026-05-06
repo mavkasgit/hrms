@@ -47,6 +47,8 @@ class VacationResponse(BaseModel):
     is_extended: bool = False
     extension_order_id: Optional[int] = None
     extension_order_number: Optional[str] = None
+    original_days: Optional[int] = None
+    actual_days: Optional[int] = None
 
 
 class VacationListResponse(BaseModel):
@@ -113,9 +115,9 @@ class VacationExtensionRequest(BaseModel):
     vacation_id: int
     order_date: date
     order_number: Optional[str] = Field(None, max_length=50)
-    # Опционально: диапазон внутри отпуска (если не указан - берется весь отпуск)
-    start_date: Optional[date] = Field(None, description="Начало диапазона внутри отпуска (если не указано - начало отпуска)")
-    end_date: Optional[date] = Field(None, description="Конец диапазона внутри отпуска (если не указано - конец отпуска)")
+    # Период продления (если не указан - рассчитывается legacy-режимом по больничному)
+    start_date: Optional[date] = Field(None, description="Начало периода продления")
+    end_date: Optional[date] = Field(None, description="Конец периода продления")
     sick_start_date: date
     sick_end_date: date
     comment: Optional[str] = Field(None, max_length=500)
@@ -142,7 +144,10 @@ class VacationPostponeRequest(BaseModel):
     # Опционально: диапазон внутри отпуска (если не указан - берется весь отпуск)
     start_date: Optional[date] = Field(None, description="Начало диапазона внутри отпуска (если не указано - начало отпуска)")
     end_date: Optional[date] = Field(None, description="Конец диапазона внутри отпуска (если не указано - конец отпуска)")
-    postponed_days: int = Field(..., description="Количество дней для переноса (остальные считаются использованными)")
+    postponed_days: Optional[int] = Field(
+        None,
+        description="Количество дней для переноса (опционально; при отсутствии считается по выбранному диапазону)",
+    )
     comment: Optional[str] = Field(None, max_length=500)
     draft_id: Optional[str] = None
 

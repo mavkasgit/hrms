@@ -105,13 +105,14 @@ async def get_vacations(
     employee_id: Optional[int] = Query(None),
     year: Optional[int] = Query(None),
     vacation_type: Optional[str] = Query(None),
+    q: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
     items, total = await vacation_repository.get_all(
-        db, employee_id=employee_id, year=year, vacation_type=vacation_type,
+        db, employee_id=employee_id, year=year, vacation_type=vacation_type, q=q,
         page=page, per_page=per_page,
     )
     return {

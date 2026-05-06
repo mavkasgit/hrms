@@ -10,6 +10,10 @@ from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
 from app.repositories.vacation_period_repository import VacationPeriodRepository
 from app.repositories.hire_date_adjustment_repository import HireDateAdjustmentRepository
+from app.repositories.vacation_adjustment_repository import VacationAdjustmentRepository
+from app.repositories.vacation_period_manual_closure_repository import (
+    VacationPeriodManualClosureRepository,
+)
 from app.schemas.vacation_period import VacationPeriodBalance
 
 MAIN_VACATION_DAYS = 24
@@ -19,6 +23,8 @@ class VacationPeriodService:
     def __init__(self):
         self._repo = VacationPeriodRepository()
         self._adjustment_repo = HireDateAdjustmentRepository()
+        self._vacation_adjustment_repo = VacationAdjustmentRepository()
+        self._manual_closure_repo = VacationPeriodManualClosureRepository()
 
     async def get_effective_start_date(self, db: AsyncSession, employee_id: int, hire_date: date) -> date:
         """Возвращает дату начала для создания периодов: последнюю adjustment_date или hire_date."""
@@ -100,18 +106,25 @@ class VacationPeriodService:
                 current_used = p.used_days or 0
                 remaining = total - current_used
                 if remaining > 0:
-                    # Добавляем транзакцию ручного закрытия
+                    closure = await self._manual_closure_repo.upsert_for_period(
+                        db,
+                        employee_id=p.employee_id,
+                        work_year_start=p.period_start,
+                        work_year_end=p.period_end,
+                        days_count=remaining,
+                        closure_type="manual_close",
+                        remaining_days=0,
+                        reason=f"Автоматическое закрытие при корректировке от {cutoff_date}",
+                    )
                     await self._repo.add_transaction(
                         db,
                         period_id=p.id,
                         days_count=remaining,
                         transaction_type="manual_close",
+                        manual_closure_id=closure.id,
                         description=f"Автоматическое закрытие при корректировке от {cutoff_date}",
+                        recompute_totals=True,
                     )
-                    p.used_days_manual = (p.used_days_manual or 0) + remaining
-                    p.used_days = total
-                    p.remaining_days = 0
-                
                 await db.flush()
 
     async def ensure_periods_for_employee(
@@ -282,6 +295,13 @@ class VacationPeriodService:
                 )
             .order_by(Vacation.start_date.desc())
             )
+            vacations_in_period = list(vac_result.scalars().all())
+            adjustments_by_vacation: dict[int, int] = {}
+            for vacation in vacations_in_period:
+                latest_adj = await self._vacation_adjustment_repo.get_latest_by_vacation(db, vacation.id)
+                if latest_adj:
+                    adjustments_by_vacation[vacation.id] = latest_adj.actual_days
+
             period_vacations = [
                 {
                     "id": vacation.id,
@@ -297,13 +317,13 @@ class VacationPeriodService:
                     "recall_date": str(vacation.recall_date) if vacation.recall_date else None,
                     "recall_order_id": vacation.recall_order_id,
                     "recall_order_number": vacation.recall_order.order_number if getattr(vacation, "recall_order", None) else None,
-                    "original_days": vacation.days_count if vacation.recall_date else None,
-                    "actual_days": (vacation.recall_order.extra_fields or {}).get("actual_days_used") if getattr(vacation, "recall_order", None) else None,
+                    "original_days": vacation.days_count if vacation.id in adjustments_by_vacation else None,
+                    "actual_days": adjustments_by_vacation.get(vacation.id),
                     "is_postponed": vacation.is_postponed,
                     "postpone_order_number": vacation.postpone_order.order_number if getattr(vacation, "postpone_order", None) else None,
                     "postponed_days": vacation.days_count if vacation.is_postponed else None,
                 }
-                for vacation in vac_result.scalars().all()
+                for vacation in vacations_in_period
             ]
 
             # Получаем транзакции периода
@@ -348,6 +368,41 @@ class VacationPeriodService:
                 detail=f"Недостаточно дней отпуска. Запрашивается: {duration_days}, доступно: {total_remaining}",
             )
 
+    async def get_effective_vacation_days(self, db: AsyncSession, vacation: Vacation) -> int:
+        latest_adjustment = await self._vacation_adjustment_repo.get_latest_by_vacation(db, vacation.id)
+        if latest_adjustment:
+            return latest_adjustment.actual_days
+        return vacation.days_count
+
+    async def _reapply_manual_closures(self, db: AsyncSession, employee_id: int) -> None:
+        closures = await self._manual_closure_repo.get_by_employee(db, employee_id)
+        for closure in closures:
+            period = await self._repo.find_by_work_year(
+                db,
+                employee_id=employee_id,
+                work_year_start=closure.work_year_start,
+                work_year_end=closure.work_year_end,
+            )
+            if not period:
+                continue
+            await self._repo.add_transaction(
+                db,
+                period_id=period.id,
+                days_count=closure.days_count,
+                transaction_type=closure.closure_type,
+                manual_closure_id=closure.id,
+                order_id=closure.order_id,
+                description=closure.reason or "Восстановлено при пересчете периодов",
+                created_by=closure.created_by,
+                source_type="manual_closure_rebuild",
+                metadata={
+                    "work_year_start": str(closure.work_year_start),
+                    "work_year_end": str(closure.work_year_end),
+                    "remaining_days": closure.remaining_days,
+                },
+                recompute_totals=True,
+            )
+
     async def adjust_additional_days(
         self,
         db: AsyncSession,
@@ -386,22 +441,30 @@ class VacationPeriodService:
         total_days = period.main_days + period.additional_days
         effective_auto = period.used_days_auto or 0
         new_manual = total_days - effective_auto
-        period.used_days_manual = new_manual
-        period.used_days = effective_auto + new_manual
+        period.used_days_manual = max(new_manual, 0)
+        period.used_days = effective_auto + period.used_days_manual
         period.remaining_days = 0
-
-        # Создаём транзакцию ручного закрытия
         if new_manual > 0:
+            closure = await self._manual_closure_repo.upsert_for_period(
+                db,
+                employee_id=period.employee_id,
+                work_year_start=period.period_start,
+                work_year_end=period.period_end,
+                days_count=new_manual,
+                closure_type="manual_close",
+                remaining_days=0,
+                reason=f"Закрытие периода: списано {new_manual} дней",
+            )
             await self._repo.add_transaction(
                 db,
                 period_id=period.id,
                 days_count=new_manual,
                 transaction_type="manual_close",
+                manual_closure_id=closure.id,
                 description=f"Закрытие периода: списано {new_manual} дней",
             )
 
         await db.flush()
-        await db.commit()
         await db.refresh(period)
 
         return VacationPeriodBalance(
@@ -417,7 +480,7 @@ class VacationPeriodService:
             used_days_manual=period.used_days_manual or 0,
             order_ids=period.order_ids,
             order_numbers=period.order_numbers,
-            remaining_days=0,
+            remaining_days=period.remaining_days or 0,
             vacations=[],
         )
 
@@ -441,23 +504,31 @@ class VacationPeriodService:
 
         if remaining_days > current_remaining and new_manual < 0:
             new_manual = 0
-
-        period.used_days_manual = new_manual
-        period.used_days = effective_auto + new_manual
+        period.used_days_manual = max(new_manual, 0)
+        period.used_days = effective_auto + period.used_days_manual
         period.remaining_days = remaining_days
 
-        # Создаём транзакцию частичного закрытия
         if new_manual > 0:
+            closure = await self._manual_closure_repo.upsert_for_period(
+                db,
+                employee_id=period.employee_id,
+                work_year_start=period.period_start,
+                work_year_end=period.period_end,
+                days_count=new_manual,
+                closure_type="partial_close",
+                remaining_days=remaining_days,
+                reason=f"Частичное закрытие: списано {new_manual} дней, остаток {remaining_days}",
+            )
             await self._repo.add_transaction(
                 db,
                 period_id=period.id,
                 days_count=new_manual,
                 transaction_type="partial_close",
+                manual_closure_id=closure.id,
                 description=f"Частичное закрытие: списано {new_manual} дней, остаток {remaining_days}",
             )
 
         await db.flush()
-        await db.commit()
         await db.refresh(period)
 
         return VacationPeriodBalance(
@@ -478,87 +549,46 @@ class VacationPeriodService:
         )
 
     async def recalculate_vacation_days_only(self, db: AsyncSession, employee_id: int) -> list[VacationPeriodBalance]:
-        """Пересчитать только дни отпусков без удаления периодов и ручных закрытий."""
+        """Пересчитать автоматические списания без удаления периодов и ручных закрытий."""
         from app.repositories.employee_repository import EmployeeRepository
-        from app.models.vacation import Vacation
         from app.repositories.order_repository import OrderRepository
-        from app.repositories.references_repository import references_repository
-        from app.utils.working_days import calculate_vacation_days, count_holidays_in_range
-        from datetime import timedelta
 
-        employee_repo = EmployeeRepository()
-        employee = await employee_repo.get_by_id(db, employee_id)
+        employee = await EmployeeRepository().get_by_id(db, employee_id)
         if not employee or not employee.hire_date:
             raise HTTPException(status_code=400, detail="У сотрудника не указана дата приёма")
 
-        # Сбрасываем использованные дни во ВСЕХ периодах (но сохраняем транзакции ручного закрытия)
-        all_periods = await self._repo.get_by_employee(db, employee_id)
-        for period in all_periods:
-            # Сохраняем used_days_manual (ручные закрытия)
-            manual = period.used_days_manual or 0
-            period.used_days = manual  # Сбрасываем только авто-дни
-            period.used_days_auto = 0
-            period.remaining_days = (period.main_days + period.additional_days) - period.used_days
-            period.order_ids = None
-            period.order_numbers = None
-            await db.flush()
+        await self._repo.delete_auto_transactions_for_employee(db, employee_id)
 
-        # Получаем все отпуска сотрудника
         result = await db.execute(
             select(Vacation)
             .where(
                 Vacation.employee_id == employee_id,
                 Vacation.is_deleted == False,
                 Vacation.is_cancelled == False,
-                Vacation.is_postponed == False,
-                Vacation.is_extended == False,
                 Vacation.order_id.isnot(None),
             )
-            .order_by(Vacation.start_date.asc())
+            .order_by(Vacation.start_date.asc(), Vacation.id.asc())
         )
         vacations = list(result.scalars().all())
+        order_repo = OrderRepository()
 
-        # Получаем праздники
-        vacation_years = set()
-        for v in vacations:
-            vacation_years.add(v.start_date.year)
-            if v.end_date.year != v.start_date.year:
-                vacation_years.add(v.end_date.year)
-        
-        holidays_by_year = {}
-        for year in vacation_years:
-            holidays_by_year[year] = await references_repository.get_holidays_for_year(db, year)
-
-        # Распределяем дни отпусков по периодам
         for vacation in vacations:
-            order = await OrderRepository().get_by_id(db, vacation.order_id)
-            order_number = order.order_number if order else str(vacation.order_id)
-
-            # Считаем дни
-            days_to_use = vacation.days_count
-            
-            # Если отпуск был отозван — пересчитываем дни до recall_date - 1
-            if vacation.recall_date:
-                actual_end = vacation.recall_date - timedelta(days=1)
-                
-                holidays_in_range = (
-                    holidays_by_year.get(vacation.start_date.year, []) +
-                    (holidays_by_year.get(actual_end.year, []) if actual_end.year != vacation.start_date.year else [])
-                )
-                
-                days_to_use = calculate_vacation_days(vacation.start_date, actual_end, count_holidays_in_range(holidays_in_range, vacation.start_date, actual_end))
-                if days_to_use <= 0:
-                    days_to_use = 0
-
-            # Списываем дни по периодам
+            days_to_use = await self.get_effective_vacation_days(db, vacation)
+            if days_to_use <= 0:
+                continue
+            order = await order_repo.get_by_id(db, vacation.order_id)
+            order_number = order.order_number if order else None
             await auto_use_days(
-                db,
+                db=db,
                 employee_id=employee_id,
                 days_to_use=days_to_use,
                 hire_date=employee.hire_date,
                 additional_days=employee.additional_vacation_days or 0,
                 order_id=vacation.order_id,
                 order_number=order_number,
+                vacation_id=vacation.id,
+                transaction_type="recalculate_use",
+                original_order_id=vacation.order_id,
                 is_recalc=True,
             )
 
@@ -568,7 +598,7 @@ class VacationPeriodService:
     async def recalculate_periods(self, db: AsyncSession, employee_id: int) -> list[VacationPeriodBalance]:
         """Пересоздать последнюю серию периодов и заново распределить дни отпусков по порядку."""
         from app.repositories.employee_repository import EmployeeRepository
-        from app.models.vacation import Vacation
+        from app.repositories.order_repository import OrderRepository
 
         employee_repo = EmployeeRepository()
         employee = await employee_repo.get_by_id(db, employee_id)
@@ -582,9 +612,8 @@ class VacationPeriodService:
             # Удаляем только периоды последней серии
             latest_boundary = boundaries[-1]
             all_periods = await self._repo.get_by_employee(db, employee_id)
-            for p in all_periods:
-                if p.period_start >= latest_boundary:
-                    await db.delete(p)
+            latest_period_ids = [p.id for p in all_periods if p.period_start >= latest_boundary]
+            await self._repo.delete_by_ids(db, latest_period_ids)
         else:
             # Нет корректировок — удаляем все периоды как раньше
             await self._repo.delete_all_by_employee(db, employee_id)
@@ -597,64 +626,31 @@ class VacationPeriodService:
             employee.additional_vacation_days or 0,
         )
 
-        # Получаем все отпуска сотрудника (не удалённые, не отменённые, не перенесенные, не продленные, с приказом)
-        # Включаем также отозванные отпуска - для них пересчитаем дни по recall_date
+        await self._repo.delete_auto_transactions_for_employee(db, employee_id)
+        await self._repo.delete_manual_transactions_for_employee(db, employee_id)
+
+        # Получаем все отпуска сотрудника (не удалённые, не отменённые, с приказом)
         result = await db.execute(
             select(Vacation)
             .where(
                 Vacation.employee_id == employee_id,
                 Vacation.is_deleted == False,
                 Vacation.is_cancelled == False,
-                Vacation.is_postponed == False,
-                Vacation.is_extended == False,
                 Vacation.order_id.isnot(None),
             )
-            .order_by(Vacation.start_date.asc())
+            .order_by(Vacation.start_date.asc(), Vacation.id.asc())
         )
         vacations = list(result.scalars().all())
-
-        # Получаем все праздники для всех годов отпусков
-        from app.repositories.references_repository import references_repository
-        from app.utils.working_days import calculate_vacation_days, count_holidays_in_range
-        
-        vacation_years = set()
-        for v in vacations:
-            vacation_years.add(v.start_date.year)
-            if v.end_date.year != v.start_date.year:
-                vacation_years.add(v.end_date.year)
-        
-        all_holidays = []
-        for year in vacation_years:
-            all_holidays.extend(await references_repository.get_holidays_for_year(db, year))
+        order_repo = OrderRepository()
 
         # По порядку от самого старого отпуска распределяем дни по периодам
         for vacation in vacations:
-            # Получаем номер приказа
-            from app.repositories.order_repository import OrderRepository
-            order_repo = OrderRepository()
-            order = await order_repo.get_by_id(db, vacation.order_id)
-            order_number = order.order_number if order else str(vacation.order_id)
+            days_to_use = await self.get_effective_vacation_days(db, vacation)
+            if days_to_use <= 0:
+                continue
 
-            # Определяем сколько дней списать
-            days_to_use = vacation.days_count
-            
-            # Если отпуск был отозван — пересчитываем дни до recall_date - 1
-            if vacation.recall_date:
-                from datetime import timedelta
-                actual_end = vacation.recall_date - timedelta(days=1)
-                
-                # Считаем праздники в новом диапазоне
-                holidays_for_start = await references_repository.get_holidays_for_year(db, vacation.start_date.year)
-                holidays_for_end = []
-                if actual_end.year != vacation.start_date.year:
-                    holidays_for_end = await references_repository.get_holidays_for_year(db, actual_end.year)
-                holidays_in_range = holidays_for_start + holidays_for_end
-                
-                days_to_use = calculate_vacation_days(vacation.start_date, actual_end, count_holidays_in_range(holidays_in_range, vacation.start_date, actual_end))
-                
-                # Если days_to_use <= 0, значит сотрудник не был в отпуске ни одного дня
-                if days_to_use <= 0:
-                    days_to_use = 0
+            order = await order_repo.get_by_id(db, vacation.order_id)
+            order_number = order.order_number if order else None
 
             await auto_use_days(
                 db,
@@ -664,8 +660,13 @@ class VacationPeriodService:
                 additional_days=employee.additional_vacation_days or 0,
                 order_id=vacation.order_id,
                 order_number=order_number,
+                vacation_id=vacation.id,
+                transaction_type="recalculate_use",
+                original_order_id=vacation.order_id,
                 is_recalc=True,
             )
+
+        await self._reapply_manual_closures(db, employee_id)
 
         await db.commit()
         return await self.get_employee_periods(db, employee_id)
@@ -679,6 +680,11 @@ async def auto_use_days(
     additional_days: int = 0,
     order_id: int = None,
     order_number: str = None,
+    vacation_id: int = None,
+    transaction_type: str = "vacation_use",
+    original_order_id: int = None,
+    adjustment_order_id: int = None,
+    adjustment_id: int = None,
     is_recalc: bool = False,
 ) -> None:
     from dateutil.relativedelta import relativedelta
@@ -704,17 +710,25 @@ async def auto_use_days(
         days_to_take = min(remaining, remaining_to_use)
         if days_to_take > 0:
             await repo.add_used_days(db, period.id, days_to_take, order_id, order_number)
-            desc = f"Автосписание по приказу {order_number or order_id}: {days_to_take} дней"
+            order_label = order_number or "без номера"
+            desc = f"Автосписание по приказу №{order_label}: {days_to_take} дней"
             if is_recalc:
                 desc += " (Перезаписан)"
             await repo.add_transaction(
                 db,
                 period_id=period.id,
                 days_count=days_to_take,
-                transaction_type="auto_use",
+                transaction_type=transaction_type,
                 order_id=order_id,
                 order_number=order_number,
+                vacation_id=vacation_id,
+                original_order_id=original_order_id,
+                adjustment_order_id=adjustment_order_id,
+                adjustment_id=adjustment_id,
+                source_type="vacation",
+                metadata={"is_recalc": is_recalc} if is_recalc else None,
                 description=desc,
+                recompute_totals=True,
             )
             remaining_to_use -= days_to_take
 
@@ -748,17 +762,25 @@ async def auto_use_days(
         total = new_period.main_days + new_period.additional_days
         days_to_take = min(total, remaining_to_use)
         await repo.add_used_days(db, new_period.id, days_to_take, order_id, order_number)
-        desc = f"Автосписание по приказу {order_number or order_id}: {days_to_take} дней (будущий период)"
+        order_label = order_number or "без номера"
+        desc = f"Автосписание по приказу №{order_label}: {days_to_take} дней (будущий период)"
         if is_recalc:
             desc += " (Перезаписан)"
         await repo.add_transaction(
             db,
             period_id=new_period.id,
             days_count=days_to_take,
-            transaction_type="auto_use",
+            transaction_type=transaction_type,
             order_id=order_id,
             order_number=order_number,
+            vacation_id=vacation_id,
+            original_order_id=original_order_id,
+            adjustment_order_id=adjustment_order_id,
+            adjustment_id=adjustment_id,
+            source_type="vacation",
+            metadata={"is_recalc": is_recalc} if is_recalc else None,
             description=desc,
+            recompute_totals=True,
         )
         remaining_to_use -= days_to_take
 

@@ -1,13 +1,14 @@
 from datetime import date
 from typing import Optional, List, Dict, Any
 
-from sqlalchemy import select, func, and_, String
+from sqlalchemy import select, func, and_, String, or_, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
 from app.models.employee import Employee
+from app.models.order import Order
 from app.models.tag import EmployeeTag
 
 
@@ -33,6 +34,7 @@ class VacationRepository:
         employee_id: Optional[int] = None,
         year: Optional[int] = None,
         vacation_type: Optional[str] = None,
+        q: Optional[str] = None,
         page: int = 1,
         per_page: int = 20,
     ) -> tuple[list[Vacation], int]:
@@ -42,17 +44,30 @@ class VacationRepository:
             .where(Vacation.is_deleted == False)
         )
 
+        if q:
+            query = query.outerjoin(Employee, Employee.id == Vacation.employee_id).outerjoin(Order, Order.id == Vacation.order_id)
+
         if employee_id is not None:
             query = query.where(Vacation.employee_id == employee_id)
         if year is not None:
             query = query.where(func.extract("year", Vacation.start_date) == year)
         if vacation_type is not None:
             query = query.where(Vacation.vacation_type == vacation_type)
+        if q:
+            q_like = f"%{q.strip()}%"
+            query = query.where(
+                or_(
+                    Employee.name.ilike(q_like),
+                    Vacation.vacation_type.ilike(q_like),
+                    Order.order_number.ilike(q_like),
+                    cast(Vacation.employee_id, String).ilike(q_like),
+                )
+            )
 
         count_query = select(func.count()).select_from(query.subquery())
         total = (await db.execute(count_query)).scalar() or 0
 
-        query = query.order_by(Vacation.start_date.desc())
+        query = query.order_by(Vacation.start_date.desc(), Vacation.id.desc())
         query = query.offset((page - 1) * per_page).limit(per_page)
 
         result = await db.execute(query)
@@ -179,9 +194,6 @@ class VacationRepository:
                 Vacation.vacation_type == vacation_type,
                 Vacation.is_deleted == False,
                 Vacation.is_cancelled == False,
-                Vacation.is_recalled == False,
-                Vacation.is_postponed == False,
-                Vacation.is_extended == False,
                 Vacation.start_date <= date(year, 12, 31),
                 Vacation.end_date >= date(year, 1, 1),
             )
@@ -203,34 +215,34 @@ class VacationRepository:
         return total_days
 
     async def _get_used_days_for_period(self, db: AsyncSession, period_id: int) -> int:
-        """Считает использованные дни для конкретного периода из таблицы vacations."""
-        from datetime import date as date_type
+        """Считает использованные дни для конкретного периода из ledger транзакций."""
+        from app.models.vacation_period_transaction import VacationPeriodTransaction
 
         period = await db.get(VacationPeriod, period_id)
         if not period:
             return 0
 
-        today = date_type.today()
-
-        if today > period.period_end:
-            end_date = period.period_end
-        else:
-            end_date = today
-
         result = await db.execute(
-            select(func.sum(Vacation.days_count))
+            select(func.coalesce(func.sum(VacationPeriodTransaction.days_count), 0))
             .where(
+                VacationPeriodTransaction.period_id == period_id,
+            )
+        )
+        ledger_used = int(result.scalar() or 0)
+        if ledger_used != 0:
+            return ledger_used
+
+        # Backward compatibility for historical data created before ledger rows.
+        fallback_result = await db.execute(
+            select(func.coalesce(func.sum(Vacation.days_count), 0)).where(
                 Vacation.employee_id == period.employee_id,
                 Vacation.is_deleted == False,
                 Vacation.is_cancelled == False,
-                Vacation.is_recalled == False,
-                Vacation.is_postponed == False,
-                Vacation.is_extended == False,
                 Vacation.start_date >= period.period_start,
-                Vacation.start_date <= end_date,
+                Vacation.start_date <= period.period_end,
             )
         )
-        return result.scalar() or 0
+        return int(fallback_result.scalar() or 0)
 
     async def get_vacation_balance(
         self, db: AsyncSession, employee_id: int, year: Optional[int] = None
@@ -383,10 +395,7 @@ class VacationRepository:
                 .where(
                     Vacation.employee_id == emp_id, 
                     Vacation.is_deleted == False, 
-                    Vacation.is_cancelled == False, 
-                    Vacation.is_recalled == False,
-                    Vacation.is_postponed == False,
-                    Vacation.is_extended == False
+                    Vacation.is_cancelled == False,
                 )
             )
             total_used_from_vacations = used_result.scalar() or 0
@@ -458,9 +467,6 @@ class VacationRepository:
                     Vacation.employee_id == emp_id,
                     Vacation.is_deleted == False,
                     Vacation.is_cancelled == False,
-                    Vacation.is_recalled == False,
-                    Vacation.is_postponed == False,
-                    Vacation.is_extended == False
                 )
             )
             total_used = total_used_result.scalar() or 0

@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Optional
 
-from sqlalchemy import select, and_, func
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.vacation_period import VacationPeriod
@@ -10,6 +10,13 @@ from app.models.vacation_period_transaction import VacationPeriodTransaction
 
 
 class VacationPeriodRepository:
+    AUTO_TRANSACTION_TYPES = {
+        "vacation_use",
+        "vacation_use_adjusted",
+        "recalculate_use",
+        "vacation_restore",
+    }
+
     async def create(self, db: AsyncSession, data: dict) -> VacationPeriod:
         period = VacationPeriod(**data)
         db.add(period)
@@ -219,15 +226,59 @@ class VacationPeriodRepository:
 
     async def delete_all_by_employee(self, db: AsyncSession, employee_id: int) -> int:
         """Удалить все периоды отпусков сотрудника."""
-        result = await db.execute(
+        periods_result = await db.execute(
             select(VacationPeriod).where(VacationPeriod.employee_id == employee_id)
         )
-        periods = result.scalars().all()
+        periods = list(periods_result.scalars().all())
         count = len(periods)
+        if not periods:
+            return 0
+
+        period_ids = [p.id for p in periods]
+
+        # Self-reference from reversed_transaction_id can block deletes.
+        await db.execute(
+            update(VacationPeriodTransaction)
+            .where(VacationPeriodTransaction.period_id.in_(period_ids))
+            .values(reversed_transaction_id=None)
+        )
+
+        tx_result = await db.execute(
+            select(VacationPeriodTransaction).where(VacationPeriodTransaction.period_id.in_(period_ids))
+        )
+        for tx in tx_result.scalars().all():
+            await db.delete(tx)
+
         for period in periods:
             await db.delete(period)
         await db.flush()
         return count
+
+    async def delete_by_ids(self, db: AsyncSession, period_ids: list[int]) -> int:
+        if not period_ids:
+            return 0
+        periods_result = await db.execute(
+            select(VacationPeriod).where(VacationPeriod.id.in_(period_ids))
+        )
+        periods = list(periods_result.scalars().all())
+        if not periods:
+            return 0
+
+        await db.execute(
+            update(VacationPeriodTransaction)
+            .where(VacationPeriodTransaction.period_id.in_(period_ids))
+            .values(reversed_transaction_id=None)
+        )
+        tx_result = await db.execute(
+            select(VacationPeriodTransaction).where(VacationPeriodTransaction.period_id.in_(period_ids))
+        )
+        for tx in tx_result.scalars().all():
+            await db.delete(tx)
+
+        for period in periods:
+            await db.delete(period)
+        await db.flush()
+        return len(periods)
 
     async def add_transaction(
         self,
@@ -238,8 +289,17 @@ class VacationPeriodRepository:
         order_id: int = None,
         order_number: str = None,
         vacation_id: int = None,
+        original_order_id: int = None,
+        adjustment_order_id: int = None,
+        adjustment_id: int = None,
+        manual_closure_id: int = None,
+        reversed_transaction_id: int = None,
+        is_reversal: bool = False,
+        source_type: str = None,
+        metadata: dict = None,
         description: str = None,
         created_by: str = None,
+        recompute_totals: bool = False,
     ) -> VacationPeriodTransaction:
         """Создать запись транзакции для периода."""
         tx = VacationPeriodTransaction(
@@ -249,21 +309,163 @@ class VacationPeriodRepository:
             order_number=order_number,
             days_count=days_count,
             transaction_type=transaction_type,
+            original_order_id=original_order_id,
+            adjustment_order_id=adjustment_order_id,
+            adjustment_id=adjustment_id,
+            manual_closure_id=manual_closure_id,
+            reversed_transaction_id=reversed_transaction_id,
+            is_reversal=is_reversal,
+            source_type=source_type,
+            details=metadata,
             description=description,
             created_by=created_by or "system",
         )
         db.add(tx)
         await db.flush()
         await db.refresh(tx)
+        if recompute_totals:
+            await self.recompute_period_totals(db, period_id)
         return tx
 
     async def get_transactions(self, db: AsyncSession, period_id: int) -> list[VacationPeriodTransaction]:
-        """Получить все транзакции периода, отсортированные по дате отпуска (новые сверху)."""
-        from app.models.vacation import Vacation
+        """Получить все транзакции периода в хронологическом порядке (старые -> новые)."""
         result = await db.execute(
             select(VacationPeriodTransaction)
-            .outerjoin(Vacation, VacationPeriodTransaction.order_id == Vacation.order_id)
             .where(VacationPeriodTransaction.period_id == period_id)
-            .order_by(Vacation.start_date.desc().nulls_last(), VacationPeriodTransaction.created_at.desc())
+            .order_by(VacationPeriodTransaction.created_at.asc(), VacationPeriodTransaction.id.asc())
         )
         return list(result.scalars().all())
+
+    async def get_active_auto_transactions_by_vacation(
+        self,
+        db: AsyncSession,
+        vacation_id: int,
+    ) -> list[VacationPeriodTransaction]:
+        adjustment_base_types = ("vacation_use", "vacation_use_adjusted", "recalculate_use")
+        result = await db.execute(
+            select(VacationPeriodTransaction)
+            .where(
+                VacationPeriodTransaction.vacation_id == vacation_id,
+                VacationPeriodTransaction.transaction_type.in_(adjustment_base_types),
+                VacationPeriodTransaction.is_reversal == False,
+                VacationPeriodTransaction.days_count > 0,
+            )
+            .order_by(VacationPeriodTransaction.id.asc())
+        )
+        return list(result.scalars().all())
+
+    async def delete_auto_transactions_for_employee(self, db: AsyncSession, employee_id: int) -> None:
+        period_ids_result = await db.execute(
+            select(VacationPeriod.id).where(VacationPeriod.employee_id == employee_id)
+        )
+        period_ids = [row[0] for row in period_ids_result.all()]
+        if not period_ids:
+            return
+
+        tx_result = await db.execute(
+            select(VacationPeriodTransaction).where(
+                VacationPeriodTransaction.period_id.in_(period_ids),
+                VacationPeriodTransaction.transaction_type.in_(self.AUTO_TRANSACTION_TYPES),
+            )
+        )
+        for tx in tx_result.scalars().all():
+            await db.delete(tx)
+        await db.flush()
+        for period_id in period_ids:
+            await self.recompute_period_totals(db, period_id)
+
+    async def delete_manual_transactions_for_employee(self, db: AsyncSession, employee_id: int) -> None:
+        period_ids_result = await db.execute(
+            select(VacationPeriod.id).where(VacationPeriod.employee_id == employee_id)
+        )
+        period_ids = [row[0] for row in period_ids_result.all()]
+        if not period_ids:
+            return
+
+        tx_result = await db.execute(
+            select(VacationPeriodTransaction).where(
+                VacationPeriodTransaction.period_id.in_(period_ids),
+                VacationPeriodTransaction.transaction_type.in_(("manual_close", "partial_close")),
+            )
+        )
+        for tx in tx_result.scalars().all():
+            await db.delete(tx)
+        await db.flush()
+        for period_id in period_ids:
+            await self.recompute_period_totals(db, period_id)
+
+    async def find_by_work_year(
+        self,
+        db: AsyncSession,
+        employee_id: int,
+        work_year_start: date,
+        work_year_end: date,
+    ) -> Optional[VacationPeriod]:
+        result = await db.execute(
+            select(VacationPeriod).where(
+                VacationPeriod.employee_id == employee_id,
+                VacationPeriod.period_start == work_year_start,
+                VacationPeriod.period_end == work_year_end,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def recompute_period_totals(self, db: AsyncSession, period_id: int) -> None:
+        period = await self.get_by_id(db, period_id)
+        if not period:
+            return
+
+        totals_result = await db.execute(
+            select(
+                func.coalesce(func.sum(VacationPeriodTransaction.days_count), 0),
+                func.coalesce(
+                    func.sum(VacationPeriodTransaction.days_count).filter(
+                        VacationPeriodTransaction.transaction_type.in_(
+                            ("manual_close", "partial_close")
+                        )
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(VacationPeriodTransaction.days_count).filter(
+                        ~VacationPeriodTransaction.transaction_type.in_(
+                            ("manual_close", "partial_close")
+                        )
+                    ),
+                    0,
+                ),
+            ).where(VacationPeriodTransaction.period_id == period_id)
+        )
+        total_used, manual_used, auto_used = totals_result.one()
+
+        period.used_days = int(total_used or 0)
+        period.used_days_manual = int(manual_used or 0)
+        period.used_days_auto = int(auto_used or 0)
+
+        total_days = (period.main_days or 0) + (period.additional_days or 0)
+        remaining = total_days - period.used_days
+        period.remaining_days = max(remaining, 0)
+
+        order_rows = await db.execute(
+            select(VacationPeriodTransaction.order_id, VacationPeriodTransaction.order_number)
+            .where(
+                VacationPeriodTransaction.period_id == period_id,
+                VacationPeriodTransaction.order_id.isnot(None),
+                VacationPeriodTransaction.days_count > 0,
+            )
+            .order_by(VacationPeriodTransaction.created_at.asc(), VacationPeriodTransaction.id.asc())
+        )
+        order_ids: list[str] = []
+        order_numbers: list[str] = []
+        seen_ids: set[int] = set()
+        for order_id, order_number in order_rows.all():
+            if order_id in seen_ids:
+                continue
+            seen_ids.add(order_id)
+            order_ids.append(str(order_id))
+            if order_number:
+                order_numbers.append(str(order_number))
+
+        period.order_ids = ",".join(order_ids) if order_ids else None
+        period.order_numbers = ",".join(order_numbers) if order_numbers else None
+        await db.flush()

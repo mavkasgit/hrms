@@ -22,3 +22,5 @@ from app.models.sick_leave import SickLeave, SickLeaveStatus  # noqa: F401, E402
 from app.models.vacation_period_transaction import VacationPeriodTransaction  # noqa: F401, E402
 from app.models.hire_date_adjustment import HireDateAdjustment  # noqa: F401, E402
 from app.models.document import Document  # noqa: F401, E402
+from app.models.vacation_adjustment import VacationAdjustment  # noqa: F401, E402
+from app.models.vacation_period_manual_closure import VacationPeriodManualClosure  # noqa: F401, E402

@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
@@ -12,6 +13,8 @@ from app.core.exceptions import (
 from app.core.logging import get_audit_logger
 from app.repositories.employee_repository import EmployeeRepository
 from app.repositories.references_repository import references_repository
+from app.repositories.vacation_adjustment_repository import vacation_adjustment_repository
+from app.repositories.vacation_period_repository import VacationPeriodRepository
 from app.repositories.vacation_repository import vacation_repository
 from app.schemas.order import OrderCreate
 from app.services.order_service import order_service
@@ -67,6 +70,149 @@ class VacationService:
             ),
         )
 
+    async def _calculate_actual_days(self, db: AsyncSession, start_date: date, end_date: date) -> int:
+        if end_date < start_date:
+            return 0
+        holidays = await references_repository.get_holidays_for_year(db, start_date.year)
+        if end_date.year != start_date.year:
+            holidays += await references_repository.get_holidays_for_year(db, end_date.year)
+        holidays_count = count_holidays_in_range(holidays, start_date, end_date)
+        return calculate_vacation_days(start_date, end_date, holidays_count)
+
+    async def reverse_vacation_auto_transactions(
+        self,
+        db: AsyncSession,
+        *,
+        vacation_id: int,
+        adjustment_id: int,
+        adjustment_order_id: int,
+        adjustment_order_number: str | None,
+        original_order_id: int,
+    ) -> None:
+        tx_repo = VacationPeriodRepository()
+        original_transactions = await tx_repo.get_active_auto_transactions_by_vacation(db, vacation_id)
+        for tx in original_transactions:
+            await tx_repo.add_transaction(
+                db,
+                period_id=tx.period_id,
+                days_count=-tx.days_count,
+                transaction_type="vacation_restore",
+                order_id=adjustment_order_id,
+                order_number=adjustment_order_number,
+                vacation_id=vacation_id,
+                original_order_id=original_order_id,
+                adjustment_order_id=adjustment_order_id,
+                adjustment_id=adjustment_id,
+                reversed_transaction_id=tx.id,
+                is_reversal=True,
+                source_type="vacation_adjustment",
+                metadata={"original_transaction_id": tx.id},
+                description="Сторно списания по корректировке отпуска",
+                recompute_totals=True,
+            )
+
+    async def reapply_vacation_days(
+        self,
+        db: AsyncSession,
+        *,
+        employee,
+        vacation,
+        actual_days: int,
+        adjustment_id: int,
+        adjustment_order_id: int,
+        order_number: str | None,
+    ) -> None:
+        if actual_days <= 0:
+            return
+        await auto_use_days(
+            db=db,
+            employee_id=vacation.employee_id,
+            days_to_use=actual_days,
+            hire_date=employee.hire_date,
+            additional_days=employee.additional_vacation_days or 0,
+            order_id=vacation.order_id,
+            order_number=order_number,
+            vacation_id=vacation.id,
+            transaction_type="vacation_use_adjusted",
+            original_order_id=vacation.order_id,
+            adjustment_order_id=adjustment_order_id,
+            adjustment_id=adjustment_id,
+            is_recalc=False,
+        )
+
+    async def apply_vacation_adjustment(
+        self,
+        db: AsyncSession,
+        *,
+        vacation_id: int,
+        adjustment_order_id: int,
+        adjustment_type: str,
+        actual_start_date: date | None,
+        actual_end_date: date | None,
+        actual_days: int,
+        reason: str | None,
+    ):
+        vacation = await vacation_repository.get_by_id(db, vacation_id)
+        if not vacation:
+            raise VacationNotFoundError(vacation_id)
+        if not vacation.order_id:
+            raise InsufficientVacationDaysError("У отпуска нет исходного приказа")
+
+        existing = await vacation_adjustment_repository.get_by_vacation_and_order(
+            db,
+            vacation_id=vacation_id,
+            adjustment_order_id=adjustment_order_id,
+        )
+        if existing:
+            return existing
+
+        employee = await EmployeeRepository().get_by_id(db, vacation.employee_id)
+        if not employee:
+            raise EmployeeNotFoundError(vacation.employee_id)
+
+        adjustment = await vacation_adjustment_repository.create(
+            db,
+            {
+                "vacation_id": vacation.id,
+                "employee_id": vacation.employee_id,
+                "adjustment_type": adjustment_type,
+                "original_order_id": vacation.order_id,
+                "adjustment_order_id": adjustment_order_id,
+                "original_start_date": vacation.start_date,
+                "original_end_date": vacation.end_date,
+                "actual_start_date": actual_start_date,
+                "actual_end_date": actual_end_date,
+                "original_days": vacation.days_count,
+                "actual_days": actual_days,
+                "days_delta": actual_days - vacation.days_count,
+                "days_returned": max(vacation.days_count - actual_days, 0),
+                "days_added": max(actual_days - vacation.days_count, 0),
+                "reason": reason,
+            },
+        )
+
+        adjustment_order = await order_service.get_by_id(db, adjustment_order_id)
+        await self.reverse_vacation_auto_transactions(
+            db,
+            vacation_id=vacation.id,
+            adjustment_id=adjustment.id,
+            adjustment_order_id=adjustment_order_id,
+            adjustment_order_number=adjustment_order.order_number if adjustment_order else None,
+            original_order_id=vacation.order_id,
+        )
+
+        order = await order_service.get_by_id(db, vacation.order_id)
+        await self.reapply_vacation_days(
+            db,
+            employee=employee,
+            vacation=vacation,
+            actual_days=actual_days,
+            adjustment_id=adjustment.id,
+            adjustment_order_id=adjustment_order_id,
+            order_number=order.order_number if order else None,
+        )
+        return adjustment
+
     async def create_vacation(self, db: AsyncSession, data: dict, user_id: str) -> dict:
         employee_id = data["employee_id"]
         start_date = data["start_date"]
@@ -119,10 +265,16 @@ class VacationService:
         )
 
         await auto_use_days(
-            db, employee_id, days_count,
+            db,
+            employee_id,
+            days_count,
             employee.hire_date,
             employee.additional_vacation_days or 0,
-            order.id, order.order_number
+            order.id,
+            order.order_number,
+            vacation_id=vacation.id,
+            transaction_type="vacation_use",
+            original_order_id=order.id,
         )
         await db.flush()
         await db.commit()
@@ -308,9 +460,6 @@ class VacationService:
         return result
 
     async def recall_vacation(self, db: AsyncSession, vacation_id: int, data: dict, user_id: str) -> dict:
-        from datetime import date as date_type
-        from datetime import timedelta
-
         vacation = await vacation_repository.get_by_id(db, vacation_id)
         if not vacation:
             raise VacationNotFoundError(vacation_id)
@@ -328,25 +477,15 @@ class VacationService:
         if not employee:
             raise EmployeeNotFoundError(vacation.employee_id)
 
-        # Новый отпуск заканчивается за день до даты отзыва
         new_end_date = recall_date - timedelta(days=1)
-
-        # Пересчитываем дни для нового отпуска (от start_date до new_end_date)
-        holidays = await references_repository.get_holidays_for_year(db, vacation.start_date.year)
-        if new_end_date.year != vacation.start_date.year:
-            holidays += await references_repository.get_holidays_for_year(db, new_end_date.year)
-
-        holidays_count = count_holidays_in_range(holidays, vacation.start_date, new_end_date)
-        new_days_count = calculate_vacation_days(vacation.start_date, new_end_date, holidays_count)
+        new_days_count = await self._calculate_actual_days(db, vacation.start_date, new_end_date)
 
         if new_days_count <= 0:
             raise InsufficientVacationDaysError("Нет дней отпуска в выбранном диапазоне")
 
-        # Сохраняем оригинальные данные до обновления
         old_end_date = vacation.end_date
         old_days_count = vacation.days_count
 
-        # Создаём приказ об отзыве
         order_type = await order_service.get_order_type_by_code(db, "vacation_recall")
         order_payload = OrderCreate(
             employee_id=vacation.employee_id,
@@ -369,20 +508,29 @@ class VacationService:
         )
         recall_order = await order_service.create_order(db, order_payload)
 
-        # Помечаем отпуск как отозванный и сохраняем метаданные
+        await self.apply_vacation_adjustment(
+            db,
+            vacation_id=vacation_id,
+            adjustment_order_id=recall_order.id,
+            adjustment_type="recall",
+            actual_start_date=vacation.start_date,
+            actual_end_date=new_end_date,
+            actual_days=new_days_count,
+            reason=data.get("comment"),
+        )
+
         await vacation_repository.update(
-            db, vacation_id, {
+            db,
+            vacation_id,
+            {
                 "is_recalled": True,
                 "recall_date": recall_date,
                 "recall_order_id": recall_order.id,
-            }
+            },
         )
 
-        # Пересчитываем дни отпусков (сохраняет ручные закрытия)
-        await vacation_period_service.recalculate_vacation_days_only(db, vacation.employee_id)
-
-        # Перечитываем обновленный отпуск
         updated_vacation = await vacation_repository.get_by_id(db, vacation_id)
+        await db.commit()
 
         audit_logger.info(
             f"VACATION RECALLED: id={vacation_id}, employee_id={vacation.employee_id}, "
@@ -443,52 +591,42 @@ class VacationService:
         return await vacation_repository.get_employee_vacation_history(db, employee_id)
 
     async def extend_vacation(self, db: AsyncSession, vacation_id: int, data: dict, user_id: str) -> dict:
-        """Продление отпуска из-за больничного.
-        
-        Логика:
-        - Можно выбрать диапазон внутри отпуска (start_date, end_date)
-        - Если диапазон не указан - берется весь отпуск
-        - Старый отпуск помечается как is_extended=True
-        - Создается новый отпуск с теми же days_count, но end_date сдвинут на дни больничного
-        - Дни отпуска не тратятся на больничный (они сохраняются)
-        """
-        from datetime import timedelta
-
         vacation = await vacation_repository.get_by_id(db, vacation_id)
         if not vacation:
             raise VacationNotFoundError(vacation_id)
 
         sick_start = data["sick_start_date"]
         sick_end = data["sick_end_date"]
-        
-        # Если указаны start_date/end_date - используем их, иначе весь отпуск
-        range_start = data.get("start_date") or vacation.start_date
-        range_end = data.get("end_date") or vacation.end_date
-        
-        if range_start < vacation.start_date or range_end > vacation.end_date:
-            raise InsufficientVacationDaysError("Выбранный диапазон выходит за пределы отпуска")
-        
-        if range_start > range_end:
-            raise InsufficientVacationDaysError("Дата конца диапазона раньше даты начала")
-        
-        if sick_start > sick_end:
-            raise InsufficientVacationDaysError("Дата конца больничного раньше даты начала")
-        
-        if sick_start > range_end or sick_end < range_start:
-            raise InsufficientVacationDaysError("Период больничного не пересекается с выбранным диапазоном отпуска")
+
+        # Новый основной сценарий: пользователь указывает сам период продления.
+        extension_period_start = data.get("start_date")
+        extension_period_end = data.get("end_date")
+
+        if extension_period_start and extension_period_end:
+            if extension_period_end < extension_period_start:
+                raise InsufficientVacationDaysError("Дата конца периода продления раньше даты начала")
+            if extension_period_start <= vacation.end_date:
+                raise InsufficientVacationDaysError("Период продления должен начинаться после окончания отпуска")
+        else:
+            # Backward compatibility: если период продления не передан,
+            # считаем длительность по больничному и начинаем на следующий день после отпуска.
+            if sick_start > sick_end:
+                raise InsufficientVacationDaysError("Дата конца больничного раньше даты начала")
+            extension_period_start = vacation.end_date + timedelta(days=1)
+            extension_days_legacy = (sick_end - sick_start).days + 1
+            extension_period_end = extension_period_start + timedelta(days=max(extension_days_legacy - 1, 0))
 
         employee_repo = EmployeeRepository()
         employee = await employee_repo.get_by_id(db, vacation.employee_id)
         if not employee:
             raise EmployeeNotFoundError(vacation.employee_id)
 
-        # Считаем дни больничного (календарные дни)
-        sick_days = (sick_end - sick_start).days + 1
-        
-        # Новый отпуск заканчивается на sick_days позже
-        new_end_date = vacation.end_date + timedelta(days=sick_days)
+        extension_days = (extension_period_end - extension_period_start).days + 1
+        new_end_date = extension_period_end
+        # Ключевое правило продления из-за нетрудоспособности:
+        # продленные дни не увеличивают расход дней отпуска.
+        actual_days_after_extension = vacation.days_count
 
-        # Создаём приказ о продлении
         order_type = await order_service.get_order_type_by_code(db, "vacation_extension")
         order_payload = OrderCreate(
             employee_id=vacation.employee_id,
@@ -499,11 +637,12 @@ class VacationService:
             extra_fields={
                 "vacation_start": vacation.start_date.isoformat(),
                 "vacation_end": vacation.end_date.isoformat(),
-                "extended_range_start": range_start.isoformat() if range_start != vacation.start_date else None,
-                "extended_range_end": range_end.isoformat() if range_end != vacation.end_date else None,
+                "extension_period_start": extension_period_start.isoformat(),
+                "extension_period_end": extension_period_end.isoformat(),
                 "vacation_days": vacation.days_count,
                 "sick_start_date": sick_start.isoformat(),
                 "sick_end_date": sick_end.isoformat(),
+                "extension_days": extension_days,
                 "comment": data.get("comment", ""),
             },
             preview_id=data.get("preview_id"),
@@ -512,45 +651,43 @@ class VacationService:
         )
         extension_order = await order_service.create_order(db, order_payload)
 
-        # Помечаем текущий отпуск как продленный
+        await self.apply_vacation_adjustment(
+            db,
+            vacation_id=vacation_id,
+            adjustment_order_id=extension_order.id,
+            adjustment_type="extension",
+            actual_start_date=vacation.start_date,
+            actual_end_date=new_end_date,
+            actual_days=actual_days_after_extension,
+            reason=data.get("comment"),
+        )
+
+        auto_comment = (
+            f"Продление по приказу №{extension_order.order_number or '—'}: "
+            f"период {vacation.start_date.isoformat()} — {vacation.end_date.isoformat()}, "
+            f"продленный период {extension_period_start.isoformat()} — {extension_period_end.isoformat()}, "
+            f"было {vacation.days_count} дн., стало {actual_days_after_extension} дн., продлено {extension_days} дн."
+        )
+        user_comment = (data.get("comment") or "").strip()
+        existing_comment = (vacation.comment or "").strip()
+        comment_parts = [part for part in [existing_comment, user_comment, auto_comment] if part]
+        merged_comment = "\n".join(comment_parts) if comment_parts else None
+
         await vacation_repository.update(
             db, vacation_id, {
                 "is_extended": True,
                 "extension_order_id": extension_order.id,
+                "comment": merged_comment,
             }
         )
 
-        # Пересчитываем периоды - это удалит дни старого отпуска
-        await vacation_period_service.recalculate_periods(db, vacation.employee_id)
-
-        # Создаём новый отпуск с теми же днями, но новой датой конца
-        new_vacation = await vacation_repository.create(
-            db, {
-                "employee_id": vacation.employee_id,
-                "start_date": vacation.start_date,
-                "end_date": new_end_date,
-                "vacation_type": vacation.vacation_type,
-                "days_count": vacation.days_count,  # Дни остаются те же!
-                "vacation_year": vacation.start_date.year,
-                "comment": data.get("comment"),
-                "order_id": vacation.order_id,
-            }
-        )
-
-        # Списываем дни нового отпуска по периодам
-        await auto_use_days(
-            db, vacation.employee_id, vacation.days_count,
-            employee.hire_date,
-            employee.additional_vacation_days or 0,
-            vacation.order_id, vacation.order.order_number if getattr(vacation, "order", None) else None
-        )
-
+        updated_vacation = await vacation_repository.get_by_id(db, vacation_id)
         await db.commit()
 
         audit_logger.info(
             f"VACATION EXTENDED: id={vacation.id}, employee_id={vacation.employee_id}, "
             f"employee_name={employee.name}, old_end={vacation.end_date}, new_end={new_end_date}, "
-            f"days_count={vacation.days_count}, sick_days={sick_days}, order_id={extension_order.id}",
+            f"days_count={actual_days_after_extension}, extension_days={extension_days}, order_id={extension_order.id}",
             extra={
                 "employee_id": vacation.employee_id,
                 "employee_name": employee.name,
@@ -561,62 +698,59 @@ class VacationService:
                 "details": {
                     "old_end_date": str(vacation.end_date),
                     "new_end_date": str(new_end_date),
-                    "days_count": vacation.days_count,
-                    "extended_range_start": str(range_start),
-                    "extended_range_end": str(range_end),
+                    "days_count": actual_days_after_extension,
+                    "extension_period_start": str(extension_period_start),
+                    "extension_period_end": str(extension_period_end),
                     "sick_start_date": str(sick_start),
                     "sick_end_date": str(sick_end),
-                    "sick_days": sick_days,
+                    "extension_days": extension_days,
                     "extension_order_number": extension_order.order_number,
                 },
             },
         )
 
         return {
-            "id": new_vacation.id,
-            "employee_id": new_vacation.employee_id,
+            "id": updated_vacation.id,
+            "employee_id": updated_vacation.employee_id,
             "employee_name": employee.name,
-            "start_date": str(new_vacation.start_date),
-            "end_date": str(new_vacation.end_date),
-            "days_count": new_vacation.days_count,
-            "order_id": new_vacation.order_id,
+            "start_date": str(updated_vacation.start_date),
+            "end_date": str(updated_vacation.end_date),
+            "days_count": updated_vacation.days_count,
+            "order_id": updated_vacation.order_id,
             "order_number": vacation.order.order_number if getattr(vacation, "order", None) else None,
             "extension_order_id": extension_order.id,
             "extension_order_number": extension_order.order_number,
         }
 
     async def postpone_vacation(self, db: AsyncSession, vacation_id: int, data: dict, user_id: str) -> dict:
-        """Частичный перенос отпуска.
-        
-        Логика:
-        - Можно выбрать диапазон внутри отпуска (start_date, end_date)
-        - Если диапазон не указан - берется весь отпуск
-        - Использованная часть (days_count - postponed_days) - остается, дни списываются
-        - Перенесенная часть (postponed_days) - помечается как is_postponed, дни возвращаются
-        - Дни ВОЗВРАЩАЮТСЯ в периоды только для перенесенной части
-        """
-        from datetime import date as date_type
-        from datetime import timedelta
-
         vacation = await vacation_repository.get_by_id(db, vacation_id)
         if not vacation:
             raise VacationNotFoundError(vacation_id)
 
-        postponed_days = data["postponed_days"]
-        
         # Если указаны start_date/end_date - используем их, иначе весь отпуск
         range_start = data.get("start_date") or vacation.start_date
         range_end = data.get("end_date") or vacation.end_date
-        
+
         if range_start < vacation.start_date or range_end > vacation.end_date:
             raise InsufficientVacationDaysError("Выбранный диапазон выходит за пределы отпуска")
-        
+
         if range_start > range_end:
             raise InsufficientVacationDaysError("Дата конца диапазона раньше даты начала")
-        
+
+        # Ключевое правило: дни переноса считаются по выбранному диапазону, а не берутся из ручного ввода.
+        postponed_days = await self._calculate_actual_days(db, range_start, range_end)
+        requested_postponed_days = data.get("postponed_days")
+        if requested_postponed_days is not None and requested_postponed_days != postponed_days:
+            audit_logger.warning(
+                "Несовпадение дней переноса: в запросе=%s, рассчитано=%s, vacation_id=%s",
+                requested_postponed_days,
+                postponed_days,
+                vacation_id,
+            )
+
         if postponed_days <= 0:
             raise InsufficientVacationDaysError("Количество дней для переноса должно быть больше 0")
-        
+
         if postponed_days >= vacation.days_count:
             raise InsufficientVacationDaysError(
                 f"Количество дней для переноса ({postponed_days}) не может быть больше или равно количеству дней отпуска ({vacation.days_count})"
@@ -629,7 +763,6 @@ class VacationService:
 
         used_days = vacation.days_count - postponed_days
 
-        # Создаём приказ о переносе
         order_type = await order_service.get_order_type_by_code(db, "vacation_postpone")
         order_payload = OrderCreate(
             employee_id=vacation.employee_id,
@@ -653,20 +786,36 @@ class VacationService:
         )
         postpone_order = await order_service.create_order(db, order_payload)
 
-        # Помечаем текущий отпуск как перенесенный (для перенесенной части)
-        # Но сам отпуск остается с used_days
+        await self.apply_vacation_adjustment(
+            db,
+            vacation_id=vacation_id,
+            adjustment_order_id=postpone_order.id,
+            adjustment_type="postpone",
+            actual_start_date=vacation.start_date,
+            actual_end_date=vacation.end_date,
+            actual_days=used_days,
+            reason=data.get("comment"),
+        )
+
+        auto_comment = (
+            f"Перенос по приказу №{postpone_order.order_number or '—'}: "
+            f"период {range_start.isoformat()} — {range_end.isoformat()}, "
+            f"было {vacation.days_count} дн., стало {used_days} дн., перенесено {postponed_days} дн."
+        )
+        user_comment = (data.get("comment") or "").strip()
+        existing_comment = (vacation.comment or "").strip()
+        comment_parts = [part for part in [existing_comment, user_comment, auto_comment] if part]
+        merged_comment = "\n".join(comment_parts) if comment_parts else None
+
         await vacation_repository.update(
             db, vacation_id, {
                 "is_postponed": True,
                 "postpone_order_id": postpone_order.id,
-                "days_count": used_days,  # Уменьшаем до использованных дней
+                "comment": merged_comment,
             }
         )
 
-        # Пересчитываем периоды - это вернет только postponed_days обратно
-        # т.к. старый отпуск теперь имеет days_count = used_days
-        await vacation_period_service.recalculate_periods(db, vacation.employee_id)
-
+        updated_vacation = await vacation_repository.get_by_id(db, vacation_id)
         await db.commit()
 
         audit_logger.info(
@@ -685,7 +834,7 @@ class VacationService:
                     "vacation_end": str(vacation.end_date),
                     "postpone_range_start": str(range_start),
                     "postpone_range_end": str(range_end),
-                    "total_days": vacation.days_count + postponed_days,
+                    "total_days": vacation.days_count,
                     "used_days": used_days,
                     "postponed_days": postponed_days,
                     "postpone_order_number": postpone_order.order_number,
@@ -694,14 +843,14 @@ class VacationService:
         )
 
         return {
-            "id": vacation.id,
-            "employee_id": vacation.employee_id,
+            "id": updated_vacation.id,
+            "employee_id": updated_vacation.employee_id,
             "employee_name": employee.name,
-            "start_date": str(vacation.start_date),
-            "end_date": str(vacation.end_date),
-            "days_count": used_days,
-            "order_id": vacation.order_id,
-            "order_number": vacation.order.order_number if getattr(vacation, "order", None) else None,
+            "start_date": str(updated_vacation.start_date),
+            "end_date": str(updated_vacation.end_date),
+            "days_count": updated_vacation.days_count,
+            "order_id": updated_vacation.order_id,
+            "order_number": updated_vacation.order.order_number if getattr(updated_vacation, "order", None) else None,
             "postpone_order_id": postpone_order.id,
             "postpone_order_number": postpone_order.order_number,
             "postponed_days": postponed_days,

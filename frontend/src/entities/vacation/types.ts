@@ -133,3 +133,53 @@ export interface VacationRecallResponse {
   recall_order_id: number | null
   recall_order_number: string | null
 }
+
+export interface VacationPostponeRequest {
+  vacation_id: number
+  order_date: string
+  order_number?: string | null
+  start_date?: string | null
+  end_date?: string | null
+  postponed_days?: number | null
+  comment?: string | null
+  draft_id?: string | null
+}
+
+export interface VacationPostponeResponse {
+  id: number
+  employee_id: number
+  employee_name: string | null
+  start_date: string
+  end_date: string
+  days_count: number
+  order_id: number | null
+  order_number: string | null
+  postpone_order_id: number | null
+  postpone_order_number: string | null
+  postponed_days: number
+}
+
+export interface VacationExtensionRequest {
+  vacation_id: number
+  order_date: string
+  order_number?: string | null
+  start_date?: string | null
+  end_date?: string | null
+  sick_start_date: string
+  sick_end_date: string
+  comment?: string | null
+  draft_id?: string | null
+}
+
+export interface VacationExtensionResponse {
+  id: number
+  employee_id: number
+  employee_name: string | null
+  start_date: string
+  end_date: string
+  days_count: number
+  order_id: number | null
+  order_number: string | null
+  extension_order_id: number | null
+  extension_order_number: string | null
+}
