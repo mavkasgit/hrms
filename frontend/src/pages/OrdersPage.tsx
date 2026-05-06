@@ -177,6 +177,7 @@ export function OrdersPage() {
   const clearOrderType = () => {
     setSelectedOrderTypeId(null)
     setOrderTypeSearch("")
+    setOrderNumber("")
   }
 
   const handleOrderTypeKeyDown = (e: React.KeyboardEvent) => {

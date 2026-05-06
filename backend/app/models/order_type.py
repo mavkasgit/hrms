@@ -14,6 +14,7 @@ class OrderType(Base):
     is_active = Column(Boolean, nullable=False, default=True, server_default="true", index=True)
     show_in_orders_page = Column(Boolean, nullable=False, default=True, server_default="true")
     template_filename = Column(String(255), nullable=True)
+    display_name = Column(String(500), nullable=True)
     field_schema = Column(JSON, nullable=False, default=list, server_default="[]")
     filename_pattern = Column(Text, nullable=True)
     letter = Column(String(1), nullable=True)

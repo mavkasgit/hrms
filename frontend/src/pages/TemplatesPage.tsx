@@ -255,7 +255,7 @@ export function TemplatesPage() {
                             if (code === "weekend_call") return "Вызовы в выходной"
                             return orderType.show_in_orders_page ? "Общий журнал" : "Отпуска"
                           })()}</TableCell>
-                          <TableCell>{orderType.template_filename || "—"}</TableCell>
+                          <TableCell>{orderType.display_name || orderType.template_filename || "—"}</TableCell>
                           <TableCell>{orderType.is_active ? "Активен" : "Архив"}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end items-center gap-1">
@@ -386,9 +386,6 @@ export function TemplatesPage() {
       <ImportTemplatesModal
         open={importOpen}
         onOpenChange={setImportOpen}
-        onImportComplete={() => {
-          // список обновится через инвалидацию кэша внутри модалки
-        }}
       />
     </div>
   )

@@ -180,8 +180,9 @@ class OrderService:
 
         for item in DEFAULT_ORDER_TYPES:
             current = existing_by_code.get(item["code"])
+            display_name = f"Шаблон - {item['name']}.docx"
             if not current:
-                created = await self.order_type_repo.create(db, item)
+                created = await self.order_type_repo.create(db, {**item, "display_name": display_name})
                 existing_by_code[created.code] = created
                 changed = True
                 continue
@@ -190,6 +191,8 @@ class OrderService:
             for key in ("name", "show_in_orders_page", "filename_pattern", "letter"):
                 if getattr(current, key) != item.get(key):
                     updates[key] = item.get(key)
+            if not current.display_name or current.display_name.startswith("Шаблон - "):
+                updates["display_name"] = display_name
             if updates:
                 await self.order_type_repo.update(db, current, updates)
                 changed = True
@@ -368,7 +371,7 @@ class OrderService:
         year_dir = Path(settings.ORDERS_PATH) / str(data.order_date.year)
         year_dir.mkdir(parents=True, exist_ok=True)
 
-        file_path = await self._generate_document(order_number, data, employee, order_type, year_dir)
+        file_path, display_name = await self._generate_document(order_number, data, employee, order_type, year_dir)
 
         order = await self.order_repo.create(
             db,
@@ -378,6 +381,7 @@ class OrderService:
                 "employee_id": data.employee_id,
                 "order_date": data.order_date,
                 "file_path": file_path,
+                "display_name": display_name,
                 "notes": data.notes,
                 "extra_fields": data.extra_fields,
             },
@@ -446,11 +450,18 @@ class OrderService:
         employee: Employee,
         order_type: OrderType,
         year_dir: Path,
-    ) -> str:
+    ) -> tuple[str, str]:
         doc, replacements = await self._build_document(order_number, data, employee, order_type)
 
-        filename = self._build_filename(order_number, order_type, replacements)
-        file_path = year_dir / filename
+        storage_name = self._build_storage_name(
+            order_number, data.order_date, order_type, employee,
+            self._extract_extra_dates(data.extra_fields, order_type.code),
+        )
+        display_name = self._build_display_name(
+            order_number, data.order_date, order_type, employee,
+            self._extract_extra_info(data.extra_fields, order_type.code),
+        )
+        file_path = year_dir / storage_name
 
         if data.draft_id:
             from app.services.order_draft_service import order_draft_service
@@ -459,13 +470,13 @@ class OrderService:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(str(draft_path), str(file_path))
             order_draft_service.delete_draft(data.draft_id)
-            return storage_key(file_path, "ORDERS_PATH")
+            return storage_key(file_path, "ORDERS_PATH"), display_name
 
         await asyncio.wait_for(
             asyncio.to_thread(doc.save, str(file_path)),
             timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
         )
-        return storage_key(file_path, "ORDERS_PATH")
+        return storage_key(file_path, "ORDERS_PATH"), display_name
 
     async def _build_document(
         self,
@@ -639,12 +650,16 @@ class OrderService:
 
     async def upload_template(self, db: AsyncSession, order_type_id: int, filename: str, content: bytes) -> dict[str, Any]:
         order_type = await self.get_order_type(db, order_type_id)
-        safe_filename = self._normalize_template_filename(filename, order_type.code)
-        template_path = Path(settings.TEMPLATES_PATH) / safe_filename
+        storage_name = self._normalize_template_filename(filename, order_type.code)
+        display_name = f"Шаблон - {order_type.name}.docx"
+        template_path = Path(settings.TEMPLATES_PATH) / storage_name
         template_path.parent.mkdir(parents=True, exist_ok=True)
         with open(template_path, "wb") as file_obj:
             file_obj.write(content)
-        await self.order_type_repo.update(db, order_type, {"template_filename": safe_filename})
+        await self.order_type_repo.update(db, order_type, {
+            "template_filename": storage_name,
+            "display_name": display_name,
+        })
         await db.commit()
         return self._serialize_order_type(order_type)
 
@@ -723,6 +738,10 @@ class OrderService:
             {"name": "{sick_leave_days}", "description": "Кол-во дней больничного", "category": "Даты"},
             {"name": "{transfer_date}", "description": "Дата перевода", "category": "Даты"},
             {"name": "{contract_new_end}", "description": "Новая дата конца контракта (для «Продление контракта»)", "category": "Даты"},
+            {"name": "{call_date}", "description": "Дата вызова (для «Вызов в выходной»)", "category": "Даты"},
+            {"name": "{call_date_start}", "description": "Дата начала вызова (для «Вызов в выходной»)", "category": "Даты"},
+            {"name": "{call_date_end}", "description": "Дата окончания вызова (для «Вызов в выходной»)", "category": "Даты"},
+            {"name": "{recall_date}", "description": "Дата отзыва из отпуска (для «Отзыв из отпуска»)", "category": "Даты"},
 
             {"name": "{oznak_gender}", "description": "ознакомлен/ознакомлена (по полу сотрудника, с маленькой буквы)", "category": "Прочее"},
             {"name": "{notes}", "description": "Комментарий к приказу", "category": "Прочее"},
@@ -812,6 +831,7 @@ class OrderService:
             "order_date": order.order_date,
             "created_date": order.created_date,
             "file_path": order.file_path,
+            "display_name": order.display_name,
             "notes": order.notes,
             "extra_fields": order.extra_fields or {},
         }
@@ -825,6 +845,7 @@ class OrderService:
             "is_active": order_type.is_active,
             "show_in_orders_page": order_type.show_in_orders_page,
             "template_filename": order_type.template_filename,
+            "display_name": order_type.display_name,
             "field_schema": order_type.field_schema or [],
             "filename_pattern": order_type.filename_pattern,
             "letter": order_type.letter,
@@ -846,9 +867,137 @@ class OrderService:
             return Path(settings.TEMPLATES_PATH) / "__missing__.docx"
         return storage_path(order_type.template_filename, "TEMPLATES_PATH")
 
+    def _extract_extra_dates(self, extra_fields: dict | None, order_type_code: str) -> list[date] | None:
+        """Extract relevant dates from extra_fields for storage filename."""
+        if not extra_fields:
+            return None
+        dates: list[date] = []
+        try:
+            if order_type_code in ("vacation_paid", "vacation_unpaid"):
+                if extra_fields.get("vacation_start"):
+                    dates.append(date.fromisoformat(extra_fields["vacation_start"]))
+                if extra_fields.get("vacation_end"):
+                    dates.append(date.fromisoformat(extra_fields["vacation_end"]))
+            elif order_type_code == "vacation_recall":
+                if extra_fields.get("recall_date"):
+                    dates.append(date.fromisoformat(extra_fields["recall_date"]))
+            elif order_type_code == "vacation_postpone":
+                if extra_fields.get("new_vacation_start"):
+                    dates.append(date.fromisoformat(extra_fields["new_vacation_start"]))
+                if extra_fields.get("new_vacation_end"):
+                    dates.append(date.fromisoformat(extra_fields["new_vacation_end"]))
+            elif order_type_code == "vacation_extension":
+                if extra_fields.get("sick_start_date"):
+                    dates.append(date.fromisoformat(extra_fields["sick_start_date"]))
+                if extra_fields.get("sick_end_date"):
+                    dates.append(date.fromisoformat(extra_fields["sick_end_date"]))
+        except (ValueError, TypeError):
+            pass
+        return dates or None
+
+    def _extract_extra_info(self, extra_fields: dict | None, order_type_code: str) -> str:
+        """Extract human-readable extra info for display name."""
+        if not extra_fields:
+            return ""
+        parts: list[str] = []
+        if order_type_code in ("vacation_paid", "vacation_unpaid"):
+            start = extra_fields.get("vacation_start", "")
+            end = extra_fields.get("vacation_end", "")
+            if start and end:
+                try:
+                    s = date.fromisoformat(start).strftime("%d.%m.%Y")
+                    e = date.fromisoformat(end).strftime("%d.%m.%Y")
+                    parts.append(f"{s}-{e}")
+                except ValueError:
+                    pass
+        elif order_type_code == "vacation_recall":
+            recall = extra_fields.get("recall_date", "")
+            if recall:
+                try:
+                    parts.append(f"с {date.fromisoformat(recall).strftime('%d.%m.%Y')}")
+                except ValueError:
+                    pass
+        elif order_type_code == "vacation_postpone":
+            ns = extra_fields.get("new_vacation_start", "")
+            ne = extra_fields.get("new_vacation_end", "")
+            if ns and ne:
+                try:
+                    parts.append(f"{date.fromisoformat(ns).strftime('%d.%m.%Y')}-{date.fromisoformat(ne).strftime('%d.%m.%Y')}")
+                except ValueError:
+                    pass
+        elif order_type_code == "vacation_extension":
+            ss = extra_fields.get("sick_start_date", "")
+            se = extra_fields.get("sick_end_date", "")
+            if ss and se:
+                try:
+                    parts.append(f"больничный {date.fromisoformat(ss).strftime('%d.%m.%Y')}-{date.fromisoformat(se).strftime('%d.%m.%Y')}")
+                except ValueError:
+                    pass
+        return " ".join(parts)
+
+    @staticmethod
+    def _transliterate(text: str) -> str:
+        """Convert Cyrillic text to Latin transcription."""
+        mapping = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+            'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+            'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+            'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+            'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+            'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo',
+            'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M',
+            'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+            'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch',
+            'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya',
+        }
+        result = []
+        for ch in text:
+            result.append(mapping.get(ch, ch))
+        return ''.join(result)
+
+    def _build_storage_name(
+        self,
+        order_number: str,
+        order_date: date,
+        order_type: OrderType,
+        employee: Employee,
+        extra_dates: list[date] | None = None,
+    ) -> str:
+        """Build a filesystem-safe filename (ASCII only, no spaces)."""
+        type_code = order_type.code
+        last_name = employee.name.split()[0] if employee.name else "unknown"
+        transliterated = self._transliterate(last_name).lower()
+        transliterated = re.sub(r'[^a-z0-9-]', '', transliterated.replace(' ', '-'))
+
+        parts = [
+            order_date.isoformat(),
+            f"prikaz_{order_number}",
+            type_code,
+            transliterated,
+        ]
+        if extra_dates:
+            date_strs = [d.isoformat() for d in extra_dates]
+            parts.append("_".join(date_strs))
+        return "_".join(parts) + ".docx"
+
+    def _build_display_name(
+        self,
+        order_number: str,
+        order_date: date,
+        order_type: OrderType,
+        employee: Employee,
+        extra_info: str = "",
+    ) -> str:
+        """Build a human-readable display name in Russian."""
+        date_str = order_date.strftime("%d.%m.%Y")
+        name = f"Приказ №{order_number} от {date_str} - {order_type.name} - {employee.name}"
+        if extra_info:
+            name += f" - {extra_info}"
+        return name + ".docx"
+
     def _normalize_template_filename(self, original_filename: str, code: str) -> str:
         ext = Path(original_filename).suffix or ".docx"
-        return f"order_type_{code}{ext.lower()}"
+        return f"template__order__{code}{ext.lower()}"
 
     def _build_filename(self, order_number: str, order_type: OrderType, replacements: dict[str, str]) -> str:
         pattern = order_type.filename_pattern or "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx"

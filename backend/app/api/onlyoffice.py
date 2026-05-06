@@ -59,7 +59,10 @@ def _assert_valid_callback_token(request: Request, body: dict[str, Any]) -> None
 
 
 def _file_response(file_path: Path) -> FileResponse:
-    return FileResponse(str(file_path), filename=file_path.name, media_type=DOCX_MEDIA_TYPE)
+    return FileResponse(
+        str(file_path),
+        media_type=DOCX_MEDIA_TYPE,
+    )
 
 
 @router.get("/orders/{order_id}/onlyoffice/config")

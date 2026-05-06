@@ -12,6 +12,7 @@ export interface OrderType {
   is_active: boolean
   show_in_orders_page: boolean
   template_filename: string | null
+  display_name: string | null
   field_schema: OrderTypeFieldSchema[]
   filename_pattern: string | null
   letter: string | null
@@ -37,6 +38,7 @@ export interface Order {
   order_date: string
   created_date: string | null
   file_path: string | null
+  display_name: string | null
   notes: string | null
   extra_fields: Record<string, string | number>
 }

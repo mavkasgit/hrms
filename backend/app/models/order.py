@@ -16,6 +16,7 @@ class Order(Base):
     order_date = Column(Date, nullable=False)
     created_date = Column(DateTime(timezone=False), server_default=func.now())
     file_path = Column(String(255))
+    display_name = Column(String(500), nullable=True)
     notes = Column(Text)
     extra_fields = Column(JSON, nullable=True)
 

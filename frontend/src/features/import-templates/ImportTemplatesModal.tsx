@@ -1,205 +1,172 @@
 import { useState, useRef } from "react"
-import { Upload, Check, FileText } from "lucide-react"
+import { Check, Download, Upload, X } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
-  DialogFooter,
 } from "@/shared/ui/dialog"
+import { useAllOrderTypes, useUploadTemplate } from "@/entities/order/useOrders"
+import type { OrderType } from "@/entities/order/types"
 
 interface ImportTemplatesModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onImportComplete: () => void
 }
 
-const ORDER_TYPE_NAMES: Record<string, string> = {
-  hire: "Прием на работу",
-  dismissal: "Увольнение",
-  transfer: "Перевод",
-  contract_extension: "Продление контракта",
-  vacation_paid: "Отпуск трудовой",
-  vacation_unpaid: "Отпуск за свой счет",
-  weekend_call: "Вызов в выходной",
+interface UploadStatus {
+  [orderTypeId: number]: "uploading" | "success" | "error"
 }
 
-export function ImportTemplatesModal({ open, onOpenChange, onImportComplete }: ImportTemplatesModalProps) {
-  const [files, setFiles] = useState<File[]>([])
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ uploaded: number; skipped: number; errors: string[] } | null>(null)
+export function ImportTemplatesModal({ open, onOpenChange }: ImportTemplatesModalProps) {
+  const { data: orderTypes = [] } = useAllOrderTypes()
+  const uploadMutation = useUploadTemplate()
+  const [uploading, setUploading] = useState<UploadStatus>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileForType = (orderType: OrderType, file: File) => {
+    setUploading((prev) => ({ ...prev, [orderType.id]: "uploading" }))
+    uploadMutation.mutate(
+      { orderTypeId: orderType.id, file },
+      {
+        onSuccess: () => {
+          setUploading((prev) => ({ ...prev, [orderType.id]: "success" }))
+          setTimeout(() => {
+            setUploading((prev) => {
+              const next = { ...prev }
+              delete next[orderType.id]
+              return next
+            })
+          }, 2000)
+        },
+        onError: () => {
+          setUploading((prev) => ({ ...prev, [orderType.id]: "error" }))
+          setTimeout(() => {
+            setUploading((prev) => {
+              const next = { ...prev }
+              delete next[orderType.id]
+              return next
+            })
+          }, 3000)
+        },
+      }
+    )
+  }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files || [])
-    const docxFiles = selected.filter((f) => f.name.endsWith(".docx"))
-    setFiles(docxFiles)
-    setResult(null)
-  }
+    if (!selected.length) return
 
-  const handleImport = async () => {
-    if (!files.length) return
-    setLoading(true)
-    try {
-      const formData = new FormData()
-      files.forEach((file) => formData.append("files", file))
-
-      const resp = await fetch(
-        `${import.meta.env.VITE_API_URL || "/api"}/order-types/templates/bulk-upload`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      )
-
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ detail: "Ошибка загрузки" }))
-        throw new Error(err.detail || "Ошибка загрузки")
+    // Match files to order types by code
+    for (const file of selected) {
+      if (!file.name.endsWith(".docx")) continue
+      const code = file.name.replace(/\.docx$/i, "")
+      const matchingType = orderTypes.find((ot) => ot.code === code)
+      if (matchingType) {
+        handleFileForType(matchingType, file)
       }
-
-      const data = await resp.json()
-      setResult(data)
-      onImportComplete()
-    } catch (err: any) {
-      setResult({ uploaded: 0, skipped: files.length, errors: [err.message || "Неизвестная ошибка"] })
-    } finally {
-      setLoading(false)
     }
+
+    // Reset input so same files can be selected again
+    e.target.value = ""
   }
 
-  const reset = () => {
-    setFiles([])
-    setResult(null)
-  }
-
-  const handleClose = () => {
-    reset()
-    onOpenChange(false)
+  const handleUploadClick = (orderType: OrderType) => {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = ".docx"
+    input.onchange = (ev) => {
+      const file = (ev.target as HTMLInputElement).files?.[0]
+      if (file) handleFileForType(orderType, file)
+    }
+    input.click()
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="w-full max-w-2xl max-h-[95vh] overflow-hidden flex flex-col">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle>Импорт шаблонов приказов</DialogTitle>
-          <DialogDescription>
-            Загрузите сразу несколько .docx-шаблонов. Файлы распределяются по типам приказов по имени.
-          </DialogDescription>
+          <DialogTitle>Шаблоны приказов</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 overflow-y-auto">
-          {/* Инструкция по именованию */}
-          <div className="bg-muted/50 border rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <FileText className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div className="flex-1 space-y-2">
-                <p className="text-sm font-medium">Требования к именам файлов</p>
-                <p className="text-xs text-muted-foreground">
-                  Имя файла (без расширения) должно совпадать с кодом типа приказа. Например:
-                </p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                  {Object.entries(ORDER_TYPE_NAMES).map(([code, name]) => (
-                    <div key={code} className="flex items-center gap-1.5">
-                      <code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{code}.docx</code>
-                      <span className="text-muted-foreground">— {name}</span>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Также поддерживаются любые созданные вами типы — просто назовите файл по их коду.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Зона выбора файлов */}
-          {!result && (
-            <>
-              <div
-                className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:bg-accent/50 transition-colors"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".docx"
-                  multiple
-                  className="hidden"
-                  onChange={handleFileSelect}
-                />
-                <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-sm text-muted-foreground">
-                  Нажмите или перетащите .docx-файлы
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Можно выбрать сразу несколько файлов
-                </p>
-              </div>
-
-              {files.length > 0 && (
-                <div className="border rounded-lg p-3 space-y-2">
-                  <p className="text-sm font-medium">Выбрано файлов: {files.length}</p>
-                  <div className="space-y-1">
-                    {files.map((file) => {
-                      const code = file.name.replace(".docx", "")
-                      const matched = ORDER_TYPE_NAMES[code]
-                      return (
-                        <div key={file.name} className="flex items-center justify-between text-xs">
-                          <span className="font-mono">{file.name}</span>
-                          {matched ? (
-                            <span className="text-green-600 text-[11px]">→ {matched}</span>
-                          ) : (
-                            <span className="text-orange-500 text-[11px]">код не распознан</span>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Результат */}
-          {result && (
-            <div className="text-center py-6">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
-                <Check className="h-8 w-8 text-green-600" />
-              </div>
-              <h3 className="text-lg font-medium mb-2">Загрузка завершена</h3>
-              <p className="text-muted-foreground text-sm">
-                Загружено: {result.uploaded}, пропущено: {result.skipped}
-              </p>
-              {result.errors.length > 0 && (
-                <div className="mt-3 text-left bg-red-50 border border-red-100 rounded-md p-3">
-                  <p className="text-xs font-medium text-red-700 mb-1">Ошибки:</p>
-                  <ul className="list-disc pl-4 text-xs text-red-600 space-y-0.5">
-                    {result.errors.map((err, i) => (
-                      <li key={i}>{err}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm text-muted-foreground">
+            Загружено: {orderTypes.filter((ot) => ot.template_exists).length} из {orderTypes.length}
+          </p>
+          <Button size="sm" onClick={() => fileInputRef.current?.click()}>
+            <Upload className="mr-2 h-4 w-4" />
+            Загрузить несколько
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".docx"
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+          />
         </div>
 
-        <DialogFooter className="shrink-0">
-          {!result ? (
-            <>
-              <Button variant="outline" onClick={handleClose}>
-                Отмена
-              </Button>
-              <Button onClick={handleImport} disabled={loading || files.length === 0}>
-                {loading ? "Загрузка…" : "Загрузить шаблоны"}
-              </Button>
-            </>
-          ) : (
-            <Button onClick={handleClose}>Закрыть</Button>
-          )}
-        </DialogFooter>
+        <div className="flex-1 overflow-y-auto space-y-1">
+          {orderTypes.map((orderType) => {
+            const status = uploading[orderType.id]
+            return (
+              <div
+                key={orderType.id}
+                className="flex items-center justify-between rounded-lg border px-3 py-2 hover:bg-accent/50 transition-colors"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-2 h-2 rounded-full shrink-0 bg-green-500" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{orderType.name}</p>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      {orderType.template_exists ? orderType.display_name || orderType.template_filename : "Нет шаблона"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 ml-4">
+                  {status === "uploading" && (
+                    <span className="text-xs text-muted-foreground">Загрузка...</span>
+                  )}
+                  {status === "success" && (
+                    <span className="text-xs text-green-600 flex items-center gap-1">
+                      <Check className="h-3 w-3" /> Загружено
+                    </span>
+                  )}
+                  {status === "error" && (
+                    <span className="text-xs text-red-600 flex items-center gap-1">
+                      <X className="h-3 w-3" /> Ошибка
+                    </span>
+                  )}
+                  {!status && orderType.template_exists && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                      onClick={() => {
+                        // delete template - delegate to parent
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-3 text-xs"
+                    onClick={() => handleUploadClick(orderType)}
+                    disabled={uploadMutation.isPending}
+                  >
+                    <Download className="mr-1 h-3 w-3" />
+                    {orderType.template_exists ? "Заменить" : "Загрузить"}
+                  </Button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </DialogContent>
     </Dialog>
   )

@@ -1,8 +1,43 @@
+import urllib.parse
 from datetime import date
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse, HTMLResponse
+from starlette.responses import Response
+
+
+class UTF8FileResponse(FileResponse):
+    """FileResponse that supports UTF-8 filenames via RFC 5987."""
+
+    def __init__(
+        self,
+        path: str | Path,
+        filename: str | None = None,
+        media_type: str | None = None,
+        **kwargs,
+    ):
+        self.utf8_filename = filename
+        super().__init__(path=path, filename=filename, media_type=media_type, **kwargs)
+
+    def init_headers(self, headers: dict[str, str] | None = None) -> None:
+        super().init_headers(headers)
+        if self.utf8_filename:
+            encoded = urllib.parse.quote(self.utf8_filename)
+            # Override Content-Disposition with RFC 5987 UTF-8 encoding
+            # Set raw bytes to bypass Starlette's latin-1 encoding
+            self.headers.raw.append(
+                (
+                    b"content-disposition",
+                    f'attachment; filename="{self.utf8_filename}"; filename*=UTF-8\'\'{encoded}'.encode("utf-8"),
+                )
+            )
+            # Remove the latin-1 encoded version that super() added
+            keys_to_remove = [k for k in self.headers if k.lower() == "content-disposition"]
+            if len(keys_to_remove) > 1:
+                for k in keys_to_remove[:-1]:
+                    del self.headers[k]
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -183,9 +218,9 @@ async def download_order(
     if not file_path.exists():
         raise HRMSException("Файл приказа отсутствует на диске", "order_file_missing", status_code=404)
 
-    return FileResponse(
-        str(file_path),
-        filename=file_path.name,
+    return UTF8FileResponse(
+        path=str(file_path),
+        filename=order.display_name or file_path.name,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 
