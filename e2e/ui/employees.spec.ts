@@ -212,7 +212,7 @@ test.describe('Сотрудники UI', () => {
     await expect(page.locator('table tbody').getByText(empName)).not.toBeVisible({ timeout: 5000 })
 
     await page.getByRole('button', { name: 'Фильтры' }).click()
-    await page.getByText('В архиве').click()
+    await page.getByText('Уволен').click()
     await expect(page.locator('table tbody').getByText(empName)).toBeVisible({ timeout: 5000 })
 
     await page.locator('table tbody').getByText(empName).first().click()

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Plus, Trash2, Cake, Copy, ExternalLink } from "lucide-react"
+import { Plus, Trash2, Cake, Copy, ExternalLink, ArrowLeft } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select"
@@ -57,10 +57,15 @@ export function HolidaysPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <Cake className="h-5 w-5" />
-          Праздники
-        </h1>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => window.history.back()} title="Назад">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <Cake className="h-5 w-5" />
+            Праздники
+          </h1>
+        </div>
       </div>
 
       {/* Stats */}

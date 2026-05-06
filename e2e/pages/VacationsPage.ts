@@ -82,7 +82,7 @@ export class VacationsPage {
   async filterByArchive(status: 'active' | 'archived' | 'all') {
     const statusLabels: Record<string, string> = {
       active: 'Активные',
-      archived: 'В архиве',
+      archived: 'Уволен',
       all: 'Все',
     }
     await this.page.getByRole('button', { name: /архив|фильтр/i }).click()

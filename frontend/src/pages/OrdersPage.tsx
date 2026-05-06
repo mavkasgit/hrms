@@ -79,6 +79,7 @@ export function OrdersPage() {
   const [filterDateFrom, setFilterDateFrom] = useState("")
   const [filterDateTo, setFilterDateTo] = useState("")
   const [filterStatus, setFilterStatus] = useState<"all" | "active" | "cancelled">("all")
+  const [filterLetter, setFilterLetter] = useState<string | undefined>(undefined)
   const filterOrderTypeRef = useRef<HTMLDivElement>(null)
 
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
@@ -100,6 +101,7 @@ export function OrdersPage() {
     per_page: 1000,
     year,
     order_type_code: filterOrderType?.code,
+    order_letter: filterLetter,
     employee_id: debouncedFilterEmployeeId ?? undefined,
     date_from: filterDateFrom || undefined,
     date_to: filterDateTo || undefined,
@@ -301,8 +303,9 @@ export function OrdersPage() {
     if (filterDateTo) count++
     if (filterStatus !== "all") count++
     if (year) count++
+    if (filterLetter) count++
     return count
-  }, [filterEmployee, filterOrderType, filterOrderNumber, filterDateFrom, filterDateTo, filterStatus, year])
+  }, [filterEmployee, filterOrderType, filterOrderNumber, filterDateFrom, filterDateTo, filterStatus, year, filterLetter])
 
   const clearFilters = () => {
     setFilterEmployee(null)
@@ -313,6 +316,7 @@ export function OrdersPage() {
     setFilterDateTo("")
     setFilterStatus("all")
     setYear(undefined)
+    setFilterLetter(undefined)
   }
 
   // Close filter type dropdown on outside click
@@ -571,7 +575,7 @@ export function OrdersPage() {
               </div>
             </div>
 
-            {/* Row 3: Year buttons + Clear */}
+            {/* Row 3: Year buttons, Letter buttons + Clear */}
             <div className="flex flex-wrap gap-3 items-center">
               <div className="flex gap-1">
                 <Button variant={!year ? "default" : "outline"} size="sm" onClick={() => setYear(undefined)}>Все года</Button>
@@ -579,6 +583,13 @@ export function OrdersPage() {
                   <Button key={y} variant={year === y ? "default" : "outline"} size="sm" onClick={() => setYear(y)}>{y}</Button>
                 ))}
               </div>
+
+              <div className="flex gap-1">
+                <Button variant={!filterLetter ? "default" : "outline"} size="sm" onClick={() => setFilterLetter(undefined)}>Все литеры</Button>
+                <Button variant={filterLetter === "к" ? "default" : "outline"} size="sm" onClick={() => setFilterLetter("к")}>-к</Button>
+                <Button variant={filterLetter === "л" ? "default" : "outline"} size="sm" onClick={() => setFilterLetter("л")}>-л</Button>
+              </div>
+
               <Button variant="outline" size="sm" onClick={clearFilters} className="ml-auto">Сбросить фильтры</Button>
             </div>
           </div>

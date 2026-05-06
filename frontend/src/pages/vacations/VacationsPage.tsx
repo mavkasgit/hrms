@@ -1052,7 +1052,7 @@ export function VacationsPage() {
               onClick={() => setArchiveFilter(f)}
               className="text-xs"
             >
-              {f === "active" ? "Активные" : f === "archived" ? "В архиве" : "Все"}
+              {f === "active" ? "Активные" : f === "archived" ? "Уволенные" : "Все"}
             </Button>
           ))}
         </div>

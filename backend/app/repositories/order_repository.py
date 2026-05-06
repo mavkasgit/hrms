@@ -19,6 +19,7 @@ class OrderRepository:
         sort_order: str = "desc",
         year: Optional[int] = None,
         order_type_code: Optional[str] = None,
+        order_letter: Optional[str] = None,
         employee_id: Optional[int] = None,
         date_from: Optional[datetime] = None,
         date_to: Optional[datetime] = None,
@@ -33,6 +34,11 @@ class OrderRepository:
         if order_type_code:
             joins.append(OrderType)
             conditions.append(OrderType.code == order_type_code)
+
+        if order_letter:
+            if OrderType not in joins:
+                joins.append(OrderType)
+            conditions.append(OrderType.letter == order_letter)
 
         if employee_id:
             conditions.append(Order.employee_id == employee_id)

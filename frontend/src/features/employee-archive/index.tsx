@@ -38,7 +38,7 @@ export function EmployeeArchiveDialog({ open, onOpenChange, employeeId, name }: 
         <DialogHeader>
           <DialogTitle>Увольнение сотрудника</DialogTitle>
           <DialogDescription>
-            {name} будет переведён в архив
+            {name} будет уволен
           </DialogDescription>
         </DialogHeader>
 
@@ -57,7 +57,7 @@ export function EmployeeArchiveDialog({ open, onOpenChange, employeeId, name }: 
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>Внимание</AlertTitle>
               <AlertDescription>
-                Сотрудник будет переведён в архив. Все связанные приказы и отпуска сохранятся.
+                Сотрудник будет уволен. Все связанные приказы и отпуска сохранятся.
               </AlertDescription>
             </Alert>
           )}

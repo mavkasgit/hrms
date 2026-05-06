@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Download, RotateCcw, Eye, Database, Upload, AlertTriangle, Loader2, CheckCircle2, Trash2, X } from "lucide-react"
+import { Download, RotateCcw, Eye, Database, Upload, AlertTriangle, Loader2, CheckCircle2, Trash2, X, ArrowLeft } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { cn } from "@/shared/utils/cn"
@@ -324,10 +324,15 @@ export function BackupsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold flex items-center gap-2">
-          <Database className="h-5 w-5" />
-          Резервное копирование БД и файлов
-        </h1>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => window.history.back()} title="Назад">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            Резервное копирование БД и файлов
+          </h1>
+        </div>
       </div>
 
       <div className="flex gap-2 items-center flex-wrap">

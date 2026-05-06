@@ -1,8 +1,15 @@
 import { useState, useEffect } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2, Upload, Download, FilePen } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Checkbox } from "@/shared/ui/checkbox"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -31,6 +38,11 @@ interface OrderTypeFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   orderType: OrderType | null
+  onEditTemplate?: (orderTypeId: number) => void
+  onDownloadTemplate?: (orderTypeId: number) => void
+  onUploadTemplate?: (orderTypeId: number, file: File) => void
+  onDeleteTemplate?: (orderTypeId: number) => void
+  templateExists?: boolean
 }
 
 const emptyField = (): OrderTypeFieldSchema => ({
@@ -40,9 +52,9 @@ const emptyField = (): OrderTypeFieldSchema => ({
   required: false,
 })
 
-const STANDARD_CODES = ["hire", "dismissal", "transfer", "contract_extension", "vacation_paid", "vacation_unpaid", "weekend_call"]
+const STANDARD_CODES = ["hire", "dismissal", "transfer", "contract_extension", "vacation_paid", "vacation_unpaid", "vacation_recall", "vacation_postpone", "vacation_extension", "weekend_call", "substitution"]
 
-export function OrderTypeForm({ open, onOpenChange, orderType }: OrderTypeFormProps) {
+export function OrderTypeForm({ open, onOpenChange, orderType, onEditTemplate, onDownloadTemplate, onUploadTemplate, onDeleteTemplate, templateExists }: OrderTypeFormProps) {
   const [name, setName] = useState("")
   const [code, setCode] = useState("")
   const [letter, setLetter] = useState<string | null>(null)
@@ -57,6 +69,7 @@ export function OrderTypeForm({ open, onOpenChange, orderType }: OrderTypeFormPr
   const deleteMutation = useDeleteOrderType()
 
   const isEdit = orderType !== null
+  const isStandard = isEdit && STANDARD_CODES.includes(orderType.code)
 
   useEffect(() => {
     if (orderType) {
@@ -81,6 +94,7 @@ export function OrderTypeForm({ open, onOpenChange, orderType }: OrderTypeFormPr
     if (!name.trim()) return
 
     if (isEdit) {
+      console.log("[OrderTypeForm] Saving edit, letter =", letter, "name =", name)
       updateMutation.mutate({
         orderTypeId: orderType!.id,
         payload: {
@@ -133,33 +147,40 @@ export function OrderTypeForm({ open, onOpenChange, orderType }: OrderTypeFormPr
           </DialogHeader>
 
           <div className="space-y-4">
+            {isStandard && (
+              <div className="text-xs text-muted-foreground bg-muted/50 border rounded px-3 py-2">
+                Стандартный тип приказа — основные поля заблокированы. Можно только загрузить/заменить шаблон.
+              </div>
+            )}
             <div className="grid gap-3 md:grid-cols-3">
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Название" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Название" disabled={isStandard} />
               <Input
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="Code"
                 disabled={isEdit}
               />
-              <select
-                value={letter || ""}
-                onChange={(e) => setLetter(e.target.value || null)}
-                className="h-10 px-3 border rounded-md text-sm bg-background"
-              >
-                <option value="">—</option>
-                <option value="л">л</option>
-                <option value="к">к</option>
-              </select>
+              <Select value={letter || "-none"} onValueChange={(v) => setLetter(v === "-none" ? null : v)} disabled={isStandard}>
+                <SelectTrigger>
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="-none">—</SelectItem>
+                  <SelectItem value="л">л</SelectItem>
+                  <SelectItem value="к">к</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <Input
               value={pattern}
               onChange={(e) => setPattern(e.target.value)}
               placeholder="Паттерн имени файла, например Приказ_{order_number}_{last_name}.docx"
+              disabled={isStandard}
             />
 
             <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={showInOrders} onCheckedChange={(v) => setShowInOrders(!!v)} />
+              <Checkbox checked={showInOrders} onCheckedChange={(v) => setShowInOrders(!!v)} disabled={isStandard} />
               Показывать в общем журнале приказов
             </label>
 
@@ -183,22 +204,23 @@ export function OrderTypeForm({ open, onOpenChange, orderType }: OrderTypeFormPr
                     placeholder="label"
                     className="h-9"
                   />
-                  <select
-                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                    value={field.type}
-                    onChange={(e) =>
-                      setFields((prev) =>
-                        prev.map((item, idx) =>
-                          idx === index ? { ...item, type: e.target.value as OrderTypeFieldSchema["type"] } : item,
-                        ),
-                      )
-                    }
-                  >
-                    <option value="text">text</option>
-                    <option value="date">date</option>
-                    <option value="number">number</option>
-                    <option value="textarea">textarea</option>
-                  </select>
+                  <Select value={field.type} onValueChange={(v) =>
+                    setFields((prev) =>
+                      prev.map((item, idx) =>
+                        idx === index ? { ...item, type: v as OrderTypeFieldSchema["type"] } : item,
+                      ),
+                    )
+                  }>
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="text">text</SelectItem>
+                      <SelectItem value="date">date</SelectItem>
+                      <SelectItem value="number">number</SelectItem>
+                      <SelectItem value="textarea">textarea</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <label className="flex items-center gap-2 text-sm h-9">
                     <Checkbox
                       checked={field.required}
@@ -218,10 +240,55 @@ export function OrderTypeForm({ open, onOpenChange, orderType }: OrderTypeFormPr
                   </Button>
                 </div>
               ))}
-              <Button variant="outline" size="sm" onClick={() => setFields((prev) => [...prev, emptyField()])}>
+              <Button variant="outline" size="sm" onClick={() => setFields((prev) => [...prev, emptyField()])} disabled={isStandard}>
                 <Plus className="mr-1 h-3 w-3" />
                 Добавить поле
               </Button>
+            </div>
+          </div>
+
+          {/* Шаблон */}
+          <div className="border-t pt-3">
+            <div className="flex items-center gap-2">
+              {isEdit && onDeleteTemplate && (
+                <Button variant="outline" size="sm" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50" disabled={!templateExists} onClick={() => onDeleteTemplate(orderType.id)}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Удалить шаблон
+                </Button>
+              )}
+              {onUploadTemplate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!orderType}
+                  onClick={() => {
+                    if (!orderType) return
+                    const input = document.createElement("input")
+                    input.type = "file"
+                    input.accept = ".docx"
+                    input.onchange = (ev) => {
+                      const file = (ev.target as HTMLInputElement).files?.[0]
+                      if (file) onUploadTemplate(orderType.id, file)
+                    }
+                    input.click()
+                  }}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  {isEdit && templateExists ? "Заменить" : "Загрузить"}
+                </Button>
+              )}
+              {isEdit && onDownloadTemplate && (
+                <Button variant="outline" size="sm" disabled={!templateExists} onClick={() => onDownloadTemplate(orderType.id)}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Скачать
+                </Button>
+              )}
+              {isEdit && onEditTemplate && (
+                <Button variant="outline" size="sm" disabled={!templateExists} onClick={() => onEditTemplate(orderType.id)}>
+                  <FilePen className="mr-2 h-4 w-4" />
+                  Редактировать
+                </Button>
+              )}
             </div>
           </div>
 
@@ -239,9 +306,11 @@ export function OrderTypeForm({ open, onOpenChange, orderType }: OrderTypeFormPr
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
               Отмена
             </Button>
-            <Button onClick={handleSave} disabled={isPending || !name.trim()}>
-              {isPending ? "Сохранение..." : isEdit ? "Сохранить" : "Создать"}
-            </Button>
+            {!isStandard && (
+              <Button onClick={handleSave} disabled={isPending || !name.trim()}>
+                {isPending ? "Сохранение..." : isEdit ? "Сохранить" : "Создать"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

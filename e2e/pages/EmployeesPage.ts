@@ -64,7 +64,7 @@ export class EmployeesPage {
   async filterByStatus(status: EmployeeStatus) {
     const statusLabels: Record<EmployeeStatus, string> = {
       active: 'Активные',
-      archived: 'В архиве',
+      archived: 'Уволен',
       all: 'Все',
       deleted: 'Удалённые',
     }

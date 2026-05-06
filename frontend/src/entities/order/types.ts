@@ -56,6 +56,7 @@ export interface OrdersQueryParams {
   sort_order?: string
   year?: number
   order_type_code?: string
+  order_letter?: string
   employee_id?: number
   date_from?: string
   date_to?: string

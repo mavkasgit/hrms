@@ -74,7 +74,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "trial_end", "label": "Конец испытательного срока", "type": "date", "required": False},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
-        "letter": "л",
+        "letter": "к",
     },
     {
         "code": "vacation_paid",
@@ -164,6 +164,8 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
     },
 ]
 
+STANDARD_ORDER_CODES = frozenset(item["code"] for item in DEFAULT_ORDER_TYPES)
+
 
 class OrderService:
     def __init__(self):
@@ -240,6 +242,21 @@ class OrderService:
         order_type = await self.get_order_type(db, order_type_id)
         payload = data.model_dump(exclude_unset=True)
 
+        # Стандартные типы приказов нельзя редактировать — их поля задаются миграцией/кодом.
+        # Разрешена только загрузка/удаление шаблона.
+        if order_type.code in STANDARD_ORDER_CODES:
+            blocked = set(payload.keys()) - {"template_filename"}
+            if blocked:
+                raise HRMSException(
+                    f"Нельзя изменить стандартный тип приказа. Заблокированные поля: {', '.join(sorted(blocked))}",
+                    "standard_order_type_readonly",
+                    status_code=403,
+                )
+            # Для стандартных типов разрешаем только template_filename (через upload_template)
+            # Если пришёл пустой payload — просто возвращаем текущее состояние
+            if not payload:
+                return self._serialize_order_type(order_type)
+
         new_name = payload.get("name")
         if new_name and new_name != order_type.name:
             existing = await self.order_type_repo.get_by_name(db, new_name)
@@ -284,6 +301,7 @@ class OrderService:
         sort_order: str = "desc",
         year: Optional[int] = None,
         order_type_code: Optional[str] = None,
+        order_letter: Optional[str] = None,
         employee_id: Optional[int] = None,
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
@@ -297,6 +315,7 @@ class OrderService:
             sort_order=sort_order,
             year=year,
             order_type_code=order_type_code,
+            order_letter=order_letter,
             employee_id=employee_id,
             date_from=date_from,
             date_to=date_to,
@@ -363,6 +382,21 @@ class OrderService:
                 "extra_fields": data.extra_fields,
             },
         )
+
+        # Автоматическая архивация сотрудника при приказе об увольнении
+        if order_type.code == "dismissal" and not employee.is_archived:
+            dismissal_date = data.order_date
+            if data.extra_fields and data.extra_fields.get("dismissal_date"):
+                try:
+                    from datetime import datetime as _dt
+                    dismissal_date = _dt.strptime(data.extra_fields["dismissal_date"], "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    pass
+            employee.is_archived = True
+            employee.terminated_date = dismissal_date
+            employee.termination_reason = f"Приказ №{order_number} от {data.order_date.strftime('%d.%m.%Y')}"
+            employee.archived_by = "system"
+            await db.flush()
 
         audit_logger.info(
             f"ORDER CREATED: number={order_number}, type={order_type.name}, employee_id={data.employee_id}, employee_name={employee.name}",
@@ -701,6 +735,26 @@ class OrderService:
         if not order:
             raise OrderNotFoundError(order_id)
         await self.order_repo.cancel(db, order_id, user_id)
+
+        # Восстановление сотрудника при отмене приказа об увольнении
+        order_type = order.order_type
+        if not order_type:
+            from sqlalchemy import select as _select
+            from app.models.order_type import OrderType as _OrderType
+            type_result = await db.execute(
+                _select(_OrderType).where(_OrderType.id == order.order_type_id)
+            )
+            order_type = type_result.scalar_one_or_none()
+        if order_type and order_type.code == "dismissal":
+            employee = await self.employee_repo.get_by_id(db, order.employee_id)
+            if employee and employee.is_archived:
+                employee.is_archived = False
+                employee.terminated_date = None
+                employee.termination_reason = None
+                employee.archived_by = None
+                employee.archived_at = None
+                await db.flush()
+
         await db.commit()
         return True
 
@@ -710,6 +764,24 @@ class OrderService:
             raise OrderNotFoundError(order_id)
 
         employee = await self.employee_repo.get_by_id(db, order.employee_id)
+
+        # Восстановление сотрудника при удалении приказа об увольнении
+        order_type_code = order.order_type.code if getattr(order, "order_type", None) else None
+        if not order_type_code:
+            from sqlalchemy import select as _select
+            from app.models.order_type import OrderType as _OrderType
+            type_result = await db.execute(
+                _select(_OrderType.code).where(_OrderType.id == order.order_type_id)
+            )
+            order_type_code = type_result.scalar_one_or_none()
+        if order_type_code == "dismissal" and employee and employee.is_archived:
+            employee.is_archived = False
+            employee.terminated_date = None
+            employee.termination_reason = None
+            employee.archived_by = None
+            employee.archived_at = None
+            await db.flush()
+
         if order.file_path:
             try:
                 storage_path(order.file_path, "ORDERS_PATH").unlink()

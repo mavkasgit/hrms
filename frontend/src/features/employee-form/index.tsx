@@ -362,7 +362,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             <DialogTitle>{isEdit ? "Редактировать сотрудника" : "Новый сотрудник"}</DialogTitle>
             {isEdit && employee && (
               <Badge variant={employee.is_archived ? "warning" : employee.is_deleted ? "destructive" : "success"}>
-                {employee.is_deleted ? "Удалён" : employee.is_archived ? "В архиве" : "Активен"}
+                {employee.is_deleted ? "Удалён" : employee.is_archived ? "Уволен" : "Активен"}
               </Badge>
             )}
           </div>
@@ -603,7 +603,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                     disabled={archiveMutation.isPending}
                   >
                     <Archive className="h-4 w-4 mr-2" />
-                    Уволить (в архив)
+                    Уволить
                   </Button>
                 )}
 
@@ -651,7 +651,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         <AlertDialogHeader>
           <AlertDialogTitle>Уволить сотрудника?</AlertDialogTitle>
           <AlertDialogDescription>
-            Сотрудник {employee?.name} будет перемещён в архив. Вы сможете восстановить его позже.
+            Сотрудник {employee?.name} будет уволен. Вы сможете восстановить его позже.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

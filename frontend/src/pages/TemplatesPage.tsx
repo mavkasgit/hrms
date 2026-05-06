@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Copy, Download, Eye, FilePen, FileUp, Plus, Trash2, Upload } from "lucide-react"
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Copy, Eye, FileUp, Plus } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
@@ -23,7 +23,6 @@ import {
 } from "@/shared/ui/dialog"
 import {
   useAllOrderTypes,
-  useUpdateOrderType,
   useDeleteOrderType,
   useDeleteTemplate,
   useTemplateVariables,
@@ -40,7 +39,6 @@ export function TemplatesPage() {
   const deleteMutation = useDeleteOrderType()
   const uploadMutation = useUploadTemplate()
   const deleteTemplateMutation = useDeleteTemplate()
-  const updateMutation = useUpdateOrderType()
   const [importOpen, setImportOpen] = useState(false)
   const [deleteTemplateDialog, setDeleteTemplateDialog] = useState<{ open: boolean; orderTypeId: number | null }>({ open: false, orderTypeId: null })
   const [deleteTypeDialog, setDeleteTypeDialog] = useState<{ open: boolean; orderType: OrderType | null }>({ open: false, orderType: null })
@@ -83,14 +81,10 @@ export function TemplatesPage() {
     window.open(`/templates/${orderTypeId}/view`, "_blank", "noopener,noreferrer")
   }
 
-  const handleEditTemplate = (orderTypeId: number) => {
-    window.open(`/templates/${orderTypeId}/edit`, "_blank", "noopener,noreferrer")
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/orders")} title="Назад к приказам">
+        <Button variant="ghost" size="icon" onClick={() => window.history.back()} title="Назад">
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <h1 className="text-2xl font-bold">Типы и шаблоны приказов</h1>
@@ -254,83 +248,21 @@ export function TemplatesPage() {
                           <TableCell>{orderType.name}</TableCell>
                           <TableCell className="font-mono text-sm">{orderType.code}</TableCell>
                           <TableCell className="font-mono text-sm">{orderType.letter ?? "—"}</TableCell>
-                          <TableCell>{orderType.show_in_orders_page ? "Общий журнал" : "Только в отпусках"}</TableCell>
+                          <TableCell>{(() => {
+                            const code = orderType.code
+                            if (code === "vacation_unpaid") return "Отпуска за свой счёт"
+                            if (code === "vacation_paid" || code === "vacation_recall" || code === "vacation_postpone" || code === "vacation_extension") return "Трудовые отпуска"
+                            if (code === "weekend_call") return "Вызовы в выходной"
+                            return orderType.show_in_orders_page ? "Общий журнал" : "Отпуска"
+                          })()}</TableCell>
                           <TableCell>{orderType.template_filename || "—"}</TableCell>
                           <TableCell>{orderType.is_active ? "Активен" : "Архив"}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end items-center gap-1">
                               {orderType.template_exists && (
-                                <>
-                                  <Button variant="ghost" size="icon" title="Превью" onClick={(e) => { e.stopPropagation(); openPreview(orderType.id); }}>
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                  <Button variant="ghost" size="icon" title="Редактировать" onClick={(e) => { e.stopPropagation(); handleEditTemplate(orderType.id); }}>
-                                    <FilePen className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    title="Скачать шаблон"
-                                    onClick={(e) => { e.stopPropagation(); window.open(`${import.meta.env.VITE_API_URL || "/api"}/order-types/${orderType.id}/template`, "_blank"); }}
-                                  >
-                                    <Download className="h-4 w-4" />
-                                  </Button>
-                                </>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                title="Загрузить шаблон"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  const input = document.createElement("input")
-                                  input.type = "file"
-                                  input.accept = ".docx"
-                                  input.onchange = (ev) => {
-                                    const file = (ev.target as HTMLInputElement).files?.[0]
-                                    if (file) uploadMutation.mutate({ orderTypeId: orderType.id, file })
-                                  }
-                                  input.click()
-                                }}
-                              >
-                                <Upload className="h-4 w-4" />
-                              </Button>
-                              {orderType.template_exists && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                                  onClick={(e) => { e.stopPropagation(); setDeleteTemplateDialog({ open: true, orderTypeId: orderType.id }); }}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-1" />
-                                  Удалить шаблон
+                                <Button variant="ghost" size="icon" title="Превью" onClick={(e) => { e.stopPropagation(); openPreview(orderType.id); }}>
+                                  <Eye className="h-4 w-4" />
                                 </Button>
-                              )}
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  updateMutation.mutate({
-                                    orderTypeId: orderType.id,
-                                    payload: { show_in_orders_page: !orderType.show_in_orders_page },
-                                  })
-                                }}
-                              >
-                                {orderType.show_in_orders_page ? "Скрыть" : "Показать"}
-                              </Button>
-                              {!["hire", "dismissal", "transfer", "contract_extension", "vacation_paid", "vacation_unpaid", "weekend_call"].includes(orderType.code) ? (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                  onClick={(e) => { e.stopPropagation(); setDeleteTypeDialog({ open: true, orderType: orderType }); }}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-1" />
-                                  Удалить тип
-                                </Button>
-                              ) : (
-                                <span className="text-xs text-muted-foreground px-2">Стандартный</span>
                               )}
                             </div>
                           </TableCell>
@@ -349,7 +281,24 @@ export function TemplatesPage() {
         </div>
       )}
 
-      <OrderTypeForm open={formOpen} onOpenChange={setFormOpen} orderType={editingOrderType} />
+      <OrderTypeForm
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        orderType={editingOrderType}
+        templateExists={editingOrderType?.template_exists}
+        onEditTemplate={(id) => {
+          const ot = orderTypes.find((o) => o.id === id)
+          if (!ot?.template_exists) return
+          window.open(`/templates/${id}/edit`, "_blank", "noopener,noreferrer")
+        }}
+        onDownloadTemplate={(id) => {
+          const ot = orderTypes.find((o) => o.id === id)
+          if (!ot?.template_exists) return
+          window.open(`${import.meta.env.VITE_API_URL || "/api"}/order-types/${id}/template`, "_blank")
+        }}
+        onUploadTemplate={(id, file) => uploadMutation.mutate({ orderTypeId: id, file })}
+        onDeleteTemplate={(id) => setDeleteTemplateDialog({ open: true, orderTypeId: id })}
+      />
 
       {/* Диалог подтверждения удаления шаблона */}
       <Dialog open={deleteTemplateDialog.open} onOpenChange={(open) => setDeleteTemplateDialog({ open, orderTypeId: open ? deleteTemplateDialog.orderTypeId : null })}>
