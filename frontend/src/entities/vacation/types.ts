@@ -127,6 +127,7 @@ export interface VacationRecallResponse {
   start_date: string
   end_date: string
   days_count: number
+  old_days_count: number | null
   order_id: number | null
   order_number: string | null
   recall_order_id: number | null

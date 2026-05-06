@@ -4,7 +4,10 @@ import { DashboardPage } from "@/pages/DashboardPage"
 import { EmployeesPage } from "@/pages/EmployeesPage"
 import { StructurePage } from "@/pages/StructurePage"
 import { OrdersPage } from "@/pages/OrdersPage"
-import { VacationsPage } from "@/pages/VacationsPage"
+import { VacationsPage } from "@/pages/vacations/VacationsPage"
+import { VacationRecallPage } from "@/pages/vacations/VacationRecallPage"
+import { VacationPostponePage } from "@/pages/vacations/VacationPostponePage"
+import { VacationExtensionPage } from "@/pages/vacations/VacationExtensionPage"
 import { UnpaidLeavesPage } from "@/pages/UnpaidLeavesPage"
 import { WeekendCallsPage } from "@/pages/WeekendCallsPage"
 import { SickLeavesPage } from "@/pages/SickLeavesPage"
@@ -30,6 +33,9 @@ export const router = createBrowserRouter([
       { path: "structure", element: <StructurePage /> },
       { path: "orders", element: <OrdersPage /> },
       { path: "vacations", element: <VacationsPage /> },
+      { path: "vacations/recall", element: <VacationRecallPage /> },
+      { path: "vacations/postpone", element: <VacationPostponePage /> },
+      { path: "vacations/extension", element: <VacationExtensionPage /> },
       { path: "unpaid-leaves", element: <UnpaidLeavesPage /> },
       { path: "weekend-calls", element: <WeekendCallsPage /> },
       { path: "sick-leaves", element: <SickLeavesPage /> },

@@ -8,6 +8,12 @@ export interface VacationPeriodVacation {
   order_number?: string | null
   comment?: string | null
   is_cancelled: boolean
+  is_recalled?: boolean
+  recall_date?: string | null
+  recall_order_id?: number | null
+  recall_order_number?: string | null
+  original_days?: number | null
+  actual_days?: number | null
 }
 
 export interface VacationPeriodTransaction {
