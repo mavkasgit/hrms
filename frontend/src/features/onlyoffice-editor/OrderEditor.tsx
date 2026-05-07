@@ -32,6 +32,15 @@ interface OrderEditorProps {
   title?: string
 }
 
+function extractUiErrorMessage(error: unknown): string | null {
+  if (!error || typeof error !== "object") return null
+  const errorObj = error as {
+    message?: string
+    response?: { data?: { detail?: string; message?: string } }
+  }
+  return errorObj.response?.data?.detail || errorObj.response?.data?.message || errorObj.message || null
+}
+
 export function OrderEditor({ config, isLoading, error, title }: OrderEditorProps) {
   const editorInstanceRef = useRef<any>(null)
   const editorIdRef = useRef(`onlyoffice-editor-${Math.random().toString(36).slice(2)}`)
@@ -42,7 +51,8 @@ export function OrderEditor({ config, isLoading, error, title }: OrderEditorProp
     let cancelled = false
     setScriptError(null)
 
-    const scriptUrl = `${config.documentServerUrl.replace(/\/$/, "")}/web-apps/apps/api/documents/api.js`
+    const serverBase = config.documentServerUrl
+    const scriptUrl = `${serverBase.replace(/\/$/, "")}/web-apps/apps/api/documents/api.js`
     loadOnlyOfficeScript(scriptUrl)
       .then(() => {
         if (cancelled) return
@@ -74,7 +84,7 @@ export function OrderEditor({ config, isLoading, error, title }: OrderEditorProp
     )
   }
 
-  const message = scriptError || error?.message
+  const message = scriptError || extractUiErrorMessage(error)
   if (message) {
     return (
       <Alert variant="destructive">

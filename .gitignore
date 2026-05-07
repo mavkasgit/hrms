@@ -6,9 +6,6 @@ repomix-output.txt
 # Environment files
 .env
 .env.local
-.env.dev
-.env.test
-.env.prod
 *.env
 
 # Python

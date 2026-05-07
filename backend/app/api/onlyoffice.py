@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any
 from datetime import date
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -37,7 +38,34 @@ def _ensure_onlyoffice_enabled() -> None:
 
 
 def _public_api_url(path: str) -> str:
+    # APP_PUBLIC_URL is backend base URL reachable by ONLYOFFICE
+    # (e.g. http://backend:8000 in Docker test/prod, http://host.docker.internal:8000 in local dev).
+    # Add /api prefix for backend routes.
     return f"{settings.APP_PUBLIC_URL.rstrip('/')}/api{path}"
+
+
+def _is_loopback_host(hostname: str | None) -> bool:
+    return hostname in {"localhost", "127.0.0.1", "::1"}
+
+
+def _request_origin(request: Request) -> str:
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto}://{host}".rstrip("/")
+
+
+def _document_server_url(request: Request) -> str:
+    configured = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
+    if not configured:
+        return _request_origin(request)
+    try:
+        configured_host = urlparse(configured).hostname
+    except Exception:
+        return configured
+    request_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.hostname or "").split(":")[0]
+    if _is_loopback_host(configured_host) and request_host and not _is_loopback_host(request_host):
+        return _request_origin(request)
+    return configured
 
 
 def _extract_callback_token(request: Request, body: dict[str, Any]) -> str | None:
@@ -68,6 +96,7 @@ def _file_response(file_path: Path) -> FileResponse:
 @router.get("/orders/{order_id}/onlyoffice/config")
 async def order_onlyoffice_config(
     order_id: int,
+    request: Request,
     mode: str = Query("edit", pattern="^(edit|view)$"),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
@@ -89,7 +118,7 @@ async def order_onlyoffice_config(
         file_url=_public_api_url(f"/orders/{order_id}/onlyoffice/file"),
         mode=mode,
     )
-    config["documentServerUrl"] = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
+    config["documentServerUrl"] = _document_server_url(request)
     return config
 
 
@@ -190,6 +219,7 @@ async def _normalize_vacation_draft_fields(db: AsyncSession, data: OrderCreate, 
 @router.get("/orders/drafts/{draft_id}/onlyoffice/config")
 async def draft_onlyoffice_config(
     draft_id: str,
+    request: Request,
     current_user: str = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
@@ -202,7 +232,7 @@ async def draft_onlyoffice_config(
         callback_url=_public_api_url(f"/orders/drafts/{draft_id}/onlyoffice/callback"),
         file_url=_public_api_url(f"/orders/drafts/{draft_id}/file"),
     )
-    config["documentServerUrl"] = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
+    config["documentServerUrl"] = _document_server_url(request)
     return config
 
 
@@ -269,6 +299,7 @@ async def delete_order_draft(
 @router.get("/order-types/{order_type_id}/onlyoffice/config")
 async def template_onlyoffice_config(
     order_type_id: int,
+    request: Request,
     mode: str = Query("edit", pattern="^(edit|view)$"),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
@@ -290,7 +321,7 @@ async def template_onlyoffice_config(
         file_url=_public_api_url(f"/order-types/{order_type_id}/onlyoffice/file"),
         mode=mode,
     )
-    config["documentServerUrl"] = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
+    config["documentServerUrl"] = _document_server_url(request)
     return config
 
 

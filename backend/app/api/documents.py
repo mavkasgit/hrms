@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query, Request, UploadFile, File
 from fastapi.responses import FileResponse, JSONResponse
@@ -27,7 +28,34 @@ def _get_current_user_stub() -> str:
 
 
 def _public_api_url(path: str) -> str:
+    # APP_PUBLIC_URL is backend base URL reachable by ONLYOFFICE
+    # (e.g. http://backend:8000 in Docker test/prod, http://host.docker.internal:8000 in local dev).
+    # Add /api prefix for backend routes.
     return f"{settings.APP_PUBLIC_URL.rstrip('/')}/api{path}"
+
+
+def _is_loopback_host(hostname: str | None) -> bool:
+    return hostname in {"localhost", "127.0.0.1", "::1"}
+
+
+def _request_origin(request: Request) -> str:
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto}://{host}".rstrip("/")
+
+
+def _document_server_url(request: Request) -> str:
+    configured = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
+    if not configured:
+        return _request_origin(request)
+    try:
+        configured_host = urlparse(configured).hostname
+    except Exception:
+        return configured
+    request_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.hostname or "").split(":")[0]
+    if _is_loopback_host(configured_host) and request_host and not _is_loopback_host(request_host):
+        return _request_origin(request)
+    return configured
 
 
 def _documents_dir(doc_code: str) -> Path:
@@ -173,6 +201,7 @@ async def upload_document(
 async def document_onlyoffice_config(
     doc_code: str,
     doc_id: int,
+    request: Request,
     mode: str = Query("view", pattern="^(edit|view)$"),
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
@@ -200,7 +229,7 @@ async def document_onlyoffice_config(
         file_url=_public_api_url(f"/documents/{doc_code}/{doc_id}/file"),
         mode=mode,
     )
-    config["documentServerUrl"] = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
+    config["documentServerUrl"] = _document_server_url(request)
     return config
 
 
