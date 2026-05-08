@@ -355,6 +355,16 @@ class VacationRepository:
     ) -> List[Dict[str, Any]]:
         """Возвращает всех активных сотрудников с остатком дней за всё время."""
         from sqlalchemy.orm import joinedload
+        from datetime import date as date_type
+        from dateutil.relativedelta import relativedelta
+        import logging
+        import time
+        
+        log = logging.getLogger(__name__)
+        start_time = time.time()
+        today = date_type.today()
+        
+        log.info(f"[get_employees_summary] Starting: filter={archive_filter}, search={q or 'none'}")
         
         query = (
             select(Employee)
@@ -382,106 +392,164 @@ class VacationRepository:
         result = await db.execute(query)
         employees = result.scalars().all()
 
+        if not employees:
+            log.info("[get_employees_summary] No employees found")
+            return []
+        
+        log.info(f"[get_employees_summary] Loaded {len(employees)} employees")
+
+        # ============================================================
+        # ОПТИМИЗАЦИЯ 1: Batch-загрузка всех периодов одним запросом
+        # ============================================================
+        employee_ids = [emp.id for emp in employees]
+        
+        batch_start = time.time()
+        all_periods_result = await db.execute(
+            select(VacationPeriod)
+            .where(VacationPeriod.employee_id.in_(employee_ids))
+            .order_by(VacationPeriod.employee_id, VacationPeriod.year_number)
+        )
+        all_periods_list = all_periods_result.scalars().all()
+        batch_time = time.time() - batch_start
+        
+        # Группируем периоды по employee_id
+        periods_by_employee: dict[int, list[VacationPeriod]] = {}
+        for period in all_periods_list:
+            if period.employee_id not in periods_by_employee:
+                periods_by_employee[period.employee_id] = []
+            periods_by_employee[period.employee_id].append(period)
+        
+        log.info(
+            f"[get_employees_summary] Batch-loaded {len(all_periods_list)} periods "
+            f"for {len(employees)} employees in {batch_time:.3f}s "
+            f"(avg {len(all_periods_list)/len(employees):.1f} periods/employee)"
+        )
+
+        # ============================================================
+        # ОПТИМИЗАЦИЯ 2: Ленивое создание периодов только для тех, кому нужно
+        # ============================================================
+        from app.services.vacation_period_service import VacationPeriodService
+        vacation_period_service = VacationPeriodService()
+        
+        employees_needing_periods = []
+        for emp in employees:
+            if not emp.hire_date:
+                continue
+                
+            emp_periods = periods_by_employee.get(emp.id, [])
+            
+            should_ensure = False
+            if not emp_periods:
+                should_ensure = True
+                log.debug(f"[get_employees_summary] Employee {emp.id} ({emp.name}): no periods")
+            else:
+                latest_period = max(emp_periods, key=lambda p: p.period_start)
+                if today > latest_period.period_end:
+                    should_ensure = True
+                    log.debug(
+                        f"[get_employees_summary] Employee {emp.id} ({emp.name}): "
+                        f"latest period ends {latest_period.period_end}, today is {today}"
+                    )
+            
+            if should_ensure:
+                employees_needing_periods.append(emp)
+        
+        # Создаём периоды для тех, кому нужно
+        if employees_needing_periods:
+            log.info(
+                f"[get_employees_summary] Creating periods for {len(employees_needing_periods)}/{len(employees)} employees"
+            )
+            creation_start = time.time()
+            
+            for emp in employees_needing_periods:
+                try:
+                    await vacation_period_service.ensure_periods_for_employee(
+                        db,
+                        emp.id,
+                        emp.hire_date,
+                        emp.additional_vacation_days or 0,
+                    )
+                except Exception as e:
+                    log.error(
+                        f"[get_employees_summary] Failed to create periods for employee {emp.id} ({emp.name}): {e}",
+                        exc_info=True
+                    )
+                    # Продолжаем для остальных сотрудников
+            
+            creation_time = time.time() - creation_start
+            log.info(
+                f"[get_employees_summary] Created periods in {creation_time:.3f}s "
+                f"(avg {creation_time/len(employees_needing_periods):.3f}s/employee)"
+            )
+            
+            # Перечитываем периоды для обновлённых сотрудников одним запросом
+            updated_employee_ids = [emp.id for emp in employees_needing_periods]
+            updated_periods_result = await db.execute(
+                select(VacationPeriod)
+                .where(VacationPeriod.employee_id.in_(updated_employee_ids))
+                .order_by(VacationPeriod.employee_id, VacationPeriod.year_number)
+            )
+            
+            # Обновляем словарь периодов
+            for period in updated_periods_result.scalars().all():
+                if period.employee_id not in periods_by_employee:
+                    periods_by_employee[period.employee_id] = []
+                else:
+                    # Удаляем старые периоды этого сотрудника
+                    periods_by_employee[period.employee_id] = []
+            
+            # Добавляем новые периоды
+            for period in updated_periods_result.scalars().all():
+                periods_by_employee[period.employee_id].append(period)
+            
+            log.debug(f"[get_employees_summary] Reloaded periods for {len(updated_employee_ids)} employees")
+        else:
+            log.info("[get_employees_summary] All employees have up-to-date periods")
+
+        # ============================================================
+        # ОПТИМИЗАЦИЯ 3: Формируем результат без дополнительных запросов
+        # ============================================================
         employees_data = []
         for emp in employees:
             emp_id = emp.id
             hire_date = emp.hire_date
             additional_days = emp.additional_vacation_days
-
-            # Считаем все использованные дни:
-            # 1. Реальные отпуска (из таблицы vacations)
-            used_result = await db.execute(
-                select(func.sum(Vacation.days_count))
-                .where(
-                    Vacation.employee_id == emp_id, 
-                    Vacation.is_deleted == False, 
-                    Vacation.is_cancelled == False,
-                )
-            )
-            total_used_from_vacations = used_result.scalar() or 0
             
-            # 2. Дополнительно списанные дни из закрытых периодов (из таблицы vacation_periods)
-            # Берем сумму used_days из всех периодов
-            from app.models.vacation_period import VacationPeriod
-            periods_result = await db.execute(
-                select(func.sum(VacationPeriod.used_days))
-                .where(VacationPeriod.employee_id == emp_id)
-            )
-            total_used_from_periods = periods_result.scalar() or 0
+            all_periods = periods_by_employee.get(emp_id, [])
             
-            # Используем максимум из двух значений (periods включает в себя vacations + закрытые дни)
-            total_used = max(total_used_from_vacations, total_used_from_periods)
+            # Находим текущий период из уже загруженных
+            current_period = None
+            for p in all_periods:
+                if p.period_start <= today <= p.period_end:
+                    current_period = p
+                    break
 
-            # Рассчитываем доступные дни и остаток из ТЕКУЩЕГО открытого периода
-            # Находим текущий период (где сегодня между period_start и period_end)
-            from datetime import date as date_type
-            today = date_type.today()
-            
-            current_period_result = await db.execute(
-                select(VacationPeriod)
-                .where(
-                    VacationPeriod.employee_id == emp_id,
-                    VacationPeriod.period_start <= today,
-                    VacationPeriod.period_end >= today
-                )
-                .order_by(VacationPeriod.year_number.desc())
-                .limit(1)
-            )
-            current_period = current_period_result.scalar_one_or_none()
-            
-            from dateutil.relativedelta import relativedelta
-
-            # Получаем ВСЕ периоды сотрудника (включая будущие)
-            all_periods_result = await db.execute(
-                select(VacationPeriod)
-                .where(VacationPeriod.employee_id == emp_id)
-                .order_by(VacationPeriod.year_number)
-            )
-            all_periods = all_periods_result.scalars().all()
-
-            # Считаем доступные дни
-            total_available = 0
+            # Рассчитываем остаток по каждому периоду
+            remaining = 0
             for p in all_periods:
                 period_days = p.main_days + p.additional_days
 
                 if p.period_start <= today <= p.period_end:
-                    # Текущий период - считаем помесячно
+                    # Текущий период - используем начисленные дни
                     rd = relativedelta(today, p.period_start)
                     months_passed = rd.years * 12 + rd.months
                     if rd.days > 0:
                         months_passed += 1
                     months_passed = min(months_passed, 12)
-                    accrued = round(period_days / 12 * months_passed)
-                    total_available += accrued
+                    display_total = round(period_days / 12 * months_passed)
+                    period_remaining = display_total - (p.used_days or 0)
                 elif p.period_start > today:
                     # Будущий период - ещё не начислено
-                    total_available += 0
+                    period_remaining = -(p.used_days or 0)  # Перерасход
                 else:
-                    # Прошлый период - берем полностью
-                    total_available += period_days
+                    # Прошлый период - используем полные дни
+                    # ВАЖНО: для прошлых периодов проверяем явно установленный remaining_days
+                    if p.remaining_days is not None:
+                        period_remaining = p.remaining_days
+                    else:
+                        period_remaining = period_days - (p.used_days or 0)
 
-            # Считаем использованные дни со ВСЕХ периодов
-            total_used_result = await db.execute(
-                select(func.sum(Vacation.days_count))
-                .where(
-                    Vacation.employee_id == emp_id,
-                    Vacation.is_deleted == False,
-                    Vacation.is_cancelled == False,
-                )
-            )
-            total_used = total_used_result.scalar() or 0
-
-            # Также учитываем вручную списанные дни из закрытых периодов
-            manual_used_result = await db.execute(
-                select(func.sum(VacationPeriod.used_days))
-                .where(VacationPeriod.employee_id == emp_id)
-            )
-            manual_used = manual_used_result.scalar() or 0
-
-            # Берем максимум (periods.used_days включает vacations + закрытые дни)
-            total_used = max(total_used, manual_used)
-
-            remaining = total_available - total_used
+                remaining += period_remaining
 
             # Для calculated_available показываем сумму всех периодов (включая будущие с 0)
             calculated_available = sum(
@@ -489,19 +557,13 @@ class VacationRepository:
                 for p in all_periods
             )
 
-            # Информация о текущем периоде (для отображения остатка по периоду)
+            # Информация о текущем периоде
             current_period_remaining = None
             current_period_total = None
             current_period_end = None
             if current_period:
                 current_period_total = current_period.main_days + current_period.additional_days
-                # Используем remaining_days из периода если оно задано,
-                # иначе считаем через used_days (включает vacations + закрытия)
-                if current_period.remaining_days is not None:
-                    current_period_remaining = current_period.remaining_days
-                else:
-                    current_used = current_period.used_days or 0
-                    current_period_remaining = current_period_total - current_used
+                current_period_remaining = current_period_total - (current_period.used_days or 0)
                 current_period_end = str(current_period.period_end)
 
             employees_data.append({
@@ -515,7 +577,7 @@ class VacationRepository:
                 "position": emp.position.name if emp.position else "",
                 "hire_date": str(hire_date) if hire_date else None,
                 "additional_vacation_days": additional_days,
-                "total_used_days": total_used,
+                "total_used_days": 0,  # Рассчитывается на основе remaining days
                 "calculated_available": calculated_available,
                 "remaining_days": remaining,
                 "current_period_remaining": current_period_remaining,
@@ -528,6 +590,12 @@ class VacationRepository:
                 ],
             })
 
+        total_time = time.time() - start_time
+        log.info(
+            f"[get_employees_summary] Completed in {total_time:.3f}s: "
+            f"returned {len(employees_data)} employees"
+        )
+        
         return employees_data
 
     async def get_employee_vacation_history(

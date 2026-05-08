@@ -150,3 +150,19 @@ async def partial_close_period(
 ):
     remaining_days = data.get("remaining_days", 0)
     return await vacation_period_service.partial_close_period(db, period_id, remaining_days)
+
+
+@router.delete("/transactions/{transaction_id}", response_model=VacationPeriodBalance)
+async def cancel_manual_closure_transaction(
+    transaction_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    from app.repositories.vacation_period_repository import VacationPeriodRepository
+
+    repo = VacationPeriodRepository()
+    period_id = await repo.delete_manual_closure_transaction(db, transaction_id)
+    if period_id is None:
+        raise HTTPException(status_code=404, detail="Транзакция не найдена или не является ручным закрытием")
+
+    return await vacation_period_service.get_balance(db, period_id)

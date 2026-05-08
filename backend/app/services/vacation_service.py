@@ -364,7 +364,8 @@ class VacationService:
 
         recreated_order = None
         if existing_order:
-            await order_service.hard_delete_order(db, existing_order.id)
+            # Сначала создаём новый приказ, затем обновляем order_id у отпуска,
+            # и только потом удаляем старый приказ — чтобы CASCADE не удалил отпуск
             recreated_order = await self._create_linked_order(
                 db,
                 updated.employee_id,
@@ -379,6 +380,7 @@ class VacationService:
                 updated.days_count,
             )
             updated = await vacation_repository.update(db, id, {"order_id": recreated_order.id})
+            await order_service.hard_delete_order(db, existing_order.id)
 
         await db.commit()
 
@@ -425,13 +427,15 @@ class VacationService:
         employee_repo = EmployeeRepository()
         employee = await employee_repo.get_by_id(db, vacation.employee_id)
 
-        await vacation_repository.hard_delete(db, id)
-
+        # Если отпуск связан с приказом — делегируем удаление приказа
+        # hard_delete_order сам удалит все связанные отпуска и пересчитает периоды
         if vacation.order_id:
             await order_service.hard_delete_order(db, vacation.order_id)
-
-        # Полностью пересчитываем периоды после удаления отпуска
-        await vacation_period_service.recalculate_periods(db, vacation.employee_id)
+        else:
+            # Удаляем только отпуск и пересчитываем периоды
+            await vacation_repository.hard_delete(db, id)
+            await vacation_period_service.recalculate_periods(db, vacation.employee_id)
+            await db.commit()
 
         audit_logger.info(
             f"VACATION DELETED: id={id}, employee_id={vacation.employee_id}, "

@@ -15,6 +15,7 @@ import type {
   VacationPostponeResponse,
   VacationExtensionRequest,
   VacationExtensionResponse,
+  VacationDeletionPreview,
 } from "./types"
 
 export async function getVacations(params: {
@@ -43,6 +44,11 @@ export async function updateVacation(id: number, data: VacationUpdate): Promise<
 
 export async function deleteVacation(id: number): Promise<void> {
   await api.delete(`/vacations/${id}`)
+}
+
+export async function getVacationDeletionPreview(id: number): Promise<VacationDeletionPreview> {
+  const response = await api.get(`/vacations/${id}/deletion-preview`)
+  return response.data
 }
 
 export async function getVacationBalance(employeeId: number, year?: number): Promise<VacationBalance> {

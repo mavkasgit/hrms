@@ -12,6 +12,7 @@ import type {
   OrderTypeUpdate,
   TemplateVariablesResponse,
   OrderUpdate,
+  OrderDeletionPreview,
 } from "./types"
 
 export async function fetchOrders(params: OrdersQueryParams) {
@@ -139,5 +140,10 @@ export async function cancelOrder(orderId: number): Promise<{ message: string }>
 
 export async function deleteOrder(orderId: number): Promise<{ message: string }> {
   const { data } = await api.delete(`/orders/${orderId}`)
+  return data
+}
+
+export async function getOrderDeletionPreview(orderId: number): Promise<OrderDeletionPreview> {
+  const { data } = await api.get(`/orders/${orderId}/deletion-preview`)
   return data
 }

@@ -37,8 +37,9 @@ import {
   useVacationEmployeesSummary,
   useEmployeeVacationHistory,
   useHolidays,
+  useVacationDeletionPreview,
 } from "@/entities/vacation"
-import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods } from "@/entities/vacation-period"
+import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, useCancelTransaction } from "@/entities/vacation-period"
 import { VacationPeriodVacationRow } from "@/entities/vacation-period/ui/VacationPeriodVacationRow"
 import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
 import { useUpdateEmployee } from "@/entities/employee/useEmployees"
@@ -125,6 +126,46 @@ interface EmployeeHistoryRowProps {
   closingPeriodId: number | null
   setClosingPeriodId: (id: number | null) => void
   recalculatePeriodsMutation: any
+  partialCloseTotalDays: number
+  setPartialCloseTotalDays: (value: number) => void
+  partialCloseCurrentRemaining: number
+  setPartialCloseCurrentRemaining: (value: number) => void
+  partialCloseError: string
+  setPartialCloseError: (value: string) => void
+  closeError: string | null
+  setCloseError: (value: string | null) => void
+}
+
+function DeletePreviewContent({ vacationId }: { vacationId: number | null }) {
+  const { data: preview, isLoading } = useVacationDeletionPreview(vacationId)
+
+  if (isLoading || !preview) {
+    return <div className="text-sm text-muted-foreground">Загрузка...</div>
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-sm">
+        <span className="text-muted-foreground">Отпуск:</span> {preview.employee_name}
+      </div>
+      <div className="text-sm">
+        <span className="text-muted-foreground">Период:</span> {preview.start_date} — {preview.end_date} ({preview.days_count} дн.)
+      </div>
+      {preview.order_number && (
+        <div className="text-sm">
+          <span className="text-muted-foreground">Приказ:</span> {preview.order_number}
+        </div>
+      )}
+      {preview.warnings.length > 0 && (
+        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-md space-y-1">
+          <div className="text-sm font-medium text-amber-800">⚠ Будут удалены связанные данные:</div>
+          {preview.warnings.map((w, i) => (
+            <div key={i} className="text-sm text-amber-700">• {w}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function EmployeeHistoryRow({ 
@@ -139,6 +180,14 @@ function EmployeeHistoryRow({
   closingPeriodId,
   setClosingPeriodId,
   recalculatePeriodsMutation,
+  partialCloseTotalDays,
+  setPartialCloseTotalDays,
+  partialCloseCurrentRemaining,
+  setPartialCloseCurrentRemaining,
+  partialCloseError,
+  setPartialCloseError,
+  closeError,
+  setCloseError,
 }: EmployeeHistoryRowProps) {
   const { data: history, isLoading } = useEmployeeVacationHistory(employeeId)
   const { data: periodsRaw } = useVacationPeriods(employeeId)
@@ -152,6 +201,8 @@ function EmployeeHistoryRow({
   const [showClosedPeriods, setShowClosedPeriods] = useState(false)
   const [recalculateAlertOpen, setRecalculateAlertOpen] = useState(false)
   const [isRecalculating, setIsRecalculating] = useState(false)
+  const [cancelTxId, setCancelTxId] = useState<number | null>(null)
+  const cancelTransactionMutation = useCancelTransaction()
 
   // Определяем, есть ли открытые периоды (до early return для соблюдения Rules of Hooks)
   const hasOpenPeriods = periods.filter(p => p.remaining_days > 0).length > 0
@@ -324,19 +375,36 @@ function EmployeeHistoryRow({
                           if (pa !== pb) return pa - pb
                           return a.id - b.id
                         })
-                        .map((tx, txIndex) => (
-                        <div key={tx.id} className="text-[11px] leading-tight">
+                        .map((tx, txIndex) => {
+                          const isManualClosure = tx.transaction_type === "manual_close" || tx.transaction_type === "partial_close"
+                          const isRestored = tx.source_type === "manual_closure_rebuild"
+                          return (
+                        <div key={tx.id} className={`text-[11px] leading-tight group/tx ${isRestored ? "text-amber-600 dark:text-amber-400" : ""}`}>
                           <span className="text-muted-foreground mr-1">{txIndex + 1}.</span>
                           <span className="font-medium">{formatTransactionType(tx.transaction_type)}</span>
+                          {isRestored && <span className="ml-1 text-[10px]">(восстановлено)</span>}
                           {tx.order_number && (
                             <span className="text-muted-foreground"> по приказу №{tx.order_number}</span>
                           )}
-                          <span className="tabular-nums"> — {tx.days_count > 0 ? `+${tx.days_count}` : tx.days_count} дн.</span>
+                          <span className="tabular-nums">—{tx.days_count} дн.</span>
                           {tx.created_at && (
                             <span className="text-muted-foreground ml-1">({formatDateTime(tx.created_at)})</span>
                           )}
+                          {isManualClosure && (
+                            <button
+                              onClick={() => setCancelTxId(tx.id)}
+                              className="ml-1 text-red-400 hover:text-red-600 opacity-0 group-hover/tx:opacity-100 transition-opacity"
+                              title="Отменить закрытие"
+                            >
+                              <X className="h-3 w-3 inline" />
+                            </button>
+                          )}
+                          {isManualClosure && tx.description && (
+                            <div className="text-[10px] text-muted-foreground ml-4">{tx.description}</div>
+                          )}
                         </div>
-                      ))}
+                          )
+                        })}
                     </div>
                   ) : (
                     <span className="text-[11px] text-muted-foreground">Нет операций</span>
@@ -345,73 +413,64 @@ function EmployeeHistoryRow({
                 </div>
               </div>
               {/* Кнопки управления периодом */}
-              {
-                <>
-                  {isClosed ? (
-                    <div className="flex gap-1 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 text-[10px] px-2 whitespace-nowrap"
-                        onClick={() => {
-                          setPartialClosePeriodId(p.period_id)
-                          setPartialCloseRemaining(String(p.remaining_days))
-                        }}
-                      >
-                        Восстановить период
-</Button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-1 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 text-[10px] px-2 whitespace-nowrap"
-                        disabled={closingPeriodId === p.period_id}
-                        onClick={() => {
-                          setClosingPeriodId(p.period_id)
-                          closePeriodMutation.mutate(p.period_id, {
-                            onSuccess: () => {
-                              // Задержка 1 сек чтобы успеть увидеть анимацию
-                              setTimeout(() => {
-                                setClosingPeriodId(null)
-                                setSuccessMessage("Период полностью закрыт")
-                                setTimeout(() => setSuccessMessage(null), 3000)
-                              }, 1000)
-                            },
-                            onError: () => {
-                              setClosingPeriodId(null)
-                            }
-                          })
-                        }}
-                      >
-                        {closingPeriodId === p.period_id ? (
-                          <span className="flex items-center gap-1">
-                            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                            </svg>
-                            <span>Закрытие...</span>
-                          </span>
-                        ) : (
-                          "Закрыть период"
-                        )}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 text-[10px] px-2 whitespace-nowrap"
-                        onClick={() => {
-                          setPartialClosePeriodId(p.period_id)
-                          setPartialCloseRemaining(String(p.remaining_days))
-                        }}
-                      >
-                        Частично закрыть
-                      </Button>
-                    </div>
+              {!isClosed && (
+                <div className="flex gap-1 shrink-0">
+                  {closeError && (
+                    <span className="text-[10px] text-red-500">{closeError}</span>
                   )}
-                </>
-              }
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-[10px] px-2 whitespace-nowrap"
+                    disabled={closingPeriodId === p.period_id}
+                    onClick={() => {
+                      setClosingPeriodId(p.period_id)
+                      closePeriodMutation.mutate(p.period_id, {
+                        onSuccess: () => {
+                          setTimeout(() => {
+                            setClosingPeriodId(null)
+                            setCloseError(null)
+                            setSuccessMessage("Период полностью закрыт")
+                            setTimeout(() => setSuccessMessage(null), 3000)
+                          }, 1000)
+                        },
+                        onError: (err: any) => {
+                          setClosingPeriodId(null)
+                          const detail = err?.response?.data?.detail
+                          setCloseError(typeof detail === "string" ? detail : "Ошибка при закрытии периода")
+                          setTimeout(() => setCloseError(null), 5000)
+                        }
+                      })
+                    }}
+                  >
+                    {closingPeriodId === p.period_id ? (
+                      <span className="flex items-center gap-1">
+                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        <span>Закрытие...</span>
+                      </span>
+                    ) : (
+                      "Закрыть период"
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-[10px] px-2 whitespace-nowrap"
+                    onClick={() => {
+                      setPartialClosePeriodId(p.period_id)
+                      setPartialCloseTotalDays(p.total_days)
+                      setPartialCloseCurrentRemaining(p.remaining_days)
+                      setPartialCloseRemaining(String(p.remaining_days))
+                      setPartialCloseError("")
+                    }}
+                  >
+                    Частично закрыть
+                  </Button>
+                </div>
+              )}
 
             {/* Правая часть — отпуска за период */}
             <div className="basis-[50%] min-w-0 bg-muted/30">
@@ -471,9 +530,7 @@ function EmployeeHistoryRow({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Удалить отпуск безвозвратно?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Отпуск будет удален безвозвратно. Это действие нельзя отменить.
-          </AlertDialogDescription>
+          <DeletePreviewContent vacationId={deleteId} />
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Отмена</AlertDialogCancel>
@@ -516,13 +573,43 @@ function EmployeeHistoryRow({
       </AlertDialogContent>
     </AlertDialog>
 
+    {/* Диалог отмены ручного закрытия */}
+    <AlertDialog open={cancelTxId !== null} onOpenChange={(open) => !open && setCancelTxId(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Отменить ручное закрытие?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Дни будут возвращены в остаток периода.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Отмена</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (cancelTxId) cancelTransactionMutation.mutate(cancelTxId)
+              setCancelTxId(null)
+            }}
+            className="bg-red-600 hover:bg-red-700"
+            autoFocus
+          >
+            Отменить закрытие
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
     {/* Диалог частичного закрытия периода */}
-    <AlertDialog open={partialClosePeriodId !== null} onOpenChange={(open) => !open && setPartialClosePeriodId(null)}>
+    <AlertDialog open={partialClosePeriodId !== null} onOpenChange={(open) => {
+      if (!open) {
+        setPartialClosePeriodId(null)
+        setPartialCloseError("")
+      }
+    }}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Частично закрыть период</AlertDialogTitle>
           <AlertDialogDescription>
-            Укажите сколько дней должно остаться в периоде. Остальные дни будут списаны.
+            Укажите сколько дней должно остаться. Текущий остаток: {partialCloseCurrentRemaining} дн., максимум: {partialCloseTotalDays} дн.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="py-4">
@@ -530,11 +617,15 @@ function EmployeeHistoryRow({
           <Input
             type="number"
             min="0"
+            max={partialCloseTotalDays}
             value={partialCloseRemaining}
-            onChange={(e) => setPartialCloseRemaining(e.target.value)}
+            onChange={(e) => { setPartialCloseRemaining(e.target.value); setPartialCloseError("") }}
             placeholder="Введите количество дней"
             className="mt-2"
           />
+          {partialCloseError && (
+            <p className="text-sm text-red-500 mt-2">{partialCloseError}</p>
+          )}
         </div>
         <AlertDialogFooter>
           <AlertDialogCancel>Отмена</AlertDialogCancel>
@@ -568,8 +659,12 @@ export function VacationsPage() {
   
   // Period management state
   const [partialClosePeriodId, setPartialClosePeriodId] = useState<number | null>(null)
+  const [partialCloseTotalDays, setPartialCloseTotalDays] = useState(0)
+  const [partialCloseCurrentRemaining, setPartialCloseCurrentRemaining] = useState(0)
   const [partialCloseRemaining, setPartialCloseRemaining] = useState("")
+  const [partialCloseError, setPartialCloseError] = useState("")
   const [closingPeriodId, setClosingPeriodId] = useState<number | null>(null)
+  const [closeError, setCloseError] = useState<string | null>(null)
 
   // Print preview state
   const [printOpen, setPrintOpen] = useState(false)
@@ -702,20 +797,45 @@ export function VacationsPage() {
   const handlePartialClosePeriod = () => {
     if (partialClosePeriodId) {
       const remaining = parseInt(partialCloseRemaining, 10)
-      if (!isNaN(remaining) && remaining >= 0) {
-        partialClosePeriodMutation.mutate(
-          { periodId: partialClosePeriodId, remainingDays: remaining },
-          {
-            onSuccess: () => {
-              setSuccessMessage("Период частично закрыт")
-              setTimeout(() => setSuccessMessage(null), 3000)
+      if (isNaN(remaining)) {
+        setPartialCloseError("Введите корректное число")
+        return
+      }
+      if (remaining < 0) {
+        setPartialCloseError("Остаток не может быть отрицательным")
+        return
+      }
+      if (remaining > partialCloseTotalDays) {
+        setPartialCloseError(`Остаток не может превышать ${partialCloseTotalDays} дн.`)
+        return
+      }
+      if (remaining > partialCloseCurrentRemaining) {
+        setPartialCloseError(`Нельзя увеличить остаток (сейчас ${partialCloseCurrentRemaining} дн.). Отмените закрытие через кнопку ✕`)
+        return
+      }
+      partialClosePeriodMutation.mutate(
+        { periodId: partialClosePeriodId, remainingDays: remaining },
+        {
+          onSuccess: () => {
+            setPartialClosePeriodId(null)
+            setPartialCloseError("")
+            setSuccessMessage("Период закрыт")
+            setTimeout(() => setSuccessMessage(null), 3000)
+          },
+          onError: (err: any) => {
+            const detail = err?.response?.data?.detail
+            if (typeof detail === "string") {
+              setPartialCloseError(detail)
+            } else {
+              setPartialCloseError("Ошибка при сохранении")
             }
           }
-        )
-      }
+        }
+      )
     }
     setPartialClosePeriodId(null)
     setPartialCloseRemaining("")
+    setPartialCloseError("")
   }
 
   // --- Main table state ---
@@ -1259,6 +1379,14 @@ export function VacationsPage() {
                             closingPeriodId={closingPeriodId}
                             setClosingPeriodId={setClosingPeriodId}
                             recalculatePeriodsMutation={recalculatePeriodsMutation}
+                            partialCloseTotalDays={partialCloseTotalDays}
+                            setPartialCloseTotalDays={setPartialCloseTotalDays}
+                            partialCloseCurrentRemaining={partialCloseCurrentRemaining}
+                            setPartialCloseCurrentRemaining={setPartialCloseCurrentRemaining}
+                            partialCloseError={partialCloseError}
+                            setPartialCloseError={setPartialCloseError}
+                            closeError={closeError}
+                            setCloseError={setCloseError}
                           />
                         </td>
                       </tr>

@@ -6,6 +6,7 @@ import type {
   VacationRecallRequest,
   VacationPostponeRequest,
   VacationExtensionRequest,
+  VacationDeletionPreview,
 } from "./types"
 
 export function useVacations(params: {
@@ -55,6 +56,14 @@ export function useVacationBalance(employeeId: number, year?: number) {
     queryKey: ["vacation-balance", employeeId, year],
     queryFn: () => api.getVacationBalance(employeeId, year),
     enabled: !!employeeId,
+  })
+}
+
+export function useVacationDeletionPreview(vacationId: number | null) {
+  return useQuery<VacationDeletionPreview>({
+    queryKey: ["vacation-deletion-preview", vacationId],
+    queryFn: () => api.getVacationDeletionPreview(vacationId!),
+    enabled: !!vacationId,
   })
 }
 

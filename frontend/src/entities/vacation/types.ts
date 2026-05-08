@@ -183,3 +183,23 @@ export interface VacationExtensionResponse {
   extension_order_id: number | null
   extension_order_number: string | null
 }
+
+export interface VacationDeletionPreview {
+  vacation_id: number
+  employee_name: string
+  order_number: string | null
+  days_count: number
+  start_date: string
+  end_date: string
+  has_transactions: boolean
+  transaction_count: number
+  has_adjustments: boolean
+  adjustment_count: number
+  has_recall_order: boolean
+  recall_order_number: string | null
+  has_postpone_order: boolean
+  postpone_order_number: string | null
+  has_extension_order: boolean
+  extension_order_number: string | null
+  warnings: string[]
+}

@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from docx import Document
 from docx.shared import RGBColor
+from sqlalchemy import delete as sa_delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -801,13 +802,79 @@ class OrderService:
             employee.archived_at = None
             await db.flush()
 
+        # Удаляем приказ точечно: запоминаем затронутые period_id и после CASCADE
+        # пересчитываем только их по оставшемуся журналу операций.
+        # Важно: не запускаем recalculate_periods, чтобы не перераспределять
+        # все отпуска "с нуля" по другим периодам.
+        from app.services.vacation_period_service import vacation_period_service
+
+        affected_period_ids = await vacation_period_service.get_affected_period_ids_for_order(db, order_id)
+
+        # Чистим зависимые сущности явно, чтобы удаление было устойчивым даже если
+        # каскадные FK ещё не применены в конкретной БД.
+        from app.models.vacation import Vacation
+        from app.models.vacation_adjustment import VacationAdjustment
+        from app.models.vacation_period_manual_closure import VacationPeriodManualClosure
+        from app.models.vacation_period_transaction import VacationPeriodTransaction
+
+        tx_ids_result = await db.execute(
+            select(VacationPeriodTransaction.id).where(
+                or_(
+                    VacationPeriodTransaction.original_order_id == order_id,
+                    VacationPeriodTransaction.adjustment_order_id == order_id,
+                )
+            )
+        )
+        tx_ids = [row[0] for row in tx_ids_result.all()]
+        if tx_ids:
+            await db.execute(
+                update(VacationPeriodTransaction)
+                .where(VacationPeriodTransaction.reversed_transaction_id.in_(tx_ids))
+                .values(reversed_transaction_id=None)
+            )
+            await db.execute(
+                sa_delete(VacationPeriodTransaction).where(VacationPeriodTransaction.id.in_(tx_ids))
+            )
+
+        vacation_ids_result = await db.execute(
+            select(Vacation.id).where(
+                or_(
+                    Vacation.order_id == order_id,
+                    Vacation.recall_order_id == order_id,
+                    Vacation.postpone_order_id == order_id,
+                    Vacation.extension_order_id == order_id,
+                )
+            )
+        )
+        vacation_ids = [row[0] for row in vacation_ids_result.all()]
+        if vacation_ids:
+            await db.execute(
+                update(VacationPeriodTransaction)
+                .where(VacationPeriodTransaction.vacation_id.in_(vacation_ids))
+                .values(vacation_id=None)
+            )
+            await db.execute(sa_delete(Vacation).where(Vacation.id.in_(vacation_ids)))
+
+        await db.execute(
+            sa_delete(VacationAdjustment).where(
+                or_(
+                    VacationAdjustment.original_order_id == order_id,
+                    VacationAdjustment.adjustment_order_id == order_id,
+                )
+            )
+        )
+        await db.execute(sa_delete(VacationPeriodManualClosure).where(VacationPeriodManualClosure.order_id == order_id))
+
+        # Удаляем файл приказа
         if order.file_path:
             try:
                 storage_path(order.file_path, "ORDERS_PATH").unlink()
             except OSError:
                 pass
 
+        # Удаляем приказ — CASCADE удалит связанные отпуска, транзакции и корректировки
         await self.order_repo.hard_delete(db, order_id)
+        await vacation_period_service.recompute_period_totals_by_ids(db, affected_period_ids)
         await db.commit()
 
         audit_logger.info(

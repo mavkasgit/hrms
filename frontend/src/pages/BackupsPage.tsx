@@ -319,7 +319,7 @@ export function BackupsPage() {
     }
   }
 
-  const allSelected = backups && backups.length > 0 && selectedFilenames.size === backups.length
+  const allSelected = Boolean(backups && backups.length > 0 && selectedFilenames.size === backups.length)
 
   return (
     <div className="space-y-6">

@@ -122,3 +122,18 @@ export interface OrderUpdate {
   notes?: string | null
   extra_fields?: Record<string, string | number> | null
 }
+
+export interface OrderDeletionPreview {
+  order_id: number
+  order_number: string
+  order_type_name: string
+  employee_name: string | null
+  order_date: string
+  has_vacations: boolean
+  vacation_count: number
+  has_transactions: boolean
+  transaction_count: number
+  has_adjustments: boolean
+  adjustment_count: number
+  warnings: string[]
+}

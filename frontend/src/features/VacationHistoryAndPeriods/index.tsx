@@ -1,12 +1,22 @@
 import { useState, useEffect, useMemo, Fragment } from "react"
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, X } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { Badge } from "@/shared/ui/badge"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/alert-dialog"
+import {
   useEmployeeVacationHistory,
 } from "@/entities/vacation"
-import { useVacationPeriods, useRecalculateVacationPeriods } from "@/entities/vacation-period"
+import { useVacationPeriods, useRecalculateVacationPeriods, useCancelTransaction } from "@/entities/vacation-period"
 import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
 import { VacationPeriodVacationRow } from "@/entities/vacation-period/ui/VacationPeriodVacationRow"
 
@@ -68,6 +78,8 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
   const [showClosedPeriods, setShowClosedPeriods] = useState(false)
   const [recalculateAlertOpen, setRecalculateAlertOpen] = useState(false)
   const [isRecalculating, setIsRecalculating] = useState(false)
+  const [cancelTxId, setCancelTxId] = useState<number | null>(null)
+  const cancelTransactionMutation = useCancelTransaction()
 
   const hasOpenPeriods = periods.filter(p => p.remaining_days > 0).length > 0
   const hasClosedPeriods = periods.filter(p => p.remaining_days === 0).length > 0
@@ -186,15 +198,32 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
                           if (pa !== pb) return pa - pb
                           return a.id - b.id
                         })
-                        .map((tx, txIndex) => (
-                        <div key={tx.id} className="text-[11px] leading-tight">
+                        .map((tx, txIndex) => {
+                          const isManualClosure = tx.transaction_type === "manual_close" || tx.transaction_type === "partial_close"
+                          const isRestored = tx.source_type === "manual_closure_rebuild"
+                          return (
+                        <div key={tx.id} className={`text-[11px] leading-tight group/tx ${isRestored ? "text-amber-600 dark:text-amber-400" : ""}`}>
                           <span className="text-muted-foreground mr-1">{txIndex + 1}.</span>
                           <span className="font-medium">{formatTransactionType(tx.transaction_type)}</span>
+                          {isRestored && <span className="ml-1 text-[10px]">(восстановлено)</span>}
                           {tx.order_number && <span className="text-muted-foreground"> по приказу №{tx.order_number}</span>}
-                          <span className="tabular-nums"> — {tx.days_count > 0 ? `+${tx.days_count}` : tx.days_count} дн.</span>
+                          <span className="tabular-nums">—{tx.days_count} дн.</span>
                           {tx.created_at && <span className="text-muted-foreground ml-1">({formatDateTime(tx.created_at)})</span>}
+                          {isManualClosure && (
+                            <button
+                              onClick={() => setCancelTxId(tx.id)}
+                              className="ml-1 text-red-400 hover:text-red-600 opacity-0 group-hover/tx:opacity-100 transition-opacity"
+                              title="Отменить закрытие"
+                            >
+                              <X className="h-3 w-3 inline" />
+                            </button>
+                          )}
+                          {isManualClosure && tx.description && (
+                            <div className="text-[10px] text-muted-foreground ml-4">{tx.description}</div>
+                          )}
                         </div>
-                      ))}
+                          )
+                        })}
                     </div>
                   ) : <span className="text-[11px] text-muted-foreground">Нет операций</span>}
                   </div>
@@ -233,6 +262,31 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
           </Fragment>
         )
       })}
+
+      {/** Диалог отмены ручного закрытия */}
+      <AlertDialog open={cancelTxId !== null} onOpenChange={(open) => !open && setCancelTxId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отменить ручное закрытие?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Дни будут возвращены в остаток периода.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (cancelTxId) cancelTransactionMutation.mutate(cancelTxId)
+                setCancelTxId(null)
+              }}
+              className="bg-red-600 hover:bg-red-700"
+              autoFocus
+            >
+              Отменить закрытие
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Диалог пересоздания периодов */}
       {recalculateAlertOpen && (

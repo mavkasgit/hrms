@@ -50,3 +50,10 @@ export async function recalculateVacationPeriods(employeeId: number): Promise<Va
   )
   return data
 }
+
+export async function cancelTransaction(transactionId: number): Promise<VacationPeriod> {
+  const { data } = await api.delete<VacationPeriod>(
+    `/vacation-periods/transactions/${transactionId}`,
+  )
+  return data
+}

@@ -77,6 +77,26 @@ class EmployeeVacationHistory(BaseModel):
     years: list[YearGroup]
 
 
+class VacationDeletionPreview(BaseModel):
+    vacation_id: int
+    employee_name: str
+    order_number: Optional[str]
+    days_count: int
+    start_date: str
+    end_date: str
+    has_transactions: bool
+    transaction_count: int
+    has_adjustments: bool
+    adjustment_count: int
+    has_recall_order: bool
+    recall_order_number: Optional[str]
+    has_postpone_order: bool
+    postpone_order_number: Optional[str]
+    has_extension_order: bool
+    extension_order_number: Optional[str]
+    warnings: list[str] = []
+
+
 def _get_current_user_stub() -> str:
     return "admin"
 
@@ -213,6 +233,94 @@ async def get_vacation(
         "order_id": vacation.order_id,
         "order_number": vacation.order.order_number if getattr(vacation, "order", None) else None,
     }
+
+
+@router.get("/{vacation_id}/deletion-preview", response_model=VacationDeletionPreview)
+async def get_vacation_deletion_preview(
+    vacation_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    from app.core.exceptions import VacationNotFoundError
+    from sqlalchemy import select, func
+    from app.models.vacation_period_transaction import VacationPeriodTransaction
+    from app.models.vacation_adjustment import VacationAdjustment
+
+    vacation = await vacation_repository.get_by_id(db, vacation_id)
+    if not vacation:
+        raise VacationNotFoundError(vacation_id)
+
+    # Считаем транзакции
+    tx_result = await db.execute(
+        select(func.count(VacationPeriodTransaction.id)).where(
+            VacationPeriodTransaction.vacation_id == vacation_id
+        )
+    )
+    tx_count = tx_result.scalar() or 0
+
+    # Считаем adjustments
+    adj_result = await db.execute(
+        select(func.count(VacationAdjustment.id)).where(
+            VacationAdjustment.vacation_id == vacation_id
+        )
+    )
+    adj_count = adj_result.scalar() or 0
+
+    # Проверяем recall order
+    has_recall = vacation.is_recalled and vacation.recall_order_id is not None
+    recall_order_number = None
+    if has_recall and getattr(vacation, "recall_order", None):
+        recall_order_number = vacation.recall_order.order_number
+
+    # Проверяем postpone order
+    has_postpone = vacation.is_postponed and vacation.postpone_order_id is not None
+    postpone_order_number = None
+    if has_postpone and getattr(vacation, "postpone_order", None):
+        postpone_order_number = vacation.postpone_order.order_number
+
+    # Проверяем extension order
+    has_extension = vacation.is_extended and vacation.extension_order_id is not None
+    extension_order_number = None
+    if has_extension and getattr(vacation, "extension_order", None):
+        extension_order_number = vacation.extension_order.order_number
+
+    warnings: list[str] = []
+    if tx_count > 0:
+        warnings.append(f"Будет удалено {tx_count} транзакций в периодах отпусков")
+    if adj_count > 0:
+        warnings.append(f"Будет удалено {adj_count} корректировок отпуска")
+    if has_recall:
+        warnings.append(f"Отпуск был отозван по приказу {recall_order_number} — отзыв будет аннулирован")
+    if has_postpone:
+        warnings.append(f"Отпуск перенесён по приказу {postpone_order_number} — перенос будет аннулирован")
+    if has_extension:
+        warnings.append(f"Отпуск продлён по приказу {extension_order_number} — продление будет аннулировано")
+    if vacation.order_id:
+        order_number = vacation.order.order_number if getattr(vacation, "order", None) else None
+        if order_number:
+            warnings.append(f"Будет удалён приказ {order_number}, связанный с отпуском")
+        else:
+            warnings.append("Будет удалён приказ, связанный с отпуском")
+
+    return VacationDeletionPreview(
+        vacation_id=vacation.id,
+        employee_name=vacation.employee.name if vacation.employee else "Неизвестно",
+        order_number=vacation.order.order_number if getattr(vacation, "order", None) else None,
+        days_count=vacation.days_count,
+        start_date=str(vacation.start_date),
+        end_date=str(vacation.end_date),
+        has_transactions=tx_count > 0,
+        transaction_count=tx_count,
+        has_adjustments=adj_count > 0,
+        adjustment_count=adj_count,
+        has_recall_order=has_recall,
+        recall_order_number=recall_order_number,
+        has_postpone_order=has_postpone,
+        postpone_order_number=postpone_order_number,
+        has_extension_order=has_extension,
+        extension_order_number=extension_order_number,
+        warnings=warnings,
+    )
 
 
 @router.put("/{vacation_id}", response_model=VacationResponse)

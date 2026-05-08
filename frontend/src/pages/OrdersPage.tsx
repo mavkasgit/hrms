@@ -34,6 +34,7 @@ import {
   useCreateOrder,
   useCancelOrder,
   useDeleteOrder,
+  useOrderDeletionPreview,
 } from "@/entities/order/useOrders"
 import { useEmployee } from "@/entities/employee/useEmployees"
 import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
@@ -60,6 +61,38 @@ function useDebounce<T>(value: T, delay: number): T {
     return () => clearTimeout(timer)
   }, [value, delay])
   return debounced
+}
+
+function OrderDeletePreview({ orderId }: { orderId: number | null }) {
+  const { data: preview, isLoading } = useOrderDeletionPreview(orderId)
+
+  if (isLoading || !preview) {
+    return <div className="text-sm text-muted-foreground">Загрузка...</div>
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-sm">
+        <span className="text-muted-foreground">Приказ:</span> {preview.order_number} ({preview.order_type_name})
+      </div>
+      {preview.employee_name && (
+        <div className="text-sm">
+          <span className="text-muted-foreground">Сотрудник:</span> {preview.employee_name}
+        </div>
+      )}
+      <div className="text-sm">
+        <span className="text-muted-foreground">Дата:</span> {preview.order_date}
+      </div>
+      {preview.warnings.length > 0 && (
+        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-md space-y-1">
+          <div className="text-sm font-medium text-amber-800">⚠ Будут удалены связанные данные:</div>
+          {preview.warnings.map((w, i) => (
+            <div key={i} className="text-sm text-amber-700">• {w}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function OrdersPage() {
@@ -737,9 +770,7 @@ export function OrdersPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить приказ безвозвратно?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Файл приказа и связанные отпуска будут удалены безвозвратно. Это действие нельзя отменить.
-            </AlertDialogDescription>
+            <OrderDeletePreview orderId={deleteOrderId} />
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>

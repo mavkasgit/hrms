@@ -7,6 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.vacation_period import VacationPeriod
 from app.models.vacation import Vacation
 from app.models.vacation_period_transaction import VacationPeriodTransaction
+from app.models.vacation_period_manual_closure import VacationPeriodManualClosure
+from app.repositories.vacation_period_manual_closure_repository import (
+    vacation_period_manual_closure_repository,
+)
 
 
 class VacationPeriodRepository:
@@ -138,6 +142,11 @@ class VacationPeriodRepository:
         
         period.used_days = old_used + days
         period.used_days_auto = old_auto + days
+
+        # Если remaining_days был установлен явно (закрытый период), пересчитываем
+        if period.remaining_days is not None:
+            total = (period.main_days or 0) + (period.additional_days or 0)
+            period.remaining_days = max(total - period.used_days, 0)
         
         if order_id:
             # Добавляем order_id в список
@@ -220,6 +229,11 @@ class VacationPeriodRepository:
             if order_id in ids:
                 ids.remove(order_id)
                 period.order_ids = ','.join(map(str, ids)) if ids else None
+
+        # Если remaining_days был установлен явно, пересчитываем
+        if period.remaining_days is not None:
+            total = (period.main_days or 0) + (period.additional_days or 0)
+            period.remaining_days = max(total - period.used_days, 0)
         
         await db.flush()
         await db.refresh(period)
@@ -415,32 +429,28 @@ class VacationPeriodRepository:
         if not period:
             return
 
-        totals_result = await db.execute(
-            select(
-                func.coalesce(func.sum(VacationPeriodTransaction.days_count), 0),
-                func.coalesce(
-                    func.sum(VacationPeriodTransaction.days_count).filter(
-                        VacationPeriodTransaction.transaction_type.in_(
-                            ("manual_close", "partial_close")
-                        )
-                    ),
-                    0,
-                ),
-                func.coalesce(
-                    func.sum(VacationPeriodTransaction.days_count).filter(
-                        ~VacationPeriodTransaction.transaction_type.in_(
-                            ("manual_close", "partial_close")
-                        )
-                    ),
-                    0,
-                ),
-            ).where(VacationPeriodTransaction.period_id == period_id)
+        # Auto транзакции суммируем
+        auto_result = await db.execute(
+            select(func.coalesce(func.sum(VacationPeriodTransaction.days_count), 0)).where(
+                VacationPeriodTransaction.period_id == period_id,
+                ~VacationPeriodTransaction.transaction_type.in_(("manual_close", "partial_close")),
+            )
         )
-        total_used, manual_used, auto_used = totals_result.one()
+        auto_used = int(auto_result.scalar() or 0)
 
-        period.used_days = int(total_used or 0)
-        period.used_days_manual = int(manual_used or 0)
-        period.used_days_auto = int(auto_used or 0)
+        # Для manual/partial_close берём ПОСЛЕДНЮЮ транзакцию (она определяет текущий остаток)
+        manual_result = await db.execute(
+            select(VacationPeriodTransaction).where(
+                VacationPeriodTransaction.period_id == period_id,
+                VacationPeriodTransaction.transaction_type.in_(("manual_close", "partial_close")),
+            ).order_by(VacationPeriodTransaction.created_at.desc(), VacationPeriodTransaction.id.desc()).limit(1)
+        )
+        last_manual = manual_result.scalar_one_or_none()
+        manual_used = last_manual.days_count if last_manual else 0
+
+        period.used_days_auto = auto_used
+        period.used_days_manual = manual_used
+        period.used_days = auto_used + manual_used
 
         total_days = (period.main_days or 0) + (period.additional_days or 0)
         remaining = total_days - period.used_days
@@ -469,3 +479,36 @@ class VacationPeriodRepository:
         period.order_ids = ",".join(order_ids) if order_ids else None
         period.order_numbers = ",".join(order_numbers) if order_numbers else None
         await db.flush()
+
+    async def delete_manual_closure_transaction(self, db: AsyncSession, transaction_id: int) -> int | None:
+        """Удалить транзакцию ручного закрытия и связанное closure. Возвращает period_id."""
+        from sqlalchemy import select as sa_select
+
+        tx = await db.get(VacationPeriodTransaction, transaction_id)
+        if not tx:
+            return None
+
+        if tx.transaction_type not in ("manual_close", "partial_close"):
+            return None
+
+        period_id = tx.period_id
+        closure_id = tx.manual_closure_id
+
+        # Сначала удаляем транзакцию
+        await db.delete(tx)
+        await db.flush()
+
+        # Удаляем closure только если на него больше никто не ссылается
+        if closure_id:
+            ref_count = await db.execute(
+                sa_select(func.count(VacationPeriodTransaction.id)).where(
+                    VacationPeriodTransaction.manual_closure_id == closure_id
+                )
+            )
+            if ref_count.scalar() == 0:
+                await vacation_period_manual_closure_repository.delete_by_id(db, closure_id)
+
+        # Пересчитываем итоги периода
+        await self.recompute_period_totals(db, period_id)
+
+        return period_id

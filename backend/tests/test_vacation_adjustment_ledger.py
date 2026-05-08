@@ -237,3 +237,44 @@ async def test_recalculate_periods_reapplies_manual_closures(db_session, create_
     )
     rebuilt_manual_txs = list(tx_result.scalars().all())
     assert len(rebuilt_manual_txs) >= 1
+
+    # Регрессия: после reapply ручных закрытий used_days не должен
+    # превышать лимит периода (исключаем задвоение auto + manual).
+    periods_after = await vacation_period_service.get_employee_periods(db_session, employee.id)
+    for period in periods_after:
+        period_limit = period.main_days + period.additional_days
+        assert period.used_days <= period_limit
+
+
+async def test_delete_order_recomputes_only_affected_periods_without_full_rebuild(
+    db_session,
+    create_employee,
+):
+    employee = await create_employee(hire_date=date(2024, 5, 23), additional_vacation_days=2)
+
+    created = await _create_paid_vacation(
+        db_session,
+        employee.id,
+        date(2026, 1, 1),
+        date(2026, 1, 26),
+    )
+    order_id = created["order_id"]
+
+    before = await vacation_period_service.get_employee_periods(db_session, employee.id)
+    before_ids = [p.period_id for p in before]
+    assert order_id is not None
+    assert any(p.used_days > 0 for p in before)
+
+    await order_service.hard_delete_order(db_session, order_id)
+
+    after = await vacation_period_service.get_employee_periods(db_session, employee.id)
+    after_ids = [p.period_id for p in after]
+
+    # Периоды не пересоздаются "с нуля": id остаются теми же.
+    assert before_ids == after_ids
+    # Удалённый приказ больше не влияет на использованные дни.
+    assert sum(p.used_days for p in after) == 0
+    # Дублирования "manual + auto" после удаления быть не должно.
+    for period in after:
+        period_limit = period.main_days + period.additional_days
+        assert period.used_days <= period_limit

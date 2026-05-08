@@ -26,7 +26,8 @@ class VacationPeriodManualClosureRepository:
         order_id: int | None = None,
         reason: str | None = None,
         created_by: str | None = None,
-    ) -> VacationPeriodManualClosure:
+    ) -> tuple[VacationPeriodManualClosure, bool]:
+        """Upsert closure. Returns (closure, is_new)."""
         result = await db.execute(
             select(VacationPeriodManualClosure).where(
                 VacationPeriodManualClosure.employee_id == employee_id,
@@ -45,7 +46,7 @@ class VacationPeriodManualClosureRepository:
                 existing.created_by = created_by
             await db.flush()
             await db.refresh(existing)
-            return existing
+            return existing, False
 
         closure = VacationPeriodManualClosure(
             employee_id=employee_id,
@@ -61,7 +62,16 @@ class VacationPeriodManualClosureRepository:
         db.add(closure)
         await db.flush()
         await db.refresh(closure)
-        return closure
+        return closure, True
+
+
+    async def delete_by_id(self, db: AsyncSession, closure_id: int) -> bool:
+        closure = await db.get(VacationPeriodManualClosure, closure_id)
+        if not closure:
+            return False
+        await db.delete(closure)
+        await db.flush()
+        return True
 
 
 vacation_period_manual_closure_repository = VacationPeriodManualClosureRepository()

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { fetchVacationPeriods, adjustVacationPeriod, closePeriod, partialClosePeriod, recalculateVacationPeriods } from "./api"
+import { fetchVacationPeriods, adjustVacationPeriod, closePeriod, partialClosePeriod, recalculateVacationPeriods, cancelTransaction } from "./api"
 import type { VacationPeriodAdjust } from "./types"
 
 export function useVacationPeriods(employeeId: number | null) {
@@ -72,6 +72,18 @@ export function useRecalculateVacationPeriods() {
     onSuccess: (_data, employeeId) => {
       // Инвалидируем кеш конкретного сотрудника
       queryClient.invalidateQueries({ queryKey: ["vacation-periods", employeeId] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
+    },
+  })
+}
+
+export function useCancelTransaction() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (transactionId: number) => cancelTransaction(transactionId),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-history"] })

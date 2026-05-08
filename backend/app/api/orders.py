@@ -5,6 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse, HTMLResponse
+from pydantic import BaseModel
 from starlette.responses import Response
 
 
@@ -38,6 +39,7 @@ class UTF8FileResponse(FileResponse):
             if len(keys_to_remove) > 1:
                 for k in keys_to_remove[:-1]:
                     del self.headers[k]
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -56,6 +58,21 @@ from app.schemas.order_type import OrderTypeListResponse
 from app.services.order_service import order_service
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+
+class OrderDeletionPreview(BaseModel):
+    order_id: int
+    order_number: str
+    order_type_name: str
+    employee_name: str | None
+    order_date: str
+    has_vacations: bool
+    vacation_count: int
+    has_transactions: bool
+    transaction_count: int
+    has_adjustments: bool
+    adjustment_count: int
+    warnings: list[str] = []
 
 
 def _get_current_user_stub() -> str:
@@ -164,6 +181,68 @@ async def get_order(
 ):
     order = await order_service.get_by_id(db, order_id)
     return order_service._serialize_order(order)
+
+
+@router.get("/{order_id}/deletion-preview", response_model=OrderDeletionPreview)
+async def get_order_deletion_preview(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    from sqlalchemy import select, func
+    from app.models.order import Order
+    from app.models.vacation import Vacation
+    from app.models.vacation_period_transaction import VacationPeriodTransaction
+    from app.models.vacation_adjustment import VacationAdjustment
+
+    order = await order_service.get_by_id(db, order_id)
+    if not order:
+        raise HRMSException("Приказ не найден", "order_not_found", status_code=404)
+
+    # Считаем отпуска
+    vac_result = await db.execute(
+        select(func.count(Vacation.id)).where(Vacation.order_id == order_id)
+    )
+    vac_count = vac_result.scalar() or 0
+
+    # Считаем транзакции по original_order_id
+    tx_result = await db.execute(
+        select(func.count(VacationPeriodTransaction.id)).where(
+            VacationPeriodTransaction.original_order_id == order_id
+        )
+    )
+    tx_count = tx_result.scalar() or 0
+
+    # Считаем adjustments по original_order_id
+    adj_result = await db.execute(
+        select(func.count(VacationAdjustment.id)).where(
+            VacationAdjustment.original_order_id == order_id
+        )
+    )
+    adj_count = adj_result.scalar() or 0
+
+    warnings: list[str] = []
+    if vac_count > 0:
+        warnings.append(f"Будет удалено {vac_count} отпусков, связанных с приказом")
+    if tx_count > 0:
+        warnings.append(f"Будет удалено {tx_count} транзакций в периодах")
+    if adj_count > 0:
+        warnings.append(f"Будет удалено {adj_count} корректировок отпуска")
+
+    return OrderDeletionPreview(
+        order_id=order.id,
+        order_number=order.order_number,
+        order_type_name=order.order_type.name if getattr(order, "order_type", None) else "",
+        employee_name=order.employee.name if getattr(order, "employee", None) else None,
+        order_date=str(order.order_date),
+        has_vacations=vac_count > 0,
+        vacation_count=vac_count,
+        has_transactions=tx_count > 0,
+        transaction_count=tx_count,
+        has_adjustments=adj_count > 0,
+        adjustment_count=adj_count,
+        warnings=warnings,
+    )
 
 
 @router.get("/settings", response_model=OrderSettingsResponse)

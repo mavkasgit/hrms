@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react"
-import { useNavigate } from "react-router-dom"
 import { ArrowLeft, Check, ChevronDown, ChevronRight, Copy, Eye, FileUp, Plus } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
@@ -33,7 +32,6 @@ import { OrderTypeForm } from "@/features/order-type-form"
 import type { OrderType } from "@/entities/order/types"
 
 export function TemplatesPage() {
-  const navigate = useNavigate()
   const { data: orderTypes = [], isLoading, error } = useAllOrderTypes()
   const { data: variables = [] } = useTemplateVariables()
   const deleteMutation = useDeleteOrderType()
