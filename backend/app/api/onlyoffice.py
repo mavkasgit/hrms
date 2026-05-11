@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Any
 from datetime import date
+import ipaddress
+import json
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -44,12 +46,36 @@ def _public_api_url(path: str) -> str:
     return f"{settings.APP_PUBLIC_URL.rstrip('/')}/api{path}"
 
 
-def _is_loopback_host(hostname: str | None) -> bool:
-    return hostname in {"localhost", "127.0.0.1", "::1"}
+def _is_private_or_loopback_host(hostname: str | None) -> bool:
+    if not hostname:
+        return False
+    if hostname in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    try:
+        addr = ipaddress.ip_address(hostname.strip("[]"))
+    except ValueError:
+        return False
+    return (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_reserved
+        or addr.is_unspecified
+    )
 
 
 def _request_origin(request: Request) -> str:
-    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
+    cf_visitor_raw = request.headers.get("cf-visitor")
+    if cf_visitor_raw:
+        try:
+            cf_scheme = json.loads(cf_visitor_raw).get("scheme")
+            if cf_scheme in {"http", "https"}:
+                proto = cf_scheme
+        except Exception:
+            pass
+    if not proto:
+        proto = request.url.scheme
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
     return f"{proto}://{host}".rstrip("/")
 
@@ -63,7 +89,11 @@ def _document_server_url(request: Request) -> str:
     except Exception:
         return configured
     request_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.hostname or "").split(":")[0]
-    if _is_loopback_host(configured_host) and request_host and not _is_loopback_host(request_host):
+    if (
+        _is_private_or_loopback_host(configured_host)
+        and request_host
+        and not _is_private_or_loopback_host(request_host)
+    ):
         return _request_origin(request)
     return configured
 

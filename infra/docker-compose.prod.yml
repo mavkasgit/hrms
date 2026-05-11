@@ -107,3 +107,14 @@ services:
              echo 'Starting localtunnel...' &&
              npx --yes localtunnel --port 80 --subdomain ${LOCALTUNNEL_SUBDOMAIN:-hrms-prod-7q2k9m4x} 2>&1"
     restart: unless-stopped
+
+  cloudflared:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    container_name: hrms-cloudflared-prod
+    network_mode: "service:nginx"
+    depends_on:
+      - nginx
+    command: >
+      tunnel --url http://127.0.0.1:80 --protocol http2 --no-autoupdate
+    restart: unless-stopped
