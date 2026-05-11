@@ -4,32 +4,37 @@
   "version": "1.0.0",
   "scripts": {
     "setup": "npm install && npm install --prefix frontend && echo 'Не забудьте установить зависимости Python!'",
-    
-    "predev": "npm run db:up && npm run db:wait && npm run db:migrate",
-    "dev": "concurrently --names \"DB,BACKEND,FRONTEND\" -c \"blue,green,yellow\" \"npm run db:logs\" \"npm run backend\" \"npm run frontend\"",
-    
+    "predev": "npm run docker:dev:up && npm run db:wait && npm run dev:migrate",
+    "dev": "concurrently --names \"DB,BACKEND,FRONTEND\" -c \"blue,green,yellow\" \"npm run docker:dev:logs\" \"npm run dev:backend\" \"npm run frontend\"",
     "frontend": "npm --prefix frontend run dev",
-    "backend": "cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000",
-
-    "devkill": "npx kill-port 8000 2>nul & npx kill-port 5173 2>nul & echo Killed all dev servers",
-    "devrestart": "npm run devkill && npm run dev",
-
-    "db:up": "docker compose --env-file .env.dev -f infra/docker-compose.dev.yml up -d",
-    "db:down": "docker compose --env-file .env.dev -f infra/docker-compose.dev.yml down",
-    "db:logs": "docker compose --env-file .env.dev -f infra/docker-compose.dev.yml logs -f",
-    "db:wait": "powershell -ExecutionPolicy Bypass -File scripts/wait-for-container-health.ps1 hrms-postgres",
-    
-    "db:migrate": "cd backend && alembic upgrade head",
+    "dev:backend": "node scripts/run.js run-backend",
+    "dev:migrate": "node scripts/run.js run-migrate",
+    "dev:kill": "node -e \"const cp=require('child_process');['8000','5173'].forEach((p)=>cp.spawnSync('npx',['kill-port',p],{stdio:'ignore',shell:true})); console.log('Dev ports cleanup done');\"",
+    "dev:restart": "npm run dev:kill && npm run dev",
+    "docker:dev:up": "docker compose --env-file .env.dev -f infra/compose/docker-compose.dev.yml up -d",
+    "docker:dev:down": "docker compose --env-file .env.dev -f infra/compose/docker-compose.dev.yml down",
+    "docker:dev:logs": "docker compose --env-file .env.dev -f infra/compose/docker-compose.dev.yml logs -f",
+    "db:wait": "node scripts/run.js wait-for-postgres hrms-postgres hrms_user 60",
     "db:makemigrate": "cd backend && alembic revision --autogenerate -m",
-    
-    "test:up": "docker compose --env-file .env.test -f infra/docker-compose.test.yml up -d --build",
-    "test:down": "docker compose --env-file .env.test -f infra/docker-compose.test.yml down",
-    "test:logs": "docker compose --env-file .env.test -f infra/docker-compose.test.yml logs -f",
-    "test:tunnel:up": "docker compose --env-file .env.test -f infra/docker-compose.test.yml --profile tunnel up -d --build",
-    "prod:up": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml up -d --build",
-    "prod:down": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml down",
-    "prod:logs": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml logs -f",
-    "prod:tunnel:up": "docker compose --env-file .env.prod -f infra/docker-compose.prod.yml --profile tunnel up -d --build",
+    "docker:test:up": "docker compose --env-file .env.test -f infra/compose/docker-compose.test.yml up -d --build",
+    "docker:test:down": "docker compose --env-file .env.test -f infra/compose/docker-compose.test.yml down",
+    "docker:test:logs": "docker compose --env-file .env.test -f infra/compose/docker-compose.test.yml logs -f",
+    "test:tunnel:up": "docker compose --env-file .env.test -f infra/compose/docker-compose.test.yml --profile tunnel up -d --build",
+    "docker:prod:up": "docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml up -d --build",
+    "docker:prod:down": "docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml down",
+    "docker:prod:logs": "docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml logs -f",
+    "prod:tunnel:up": "docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml --profile tunnel up -d --build",
+    "db:up": "npm run docker:dev:up",
+    "db:down": "npm run docker:dev:down",
+    "db:logs": "npm run docker:dev:logs",
+    "backend": "npm run dev:backend",
+    "db:migrate": "npm run dev:migrate",
+    "test:up": "npm run docker:test:up",
+    "test:down": "npm run docker:test:down",
+    "test:logs": "npm run docker:test:logs",
+    "prod:up": "npm run docker:prod:up",
+    "prod:down": "npm run docker:prod:down",
+    "prod:logs": "npm run docker:prod:logs",
     "test:e2e:smoke": "npx playwright test e2e/ui/structure-full-lifecycle.spec.ts e2e/ui/employees.spec.ts e2e/domain/vacation-periods-generation.spec.ts",
     "test:e2e:api": "npx playwright test e2e/api",
     "test:e2e:ui": "npx playwright test e2e/ui",
@@ -38,6 +43,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3"
   }
 }

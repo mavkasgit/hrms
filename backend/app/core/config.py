@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     ONLYOFFICE_JWT_SECRET: str = "change-me"
     ONLYOFFICE_PUBLIC_URL: str = "http://localhost:8085"
     ONLYOFFICE_INTERNAL_URL: str = "http://localhost:8085"
+    BACKEND_INTERNAL_CALLBACK_URL: str = ""
     APP_PUBLIC_URL: str = "http://localhost:8000"
     
     # SQL logging (set to True to see all SQL queries)

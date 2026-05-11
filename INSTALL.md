@@ -1,76 +1,80 @@
-# Установка HRMS с нуля
+# Установка HRMS с нуля (Linux/macOS/Windows)
 
-## 1. Клонирование
+## 1. Требования
+
+- Docker + Docker Compose v2
+- Node.js 20+
+- Python 3.11+ (для локального dev backend)
+
+## 2. Подготовка
 
 ```bash
 git clone https://github.com/mavkasgit/hrms.git
 cd hrms
+npm install
+npm install --prefix frontend
+pip install -r backend/requirements.txt
 ```
 
-## 2. Проверка предусловий
+## 3. DEV (кроссплатформенно)
 
-- Docker Desktop установлен и запущен
-- Node.js 20+ (для локальной разработки, не обязательно для Docker)
-- Python 3.11+ (для локальной разработки, не обязательно для Docker)
-
-## 3. Настройка .env файлов
-
-Скопируй `.env.test` и `.env.prod` (уже есть в репозитории):
-
-- `.env.test` — test среда
-- `.env.prod` — prod среда
-
-Если нужен другой IP — замени `host.docker.internal` на IP машины в compose файлах, или оставь как есть для локального доступа.
-
-## 4. Запуск Test среды
+DEV использует Docker только для PostgreSQL и OnlyOffice. Backend/Frontend работают локально.
 
 ```bash
-docker compose -f infra/docker-compose.test.yml up -d --build
+npm run docker:dev:up
+npm run dev
 ```
 
-Первый запуск займёт 3-5 минут (скачивание образов, сборка backend/frontend).
+Точки доступа:
+- Frontend: `http://localhost:5173`
+- Backend API: `http://localhost:8000`
+- OnlyOffice: `http://localhost:8085`
 
-Открыть: `http://localhost:5174`
-
-## 5. Запуск Prod среды (опционально)
+## 4. TEST (Docker full stack)
 
 ```bash
-docker compose -f infra/docker-compose.prod.yml up -d --build
+npm run docker:test:up
 ```
 
-Открыть: `http://localhost:5175`
-
-## 6. Проверка
+С tunnel-профилем:
 
 ```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
+npm run test:tunnel:up
 ```
 
-Должно быть 4 контейнера для каждой среды: postgres, onlyoffice, backend, frontend.
+Точка доступа:
+- Nginx entrypoint: `http://localhost:8080`
 
-## 7. Остановка
+## 5. PROD (Docker full stack)
 
 ```bash
-# Test
-docker compose -f infra/docker-compose.test.yml down
-
-# Prod
-docker compose -f infra/docker-compose.prod.yml down
-
-# Полная очистка (данные удалятся)
-docker compose -f infra/docker-compose.test.yml down -v
-docker compose -f infra/docker-compose.prod.yml down -v
+npm run docker:prod:up
 ```
 
-## Порты
+С tunnel-профилем:
 
-| Сервис      | Test | Prod |
-|-------------|------|------|
-| Frontend    | 5174 | 5175 |
-| Backend API | 8001 | 8002 |
-| Postgres    | 5433 | 5434 |
-| OnlyOffice  | 8086 | 8087 |
+```bash
+npm run prod:tunnel:up
+```
 
-## Миграции БД
+Точка доступа:
+- Nginx entrypoint: `http://localhost` (и `https://localhost`, если настроен TLS)
 
-Запускаются автоматически при старте backend (`alembic upgrade head`).
+## 6. Остановка
+
+```bash
+npm run docker:dev:down
+npm run docker:test:down
+npm run docker:prod:down
+```
+
+## 7. Проверка состояния
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
+
+Ожидаемо:
+- `hrms-*-test` и `hrms-*-prod` существуют одновременно без пересечения портов
+- test слушает `8080`, prod слушает `80/443`
+

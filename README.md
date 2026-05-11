@@ -1,137 +1,97 @@
-# HRMS — Система управления персоналом
+# HRMS
 
-Корпоративная HRMS-система для развертывания в локальной сети предприятия.
+Корпоративная HRMS-система (FastAPI + React + PostgreSQL + OnlyOffice) с кроссплатформенным запуском для Linux/macOS/Windows.
 
 ## Стек
 
-- **Backend:** Python 3.11+, FastAPI, SQLAlchemy (async), asyncpg, Alembic
-- **Frontend:** React 18, TypeScript, Vite, TailwindCSS, Shadcn UI, React Query
-- **Database:** PostgreSQL 15
-- **Infrastructure:** Docker Compose
+- Backend: Python 3.11+, FastAPI, SQLAlchemy (async), Alembic
+- Frontend: React 18, TypeScript, Vite
+- DB: PostgreSQL 15
+- Infra: Docker Compose (`infra/compose`)
 
-## Структура проекта
+## Структура
 
-```
+```text
 hrms/
-├── backend/           # FastAPI приложение
-│   └── app/
-│       ├── api/       # Слой 1: Контроллеры (Routers)
-│       ├── services/  # Слой 2: Бизнес-логика
-│       ├── repositories/ # Слой 3: Доступ к БД
-│       ├── models/    # SQLAlchemy модели
-│       ├── schemas/   # Pydantic схемы
-│       ├── core/      # Настройки, security, database
-│       └── utils/     # Утилиты
-├── frontend/          # React приложение
-│   └── src/
-│       ├── app/       # Глобальные провайдеры, роутер
-│       ├── pages/     # Страницы
-│       ├── features/  # Функциональные блоки
-│       ├── entities/  # Бизнес-сущности
-│       └── shared/    # Общие компоненты
-└── infra/             # Docker и окружения
+├── backend/
+├── frontend/
+├── infra/
+│   ├── compose/
+│   │   ├── docker-compose.dev.yml
+│   │   ├── docker-compose.test.yml
+│   │   └── docker-compose.prod.yml
+│   └── nginx/
+│       └── default.conf
+├── scripts/
+│   ├── run.js
+│   ├── run-backend.sh|ps1
+│   ├── run-migrate.sh|ps1
+│   └── wait-for-postgres.sh|ps1
+├── .env.dev
+├── .env.test
+└── .env.prod
 ```
 
-## Быстрый старт (Dev)
+## Быстрый старт
 
-### 1. Клонирование и настройка
+### Подготовка
 
 ```bash
-git clone <repository-url>
-cd hrms
-```
-
-### 2. Установка зависимостей
-
-**Шаг 1: Установи необходимое ПО**
-
-Выполни эти команды в cmd (одну за другой):
-
-```cmd
-winget install Python.Python.3.11
-```
-Устанавливает Python 3.11 с pip (менеджер пакетов).
-
-```cmd
-winget install OpenJS.NodeJS
-```
-Устанавливает Node.js с npm (менеджер пакетов для JavaScript).
-
-```cmd
-winget install Docker.DockerDesktop
-```
-Устанавливает Docker Desktop (контейнеризация для БД и сервисов).
-
-⚠️ **После установки Docker Desktop перезагрузи компьютер.**
-
-**Шаг 2: Установи все зависимости проекта**
-
-Выполни в терминале из корня проекта:
-
-```bash
-npx make install-all
-```
-
-Если `make` не установлен, выполни вручную:
-
-```bash
+npm install
+npm install --prefix frontend
 pip install -r backend/requirements.txt
-cd frontend
-npm install
-cd ..
-npm install
 ```
 
-### 3. Запуск через Docker Compose
+### DEV
+
+DEV: Docker только для PostgreSQL + OnlyOffice, backend/frontend локально.
 
 ```bash
-make up          # Запуск всех сервисов
-make down        # Остановка
-make logs        # Просмотр логов
+npm run docker:dev:up
+npm run dev
 ```
 
-Сервисы:
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:8000
-- PostgreSQL: localhost:5432
-- API Docs: http://localhost:8000/docs
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8000`
 
-### 4. Локальная разработка (без Docker)
-
-**Backend:**
-```bash
-make backend-install   # Установка зависимостей
-make backend-run       # Запуск uvicorn
-```
-
-**Frontend:**
-```bash
-make frontend-install  # Установка зависимостей
-make frontend-run      # Запуск Vite dev server
-```
-
-### 5. Миграции БД
+### TEST
 
 ```bash
-make migrate           # Применить все миграции
-make makemigrate MSG="description"  # Создать новую миграцию
+npm run docker:test:up
 ```
 
-## Окружения
-
-| Окружение | ENV | База данных | JWT |
-|-----------|-----|-------------|-----|
-| Dev | dev | hrms_dev | Отключен (фейковый admin) |
-| Test | test | hrms_test | Включен |
-| Prod | prod | hrms_prod | Строгая проверка |
-
-## Резервное копирование
+С туннелем:
 
 ```bash
-make backup          # Создать backup файлов и БД
-make restore DATE=20260403  # Восстановить из backup
+npm run test:tunnel:up
 ```
 
-## Лицензия
+- Entry URL: `http://localhost:8080`
 
-Внутренний проект предприятия.
+### PROD
+
+```bash
+npm run docker:prod:up
+```
+
+С туннелем:
+
+```bash
+npm run prod:tunnel:up
+```
+
+- Entry URL: `http://localhost`
+
+## Основные команды
+
+- `npm run dev:backend` — запуск backend через `scripts/run.js`
+- `npm run dev:migrate` — миграции с ожиданием DB
+- `npm run docker:dev|test|prod:logs` — логи окружения
+- `npm run docker:dev|test|prod:down` — остановка окружения
+
+## Env-контракт OnlyOffice
+
+- `PUBLIC_URL` / `ONLYOFFICE_PUBLIC_URL` — браузерные URL
+- `ONLYOFFICE_INTERNAL_URL` — backend -> onlyoffice
+- `BACKEND_INTERNAL_CALLBACK_URL` — onlyoffice -> backend callback/file URL
+- `APP_PUBLIC_URL` — legacy fallback для обратной совместимости

@@ -40,10 +40,11 @@ def _ensure_onlyoffice_enabled() -> None:
 
 
 def _public_api_url(path: str) -> str:
-    # APP_PUBLIC_URL is backend base URL reachable by ONLYOFFICE
-    # (e.g. http://backend:8000 in Docker test/prod, http://host.docker.internal:8000 in local dev).
+    # BACKEND_INTERNAL_CALLBACK_URL is backend base URL reachable by ONLYOFFICE.
+    # APP_PUBLIC_URL remains as backward-compatible fallback.
     # Add /api prefix for backend routes.
-    return f"{settings.APP_PUBLIC_URL.rstrip('/')}/api{path}"
+    base_url = (settings.BACKEND_INTERNAL_CALLBACK_URL or settings.APP_PUBLIC_URL).rstrip("/")
+    return f"{base_url}/api{path}"
 
 
 def _is_private_or_loopback_host(hostname: str | None) -> bool:
@@ -77,7 +78,27 @@ def _request_origin(request: Request) -> str:
     if not proto:
         proto = request.url.scheme
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    host_only = (host or "").split(":")[0]
+    if _is_private_or_loopback_host(host_only):
+        external_origin = _external_origin_from_headers(request)
+        if external_origin:
+            return external_origin
     return f"{proto}://{host}".rstrip("/")
+
+
+def _external_origin_from_headers(request: Request) -> str | None:
+    for raw in (request.headers.get("origin"), request.headers.get("referer")):
+        if not raw:
+            continue
+        try:
+            parsed = urlparse(raw)
+        except Exception:
+            continue
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            continue
+        if parsed.hostname and not _is_private_or_loopback_host(parsed.hostname):
+            return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    return None
 
 
 def _document_server_url(request: Request) -> str:
@@ -88,6 +109,10 @@ def _document_server_url(request: Request) -> str:
         configured_host = urlparse(configured).hostname
     except Exception:
         return configured
+    external_origin = _external_origin_from_headers(request)
+    if external_origin and _is_private_or_loopback_host(configured_host):
+        return external_origin
+
     request_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.hostname or "").split(":")[0]
     if (
         _is_private_or_loopback_host(configured_host)

@@ -11,7 +11,7 @@ services:
     ports:
       - "${DEV_POSTGRES_PORT:-5432}:5432"
     volumes:
-      - ${DEV_POSTGRES_DATA_PATH:-../data/postgres-dev}:/var/lib/postgresql/data
+      - ${DEV_POSTGRES_DATA_PATH:-../../data/postgres-dev}:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
