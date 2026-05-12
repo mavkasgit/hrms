@@ -41,7 +41,71 @@ import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOn
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { EmployeeSearch } from "@/features/employee-search"
 import type { Employee } from "@/entities/employee/types"
-import type { OrderType } from "@/entities/order/types"
+import type { OrderType, OrderTypeFieldSchema } from "@/entities/order/types"
+
+// ─── Dynamic Field Renderer ───────────────────────────────────────────────────
+
+type DynamicFieldProps = {
+  field: OrderTypeFieldSchema
+  value: string | number | undefined
+  error?: string
+  onChange: (key: string, value: string | number) => void
+}
+
+function DynamicField({ field, value, error, onChange }: DynamicFieldProps) {
+  const displayValue = value !== undefined && value !== null ? String(value) : ""
+
+  if (field.type === "date") {
+    return (
+      <div>
+        <DatePicker
+          label={field.label}
+          value={displayValue}
+          onChange={(v) => onChange(field.key, v)}
+          required={field.required}
+          className="w-[130px]"
+        />
+        {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      </div>
+    )
+  }
+
+  if (field.type === "textarea") {
+    return (
+      <div>
+        <label className="text-sm font-medium">
+          {field.label}
+          {field.required && <span className="text-red-500 ml-0.5">*</span>}
+        </label>
+        <textarea
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-0 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 mt-1"
+          placeholder={field.label}
+          value={displayValue}
+          onChange={(e) => onChange(field.key, e.target.value)}
+        />
+        {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      </div>
+    )
+  }
+
+  // text / number
+  return (
+    <div>
+      <Input
+        label={field.label}
+        type={field.type === "number" ? "number" : "text"}
+        placeholder={field.label}
+        value={displayValue}
+        onChange={(e) =>
+          onChange(field.key, field.type === "number" ? Number(e.target.value) : e.target.value)
+        }
+        required={field.required}
+        className="w-[200px]"
+      />
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    </div>
+  )
+}
 
 const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
   "Прием на работу": "bg-green-100 text-green-800 border-green-200",
@@ -122,6 +186,8 @@ export function OrdersPage() {
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
   const [orderNumber, setOrderNumber] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [extraFields, setExtraFields] = useState<Record<string, string | number>>({})
+  const [extraFieldErrors, setExtraFieldErrors] = useState<Record<string, string>>({})
 
   const orderTypeRef = useRef<HTMLDivElement>(null)
 
@@ -197,6 +263,12 @@ export function OrdersPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
+  // Reset extra fields when order type changes
+  useEffect(() => {
+    setExtraFields({})
+    setExtraFieldErrors({})
+  }, [selectedOrderTypeId])
+
   const filteredTypes = orderTypes.filter((t) =>
     t.name.toLowerCase().includes(orderTypeSearch.toLowerCase())
   )
@@ -227,6 +299,8 @@ export function OrdersPage() {
     setOrderDate(new Date().toISOString().split("T")[0])
     setOrderNumber("")
     setErrors({})
+    setExtraFieldErrors({})
+    setExtraFields({})
     setDraftId(null)
   }
 
@@ -236,16 +310,30 @@ export function OrdersPage() {
     if (!selectedOrderTypeId) newErrors.orderType = "Выберите тип приказа"
     if (!orderDate) newErrors.orderDate = "Укажите дату приказа"
     if (!orderNumber) newErrors.orderNumber = "Укажите номер приказа"
+
+    for (const field of selectedOrderType?.field_schema ?? []) {
+      if (field.required && !extraFields[field.key]) {
+        newErrors[`extra_${field.key}`] = `${field.label} обязательно`
+      }
+    }
+
     setErrors(newErrors)
+    setExtraFieldErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
   const buildOrderPayload = () => {
+    const cleanedExtraFields = Object.fromEntries(
+      Object.entries(extraFields).filter(
+        ([, value]) => value !== "" && value !== null && value !== undefined
+      )
+    )
     return {
       employee_id: selectedEmployee!.id,
       order_type_id: selectedOrderTypeId!,
       order_date: orderDate,
       order_number: orderNumber || undefined,
+      extra_fields: Object.keys(cleanedExtraFields).length > 0 ? cleanedExtraFields : undefined,
     }
   }
 
@@ -395,65 +483,19 @@ export function OrdersPage() {
 
         {!collapsed && (
           <div className="border-t px-4 py-4">
-            <div className="grid gap-4">
-                <div className="flex gap-4">
-                  <div>
-                    <label className="text-sm font-medium">Сотрудник <span className="text-red-500">*</span></label>
-                    <div className="mt-1">
-                      <EmployeeSearch
-                        value={selectedEmployee}
-                        onChange={setSelectedEmployee}
-                        error={errors.employee}
-                        label=" "
-                        width="w-96"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="w-[17%]" ref={orderTypeRef}>
-                    <label className="text-sm font-medium">Тип приказа <span className="text-red-500">*</span></label>
-                    <div className="mt-1 relative">
-                      {selectedOrderType ? (
-                        <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50 h-10">
-                          <Check className="h-4 w-4 text-green-600 shrink-0" />
-                          <span className="text-sm flex-1 truncate">{selectedOrderType.name}</span>
-                          <button
-                            type="button"
-                            onClick={clearOrderType}
-                            className="shrink-0 text-muted-foreground hover:text-foreground"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <Input
-                          placeholder="Выберите тип..."
-                          value={orderTypeSearch}
-                          onChange={(e) => {
-                            setOrderTypeSearch(e.target.value)
-                            setOrderTypeOpen(true)
-                          }}
-                          onKeyDown={handleOrderTypeKeyDown}
-                          onFocus={() => setOrderTypeOpen(true)}
-                          className={`h-10 ${errors.orderType ? "border-red-500" : ""}`}
-                        />
-                      )}
-                      {orderTypeOpen && filteredTypes.length > 0 && (
-                        <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
-                          {filteredTypes.map((t) => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0"
-                              onClick={() => selectOrderType(t)}
-                            >
-                              {t.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {errors.orderType && <p className="text-xs text-red-500 mt-1">{errors.orderType}</p>}
+            <div className="flex flex-col lg:flex-row">
+              {/* Left column — Основные данные */}
+              <div className="space-y-4 lg:w-[400px] lg:shrink-0 lg:pr-6 lg:border-r">
+                <div>
+                  <label className="text-sm font-medium">Сотрудник <span className="text-red-500">*</span></label>
+                  <div className="mt-1">
+                    <EmployeeSearch
+                      value={selectedEmployee}
+                      onChange={setSelectedEmployee}
+                      error={errors.employee}
+                      label=" "
+                      width="w-96"
+                    />
                   </div>
                 </div>
 
@@ -477,26 +519,114 @@ export function OrdersPage() {
                     error={errors.orderNumber}
                   />
                 </div>
+
+                <div className="flex gap-2 pt-2">
+                  <Button variant="outline" onClick={(e) => { e.stopPropagation(); resetForm(); }} disabled={isPending}>
+                    Очистить
+                  </Button>
+                  {!draftId ? (
+                    <Button
+                      onClick={(e) => { e.stopPropagation(); handleEditBeforeCreate(); }}
+                      disabled={isPending}
+                    >
+                      {createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}
+                    </Button>
+                  ) : (
+                    <Button onClick={(e) => { e.stopPropagation(); handleCommitDraft(); }} disabled={isPending}>
+                      {commitDraftMutation.isPending ? "Создание..." : "Создать приказ"}
+                    </Button>
+                  )}
+                </div>
               </div>
 
-              <div className="flex gap-2 mt-4">
-                <Button variant="outline" onClick={(e) => { e.stopPropagation(); resetForm(); }} disabled={isPending}>
-                  Очистить
-                </Button>
-                {!draftId ? (
-                  <Button
-                    onClick={(e) => { e.stopPropagation(); handleEditBeforeCreate(); }}
-                    disabled={isPending}
-                  >
-                    {createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}
-                  </Button>
-                ) : (
-                  <Button onClick={(e) => { e.stopPropagation(); handleCommitDraft(); }} disabled={isPending}>
-                    {commitDraftMutation.isPending ? "Создание..." : "Создать приказ"}
-                  </Button>
+              {/* Right column — Детали приказа */}
+              <div className="space-y-4 flex-1 min-w-0 max-w-[400px] lg:pl-6">
+                <div ref={orderTypeRef} className="w-60">
+                  <label className="text-sm font-medium">Тип приказа <span className="text-red-500">*</span></label>
+                  <div className="mt-1 relative">
+                    {selectedOrderType ? (
+                      <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50 h-10">
+                        <Check className="h-4 w-4 text-green-600 shrink-0" />
+                        <span className="text-sm flex-1 truncate">{selectedOrderType.name}</span>
+                        <button
+                          type="button"
+                          onClick={clearOrderType}
+                          className="shrink-0 text-muted-foreground hover:text-foreground"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <Input
+                        placeholder="Выберите тип..."
+                        value={orderTypeSearch}
+                        onChange={(e) => {
+                          setOrderTypeSearch(e.target.value)
+                          setOrderTypeOpen(true)
+                        }}
+                        onKeyDown={handleOrderTypeKeyDown}
+                        onFocus={() => setOrderTypeOpen(true)}
+                        className={`h-10 ${errors.orderType ? "border-red-500" : ""}`}
+                      />
+                    )}
+                    {orderTypeOpen && filteredTypes.length > 0 && (
+                      <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
+                        {filteredTypes.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0"
+                            onClick={() => selectOrderType(t)}
+                          >
+                            {t.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {errors.orderType && <p className="text-xs text-red-500 mt-1">{errors.orderType}</p>}
+                </div>
+
+                {/* Dynamic extra fields from field_schema */}
+                {selectedOrderType && Array.isArray(selectedOrderType.field_schema) && selectedOrderType.field_schema.length > 0 && (
+                  <div className="space-y-4">
+                    {(() => {
+                      const fields = selectedOrderType.field_schema.filter((f) => f.key !== "trial_end")
+                      const rows: typeof fields[] = []
+                      let currentRow: typeof fields = []
+
+                      for (const field of fields) {
+                        if (field.type === "date") {
+                          currentRow.push(field)
+                        } else {
+                          if (currentRow.length > 0) {
+                            rows.push(currentRow)
+                            currentRow = []
+                          }
+                          rows.push([field])
+                        }
+                      }
+                      if (currentRow.length > 0) rows.push(currentRow)
+
+                      return rows.map((row, ri) => (
+                        <div key={ri} className="flex gap-4 flex-wrap">
+                          {row.map((field) => (
+                            <DynamicField
+                              key={field.key}
+                              field={field}
+                              value={extraFields[field.key]}
+                              error={extraFieldErrors[`extra_${field.key}`]}
+                              onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                            />
+                          ))}
+                        </div>
+                      ))
+                    })()}
+                  </div>
                 )}
               </div>
             </div>
+          </div>
         )}
       </div>
 

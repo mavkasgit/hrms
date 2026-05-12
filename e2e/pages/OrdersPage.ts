@@ -112,10 +112,10 @@ export class OrdersPage {
         await contractEndInput.fill(data.contract_end)
       }
     }
-    if (data.probation_end) {
-      const probationInput = this.page.getByLabel(/конец исп. срока/i)
-      if (await probationInput.isVisible()) {
-        await probationInput.fill(data.probation_end)
+    if (data.trial_end) {
+      const trialInput = this.page.getByLabel(/испытательного срока/i)
+      if (await trialInput.isVisible()) {
+        await trialInput.fill(data.trial_end)
       }
     }
 
@@ -156,10 +156,10 @@ export class OrdersPage {
     }
 
     // Продление контракта
-    if (data.new_contract_end) {
+    if (data.contract_new_end) {
       const newEndInput = this.page.getByLabel(/новая дата конца/i)
       if (await newEndInput.isVisible()) {
-        await newEndInput.fill(data.new_contract_end)
+        await newEndInput.fill(data.contract_new_end)
       }
     }
   }

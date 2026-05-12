@@ -18,7 +18,7 @@ AUDIT_PATTERN = re.compile(
 ACTION_MAP = {
     "EMPLOYEE CREATED": "created",
     "EMPLOYEE UPDATED": "updated",
-    "EMPLOYEE ARCHIVED": "archived",
+    "EMPLOYEE DISMISSED": "dismissed",
     "EMPLOYEE RESTORED": "restored",
     "EMPLOYEE SOFT DELETED": "deleted",
     "EMPLOYEE HARD DELETED": "hard_deleted",

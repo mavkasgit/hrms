@@ -67,13 +67,13 @@ test.describe('API errors', () => {
     expect(updateResp.status()).toBe(404)
   })
 
-  test('employees: archive already archived and restore non-archived -> 400/409', async ({ request, apiOps }) => {
-    const empForArchive = await apiOps.createEmployee({})
-    const archiveOnce = await request.post(`/api/employees/${empForArchive.id}/archive`)
-    expect(archiveOnce.status()).toBe(200)
+  test('employees: dismiss already dismissed and restore non-dismissed -> 400/409', async ({ request, apiOps }) => {
+    const empForDismiss = await apiOps.createEmployee({})
+    const dismissOnce = await request.post(`/api/employees/${empForDismiss.id}/dismiss`)
+    expect(dismissOnce.status()).toBe(200)
 
-    const archiveTwice = await request.post(`/api/employees/${empForArchive.id}/archive`)
-    expect([400, 409]).toContain(archiveTwice.status())
+    const dismissTwice = await request.post(`/api/employees/${empForDismiss.id}/dismiss`)
+    expect([400, 409]).toContain(dismissTwice.status())
 
     const empForRestore = await apiOps.createEmployee({})
     const restoreResp = await request.post(`/api/employees/${empForRestore.id}/restore`)

@@ -27,7 +27,7 @@ export function makeHireOrderData(employeeName: string): OrderTestData {
     extra_fields: {
       hire_date: '2024-01-15',
       contract_end: '2025-01-14',
-      probation_end: '2024-04-15',
+      trial_end: '2024-04-15',
     }
   }
 }
@@ -105,8 +105,8 @@ export function makeContractExtensionOrderData(employeeName: string): OrderTestD
     order_type: 'Продление контракта',
     order_date: '2024-12-01',
     extra_fields: {
-      new_contract_end: '2026-01-14',
-      new_probation_end: undefined,
+      contract_new_end: '2026-01-14',
+      trial_end: undefined,
     }
   }
 }
@@ -116,7 +116,7 @@ export const ORDER_FIELD_LABELS: Record<OrderTypeName, Record<string, string>> =
   'Прием на работу': {
     hire_date: 'Дата приема',
     contract_end: 'Конец контракта',
-    probation_end: 'Конец исп. срока',
+    trial_end: 'Конец испытательного срока',
   },
   'Увольнение': {
     termination_date: 'Дата увольнения',
@@ -140,8 +140,8 @@ export const ORDER_FIELD_LABELS: Record<OrderTypeName, Record<string, string>> =
     transfer_date: 'Дата перевода',
   },
   'Продление контракта': {
-    new_contract_end: 'Новая дата конца контракта',
-    new_probation_end: 'Конец исп. срока',
+    contract_new_end: 'Новая дата конца контракта',
+    trial_end: 'Конец испытательного срока',
   },
 }
 

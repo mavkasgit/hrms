@@ -33,7 +33,7 @@ export interface Order {
   order_type_id: number
   order_type_name: string
   order_type_code: string
-  employee_id: number
+  employee_id: number | null
   employee_name: string | null
   order_date: string
   created_date: string | null
@@ -41,6 +41,31 @@ export interface Order {
   display_name: string | null
   notes: string | null
   extra_fields: Record<string, string | number>
+  is_group: boolean
+  group_employee_count?: number | null
+  group_employees?: GroupEmployeeInfo[]
+}
+
+export interface GroupEmployeeInfo {
+  employee_id: number
+  employee_full_name: string
+  position: string | null
+  department: string | null
+  vacation_start: string
+  vacation_end: string
+  vacation_days: number
+}
+
+export interface VacationUnpaidGroupEmployeeCreate {
+  employee_id: number
+  vacation_days: number
+}
+
+export interface VacationUnpaidGroupOrderCreate {
+  order_date: string
+  order_number?: string | null
+  vacation_start: string
+  employees: VacationUnpaidGroupEmployeeCreate[]
 }
 
 export interface OrderListResponse {

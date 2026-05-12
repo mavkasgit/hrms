@@ -79,13 +79,13 @@ export class VacationsPage {
     })
   }
 
-  async filterByArchive(status: 'active' | 'archived' | 'all') {
+  async filterByDismissal(status: 'active' | 'dismissed' | 'all') {
     const statusLabels: Record<string, string> = {
       active: 'Активные',
-      archived: 'Уволен',
+      dismissed: 'Уволенные',
       all: 'Все',
     }
-    await this.page.getByRole('button', { name: /архив|фильтр/i }).click()
+    await this.page.getByRole('button', { name: /уволенные|фильтр/i }).click()
     await this.waitForVacationListRefresh(async () => {
       await this.page.getByText(statusLabels[status]).click()
     })

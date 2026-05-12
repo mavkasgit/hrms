@@ -841,7 +841,7 @@ export function VacationsPage() {
   // --- Main table state ---
   const [searchName, setSearchName] = useState("")
   const debouncedSearch = useDebounce(searchName, 300)
-  const [archiveFilter, setArchiveFilter] = useState<"active" | "archived" | "all">("active")
+  const [dismissalFilter, setDismissalFilter] = useState<"active" | "dismissed" | "all">("active")
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
   const [editingAddDays, setEditingAddDays] = useState<number | null>(null)
   const [editingAddDaysValue, setEditingAddDaysValue] = useState("")
@@ -876,7 +876,7 @@ export function VacationsPage() {
 
   const { data: employees, isLoading: employeesLoading } = useVacationEmployeesSummary(
     debouncedSearch || undefined,
-    archiveFilter
+    dismissalFilter
   )
 
   const toggleRow = (empId: number) => {
@@ -1156,7 +1156,7 @@ export function VacationsPage() {
           onClick={() => {
             setSearchName("")
             setSortConfigs([])
-            setArchiveFilter("active")
+            setDismissalFilter("active")
             setSelectedEmployee(null)
             setExpandedRows(new Set())
           }}
@@ -1164,15 +1164,15 @@ export function VacationsPage() {
           Очистить
         </Button>
         <div className="flex gap-1">
-          {(["active", "archived", "all"] as const).map((f) => (
+          {(["active", "dismissed", "all"] as const).map((f) => (
             <Button
               key={f}
-              variant={archiveFilter === f ? "default" : "outline"}
+              variant={dismissalFilter === f ? "default" : "outline"}
               size="sm"
-              onClick={() => setArchiveFilter(f)}
+              onClick={() => setDismissalFilter(f)}
               className="text-xs"
             >
-              {f === "active" ? "Активные" : f === "archived" ? "Уволенные" : "Все"}
+              {f === "active" ? "Активные" : f === "dismissed" ? "Уволенные" : "Все"}
             </Button>
           ))}
         </div>

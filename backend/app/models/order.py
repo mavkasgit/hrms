@@ -12,7 +12,7 @@ class Order(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     order_number = Column(String(50), nullable=False)
     order_type_id = Column(Integer, ForeignKey("order_types.id"), nullable=False, index=True)
-    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True, index=True)
     order_date = Column(Date, nullable=False)
     created_date = Column(DateTime(timezone=False), server_default=func.now())
     file_path = Column(String(255))
@@ -28,8 +28,11 @@ class Order(Base):
     cancelled_at = Column(DateTime(timezone=False))
     cancelled_by = Column(String(100))
 
+    is_group = Column(Boolean, default=False, nullable=False)
+
     employee = relationship("Employee", back_populates="orders")
     order_type = relationship("OrderType", back_populates="orders")
+    employees = relationship("OrderEmployee", back_populates="order", cascade="all, delete-orphan")
 
 
 class OrderSequence(Base):

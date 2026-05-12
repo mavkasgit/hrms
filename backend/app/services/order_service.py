@@ -12,7 +12,7 @@ from sqlalchemy import delete as sa_delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.exceptions import DuplicateError, EmployeeNotFoundError, HRMSException, OrderNotFoundError
+from app.core.exceptions import DuplicateError, EmployeeNotFoundError, HRMSException, OrderNotFoundError, VacationOverlapError
 from app.core.logging import get_audit_logger
 from app.core.paths import storage_key, storage_path
 from app.models.employee import Employee
@@ -374,6 +374,18 @@ class OrderService:
 
         file_path, display_name = await self._generate_document(order_number, data, employee, order_type, year_dir)
 
+        # Подготавливаем extra_fields для продления контракта
+        extra_fields = data.extra_fields
+        if order_type.code == "contract_extension" and data.extra_fields:
+            new_end = data.extra_fields.get("contract_new_end")
+            if new_end:
+                extra_fields = dict(data.extra_fields)
+                extra_fields["old_contract_end"] = (
+                    employee.contract_end.isoformat() if employee.contract_end else None
+                )
+                employee.contract_end = date.fromisoformat(new_end)
+                await db.flush()
+
         order = await self.order_repo.create(
             db,
             {
@@ -384,12 +396,12 @@ class OrderService:
                 "file_path": file_path,
                 "display_name": display_name,
                 "notes": data.notes,
-                "extra_fields": data.extra_fields,
+                "extra_fields": extra_fields,
             },
         )
 
         # Автоматическая архивация сотрудника при приказе об увольнении
-        if order_type.code == "dismissal" and not employee.is_archived:
+        if order_type.code == "dismissal" and not employee.is_dismissed:
             dismissal_date = data.order_date
             if data.extra_fields and data.extra_fields.get("dismissal_date"):
                 try:
@@ -397,10 +409,10 @@ class OrderService:
                     dismissal_date = _dt.strptime(data.extra_fields["dismissal_date"], "%Y-%m-%d").date()
                 except (ValueError, TypeError):
                     pass
-            employee.is_archived = True
-            employee.terminated_date = dismissal_date
-            employee.termination_reason = f"Приказ №{order_number} от {data.order_date.strftime('%d.%m.%Y')}"
-            employee.archived_by = "system"
+            employee.is_dismissed = True
+            employee.dismissal_date = dismissal_date
+            employee.dismissal_reason = f"Приказ №{order_number} от {data.order_date.strftime('%d.%m.%Y')}"
+            employee.dismissed_by = "system"
             await db.flush()
 
         audit_logger.info(
@@ -564,15 +576,24 @@ class OrderService:
 
         return replacements
 
-    def _replace_placeholders(self, doc: Document, replacements: dict[str, str]) -> None:
-        """Character-by-character placeholder replacement that preserves formatting and images."""
-        for paragraph in doc.paragraphs:
-            self._replace_in_paragraph(paragraph, replacements)
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for paragraph in cell.paragraphs:
-                        self._replace_in_paragraph(paragraph, replacements)
+    def _replace_placeholders(self, target: Any, replacements: dict[str, str]) -> None:
+        """Replace placeholders in a Document, Paragraph, or Cell. Dispatches to the appropriate handler."""
+        if hasattr(target, "paragraphs") and hasattr(target, "tables"):
+            # Document
+            for paragraph in target.paragraphs:
+                self._replace_in_paragraph(paragraph, replacements)
+            for table in target.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            self._replace_in_paragraph(paragraph, replacements)
+        elif hasattr(target, "paragraphs"):
+            # Cell or similar object with paragraphs
+            for paragraph in target.paragraphs:
+                self._replace_in_paragraph(paragraph, replacements)
+        else:
+            # Single Paragraph
+            self._replace_in_paragraph(target, replacements)
 
     def _replace_in_paragraph(self, paragraph: Any, replacements: dict[str, str]) -> None:
         """Replace placeholders in a single paragraph using run coordinate mapping.
@@ -767,12 +788,19 @@ class OrderService:
             order_type = type_result.scalar_one_or_none()
         if order_type and order_type.code == "dismissal":
             employee = await self.employee_repo.get_by_id(db, order.employee_id)
-            if employee and employee.is_archived:
-                employee.is_archived = False
-                employee.terminated_date = None
-                employee.termination_reason = None
-                employee.archived_by = None
-                employee.archived_at = None
+            if employee and employee.is_dismissed:
+                employee.is_dismissed = False
+                employee.dismissal_date = None
+                employee.dismissal_reason = None
+                employee.dismissed_by = None
+                employee.dismissed_at = None
+                await db.flush()
+
+        # Восстановление contract_end при отмене приказа о продлении
+        if order_type and order_type.code == "contract_extension":
+            employee = await self.employee_repo.get_by_id(db, order.employee_id)
+            if employee and order.extra_fields and order.extra_fields.get("old_contract_end"):
+                employee.contract_end = date.fromisoformat(order.extra_fields["old_contract_end"])
                 await db.flush()
 
         await db.commit()
@@ -794,12 +822,17 @@ class OrderService:
                 _select(_OrderType.code).where(_OrderType.id == order.order_type_id)
             )
             order_type_code = type_result.scalar_one_or_none()
-        if order_type_code == "dismissal" and employee and employee.is_archived:
-            employee.is_archived = False
-            employee.terminated_date = None
-            employee.termination_reason = None
-            employee.archived_by = None
-            employee.archived_at = None
+        if order_type_code == "dismissal" and employee and employee.is_dismissed:
+            employee.is_dismissed = False
+            employee.dismissal_date = None
+            employee.dismissal_reason = None
+            employee.dismissed_by = None
+            employee.dismissed_at = None
+            await db.flush()
+
+        # Восстановление contract_end при удалении приказа о продлении
+        if order_type_code == "contract_extension" and employee and order.extra_fields and order.extra_fields.get("old_contract_end"):
+            employee.contract_end = date.fromisoformat(order.extra_fields["old_contract_end"])
             await db.flush()
 
         # Удаляем приказ точечно: запоминаем затронутые period_id и после CASCADE
@@ -883,10 +916,256 @@ class OrderService:
         )
         return True
 
+    async def create_vacation_unpaid_group_order(
+        self, db: AsyncSession, data: "VacationUnpaidGroupOrderCreate"
+    ) -> Order:
+        """Create a group unpaid vacation order for multiple employees."""
+        from datetime import timedelta
+        from sqlalchemy import insert as sa_insert
+
+        from app.models.order_employee import OrderEmployee
+        from app.models.vacation import Vacation
+        from app.repositories.vacation_repository import vacation_repository as _vacation_repo
+
+        await self.ensure_default_order_types(db)
+
+        if not data.employees:
+            raise HRMSException("Список сотрудников не может быть пустым", "validation_error", status_code=422)
+
+        order_type = await self.get_order_type_by_code(db, "vacation_unpaid")
+
+        order_number = data.order_number
+        if not order_number:
+            order_number = await self.order_repo.get_next_order_number(db, order_type.id)
+        else:
+            order_number = order_number.strip()
+
+        common_start = data.vacation_start
+
+        employee_rows = []
+        for emp_item in data.employees:
+            employee = await self.employee_repo.get_by_id(db, emp_item.employee_id)
+            if not employee:
+                raise EmployeeNotFoundError(emp_item.employee_id)
+
+            vacation_end = common_start + timedelta(days=emp_item.vacation_days - 1)
+
+            overlap = await _vacation_repo.check_overlap(db, emp_item.employee_id, common_start, vacation_end)
+            if overlap:
+                raise VacationOverlapError(
+                    f"Пересечение отпуска для сотрудника {employee.name}: {overlap.start_date} — {overlap.end_date}"
+                )
+
+            employee_rows.append({
+                "employee": employee,
+                "vacation_days": emp_item.vacation_days,
+                "vacation_end": vacation_end,
+            })
+
+        year_dir = Path(settings.ORDERS_PATH) / str(data.order_date.year)
+        year_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path, display_name = await self._generate_group_document(
+            order_number, data, order_type, year_dir, employee_rows,
+        )
+
+        order = await self.order_repo.create(
+            db,
+            {
+                "order_number": order_number,
+                "order_type_id": order_type.id,
+                "employee_id": None,
+                "order_date": data.order_date,
+                "file_path": file_path,
+                "display_name": display_name,
+                "notes": None,
+                "extra_fields": {},
+                "is_group": True,
+            },
+        )
+
+        for row in employee_rows:
+            emp = row["employee"]
+            await db.execute(
+                sa_insert(OrderEmployee).values(
+                    order_id=order.id,
+                    employee_id=emp.id,
+                    vacation_start=common_start,
+                    vacation_end=row["vacation_end"],
+                    vacation_days=row["vacation_days"],
+                )
+            )
+            await db.execute(
+                sa_insert(Vacation).values(
+                    employee_id=emp.id,
+                    start_date=common_start,
+                    end_date=row["vacation_end"],
+                    vacation_type="Отпуск за свой счет",
+                    days_count=row["vacation_days"],
+                    vacation_year=common_start.year,
+                    order_id=order.id,
+                )
+            )
+
+        await db.flush()
+
+        # Reload order with relationships for serialization
+        from sqlalchemy import select as sa_select
+        from sqlalchemy.orm import selectinload
+        from app.models.order_employee import OrderEmployee
+        reload_result = await db.execute(
+            sa_select(Order)
+            .options(
+                selectinload(Order.order_type),
+                selectinload(Order.employees).selectinload(OrderEmployee.employee),
+            )
+            .where(Order.id == order.id)
+            .execution_options(populate_existing=True)
+        )
+        order = reload_result.scalar_one()
+
+        audit_logger.info(
+            f"GROUP ORDER CREATED: number={order_number}, type=vacation_unpaid, employee_count={len(employee_rows)}",
+            extra={
+                "action": "group_order_created",
+                "user_id": "system",
+                "order_id": order.id,
+                "details": {
+                    "order_number": order_number,
+                    "order_type_code": "vacation_unpaid",
+                    "order_date": str(data.order_date),
+                    "employee_count": len(employee_rows),
+                },
+            },
+        )
+
+        return order
+
+    async def _generate_group_document(
+        self,
+        order_number: str,
+        data: "VacationUnpaidGroupOrderCreate",
+        order_type: OrderType,
+        year_dir: Path,
+        employee_rows: list[dict],
+    ) -> tuple[str, str]:
+        """Generate DOCX for a group order using the group template."""
+        template_name = "template__order__vacation_unpaid_group.docx"
+        template_path = Path(settings.TEMPLATES_PATH) / template_name
+
+        if template_path.exists():
+            doc = await asyncio.wait_for(
+                asyncio.to_thread(Document, str(template_path)),
+                timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
+            )
+        else:
+            doc = Document()
+            doc.add_heading(f"Приказ №{order_number}", level=1)
+            warning_run = doc.add_paragraph().add_run(MISSING_TEMPLATE_WARNING)
+            warning_run.bold = True
+            warning_run.font.color.rgb = RGBColor(0xDC, 0x26, 0x26)
+
+        replacements = {
+            "{order_number}": order_number,
+            "{order_date}": data.order_date.strftime("%d.%m.%Y"),
+            "{vacation_start}": data.vacation_start.strftime("%d.%m.%Y"),
+        }
+
+        self._replace_placeholders(doc, replacements)
+
+        employee_table_replacements = []
+        for idx, row_data in enumerate(employee_rows, 1):
+            emp = row_data["employee"]
+            employee_table_replacements.append({
+                "{index}": str(idx),
+                "{full_name}": emp.name,
+                "{position}": str(emp.position.name if emp.position else ""),
+                "{department}": str(emp.department.name if emp.department else ""),
+                "{vacation_start}": data.vacation_start.strftime("%d.%m.%Y"),
+                "{vacation_end}": row_data["vacation_end"].strftime("%d.%m.%Y"),
+                "{vacation_days}": str(row_data["vacation_days"]),
+            })
+
+        for table in doc.tables:
+            template_row = None
+            for row in table.rows:
+                cell_text = " ".join(cell.text for cell in row.cells)
+                if "{full_name}" in cell_text:
+                    template_row = row
+                    break
+
+            if template_row:
+                template_idx = None
+                for i, row in enumerate(table.rows):
+                    if row is template_row:
+                        template_idx = i
+                        break
+                if template_idx is None:
+                    continue
+
+                # First add all extra rows from template (before replacing placeholders)
+                for _ in employee_table_replacements[1:]:
+                    table.add_row()
+
+                # Now replace placeholders in each row starting from template_idx
+                for emp_idx, emp_data in enumerate(employee_table_replacements):
+                    target_row = table.rows[template_idx + emp_idx]
+                    for cell in target_row.cells:
+                        for placeholder, value in emp_data.items():
+                            self._replace_placeholders(cell.paragraphs[0], {placeholder: value})
+
+        storage_name = f"prikaz_{order_number}_vacation_unpaid_group_{data.vacation_start.strftime('%Y-%m-%d')}.docx"
+        display_name = f"Приказ №{order_number} от {data.order_date.strftime('%d.%m.%Y')} — отпуск за свой счет (групповой, {len(employee_rows)} сотр.)"
+        file_path = year_dir / storage_name
+
+        await asyncio.wait_for(
+            asyncio.to_thread(doc.save, str(file_path)),
+            timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
+        )
+        return storage_key(file_path, "ORDERS_PATH"), display_name
+
+
     def _serialize_order(self, order: Order) -> dict[str, Any]:
-        employee_name = order.employee.name if getattr(order, "employee", None) else None
-        order_type_name = order.order_type.name if getattr(order, "order_type", None) else ""
-        order_type_code = order.order_type.code if getattr(order, "order_type", None) else ""
+        from sqlalchemy import inspect as sa_inspect
+        from sqlalchemy.orm.attributes import LoaderCallableStatus
+
+        state = sa_inspect(order)
+        loaded = state.attrs
+
+        def _get_loaded(name: str):
+            attr = getattr(loaded, name, None)
+            if attr is None:
+                return None
+            val = attr.loaded_value
+            if val is LoaderCallableStatus:
+                return None
+            return val
+
+        ot = _get_loaded("order_type")
+        emp = _get_loaded("employee")
+        emps = _get_loaded("employees")
+
+        order_type_name = ot.name if ot else ""
+        order_type_code = ot.code if ot else ""
+        employee_name = emp.name if emp else None
+        is_group = bool(getattr(order, "is_group", False))
+        group_employee_count = len(emps) if is_group and emps else None
+
+        group_employees = None
+        if is_group and emps:
+            group_employees = [
+                {
+                    "employee_id": e.employee_id,
+                    "employee_full_name": e.employee.name if e.employee else None,
+                    "position": e.employee.position.name if e.employee and e.employee.position else None,
+                    "department": e.employee.department.name if e.employee and e.employee.department else None,
+                    "vacation_start": e.vacation_start.isoformat() if e.vacation_start else None,
+                    "vacation_end": e.vacation_end.isoformat() if e.vacation_end else None,
+                    "vacation_days": e.vacation_days,
+                }
+                for e in emps
+            ]
+        
         return {
             "id": order.id,
             "order_number": order.order_number,
@@ -901,6 +1180,9 @@ class OrderService:
             "display_name": order.display_name,
             "notes": order.notes,
             "extra_fields": order.extra_fields or {},
+            "is_group": is_group,
+            "group_employee_count": group_employee_count,
+            "group_employees": group_employees,
         }
 
     def _serialize_order_type(self, order_type: OrderType) -> dict[str, Any]:

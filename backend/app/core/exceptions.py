@@ -36,14 +36,14 @@ class DuplicateTabNumberError(DuplicateError):
         super().__init__(f"Сотрудник с табельным номером {tab_number} уже существует", "duplicate_tab_number")
 
 
-class EmployeeAlreadyArchivedError(HRMSException):
+class EmployeeAlreadyDismissedError(HRMSException):
     def __init__(self, tab_number: int):
-        super().__init__(f"Сотрудник с табельным номером {tab_number} уже архивирован", "employee_already_archived", status_code=400)
+        super().__init__(f"Сотрудник с табельным номером {tab_number} уже уволен", "employee_already_dismissed", status_code=400)
 
 
-class EmployeeNotArchivedError(HRMSException):
+class EmployeeNotDismissedError(HRMSException):
     def __init__(self, tab_number: int):
-        super().__init__(f"Сотрудник с табельным номером {tab_number} не архивирован", "employee_not_archived", status_code=400)
+        super().__init__(f"Сотрудник с табельным номером {tab_number} не уволен", "employee_not_dismissed", status_code=400)
 
 
 class EmployeeDeletedError(HRMSException):

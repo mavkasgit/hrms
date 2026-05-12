@@ -13,6 +13,7 @@ import type {
   TemplateVariablesResponse,
   OrderUpdate,
   OrderDeletionPreview,
+  VacationUnpaidGroupOrderCreate,
 } from "./types"
 
 export async function fetchOrders(params: OrdersQueryParams) {
@@ -76,6 +77,11 @@ export async function updateOrder(orderId: number, payload: OrderUpdate) {
 
 export async function createOrder(order: OrderCreate) {
   const { data } = await api.post<Order>("/orders", order)
+  return data
+}
+
+export async function createVacationUnpaidGroupOrder(payload: VacationUnpaidGroupOrderCreate) {
+  const { data } = await api.post<Order>("/orders/vacation-unpaid/group", payload)
   return data
 }
 

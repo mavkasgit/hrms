@@ -1,11 +1,12 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import and_, extract, func, select
+from sqlalchemy import and_, extract, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.order import Order
+from app.models.order_employee import OrderEmployee
 from app.models.order_type import OrderType
 
 
@@ -41,7 +42,11 @@ class OrderRepository:
             conditions.append(OrderType.letter == order_letter)
 
         if employee_id:
-            conditions.append(Order.employee_id == employee_id)
+            from app.models.order_employee import OrderEmployee
+            group_order_subq = select(OrderEmployee.order_id).where(OrderEmployee.employee_id == employee_id)
+            conditions.append(
+                or_(Order.employee_id == employee_id, Order.id.in_(group_order_subq))
+            )
 
         if date_from:
             conditions.append(Order.order_date >= date_from)
@@ -64,7 +69,11 @@ class OrderRepository:
         sort_column = getattr(Order, sort_by, Order.created_date) if sort_by else Order.created_date
         order_expr = sort_column.asc() if sort_order == "asc" else sort_column.desc()
 
-        data_query = select(Order).options(selectinload(Order.employee), selectinload(Order.order_type))
+        data_query = select(Order).options(
+            selectinload(Order.employee),
+            selectinload(Order.order_type),
+            selectinload(Order.employees).selectinload(OrderEmployee.employee),
+        )
         for join_model in joins:
             data_query = data_query.join(join_model)
         data_query = (
@@ -90,7 +99,11 @@ class OrderRepository:
 
         result = await db.execute(
             select(Order)
-            .options(selectinload(Order.employee), selectinload(Order.order_type))
+            .options(
+                selectinload(Order.employee),
+                selectinload(Order.order_type),
+                selectinload(Order.employees).selectinload(OrderEmployee.employee),
+            )
             .where(where_clause)
             .order_by(Order.created_date.desc())
             .limit(limit)
@@ -200,7 +213,11 @@ class OrderRepository:
             conditions.append(Order.is_deleted == False)
         result = await db.execute(
             select(Order)
-            .options(selectinload(Order.employee), selectinload(Order.order_type))
+            .options(
+                selectinload(Order.employee),
+                selectinload(Order.order_type),
+                selectinload(Order.employees).selectinload(OrderEmployee.employee),
+            )
             .where(and_(*conditions))
         )
         return result.scalar_one_or_none()
