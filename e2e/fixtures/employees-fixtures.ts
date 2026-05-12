@@ -20,7 +20,7 @@ type EmployeesFixtures = {
   employeesApi: {
     uid: () => string
     createEmployee: (overrides?: Record<string, unknown>) => Promise<Employee>
-    archiveEmployee: (employeeId: number) => Promise<Employee>
+    dismissEmployee: (employeeId: number) => Promise<Employee>
     restoreEmployee: (employeeId: number) => Promise<Employee>
     getEmployeeById: (employeeId: number) => Promise<Employee>
     searchEmployees: (query: string) => Promise<Employee[]>
@@ -75,8 +75,8 @@ export const test = base.extend<EmployeesFixtures>({
         employees.push(emp.id)
         return emp
       },
-      archiveEmployee: async (employeeId: number) => {
-        const resp = await request.post(`${API_BASE}/api/employees/${employeeId}/archive`)
+      dismissEmployee: async (employeeId: number) => {
+        const resp = await request.post(`${API_BASE}/api/employees/${employeeId}/dismiss`)
         expect(resp.status()).toBe(200)
         return resp.json()
       },

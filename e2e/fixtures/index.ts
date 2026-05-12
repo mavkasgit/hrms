@@ -120,8 +120,8 @@ async function apiUpdateEmployee(
   return resp.json()
 }
 
-async function apiArchiveEmployee(request: APIRequestContext, id: number): Promise<Employee> {
-  const resp = await request.post(`${API_BASE}/api/employees/${id}/archive`)
+async function apiDismissEmployee(request: APIRequestContext, id: number): Promise<Employee> {
+  const resp = await request.post(`${API_BASE}/api/employees/${id}/dismiss`)
   expect(resp.status()).toBe(200)
   return resp.json()
 }
@@ -354,7 +354,7 @@ type ApiOperations = {
   ) => Promise<Employee>
   getEmployee: (id: number) => Promise<Employee>
   updateEmployee: (id: number, data: Record<string, unknown>) => Promise<Employee>
-  archiveEmployee: (id: number) => Promise<Employee>
+  dismissEmployee: (id: number) => Promise<Employee>
   restoreEmployee: (id: number) => Promise<Employee>
   searchEmployees: (query: string) => Promise<Employee[]>
   deleteEmployee: (id: number) => Promise<void>
@@ -469,7 +469,7 @@ export const test = base.extend<CommonFixtures>({
       getEmployee: async (id: number) => apiGetEmployee(request, id),
       updateEmployee: async (id: number, data: Record<string, unknown>) =>
         apiUpdateEmployee(request, id, data),
-      archiveEmployee: async (id: number) => apiArchiveEmployee(request, id),
+      dismissEmployee: async (id: number) => apiDismissEmployee(request, id),
       restoreEmployee: async (id: number) => apiRestoreEmployee(request, id),
       searchEmployees: async (query: string) => apiSearchEmployees(request, query),
       deleteEmployee: async (id: number) => {

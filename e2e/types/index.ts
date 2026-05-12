@@ -8,7 +8,7 @@
 
 export type Gender = 'М' | 'Ж'
 export type PaymentForm = 'Повременная' | 'Сдельная'
-export type EmployeeStatus = 'active' | 'archived' | 'all' | 'deleted'
+export type EmployeeStatus = 'active' | 'dismissed' | 'all' | 'deleted'
 
 export interface Employee {
   id: number
@@ -34,11 +34,11 @@ export interface Employee {
   additional_vacation_days: number
   created_at: string
   updated_at: string | null
-  is_archived: boolean
-  terminated_date: string | null
-  termination_reason: string | null
-  archived_by: string | null
-  archived_at: string | null
+  is_dismissed: boolean
+  dismissal_date: string | null
+  dismissal_reason: string | null
+  dismissed_by: string | null
+  dismissed_at: string | null
   is_deleted: boolean
 }
 
@@ -144,15 +144,14 @@ export interface OrderTypeRecord {
 export interface OrderExtraFields {
   hire_date?: string
   contract_end?: string
-  probation_end?: string
+  trial_end?: string
   termination_date?: string
   vacation_start?: string
   vacation_end?: string
   vacation_days?: number
   transfer_date?: string
   transfer_reason?: string
-  new_contract_end?: string
-  new_probation_end?: string
+  contract_new_end?: string
 }
 
 export interface Order {

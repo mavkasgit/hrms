@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +10,7 @@ from app.models.hire_date_adjustment import HireDateAdjustment
 from app.models.order import Order
 from app.schemas.department_graph import TagRef
 from app.schemas.employee import (
-    EmployeeArchive,
+    EmployeeDismissal,
     EmployeeCreate,
     EmployeeListResponse,
     EmployeeListWithTagsResponse,
@@ -77,7 +77,9 @@ async def list_employees(
     q: Optional[str] = Query(None),
     department_id: Optional[int] = Query(None),
     gender: Optional[str] = Query(None),
-    status: Optional[str] = Query("active", pattern="^(active|archived|all|deleted)$"),
+    rate_type: Optional[str] = Query(None, pattern="^(full|partial)$"),
+    concurrent_employment_type: Optional[List[str]] = Query(None),
+    status: Optional[str] = Query("active", pattern="^(active|dismissed|all|deleted)$"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=1000),
     sort_by: Optional[str] = Query(None),
@@ -85,6 +87,20 @@ async def list_employees(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[list_employees] concurrent_employment_type={concurrent_employment_type}, type={type(concurrent_employment_type)}")
+
+    allowed_concurrent_types = {"internal", "external"}
+    if concurrent_employment_type:
+        invalid_values = set(concurrent_employment_type) - allowed_concurrent_types
+        if invalid_values:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid concurrent_employment_type values: {sorted(invalid_values)}"
+            )
+
     if q:
         employees = await employee_service.search_employees(db, q)
         total = len(employees)
@@ -104,6 +120,8 @@ async def list_employees(
         db,
         department_id=department_id,
         gender=gender,
+        rate_type=rate_type,
+        concurrent_employment_type=concurrent_employment_type,
         status=status,
         page=page,
         per_page=per_page,
@@ -228,15 +246,15 @@ async def recalculate_employee_periods(
     return await vacation_period_service.recalculate_periods(db, employee_id)
 
 
-@router.post("/{employee_id}/archive")
-async def archive_employee(
+@router.post("/{employee_id}/dismiss")
+async def dismiss_employee(
     employee_id: int,
-    body: Optional[EmployeeArchive] = None,
+    body: Optional[EmployeeDismissal] = None,
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    reason = body.termination_reason if body else None
-    employee, warnings = await employee_service.archive_employee(db, employee_id, current_user, reason)
+    reason = body.dismissal_reason if body else None
+    employee, warnings = await employee_service.dismiss_employee(db, employee_id, current_user, reason)
     response = EmployeeResponse.model_validate(employee)
     result = response.model_dump()
     result["warnings"] = warnings
@@ -298,12 +316,12 @@ async def get_employee_periods_status(
 
 
 @router.get("/{employee_id}/warnings", response_model=EmployeeWarningsResponse)
-async def get_archive_warnings(
+async def get_dismissal_warnings(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    warnings = await employee_service.get_archive_warnings(db, employee_id)
+    warnings = await employee_service.get_dismissal_warnings(db, employee_id)
     return {"warnings": warnings}
 
 

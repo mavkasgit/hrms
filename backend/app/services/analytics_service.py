@@ -12,7 +12,7 @@ class AnalyticsService:
     async def get_dashboard_stats(db: AsyncSession, department_id: Optional[int] = None, gender: Optional[str] = None) -> dict:
         conditions = [
             Employee.is_deleted == False,
-            Employee.is_archived == False,
+            Employee.is_dismissed == False,
         ]
         if department_id:
             conditions.append(Employee.department_id == department_id)
@@ -92,7 +92,7 @@ class AnalyticsService:
 
         conditions = [
             Employee.is_deleted == False,
-            Employee.is_archived == False,
+            Employee.is_dismissed == False,
             Employee.birth_date.isnot(None),
         ]
         if gender:
@@ -148,7 +148,7 @@ class AnalyticsService:
 
         conditions = [
             Employee.is_deleted == False,
-            Employee.is_archived == False,
+            Employee.is_dismissed == False,
         ]
         if department_id:
             conditions.append(Employee.department_id == department_id)
@@ -206,7 +206,7 @@ class AnalyticsService:
 
         conditions = [
             Employee.is_deleted == False,
-            Employee.is_archived == False,
+            Employee.is_dismissed == False,
         ]
         if gender:
             conditions.append(Employee.gender == gender)

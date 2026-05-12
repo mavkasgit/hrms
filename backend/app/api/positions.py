@@ -56,7 +56,7 @@ async def list_positions(db: AsyncSession = Depends(get_db)):
             Employee.position_id,
             func.count().label("cnt"),
         )
-        .where(Employee.is_deleted == False, Employee.is_archived == False)
+        .where(Employee.is_deleted == False, Employee.is_dismissed == False)
         .group_by(Employee.position_id)
     )
     counts = {row.position_id: row.cnt for row in result.all()}
@@ -111,7 +111,7 @@ async def create_position(
         .where(
             Employee.position_id == pos.id,
             Employee.is_deleted == False,
-            Employee.is_archived == False,
+            Employee.is_dismissed == False,
         )
     )
     count = result.scalar_one()
@@ -169,7 +169,7 @@ async def update_position(
         .where(
             Employee.position_id == pos_id,
             Employee.is_deleted == False,
-            Employee.is_archived == False,
+            Employee.is_dismissed == False,
         )
     )
     count = result.scalar_one()

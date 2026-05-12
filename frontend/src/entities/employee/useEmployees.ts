@@ -7,7 +7,9 @@ export function useEmployees(params: {
   q?: string
   department?: string
   gender?: string
-  status?: EmployeeStatus
+  rate_type?: "full" | "partial"
+  concurrent_employment_type?: ("internal" | "external")[]
+  status?: "active" | "dismissed"
   page: number
   per_page: number
   sort_by?: string
@@ -64,11 +66,11 @@ export function useUpdateEmployee() {
   })
 }
 
-export function useArchiveEmployee() {
+export function useDismissEmployee() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ employeeId, reason }: { employeeId: number; reason?: string }) =>
-      api.archiveEmployee(employeeId, reason),
+      api.dismissEmployee(employeeId, reason),
     onSuccess: (_, { employeeId }) => {
       queryClient.invalidateQueries({ queryKey: ["employees"] })
       queryClient.invalidateQueries({ queryKey: ["employee", employeeId] })

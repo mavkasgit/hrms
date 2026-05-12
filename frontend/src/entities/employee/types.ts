@@ -33,6 +33,7 @@ export interface Employee {
   pensioner: boolean
   payment_form: string | null
   rate: number | null
+  employment_type: string | null
   contract_start: string | null
   contract_end: string | null
   personal_number: string | null
@@ -41,11 +42,11 @@ export interface Employee {
   additional_vacation_days: number
   created_at: string
   updated_at: string | null
-  is_archived: boolean
-  terminated_date: string | null
-  termination_reason: string | null
-  archived_by: string | null
-  archived_at: string | null
+  is_dismissed: boolean
+  dismissal_date: string | null
+  dismissal_reason: string | null
+  dismissed_by: string | null
+  dismissed_at: string | null
   is_deleted: boolean
   periods_need_reset?: boolean
 }
@@ -71,6 +72,7 @@ export interface EmployeeCreate {
   pensioner?: boolean
   payment_form?: string | null
   rate?: number | null
+  employment_type?: string | null
   contract_start?: string | null
   contract_end?: string | null
   personal_number?: string | null
@@ -92,6 +94,7 @@ export interface EmployeeUpdate {
   pensioner?: boolean
   payment_form?: string | null
   rate?: number | null
+  employment_type?: string | null
   contract_start?: string | null
   contract_end?: string | null
   personal_number?: string | null
@@ -110,4 +113,4 @@ export interface EmployeeAuditLog {
   reason: string | null
 }
 
-export type EmployeeStatus = "active" | "archived" | "all" | "deleted"
+export type EmployeeStatus = "active" | "dismissed" | "all" | "deleted"

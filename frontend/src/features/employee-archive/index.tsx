@@ -11,21 +11,21 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert"
-import { useArchiveEmployee } from "@/entities/employee/useEmployees"
+import { useDismissEmployee } from "@/entities/employee/useEmployees"
 
-interface EmployeeArchiveDialogProps {
+interface EmployeeDismissalDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   employeeId: number
   name: string
 }
 
-export function EmployeeArchiveDialog({ open, onOpenChange, employeeId, name }: EmployeeArchiveDialogProps) {
+export function EmployeeDismissalDialog({ open, onOpenChange, employeeId, name }: EmployeeDismissalDialogProps) {
   const [reason, setReason] = useState("")
   const [confirmed, setConfirmed] = useState(false)
-  const mutation = useArchiveEmployee()
+  const mutation = useDismissEmployee()
 
-  const handleArchive = () => {
+  const handleDismiss = () => {
     mutation.mutate({ employeeId, reason: reason || undefined })
     setReason("")
     setConfirmed(false)
@@ -79,7 +79,7 @@ export function EmployeeArchiveDialog({ open, onOpenChange, employeeId, name }: 
           </Button>
           <Button
             variant="destructive"
-            onClick={handleArchive}
+            onClick={handleDismiss}
             disabled={!confirmed || mutation.isPending}
           >
             {mutation.isPending ? "Увольнение..." : "Уволить"}

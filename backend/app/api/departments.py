@@ -88,7 +88,7 @@ async def get_departments_graph(db: AsyncSession = Depends(get_db)):
         .options(selectinload(Employee.position))
         .where(Employee.department_id.in_(dept_ids),
                Employee.is_deleted == False,
-               Employee.is_archived == False)
+               Employee.is_dismissed == False)
     )
     employees = emp_result.scalars().unique().all()
 
@@ -228,7 +228,7 @@ async def get_department(dept_id: int, db: AsyncSession = Depends(get_db)):
         .where(
             Employee.department_id == dept_id,
             Employee.is_deleted == False,
-            Employee.is_archived == False,
+            Employee.is_dismissed == False,
         )
     )
     employees = emp_result.scalars().unique().all()

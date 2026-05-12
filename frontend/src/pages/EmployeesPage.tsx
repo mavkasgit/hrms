@@ -21,7 +21,7 @@ import { DocumentModal } from "@/features/document-modal/DocumentModal"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 import { useTags } from "@/entities/tag/useTags"
 import { PrintPreviewDialog } from "@/features/print-preview"
-import type { Employee, EmployeeStatus } from "@/entities/employee/types"
+import type { Employee } from "@/entities/employee/types"
 import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
 
 function calculateAge(birthDate: string | null): number | null {
@@ -56,10 +56,12 @@ function getGenderButtonClass(gender: string, active: boolean): string {
 }
 
 export function EmployeesPage() {
-  const [status, setStatus] = useState<EmployeeStatus>("active")
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<"active" | "dismissed">>(new Set(["active"]))
   const [q, setQ] = useState("")
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [selectedGenders, setSelectedGenders] = useState<Set<string>>(new Set())
+  const [selectedRateTypes, setSelectedRateTypes] = useState<Set<"full" | "partial">>(new Set())
+  const [selectedEmploymentTypes, setSelectedEmploymentTypes] = useState<Set<"internal" | "external">>(new Set())
   const [sortConfigs, setSortConfigs] = useState<SortConfig[]>([])
   const filtersRef = useRef<HTMLDivElement>(null)
 
@@ -76,13 +78,24 @@ export function EmployeesPage() {
   const { data: allTags } = useTags()
 
   const genderFilter = selectedGenders.size === 1 ? [...selectedGenders][0] : undefined
+  const rateTypeFilter = selectedRateTypes.size === 1 ? [...selectedRateTypes][0] : undefined
+  const showRateColumn = selectedRateTypes.size > 0 || selectedEmploymentTypes.size > 0
+  const employmentTypeFilter = selectedEmploymentTypes.size > 0 ? [...selectedEmploymentTypes] : undefined
+  const statusFilter = selectedStatuses.size === 1 ? [...selectedStatuses][0] : undefined
+  const showTerminationDate = selectedStatuses.has("dismissed")
+  const hasFilters =
+    (selectedStatuses.size > 0 && !(selectedStatuses.size === 1 && selectedStatuses.has("active"))) ||
+    selectedRateTypes.size > 0 ||
+    selectedEmploymentTypes.size > 0
 
   const { data, isLoading, error } = useEmployees({
     page: 1,
     per_page: 1000,
-    status,
+    status: statusFilter,
     q: q || undefined,
     gender: genderFilter,
+    rate_type: rateTypeFilter,
+    concurrent_employment_type: employmentTypeFilter,
   })
 
   useEffect(() => {
@@ -104,11 +117,40 @@ export function EmployeesPage() {
     })
   }
 
+  const toggleRateType = (rateType: "full" | "partial") => {
+    setSelectedRateTypes((prev) => {
+      const next = new Set(prev)
+      if (next.has(rateType)) next.delete(rateType)
+      else next.add(rateType)
+      return next
+    })
+  }
+
+  const toggleEmploymentType = (employmentType: "internal" | "external") => {
+    setSelectedEmploymentTypes((prev) => {
+      const next = new Set(prev)
+      if (next.has(employmentType)) next.delete(employmentType)
+      else next.add(employmentType)
+      return next
+    })
+  }
+
+  const toggleStatus = (s: "active" | "dismissed") => {
+    setSelectedStatuses((prev) => {
+      const next = new Set(prev)
+      if (next.has(s)) next.delete(s)
+      else next.add(s)
+      return next
+    })
+  }
+
   const resetFilters = () => {
     setQ("")
     setSelectedGenders(new Set())
+    setSelectedRateTypes(new Set())
+    setSelectedEmploymentTypes(new Set())
+    setSelectedStatuses(new Set(["active"]))
     setSortConfigs([])
-    setStatus("active")
   }
 
   const handleSort = (field: SortField) => {
@@ -250,26 +292,82 @@ export function EmployeesPage() {
             variant="outline"
             size="sm"
             onClick={() => setFiltersOpen(!filtersOpen)}
-            className={status !== "active" ? "border-blue-300" : ""}
+            className={hasFilters ? "border-blue-300" : ""}
           >
             <Filter className="h-4 w-4 mr-1" />
             Фильтры
           </Button>
           {filtersOpen && (
-            <div className="absolute right-0 top-full mt-1 bg-popover border rounded-md shadow-lg p-3 z-50 w-56">
-              <p className="text-xs font-medium text-muted-foreground mb-2">Статус</p>
-              <div className="flex flex-col gap-1">
-                {(["active", "archived", "all"] as EmployeeStatus[]).map((s) => (
-                  <button
-                    key={s}
-                    className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
-                      status === s ? "bg-muted font-medium" : ""
-                    }`}
-                    onClick={() => setStatus(s)}
-                  >
-                    {s === "active" ? "Активные" : s === "archived" ? "Уволенные" : "Все"}
-                  </button>
-                ))}
+            <div className="absolute right-0 top-full mt-1 bg-popover border rounded-md shadow-lg p-3 z-50 w-[520px]">
+              <div className="grid grid-cols-3 gap-4">
+                {/* Статус */}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Статус</p>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                        selectedStatuses.has("active") ? "bg-green-100 font-medium text-green-700" : ""
+                      }`}
+                      onClick={() => toggleStatus("active")}
+                    >
+                      Активные
+                    </button>
+                    <button
+                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                        selectedStatuses.has("dismissed") ? "bg-red-100 font-medium text-red-700" : ""
+                      }`}
+                      onClick={() => toggleStatus("dismissed")}
+                    >
+                      Уволенные
+                    </button>
+                  </div>
+                </div>
+
+                {/* Ставка */}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Ставка</p>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                        selectedRateTypes.has("full") ? "bg-emerald-100 font-medium text-emerald-700" : ""
+                      }`}
+                      onClick={() => toggleRateType("full")}
+                    >
+                      Полная ставка
+                    </button>
+                    <button
+                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                        selectedRateTypes.has("partial") ? "bg-amber-100 font-medium text-amber-700" : ""
+                      }`}
+                      onClick={() => toggleRateType("partial")}
+                    >
+                      Частичная ставка
+                    </button>
+                  </div>
+                </div>
+
+                {/* Совмещение */}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Совмещение</p>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                        selectedEmploymentTypes.has("internal") ? "bg-blue-100 font-medium text-blue-700" : ""
+                      }`}
+                      onClick={() => toggleEmploymentType("internal")}
+                    >
+                      Внутреннее
+                    </button>
+                    <button
+                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                        selectedEmploymentTypes.has("external") ? "bg-purple-100 font-medium text-purple-700" : ""
+                      }`}
+                      onClick={() => toggleEmploymentType("external")}
+                    >
+                      Внешнее
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -315,6 +413,12 @@ export function EmployeesPage() {
               <SortHeader field="position">Должность</SortHeader>
               <SortHeader field="age">Возраст</SortHeader>
               <SortHeader field="hire_date">Конец контракта</SortHeader>
+              {showTerminationDate && (
+                <TableHead className="px-2 py-1">Дата увольнения</TableHead>
+              )}
+              {showRateColumn && (
+                <TableHead className="px-2 py-1">Ставка / Совмещение</TableHead>
+              )}
               <TableHead className="text-right px-2 py-1"></TableHead>
             </TableRow>
           </TableHeader>
@@ -324,7 +428,7 @@ export function EmployeesPage() {
               return (
                 <TableRow
                   key={emp.id}
-                  className={`${emp.is_archived ? "bg-muted/30" : ""} cursor-pointer hover:bg-muted/50 transition-colors`}
+                  className={`${emp.is_dismissed ? "bg-muted/30" : ""} cursor-pointer hover:bg-muted/50 transition-colors`}
                   onClick={() => handleEdit(emp)}
                 >
                   <TableCell className="font-mono text-sm px-2 py-0.5">{emp.tab_number ?? "—"}</TableCell>
@@ -359,6 +463,23 @@ export function EmployeesPage() {
                   <TableCell className="px-2 py-0.5">
                     {emp.contract_end ? new Date(emp.contract_end).toLocaleDateString("ru-RU") : "—"}
                   </TableCell>
+                  {showTerminationDate && (
+                    <TableCell className="px-2 py-0.5">
+                      {emp.dismissal_date ? new Date(emp.dismissal_date).toLocaleDateString("ru-RU") : "—"}
+                    </TableCell>
+                  )}
+                  {showRateColumn && (
+                    <TableCell className="px-2 py-0.5">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-mono text-sm">{emp.rate ? `${emp.rate}` : "—"}</span>
+                        {emp.employment_type && emp.employment_type !== "main" && (
+                          <span className="text-xs text-muted-foreground">
+                            {emp.employment_type === "internal" ? "Внутреннее" : "Внешнее"}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
                   <TableCell className="text-right px-2 py-0.5">
                     <Button
                       variant="ghost"

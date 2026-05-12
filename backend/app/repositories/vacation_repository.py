@@ -377,9 +377,9 @@ class VacationRepository:
         )
 
         if archive_filter == "active":
-            query = query.where(Employee.is_archived == False)
+            query = query.where(Employee.is_dismissed == False)
         elif archive_filter == "archived":
-            query = query.where(Employee.is_archived == True)
+            query = query.where(Employee.is_dismissed == True)
 
         if q:
             q_filter = f"%{q.lower()}%"

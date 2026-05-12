@@ -40,7 +40,7 @@ interface AuditLogItem {
 const actionLabels: Record<string, string> = {
   created: "Создан",
   updated: "Обновлён",
-  archived: "Архивирован",
+  dismissed: "Уволен",
   restored: "Восстановлен",
   deleted: "Удалён",
   hard_deleted: "Удалён навсегда",
@@ -61,7 +61,7 @@ const actionLabels: Record<string, string> = {
 const actionColors: Record<string, string> = {
   created: "bg-green-100 text-green-800",
   updated: "bg-blue-100 text-blue-800",
-  archived: "bg-yellow-100 text-yellow-800",
+  dismissed: "bg-yellow-100 text-yellow-800",
   restored: "bg-purple-100 text-purple-800",
   deleted: "bg-red-100 text-red-800",
   hard_deleted: "bg-red-200 text-red-900",

@@ -14,7 +14,7 @@ async def test_employees_summary():
         result = await db.execute(text("""
             SELECT id, tab_number, name, department_id, position_id, hire_date, additional_vacation_days
             FROM employees 
-            WHERE is_deleted = false AND is_archived = false
+            WHERE is_deleted = false AND is_dismissed = false
             ORDER BY name
             LIMIT 3
         """))

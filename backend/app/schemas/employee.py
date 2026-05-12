@@ -18,6 +18,7 @@ class EmployeeBase(BaseModel):
     pensioner: bool = False
     payment_form: Optional[str] = Field(None, max_length=50)
     rate: Optional[float] = None
+    employment_type: Optional[str] = Field(None, max_length=50)
     contract_start: Optional[date] = None
     contract_end: Optional[date] = None
     personal_number: Optional[str] = Field(None, max_length=50)
@@ -63,6 +64,7 @@ class EmployeeUpdate(BaseModel):
     pensioner: Optional[bool] = None
     payment_form: Optional[str] = Field(None, max_length=50)
     rate: Optional[float] = None
+    employment_type: Optional[str] = Field(None, max_length=50)
     contract_start: Optional[date] = None
     contract_end: Optional[date] = None
     personal_number: Optional[str] = Field(None, max_length=50)
@@ -91,8 +93,8 @@ class EmployeeUpdate(BaseModel):
         return self
 
 
-class EmployeeArchive(BaseModel):
-    termination_reason: Optional[str] = Field(None, max_length=255)
+class EmployeeDismissal(BaseModel):
+    dismissal_reason: Optional[str] = Field(None, max_length=255)
 
 
 class DepartmentInfo(BaseModel):
@@ -127,6 +129,7 @@ class EmployeeResponse(BaseModel):
     pensioner: bool = False
     payment_form: Optional[str] = None
     rate: Optional[float] = None
+    employment_type: Optional[str] = None
     contract_start: Optional[date] = None
     contract_end: Optional[date] = None
     personal_number: Optional[str] = None
@@ -135,11 +138,11 @@ class EmployeeResponse(BaseModel):
     additional_vacation_days: int = 0
     created_at: datetime
     updated_at: Optional[datetime] = None
-    is_archived: bool
-    terminated_date: Optional[date] = None
-    termination_reason: Optional[str] = None
-    archived_by: Optional[str] = None
-    archived_at: Optional[datetime] = None
+    is_dismissed: bool
+    dismissal_date: Optional[date] = None
+    dismissal_reason: Optional[str] = None
+    dismissed_by: Optional[str] = None
+    dismissed_at: Optional[datetime] = None
     is_deleted: bool
     periods_need_reset: Optional[bool] = None
 

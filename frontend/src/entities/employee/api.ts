@@ -11,13 +11,20 @@ import type {
 export async function fetchEmployees(params: {
   q?: string
   department?: string
-  status?: EmployeeStatus
+  status?: "active" | "dismissed"
+  rate_type?: "full" | "partial"
+  concurrent_employment_type?: ("internal" | "external")[]
   page: number
   per_page: number
   sort_by?: string
   sort_order?: string
 }) {
-  const { data } = await api.get<EmployeeListResponse>("/employees", { params })
+  const { data } = await api.get<EmployeeListResponse>("/employees", {
+    params,
+    paramsSerializer: {
+      indexes: null,
+    },
+  })
   return data
 }
 
@@ -53,10 +60,10 @@ export async function fetchEmployeePeriodsStatus(employeeId: number) {
   return data
 }
 
-export async function archiveEmployee(employeeId: number, reason?: string) {
+export async function dismissEmployee(employeeId: number, reason?: string) {
   const { data } = await api.post<Employee & { warnings?: string[] }>(
-    `/employees/${employeeId}/archive`,
-    reason ? { termination_reason: reason } : {}
+    `/employees/${employeeId}/dismiss`,
+    reason ? { dismissal_reason: reason } : {}
   )
   return data
 }
@@ -80,7 +87,7 @@ export async function fetchEmployeeAuditLog(employeeId: number) {
   return data
 }
 
-export async function fetchArchiveWarnings(employeeId: number) {
+export async function fetchDismissalWarnings(employeeId: number) {
   const { data } = await api.get<{ warnings: string[] }>(`/employees/${employeeId}/warnings`)
   return data
 }

@@ -105,39 +105,6 @@ test.describe('Сотрудники UI', () => {
     await page.keyboard.press('Escape')
   })
 
-  test('архивация активного сотрудника', async ({ page, request, apiOps }) => {
-    const u = apiOps.uid()
-    const dept = await apiOps.createDepartment(`Архив-Отдел-${u}`)
-    const pos = await apiOps.createPosition(`Архив-Должность-${u}`)
-    const emp = await apiOps.createEmployee(dept.id, pos.id, {
-      name: `Архив-Сотрудник-${u}`,
-    })
-
-    console.log(`[TEST] Создан сотрудник для архивации: "${emp.name}" (id=${emp.id})`)
-
-    await page.goto('/employees')
-    await page.waitForLoadState('networkidle')
-    const employeeRow = page.locator('tbody tr').filter({ hasText: emp.name })
-    await expect(employeeRow).toBeVisible({ timeout: 5000 })
-
-    await employeeRow.click()
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toBeVisible({ timeout: 5000 })
-    await dialog.getByRole('button', { name: /уволить|архивировать/i }).click()
-
-    const confirmDialog = page.locator('[role="alertdialog"]').or(page.getByRole('dialog').last())
-    await expect(confirmDialog).toBeVisible({ timeout: 5000 })
-    await confirmDialog.getByRole('button', { name: /уволить|архивировать|подтвердить|да/i }).click()
-    await page.waitForLoadState('networkidle')
-
-    await expect(employeeRow).not.toBeVisible({ timeout: 5000 })
-    const apiResponse = await request.get(`/api/employees/${emp.id}`)
-    const archivedEmp = await apiResponse.json()
-    expect(archivedEmp.is_archived).toBe(true)
-    expect(archivedEmp.terminated_date).toBeTruthy()
-    console.log(`[TEST] ✅ Сотрудник "${emp.name}" успешно архивирован`)
-  })
-
   test('мягкое удаление активного сотрудника', async ({ page, apiOps }) => {
     const employee = await apiOps.createEmployee({})
     const empName = employee.name
@@ -160,7 +127,7 @@ test.describe('Сотрудники UI', () => {
     await apiOps.deleteEmployee(employeeId).catch(() => {})
   })
 
-  test('создание → архивация → восстановление → удаление', async ({ page }) => {
+  test('создание → восстановление → удаление', async ({ page, apiOps }) => {
     const u = uid()
     const empName = `Цикл-Тест-${u}`
     const empPosition = `Цикл-Должность-${u}`
@@ -199,32 +166,7 @@ test.describe('Сотрудники UI', () => {
     await expect(dialog).not.toBeVisible({ timeout: 10000 })
     await expect(page.getByText(empName)).toBeVisible({ timeout: 5000 })
 
-    await page.getByText(empName).click()
-    const editDialog = page.getByRole('dialog')
-    await expect(editDialog).toBeVisible()
-    await editDialog.getByRole('button', { name: /уволить.*архив/i }).click()
-
-    const archiveDialog = page.getByRole('alertdialog')
-    await expect(archiveDialog).toBeVisible()
-    await archiveDialog.getByRole('button', { name: /уволить/i }).click()
-    await expect(archiveDialog).not.toBeVisible({ timeout: 5000 })
-    await expect(editDialog).not.toBeVisible({ timeout: 5000 })
-    await expect(page.locator('table tbody').getByText(empName)).not.toBeVisible({ timeout: 5000 })
-
-    await page.getByRole('button', { name: 'Фильтры' }).click()
-    await page.getByText('Уволен').click()
-    await expect(page.locator('table tbody').getByText(empName)).toBeVisible({ timeout: 5000 })
-
-    await page.locator('table tbody').getByText(empName).first().click()
-    const archivedDialog = page.getByRole('dialog')
-    await expect(archivedDialog).toBeVisible()
-    await archivedDialog.getByRole('button', { name: /восстановить/i }).click()
-    await expect(archivedDialog).not.toBeVisible({ timeout: 5000 })
-
-    await page.getByRole('button', { name: 'Фильтры' }).click()
-    await page.getByText('Активные').click()
-    await expect(page.locator('table tbody').getByText(empName)).toBeVisible({ timeout: 5000 })
-
+    // Получаем ID сотрудника через API
     const searchResp = await page.request.get('/api/employees', {
       params: { q: empName, page: 1, per_page: 1 },
     })
@@ -232,6 +174,32 @@ test.describe('Сотрудники UI', () => {
     const employeeId = searchData.items[0]?.id
     expect(employeeId).toBeTruthy()
 
+    // Увольняем через API
+    await apiOps.dismissEmployee(employeeId)
+
+    // Проверяем что сотрудник не виден в активных
+    await page.goto('/employees')
+    await page.waitForLoadState('networkidle')
+    await expect(page.locator('table tbody').getByText(empName)).not.toBeVisible({ timeout: 5000 })
+
+    // Показываем уволенных
+    await page.getByRole('button', { name: 'Фильтры' }).click()
+    await page.getByText('Уволен').click()
+    await expect(page.locator('table tbody').getByText(empName)).toBeVisible({ timeout: 5000 })
+
+    // Восстанавливаем
+    await page.locator('table tbody').getByText(empName).first().click()
+    const dismissedDialog = page.getByRole('dialog')
+    await expect(dismissedDialog).toBeVisible()
+    await dismissedDialog.getByRole('button', { name: /восстановить/i }).click()
+    await expect(dismissedDialog).not.toBeVisible({ timeout: 5000 })
+
+    // Проверяем что снова в активных
+    await page.getByRole('button', { name: 'Фильтры' }).click()
+    await page.getByText('Активные').click()
+    await expect(page.locator('table tbody').getByText(empName)).toBeVisible({ timeout: 5000 })
+
+    // Мягкое удаление
     const deleteResp = await page.request.delete(`/api/employees/${employeeId}`, {
       params: { hard: false },
     })

@@ -64,7 +64,7 @@ export class EmployeesPage {
   async filterByStatus(status: EmployeeStatus) {
     const statusLabels: Record<EmployeeStatus, string> = {
       active: 'Активные',
-      archived: 'Уволен',
+      dismissed: 'Уволен',
       all: 'Все',
       deleted: 'Удалённые',
     }
@@ -248,17 +248,17 @@ export class EmployeesPage {
     await expect(this.dialog).toBeVisible({ timeout: 5000 })
   }
 
-  async archiveEmployee(name: string) {
+  async dismissEmployee(name: string) {
     await this.openEmployee(name)
-    const archiveBtn = this.dialog.getByRole('button', { name: /уволить.*архив/i })
-    await expect(archiveBtn).toBeVisible({ timeout: 5000 })
-    await archiveBtn.click()
+    const dismissBtn = this.dialog.getByRole('button', { name: /уволить/i })
+    await expect(dismissBtn).toBeVisible({ timeout: 5000 })
+    await dismissBtn.click()
 
     // Подтверждение в AlertDialog
-    const archiveDialog = this.page.getByRole('alertdialog')
-    await expect(archiveDialog).toBeVisible()
-    await archiveDialog.getByRole('button', { name: /уволить/i }).click()
-    await expect(archiveDialog).not.toBeVisible({ timeout: 5000 })
+    const dismissDialog = this.page.getByRole('alertdialog')
+    await expect(dismissDialog).toBeVisible()
+    await dismissDialog.getByRole('button', { name: /уволить/i }).click()
+    await expect(dismissDialog).not.toBeVisible({ timeout: 5000 })
     await expect(this.dialog).not.toBeVisible({ timeout: 5000 })
   }
 

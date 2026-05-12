@@ -200,7 +200,7 @@ class SickLeaveRepository:
         )
 
         if not include_archived:
-            query = query.where(Employee.is_archived == False)
+            query = query.where(Employee.is_dismissed == False)
 
         if search_query:
             query = query.where(

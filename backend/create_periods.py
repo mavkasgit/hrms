@@ -15,7 +15,7 @@ async def create_periods():
         result = await db.execute(text("""
             SELECT id, name, hire_date, additional_vacation_days 
             FROM employees 
-            WHERE is_deleted = false AND is_archived = false AND hire_date IS NOT NULL
+            WHERE is_deleted = false AND is_dismissed = false AND hire_date IS NOT NULL
             ORDER BY name
         """))
         employees = result.all()

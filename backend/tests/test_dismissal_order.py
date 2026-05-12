@@ -13,8 +13,8 @@ async def test_dismissal_order_archives_employee(db_session, create_employee):
     await order_service.ensure_default_order_types(db_session)
 
     employee = await create_employee(name="Ivanov Ivan")
-    assert employee.is_archived is False
-    assert employee.terminated_date is None
+    assert employee.is_dismissed is False
+    assert employee.dismissal_date is None
 
     dismissal_type = await order_service.get_order_type_by_code(db_session, "dismissal")
 
@@ -33,9 +33,9 @@ async def test_dismissal_order_archives_employee(db_session, create_employee):
     repo = EmployeeRepository()
     archived_employee = await repo.get_by_id(db_session, employee.id)
 
-    assert archived_employee.is_archived is True
-    assert archived_employee.terminated_date == date(2026, 5, 6)
-    assert "Приказ" in archived_employee.termination_reason
+    assert archived_employee.is_dismissed is True
+    assert archived_employee.dismissal_date == date(2026, 5, 6)
+    assert "Приказ" in archived_employee.dismissal_reason
     assert order is not None
 
 
@@ -49,9 +49,9 @@ async def test_cancel_dismissal_order_restores_employee(db_session, create_emplo
     # Сначала вручную архивируем (как если бы приказ уже был создан)
     from app.repositories.employee_repository import EmployeeRepository
     repo = EmployeeRepository()
-    employee.is_archived = True
-    employee.terminated_date = date(2026, 5, 6)
-    employee.termination_reason = "Test"
+    employee.is_dismissed = True
+    employee.dismissal_date = date(2026, 5, 6)
+    employee.dismissal_reason = "Test"
     await db_session.flush()
 
     order = await create_order(
@@ -65,9 +65,9 @@ async def test_cancel_dismissal_order_restores_employee(db_session, create_emplo
     await order_service.cancel_order(db_session, order.id, "admin")
 
     restored_employee = await repo.get_by_id(db_session, employee.id)
-    assert restored_employee.is_archived is False
-    assert restored_employee.terminated_date is None
-    assert restored_employee.termination_reason is None
+    assert restored_employee.is_dismissed is False
+    assert restored_employee.dismissal_date is None
+    assert restored_employee.dismissal_reason is None
 
 
 async def test_delete_dismissal_order_restores_employee(db_session, create_employee, create_order_type, create_order):
@@ -79,9 +79,9 @@ async def test_delete_dismissal_order_restores_employee(db_session, create_emplo
 
     from app.repositories.employee_repository import EmployeeRepository
     repo = EmployeeRepository()
-    employee.is_archived = True
-    employee.terminated_date = date(2026, 5, 6)
-    employee.termination_reason = "Test"
+    employee.is_dismissed = True
+    employee.dismissal_date = date(2026, 5, 6)
+    employee.dismissal_reason = "Test"
     await db_session.flush()
 
     order = await create_order(
@@ -96,9 +96,9 @@ async def test_delete_dismissal_order_restores_employee(db_session, create_emplo
     await order_service.hard_delete_order(db_session, order_id)
 
     restored_employee = await repo.get_by_id(db_session, employee.id)
-    assert restored_employee.is_archived is False
-    assert restored_employee.terminated_date is None
-    assert restored_employee.termination_reason is None
+    assert restored_employee.is_dismissed is False
+    assert restored_employee.dismissal_date is None
+    assert restored_employee.dismissal_reason is None
 
 
 async def test_non_dismissal_order_does_not_archive_employee(db_session, create_employee, create_order_type, create_order):
@@ -119,5 +119,5 @@ async def test_non_dismissal_order_does_not_archive_employee(db_session, create_
     repo = EmployeeRepository()
     fetched_employee = await repo.get_by_id(db_session, employee.id)
 
-    assert fetched_employee.is_archived is False
-    assert fetched_employee.terminated_date is None
+    assert fetched_employee.is_dismissed is False
+    assert fetched_employee.dismissal_date is None

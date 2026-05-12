@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,10 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_audit_logger
 from app.core.exceptions import (
     DuplicateTabNumberError,
-    EmployeeAlreadyArchivedError,
+    EmployeeAlreadyDismissedError,
     EmployeeDeletedError,
     EmployeeNotFoundError,
-    EmployeeNotArchivedError,
+    EmployeeNotDismissedError,
 )
 from app.models.employee import Employee
 from app.repositories.employee_repository import EmployeeRepository
@@ -28,6 +28,8 @@ class EmployeeService:
         db: AsyncSession,
         department_id: Optional[int] = None,
         gender: Optional[str] = None,
+        rate_type: Optional[str] = None,
+        concurrent_employment_type: Optional[List[str]] = None,
         status: str = "active",
         page: int = 1,
         per_page: int = 20,
@@ -38,6 +40,8 @@ class EmployeeService:
             db,
             department_id=department_id,
             gender=gender,
+            rate_type=rate_type,
+            concurrent_employment_type=concurrent_employment_type,
             status=status,
             page=page,
             per_page=per_page,
@@ -236,38 +240,38 @@ class EmployeeService:
 
         return employee
 
-    async def archive_employee(
+    async def dismiss_employee(
         self, db: AsyncSession, employee_id: int, user_id: str, reason: Optional[str] = None
     ) -> tuple[Employee, list[str]]:
         employee = await self.get_by_id(db, employee_id)
 
-        if employee.is_archived:
-            raise EmployeeAlreadyArchivedError(employee_id)
+        if employee.is_dismissed:
+            raise EmployeeAlreadyDismissedError(employee_id)
 
-        warnings = await self._check_archive_warnings(db, employee_id)
+        warnings = await self._check_dismissal_warnings(db, employee_id)
 
         old_values = {
-            "is_archived": employee.is_archived,
-            "terminated_date": employee.terminated_date,
-            "termination_reason": employee.termination_reason,
+            "is_dismissed": employee.is_dismissed,
+            "dismissal_date": employee.dismissal_date,
+            "dismissal_reason": employee.dismissal_reason,
         }
 
-        employee = await repository.archive(db, employee_id, user_id, reason)
+        employee = await repository.dismiss(db, employee_id, user_id, reason)
 
         changed_fields = {
-            "is_archived": {"old": False, "new": True},
-            "terminated_date": {"old": None, "new": str(employee.terminated_date)},
-            "termination_reason": {"old": None, "new": reason},
+            "is_dismissed": {"old": False, "new": True},
+            "dismissal_date": {"old": None, "new": str(employee.dismissal_date)},
+            "dismissal_reason": {"old": None, "new": reason},
         }
-        await repository._add_audit_entry(db, employee_id, "archived", user_id, reason, changed_fields)
+        await repository._add_audit_entry(db, employee_id, "dismissed", user_id, reason, changed_fields)
 
         # Логирование в общий журнал
         audit_logger.info(
-            f"EMPLOYEE ARCHIVED: id={employee_id}, name={employee.name}, reason={reason}",
+            f"EMPLOYEE DISMISSED: id={employee_id}, name={employee.name}, reason={reason}",
             extra={
                 "employee_id": employee_id,
                 "employee_name": employee.name,
-                "action": "archived",
+                "action": "dismissed",
                 "user_id": user_id,
                 "reason": reason,
                 "changed_fields": changed_fields,
@@ -281,15 +285,15 @@ class EmployeeService:
         if not employee:
             raise EmployeeNotFoundError(employee_id)
 
-        if not employee.is_archived:
-            raise EmployeeNotArchivedError(employee_id)
+        if not employee.is_dismissed:
+            raise EmployeeNotDismissedError(employee_id)
 
         employee = await repository.restore(db, employee_id, user_id)
 
         changed_fields = {
-            "is_archived": {"old": True, "new": False},
-            "terminated_date": {"old": str(employee.terminated_date), "new": None},
-            "termination_reason": {"old": employee.termination_reason, "new": None},
+            "is_dismissed": {"old": True, "new": False},
+            "dismissal_date": {"old": str(employee.dismissal_date), "new": None},
+            "dismissal_reason": {"old": employee.dismissal_reason, "new": None},
         }
         await repository._add_audit_entry(db, employee_id, "restored", user_id, None, changed_fields)
 
@@ -358,14 +362,14 @@ class EmployeeService:
         await self.get_by_id(db, employee_id)
         return await repository.get_audit_log(db, employee_id)
 
-    async def get_archive_warnings(self, db: AsyncSession, employee_id: int) -> list[str]:
+    async def get_dismissal_warnings(self, db: AsyncSession, employee_id: int) -> list[str]:
         await self.get_by_id(db, employee_id)
-        return await self._check_archive_warnings(db, employee_id)
+        return await self._check_dismissal_warnings(db, employee_id)
 
     async def get_departments(self, db: AsyncSession) -> list[str]:
         return await repository.get_departments(db)
 
-    async def _check_archive_warnings(self, db: AsyncSession, employee_id: int) -> list[str]:
+    async def _check_dismissal_warnings(self, db: AsyncSession, employee_id: int) -> list[str]:
         warnings = []
         future_vacations = await repository.get_future_vacations(db, employee_id)
         if future_vacations:

@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -36,6 +36,8 @@ class EmployeeRepository:
         db: AsyncSession,
         department_id: Optional[int] = None,
         gender: Optional[str] = None,
+        rate_type: Optional[str] = None,
+        concurrent_employment_type: Optional[List[str]] = None,
         status: str = "active",
         page: int = 1,
         per_page: int = 20,
@@ -46,10 +48,10 @@ class EmployeeRepository:
 
         if status == "active":
             conditions.append(Employee.is_deleted == False)
-            conditions.append(Employee.is_archived == False)
-        elif status == "archived":
+            conditions.append(Employee.is_dismissed == False)
+        elif status == "dismissed":
             conditions.append(Employee.is_deleted == False)
-            conditions.append(Employee.is_archived == True)
+            conditions.append(Employee.is_dismissed == True)
         elif status == "deleted":
             conditions.append(Employee.is_deleted == True)
         elif status == "all":
@@ -60,6 +62,14 @@ class EmployeeRepository:
 
         if gender:
             conditions.append(Employee.gender == gender)
+
+        if rate_type == "full":
+            conditions.append(or_(Employee.rate >= 1.0, Employee.rate.is_(None)))
+        elif rate_type == "partial":
+            conditions.append(or_(Employee.rate < 1.0, Employee.rate.is_(None)))
+
+        if concurrent_employment_type and len(concurrent_employment_type) > 0:
+            conditions.append(Employee.employment_type.in_(concurrent_employment_type))
 
         where_clause = and_(*conditions) if conditions else True
 
@@ -143,7 +153,7 @@ class EmployeeRepository:
         await db.refresh(employee)
         return employee
 
-    async def archive(
+    async def dismiss(
         self,
         db: AsyncSession,
         employee_id: int,
@@ -153,11 +163,11 @@ class EmployeeRepository:
         employee = await self.get_by_id(db, employee_id)
         if not employee:
             return None
-        employee.is_archived = True
-        employee.terminated_date = datetime.now().date()
-        employee.termination_reason = reason
-        employee.archived_by = user_id
-        employee.archived_at = datetime.now()
+        employee.is_dismissed = True
+        employee.dismissal_date = datetime.now().date()
+        employee.dismissal_reason = reason
+        employee.dismissed_by = user_id
+        employee.dismissed_at = datetime.now()
         await db.flush()
         await db.refresh(employee)
         return employee
@@ -166,11 +176,11 @@ class EmployeeRepository:
         employee = await self.get_by_id(db, employee_id)
         if not employee:
             return None
-        employee.is_archived = False
-        employee.terminated_date = None
-        employee.termination_reason = None
-        employee.archived_by = None
-        employee.archived_at = None
+        employee.is_dismissed = False
+        employee.dismissal_date = None
+        employee.dismissal_reason = None
+        employee.dismissed_by = None
+        employee.dismissed_at = None
         await db.flush()
         await db.refresh(employee)
         return employee
@@ -199,10 +209,35 @@ class EmployeeRepository:
         from app.models.vacation import Vacation
         from app.models.vacation_plan import VacationPlan
         from app.models.vacation_period import VacationPeriod
+        from app.models.vacation_period_manual_closure import VacationPeriodManualClosure
+        from app.models.vacation_adjustment import VacationAdjustment
+        from app.models.hire_date_adjustment import HireDateAdjustment
+        from app.models.sick_leave import SickLeave
+        from app.models.order_employee import OrderEmployee
+        from app.models.tag import EmployeeTag
+        from app.models.department import Department
         from app.models.order import Order
         from sqlalchemy import delete, update
 
+        await db.execute(delete(EmployeeTag).where(EmployeeTag.employee_id == employee_id))
+
+        await db.execute(delete(HireDateAdjustment).where(HireDateAdjustment.employee_id == employee_id))
+
+        await db.execute(delete(SickLeave).where(SickLeave.employee_id == employee_id))
+
+        await db.execute(delete(VacationAdjustment).where(VacationAdjustment.employee_id == employee_id))
+
+        await db.execute(delete(VacationPeriodManualClosure).where(VacationPeriodManualClosure.employee_id == employee_id))
+
         await db.execute(delete(VacationPeriod).where(VacationPeriod.employee_id == employee_id))
+
+        await db.execute(delete(OrderEmployee).where(OrderEmployee.employee_id == employee_id))
+
+        await db.execute(
+            update(Department)
+            .where(Department.head_employee_id == employee_id)
+            .values(head_employee_id=None)
+        )
 
         await db.execute(
             update(Vacation).where(Vacation.employee_id == employee_id).values(order_id=None)
