@@ -22,7 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
 import type { Employee, EmployeeCreate, EmployeeUpdate } from "@/entities/employee/types"
-import { useCreateEmployee, useUpdateEmployee, useArchiveEmployee, useRestoreEmployee, useDeleteEmployee, useResetEmployeePeriods, useHireOrder } from "@/entities/employee/useEmployees"
+import { useCreateEmployee, useUpdateEmployee, useRestoreEmployee, useDeleteEmployee, useResetEmployeePeriods, useHireOrder, useDismissEmployee } from "@/entities/employee/useEmployees"
 import { Archive, Trash2, RotateCcw, Building, Briefcase, CalendarClock } from "lucide-react"
 import { useDepartments, useCreateDepartment } from "@/entities/department"
 import { usePositions, useCreatePosition } from "@/entities/position"
@@ -55,6 +55,7 @@ const emptyForm: EmployeeCreate = {
   pensioner: false,
   payment_form: null,
   rate: null,
+  employment_type: null,
   contract_start: null,
   contract_end: null,
   personal_number: null,
@@ -66,16 +67,16 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
   const isEdit = !!employee
   const [form, setForm] = useState(isEdit ? employee : emptyForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [showArchiveDialog, setShowArchiveDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showHireDateDialog, setShowHireDateDialog] = useState(false)
   const [pendingUpdateData, setPendingUpdateData] = useState<EmployeeUpdate | null>(null)
   const [isRecalculating, setIsRecalculating] = useState(false)
   const [showAdjustmentDialog, setShowAdjustmentDialog] = useState(false)
+  const [showDismissalDialog, setShowDismissalDialog] = useState(false)
+  const [showHireDialog, setShowHireDialog] = useState(false)
 
   const createMutation = useCreateEmployee()
   const updateMutation = useUpdateEmployee()
-  const archiveMutation = useArchiveEmployee()
   const restoreMutation = useRestoreEmployee()
   const deleteMutation = useDeleteEmployee()
   const resetPeriodsMutation = useResetEmployeePeriods()
@@ -165,6 +166,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         pensioner: form.pensioner,
         payment_form: form.payment_form,
         rate: form.rate,
+        employment_type: form.employment_type,
         contract_start: form.contract_start,
         contract_end: form.contract_end,
         personal_number: form.personal_number,
@@ -279,25 +281,23 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
   }
 
   const handleArchive = () => {
-    console.log(`[FORM] handleArchive вызван`)
-    if (!employee) {
-      console.log(`[FORM] Нет данных сотрудника`)
-      return
-    }
-    console.log(`[FORM] Увольнение сотрудника ID=${employee.id}`)
-    archiveMutation.mutate(
-      { employeeId: employee.id },
-      {
-        onSuccess: () => {
-          console.log(`[FORM] Сотрудник успешно уволен`)
-          setShowArchiveDialog(false)
-          onOpenChange(false)
-        },
-        onError: (error) => {
-          console.error(`[FORM] Ошибка при увольнении:`, error)
-        },
-      }
-    )
+    setShowDismissalDialog(true)
+  }
+
+  const handleConfirmArchive = () => {
+    if (!employee) return
+    navigate(`/orders?employeeId=${employee.id}&orderType=dismissal`)
+    onOpenChange(false)
+  }
+
+  const handleHireOrder = () => {
+    setShowHireDialog(true)
+  }
+
+  const handleConfirmHireOrder = () => {
+    if (!employee) return
+    navigate(`/orders?employeeId=${employee.id}&orderType=hire`)
+    onOpenChange(false)
   }
 
   const handleRestore = () => {
@@ -361,8 +361,8 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
           <div className="flex items-center justify-between">
             <DialogTitle>{isEdit ? "Редактировать сотрудника" : "Новый сотрудник"}</DialogTitle>
             {isEdit && employee && (
-              <Badge variant={employee.is_archived ? "warning" : employee.is_deleted ? "destructive" : "success"}>
-                {employee.is_deleted ? "Удалён" : employee.is_archived ? "Уволен" : "Активен"}
+              <Badge variant={employee.is_dismissed ? "warning" : employee.is_deleted ? "destructive" : "success"}>
+                {employee.is_deleted ? "Удалён" : employee.is_dismissed ? "Уволен" : "Активен"}
               </Badge>
             )}
           </div>
@@ -403,7 +403,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
           </div>
 
-          <div className="grid grid-cols-[100px_1fr_1fr] gap-4">
+          <div className="grid grid-cols-[80px_310px_200px] gap-4">
             <div>
               <label className="text-sm font-medium">Таб.№</label>
               <Input
@@ -414,27 +414,31 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
             <div>
               <label className="text-sm font-medium">Должность *</label>
-              <ComboboxCreate
-                value={form.position_id}
-                onChange={(id) => updateField("position_id", id)}
-                items={posItems}
-                onCreate={handleCreatePosition}
-                placeholder="Выберите или создайте"
-                icon={<Briefcase className="h-4 w-4" />}
-                error={errors.position}
-              />
+              <div className="overflow-hidden">
+                <ComboboxCreate
+                  value={form.position_id}
+                  onChange={(id) => updateField("position_id", id)}
+                  items={posItems}
+                  onCreate={handleCreatePosition}
+                  placeholder="Выберите или создайте"
+                  icon={<Briefcase className="h-4 w-4" />}
+                  error={errors.position}
+                />
+              </div>
             </div>
             <div>
               <label className="text-sm font-medium">Подразделение *</label>
-              <ComboboxCreate
-                value={form.department_id}
-                onChange={(id) => updateField("department_id", id)}
-                items={deptItems}
-                onCreate={handleCreateDepartment}
-                placeholder="Выберите или создайте"
-                icon={<Building className="h-4 w-4" />}
-                error={errors.department}
-              />
+              <div className="overflow-hidden">
+                <ComboboxCreate
+                  value={form.department_id}
+                  onChange={(id) => updateField("department_id", id)}
+                  items={deptItems}
+                  onCreate={handleCreateDepartment}
+                  placeholder="Выберите или создайте"
+                  icon={<Building className="h-4 w-4" />}
+                  error={errors.department}
+                />
+              </div>
             </div>
           </div>
 
@@ -474,7 +478,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
           </div>
 
-          <div className="grid grid-cols-[165px_1fr_140px_80px] gap-4 items-center">
+          <div className="grid grid-cols-[165px_1fr_140px] gap-4 items-center">
             <div className="flex items-end">
               <DatePicker
                 label="Дата приёма"
@@ -514,7 +518,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 <button
                   type="button"
                   className="text-xs text-amber-600 hover:text-amber-700 hover:underline cursor-pointer whitespace-nowrap leading-relaxed"
-                  onClick={() => navigate(`/orders?employeeId=${employee.id}&orderType=hire`)}
+                  onClick={handleHireOrder}
                   title="Добавить приказ о приёме"
                 >
                   Приказ о приёме не добавлен
@@ -536,32 +540,56 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="text-sm font-medium">Ставка</label>
-              <Input
-                type="number"
-                step="0.1"
-                value={form.rate ?? ""}
-                onChange={(e) => updateField("rate", e.target.value ? parseFloat(e.target.value) : null)}
-                className="w-full"
-              />
-            </div>
           </div>
 
-          <div className="grid grid-cols-[130px_130px] gap-4">
-            <div>
+          <div className="grid items-end" style={{ gridTemplateColumns: "130px 16px 130px 40px 80px 16px 1fr" }}>
+            <div className="flex flex-col gap-1">
               <DatePicker
                 label="Начало контракта"
                 value={form.contract_start || ""}
                 onChange={(value) => updateField("contract_start", value || null)}
               />
             </div>
-            <div>
+
+            <div />
+
+            <div className="flex flex-col gap-1">
               <DatePicker
                 label="Окончание контракта"
                 value={form.contract_end || ""}
                 onChange={(value) => updateField("contract_end", value || null)}
               />
+            </div>
+
+            <div />
+
+            <div className="flex flex-col gap-1">
+              <div className="text-sm font-medium whitespace-nowrap">Ставка</div>
+              <Input
+                type="number"
+                step="0.1"
+                value={form.rate ?? ""}
+                onChange={(e) => updateField("rate", e.target.value ? parseFloat(e.target.value) : null)}
+                className="w-full h-10 py-2"
+              />
+            </div>
+
+            <div />
+
+            <div className="flex flex-col gap-1">
+              <div className="text-sm font-medium whitespace-nowrap">Совмещение</div>
+              <Select
+                value={form.employment_type || ""}
+                onValueChange={(v) => updateField("employment_type", v || null)}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="internal">Внутреннее совместительство</SelectItem>
+                  <SelectItem value="external">Внешнее совместительство</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -594,20 +622,19 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
           <div className="flex gap-2">
             {isEdit && employee && !employee.is_deleted && (
               <>
-                {!employee.is_archived && (
+                {!employee.is_dismissed && (
                   <Button
                     variant="outline"
                     size="sm"
                     className="text-amber-600 border-amber-200 hover:bg-amber-50"
-                    onClick={() => setShowArchiveDialog(true)}
-                    disabled={archiveMutation.isPending}
+                    onClick={handleArchive}
                   >
                     <Archive className="h-4 w-4 mr-2" />
                     Уволить
                   </Button>
                 )}
 
-                {employee.is_archived && (
+                {employee.is_dismissed && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -645,26 +672,6 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         </div>
       </DialogContent>
     </Dialog>
-
-    <AlertDialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Уволить сотрудника?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Сотрудник {employee?.name} будет уволен. Вы сможете восстановить его позже.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Отмена</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={handleArchive}
-            className="bg-amber-600 hover:bg-amber-700"
-          >
-            Уволить
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
 
     <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
       <AlertDialogContent>
@@ -730,6 +737,40 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         onOpenChange(false)
       }}
     />
+
+    <AlertDialog open={showDismissalDialog} onOpenChange={setShowDismissalDialog}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Создание приказа об увольнении</AlertDialogTitle>
+          <AlertDialogDescription>
+            Для увольнения сотрудника {employee?.name} будет открыта страница приказов, где нужно будет оформить приказ об увольнении. Продолжить?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Отмена</AlertDialogCancel>
+          <AlertDialogAction onClick={handleConfirmArchive}>
+            Продолжить
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <AlertDialog open={showHireDialog} onOpenChange={setShowHireDialog}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Создание приказа о приёме</AlertDialogTitle>
+          <AlertDialogDescription>
+            Для добавления приказа о приёме сотрудника {employee?.name} будет открыта страница приказов. Продолжить?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Отмена</AlertDialogCancel>
+          <AlertDialogAction onClick={handleConfirmHireOrder}>
+            Продолжить
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </>
   )
 }
