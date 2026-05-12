@@ -104,6 +104,17 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
         "letter": "к",
     },
     {
+        "code": "vacation_unpaid_group",
+        "name": "Отпуск за свой счет (групповой)",
+        "show_in_orders_page": False,
+        "template_filename": "template__order__vacation_unpaid_group.docx",
+        "field_schema": [
+            {"key": "vacation_start", "label": "Дата начала", "type": "date", "required": True},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_vacation_unpaid_group_{vacation_start}.docx",
+        "letter": "к",
+    },
+    {
         "code": "weekend_call",
         "name": "Вызов в выходной",
         "show_in_orders_page": False,
@@ -932,7 +943,7 @@ class OrderService:
         if not data.employees:
             raise HRMSException("Список сотрудников не может быть пустым", "validation_error", status_code=422)
 
-        order_type = await self.get_order_type_by_code(db, "vacation_unpaid")
+        order_type = await self.get_order_type_by_code(db, "vacation_unpaid_group")
 
         order_number = data.order_number
         if not order_number:
@@ -1013,11 +1024,17 @@ class OrderService:
         from sqlalchemy import select as sa_select
         from sqlalchemy.orm import selectinload
         from app.models.order_employee import OrderEmployee
+        from app.models.employee import Employee
         reload_result = await db.execute(
             sa_select(Order)
             .options(
                 selectinload(Order.order_type),
-                selectinload(Order.employees).selectinload(OrderEmployee.employee),
+                selectinload(Order.employees)
+                    .selectinload(OrderEmployee.employee)
+                    .selectinload(Employee.position),
+                selectinload(Order.employees)
+                    .selectinload(OrderEmployee.employee)
+                    .selectinload(Employee.department),
             )
             .where(Order.id == order.id)
             .execution_options(populate_existing=True)
@@ -1025,7 +1042,7 @@ class OrderService:
         order = reload_result.scalar_one()
 
         audit_logger.info(
-            f"GROUP ORDER CREATED: number={order_number}, type=vacation_unpaid, employee_count={len(employee_rows)}",
+            f"GROUP ORDER CREATED: number={order_number}, type=vacation_unpaid_group, employee_count={len(employee_rows)}",
             extra={
                 "action": "group_order_created",
                 "user_id": "system",
@@ -1050,7 +1067,7 @@ class OrderService:
         employee_rows: list[dict],
     ) -> tuple[str, str]:
         """Generate DOCX for a group order using the group template."""
-        template_name = "template__order__vacation_unpaid_group.docx"
+        template_name = order_type.template_filename or "template__order__vacation_unpaid_group.docx"
         template_path = Path(settings.TEMPLATES_PATH) / template_name
 
         if template_path.exists():
@@ -1086,27 +1103,23 @@ class OrderService:
 
         # Process employee table rows BEFORE general placeholder replacement
         for table in doc.tables:
-            template_row = None
-            for row in table.rows:
+            template_idx = None
+            for i, row in enumerate(table.rows):
                 cell_text = " ".join(cell.text for cell in row.cells)
                 if "{full_name}" in cell_text:
-                    template_row = row
+                    template_idx = i
                     break
 
-            if template_row:
-                template_idx = None
-                for i, row in enumerate(table.rows):
-                    if row is template_row:
-                        template_idx = i
-                        break
-                if template_idx is None:
-                    continue
+            if template_idx is not None:
+                from copy import deepcopy
+                template_row = table.rows[template_idx]
 
-                # First add all extra rows from template (before replacing placeholders)
+                # Add extra rows by copying template row XML
                 for _ in employee_table_replacements[1:]:
-                    table.add_row()
+                    new_tr = deepcopy(template_row._tr)
+                    table._tbl.append(new_tr)
 
-                # Now replace placeholders in each row starting from template_idx
+                # Now replace placeholders in each row
                 for emp_idx, emp_data in enumerate(employee_table_replacements):
                     target_row = table.rows[template_idx + emp_idx]
                     for cell in target_row.cells:

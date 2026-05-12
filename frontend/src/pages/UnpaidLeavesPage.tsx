@@ -369,7 +369,10 @@ export function UnpaidLeavesPage() {
         vacation_days: e.vacation_days,
       })),
     }, {
-      onSuccess: () => resetGroupForm(),
+      onSuccess: (order) => {
+        resetGroupForm()
+        window.open(`/orders/${order.id}/edit-docx`, "_blank", "noopener,noreferrer")
+      },
     })
   }
 

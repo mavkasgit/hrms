@@ -92,7 +92,7 @@ async def test_create_vacation_unpaid_group_order(db_session, create_employee, c
     serialized = order_service._serialize_order(order)
     assert serialized["is_group"] is True
     assert serialized["group_employee_count"] == 3
-    assert serialized["order_type_code"] == "vacation_unpaid"
+    assert serialized["order_type_code"] == "vacation_unpaid_group"
 
     group_emps = serialized["group_employees"]
     assert len(group_emps) == 3

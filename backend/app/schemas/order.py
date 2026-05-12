@@ -27,13 +27,16 @@ class OrderResponse(BaseModel):
     order_type_id: int
     order_type_name: str
     order_type_code: str
-    employee_id: int
+    employee_id: Optional[int] = None
     employee_name: Optional[str] = None
     order_date: date
     created_date: Optional[datetime] = None
     file_path: Optional[str] = None
     notes: Optional[str] = None
     extra_fields: Optional[dict[str, Any]] = None
+    is_group: bool = False
+    group_employee_count: Optional[int] = None
+    group_employees: Optional[list["GroupEmployeeInfo"]] = None
 
     model_config = {"from_attributes": True}
 
@@ -99,23 +102,3 @@ class GroupEmployeeInfo(BaseModel):
     vacation_start: str
     vacation_end: str
     vacation_days: int
-
-
-class OrderResponse(BaseModel):
-    id: int
-    order_number: str
-    order_type_id: int
-    order_type_name: str
-    order_type_code: str
-    employee_id: int | None = None
-    employee_name: str | None = None
-    order_date: date
-    created_date: datetime | None = None
-    file_path: str | None = None
-    notes: str | None = None
-    extra_fields: dict[str, Any] | None = None
-    is_group: bool = False
-    group_employee_count: int | None = None
-    group_employees: list[GroupEmployeeInfo] | None = None
-
-    model_config = {"from_attributes": True}
