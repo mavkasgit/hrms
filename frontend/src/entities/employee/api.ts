@@ -5,7 +5,6 @@ import type {
   EmployeeCreate,
   EmployeeUpdate,
   EmployeeAuditLog,
-  EmployeeStatus,
 } from "./types"
 
 export async function fetchEmployees(params: {

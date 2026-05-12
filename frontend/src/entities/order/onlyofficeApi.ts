@@ -1,6 +1,6 @@
 import api from "@/shared/api/axios"
-import type { OrderCreate } from "./types"
-import type { CommitOrderDraftResponse, OnlyOfficeConfig, OrderDraftResponse } from "./onlyofficeTypes"
+import type { GroupOrderCreate, OrderCreate } from "./types"
+import type { CommitOrderDraftResponse, GroupDraftResponse, OnlyOfficeConfig, OrderDraftResponse } from "./onlyofficeTypes"
 
 export async function fetchOrderOnlyOfficeConfig(orderId: number, mode: "edit" | "view" = "edit") {
   const { data } = await api.get<OnlyOfficeConfig>(`/orders/${orderId}/onlyoffice/config`, {
@@ -54,5 +54,15 @@ export async function forceSaveTemplate(orderTypeId: number, documentKey: string
 
 export async function deleteOrderDraft(draftId: string) {
   const { data } = await api.delete<{ message: string }>(`/orders/drafts/${draftId}`)
+  return data
+}
+
+export async function createGroupDraft(payload: GroupOrderCreate) {
+  const { data } = await api.post<GroupDraftResponse>("/orders/group-drafts", payload)
+  return data
+}
+
+export async function commitGroupDraft(draftId: string) {
+  const { data } = await api.post<Order>(`/orders/group-drafts/${draftId}/commit`)
   return data
 }

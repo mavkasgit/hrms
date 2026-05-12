@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as api from "./api"
-import type { OrderCreate, OrderUpdate, OrdersQueryParams, OrderTypeCreate, OrderTypeUpdate, OrderDeletionPreview, VacationUnpaidGroupOrderCreate } from "./types"
+import type { OrderCreate, OrderUpdate, OrdersQueryParams, OrderTypeCreate, OrderTypeUpdate, OrderDeletionPreview, VacationUnpaidGroupOrderCreate, WeekendCallGroupOrderCreate } from "./types"
 
 export function useOrders(params: OrdersQueryParams) {
   return useQuery({
@@ -210,6 +210,17 @@ export function useCreateVacationUnpaidGroupOrder() {
       queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
       queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
+    },
+  })
+}
+
+export function useCreateWeekendCallGroupOrder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: WeekendCallGroupOrderCreate) => api.createWeekendCallGroupOrder(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
     },
   })
 }

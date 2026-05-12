@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Plus, Trash2, Upload, Download, FilePen } from "lucide-react"
+import { Plus, Trash2, Upload, Download, FilePen, Check } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Checkbox } from "@/shared/ui/checkbox"
@@ -40,7 +40,7 @@ interface OrderTypeFormProps {
   orderType: OrderType | null
   onEditTemplate?: (orderTypeId: number) => void
   onDownloadTemplate?: (orderTypeId: number) => void
-  onUploadTemplate?: (orderTypeId: number, file: File) => void
+  onUploadTemplate?: (orderTypeId: number, file: File, onSuccess?: () => void) => void
   onDeleteTemplate?: (orderTypeId: number) => void
   templateExists?: boolean
 }
@@ -52,7 +52,7 @@ const emptyField = (): OrderTypeFieldSchema => ({
   required: false,
 })
 
-const STANDARD_CODES = ["hire", "dismissal", "transfer", "contract_extension", "vacation_paid", "vacation_unpaid", "vacation_recall", "vacation_postpone", "vacation_extension", "weekend_call", "substitution"]
+const STANDARD_CODES = ["hire", "dismissal", "transfer", "contract_extension", "vacation_paid", "vacation_unpaid", "vacation_recall", "vacation_postpone", "vacation_extension", "weekend_call", "substitution", "vacation_unpaid_group", "weekend_call_group"]
 
 export function OrderTypeForm({ open, onOpenChange, orderType, onEditTemplate, onDownloadTemplate, onUploadTemplate, onDeleteTemplate, templateExists }: OrderTypeFormProps) {
   const [name, setName] = useState("")
@@ -63,6 +63,7 @@ export function OrderTypeForm({ open, onOpenChange, orderType, onEditTemplate, o
   const [fields, setFields] = useState<OrderTypeFieldSchema[]>([])
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [uploadSuccess, setUploadSuccess] = useState(false)
 
   const createMutation = useCreateOrderType()
   const updateMutation = useUpdateOrderType()
@@ -88,6 +89,7 @@ export function OrderTypeForm({ open, onOpenChange, orderType, onEditTemplate, o
       setFields([])
     }
     setDeleteError(null)
+    setUploadSuccess(false)
   }, [orderType, open])
 
   const handleSave = () => {
@@ -268,7 +270,7 @@ export function OrderTypeForm({ open, onOpenChange, orderType, onEditTemplate, o
                     input.accept = ".docx"
                     input.onchange = (ev) => {
                       const file = (ev.target as HTMLInputElement).files?.[0]
-                      if (file) onUploadTemplate(orderType.id, file)
+                      if (file) onUploadTemplate(orderType.id, file, () => setUploadSuccess(true))
                     }
                     input.click()
                   }}
@@ -288,6 +290,12 @@ export function OrderTypeForm({ open, onOpenChange, orderType, onEditTemplate, o
                   <FilePen className="mr-2 h-4 w-4" />
                   Редактировать
                 </Button>
+              )}
+              {uploadSuccess && (
+                <span className="inline-flex items-center gap-1 text-sm text-green-600">
+                  <Check className="h-4 w-4" />
+                  Шаблон загружен
+                </span>
               )}
             </div>
           </div>

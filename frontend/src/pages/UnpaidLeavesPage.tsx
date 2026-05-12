@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
 import { ChevronDown, ChevronRight, Download, Eye, FilePen, Trash2, X } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -8,10 +8,10 @@ import { Skeleton } from "@/shared/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table"
 import { EmployeeSearch } from "@/features/employee-search"
 import { useAllOrderTypes, useCancelOrder, useCreateVacationUnpaidGroupOrder, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
-import { useCommitOrderDraft, useCreateOrderDraft, useDeleteOrderDraft } from "@/entities/order/useOnlyOffice"
+import { useCommitGroupDraft, useCommitOrderDraft, useCreateGroupDraft, useCreateOrderDraft, useDeleteOrderDraft } from "@/entities/order/useOnlyOffice"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
-import type { GroupEmployeeInfo, VacationUnpaidGroupEmployeeCreate } from "@/entities/order/types"
+import type { GroupEmployeeInfo, Order, VacationUnpaidGroupEmployeeCreate } from "@/entities/order/types"
 import {
   Tabs,
   TabsList,
@@ -39,6 +39,13 @@ interface DateRange {
 interface GroupEmployeeRow extends VacationUnpaidGroupEmployeeCreate {
   employee: Employee
   vacation_end_calculated?: string
+}
+
+interface UnpaidLeaveEntry {
+  orderId: number
+  employeeName: string
+  range: DateRange
+  explicitDays: number | null
 }
 
 function formatDate(dateStr: string | null): string {
@@ -99,6 +106,37 @@ function overlapDays(range: DateRange, periodStart: string, periodEnd: string): 
   return Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
 }
 
+function toUnpaidLeaveEntries(order: Order): UnpaidLeaveEntry[] {
+  if (order.is_group) {
+    return (order.group_employees || []).flatMap((employee) => {
+      const range = parseUnpaidRange({
+        vacation_start: employee.vacation_start,
+        vacation_end: employee.vacation_end,
+      })
+      if (!range) return []
+      return [{
+        orderId: order.id,
+        employeeName: employee.employee_full_name || "Неизвестный сотрудник",
+        range,
+        explicitDays: employee.vacation_days > 0 ? employee.vacation_days : null,
+      }]
+    })
+  }
+
+  const extra = (order.extra_fields || {}) as Record<string, unknown>
+  const range = parseUnpaidRange(extra)
+  if (!range) return []
+  const explicitDaysRaw = typeof extra.vacation_days === "number" ? extra.vacation_days : Number(extra.vacation_days)
+  const explicitDays = Number.isNaN(explicitDaysRaw) || explicitDaysRaw <= 0 ? null : explicitDaysRaw
+
+  return [{
+    orderId: order.id,
+    employeeName: order.employee_name || "Неизвестный сотрудник",
+    range,
+    explicitDays,
+  }]
+}
+
 export function UnpaidLeavesPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
@@ -117,12 +155,16 @@ export function UnpaidLeavesPage() {
   const createDraftMutation = useCreateOrderDraft()
   const commitDraftMutation = useCommitOrderDraft()
   const deleteDraftMutation = useDeleteOrderDraft()
+  const createGroupDraftMutation = useCreateGroupDraft()
+  const commitGroupDraftMutation = useCommitGroupDraft()
   const cancelMutation = useCancelOrder()
   const deleteMutation = useDeleteOrder()
   const createGroupOrderMutation = useCreateVacationUnpaidGroupOrder()
   const [cancelOrderId, setCancelOrderId] = useState<number | null>(null)
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
+  const [showEmployeesTable, setShowEmployeesTable] = useState(true)
   const [draftId, setDraftId] = useState<string | null>(null)
+  const [groupDraftId, setGroupDraftId] = useState<string | null>(null)
   const [orderMode, setOrderMode] = useState<"single" | "group">("single")
   const [groupEmployees, setGroupEmployees] = useState<GroupEmployeeRow[]>([])
   const [groupVacationStart, setGroupVacationStart] = useState("")
@@ -237,6 +279,18 @@ export function UnpaidLeavesPage() {
     window.addEventListener("message", handleDraftSave)
     return () => window.removeEventListener("message", handleDraftSave)
   }, [draftId, selectedEmployee, orderDate, orderNumber, vacationStart, vacationEnd, vacationDays])
+
+  useEffect(() => {
+    const handleGroupDraftSave = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+      const message = event.data as { type?: string; draftId?: string }
+      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== groupDraftId) return
+      handleCommitGroupDraft()
+    }
+
+    window.addEventListener("message", handleGroupDraftSave)
+    return () => window.removeEventListener("message", handleGroupDraftSave)
+  }, [groupDraftId])
 
   const handleDownload = (orderId: number) => {
     window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
@@ -369,54 +423,82 @@ export function UnpaidLeavesPage() {
         vacation_days: e.vacation_days,
       })),
     }, {
-      onSuccess: () => resetGroupForm(),
+      onSuccess: (order) => {
+        resetGroupForm()
+        window.open(`/orders/${order.id}/edit-docx`, "_blank", "noopener,noreferrer")
+      },
+    })
+  }
+
+  const handleCreateGroupDraft = () => {
+    if (!validateGroup() || !unpaidLeaveType) return
+    const editorWindow = window.open("about:blank", "_blank")
+    createGroupDraftMutation.mutate(
+      {
+        order_type_code: "vacation_unpaid_group",
+        order_date: orderDate,
+        order_number: orderNumber,
+        vacation_start: groupVacationStart,
+        employees: groupEmployees.map((e) => ({
+          employee_id: e.employee_id,
+          vacation_days: e.vacation_days,
+        })),
+      },
+      {
+        onSuccess: (draft) => {
+          setGroupDraftId(draft.draft_id)
+          const url = draft.edit_url
+          if (editorWindow && !editorWindow.closed) {
+            editorWindow.location.href = url
+          } else {
+            window.open(url, "_blank", "noopener,noreferrer")
+          }
+        },
+        onError: () => {
+          editorWindow?.close()
+        },
+      }
+    )
+  }
+
+  const handleCommitGroupDraft = () => {
+    if (!groupDraftId) return
+    commitGroupDraftMutation.mutate(groupDraftId, {
+      onSuccess: () => {
+        setGroupDraftId(null)
+        resetGroupForm()
+      },
     })
   }
 
   const orders = data?.items ?? []
   const periodError = periodStart && periodEnd && periodEnd < periodStart ? "Дата конца раньше даты начала" : ""
 
-  const filteredOrders = orders
-    .filter((order) => {
-      if (!employeeFilter.trim()) return true
-      return (order.employee_name || "").toLowerCase().includes(employeeFilter.trim().toLowerCase())
-    })
-    .filter((order) => {
-      const extra = (order.extra_fields || {}) as Record<string, unknown>
-      const range = parseUnpaidRange(extra)
-      if (!range) return false
-      return intersectsPeriod(range, periodStart, periodEnd)
-    })
+  const normalizedEmployeeFilter = employeeFilter.trim().toLowerCase()
+  const unpaidEntries = orders.flatMap((order) => toUnpaidLeaveEntries(order))
+  const filteredEntries = unpaidEntries.filter((entry) => {
+    if (normalizedEmployeeFilter && !entry.employeeName.toLowerCase().includes(normalizedEmployeeFilter)) return false
+    return intersectsPeriod(entry.range, periodStart, periodEnd)
+  })
+  const filteredOrderIds = new Set(filteredEntries.map((entry) => entry.orderId))
+  const filteredOrders = orders.filter((order) => filteredOrderIds.has(order.id))
 
-  const totalOrders = filteredOrders.length
-
-  const totalUnpaidDays = filteredOrders.reduce((sum, order) => {
-    const extra = (order.extra_fields || {}) as Record<string, unknown>
-    const range = parseUnpaidRange(extra)
-    if (!range) return sum
-    const explicitDays = typeof extra.vacation_days === "number" ? extra.vacation_days : Number(extra.vacation_days)
-    if (!Number.isNaN(explicitDays) && explicitDays > 0 && !periodStart && !periodEnd) return sum + explicitDays
-    return sum + overlapDays(range, periodStart, periodEnd)
+  const totalOrders = filteredEntries.length
+  const totalUnpaidDays = filteredEntries.reduce((sum, entry) => {
+    if (entry.explicitDays && !periodStart && !periodEnd) return sum + entry.explicitDays
+    return sum + overlapDays(entry.range, periodStart, periodEnd)
   }, 0)
 
   const employeesMap = new Map<string, { name: string; orders: number; days: number }>()
-  for (const order of filteredOrders) {
-    const name = order.employee_name || "Неизвестный сотрудник"
-    const extra = (order.extra_fields || {}) as Record<string, unknown>
-    const range = parseUnpaidRange(extra)
-    const current = employeesMap.get(name) || { name, orders: 0, days: 0 }
+  for (const entry of filteredEntries) {
+    const current = employeesMap.get(entry.employeeName) || { name: entry.employeeName, orders: 0, days: 0 }
     current.orders += 1
-    if (range) {
-      const explicitDays = typeof extra.vacation_days === "number" ? extra.vacation_days : Number(extra.vacation_days)
-      if (!Number.isNaN(explicitDays) && explicitDays > 0 && !periodStart && !periodEnd) {
-        current.days += explicitDays
-      } else {
-        current.days += overlapDays(range, periodStart, periodEnd)
-      }
-    }
-    employeesMap.set(name, current)
+    current.days += entry.explicitDays && !periodStart && !periodEnd
+      ? entry.explicitDays
+      : overlapDays(entry.range, periodStart, periodEnd)
+    employeesMap.set(entry.employeeName, current)
   }
-  const employeesSummary = Array.from(employeesMap.values()).sort((a, b) => b.orders - a.orders)
+  const employeesSummary = Array.from(employeesMap.values()).sort((a, b) => b.days - a.days)
 
   const setCalendarYearPeriod = () => {
     setPeriodMode("calendarYear")
@@ -611,14 +693,31 @@ export function UnpaidLeavesPage() {
                   {(createGroupOrderMutation.error as any)?.response?.data?.detail || (createGroupOrderMutation.error as any)?.message || "Ошибка создания группового приказа"}
                 </p>
               )}
+              {createGroupDraftMutation.isError && (
+                <p className="text-sm text-red-600">
+                  {(createGroupDraftMutation.error as any)?.response?.data?.detail || (createGroupDraftMutation.error as any)?.message || "Ошибка подготовки группового приказа"}
+                </p>
+              )}
+              {commitGroupDraftMutation.isError && (
+                <p className="text-sm text-red-600">
+                  {(commitGroupDraftMutation.error as any)?.response?.data?.detail || (commitGroupDraftMutation.error as any)?.message || "Ошибка создания группового приказа"}
+                </p>
+              )}
 
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={resetGroupForm} disabled={createGroupOrderMutation.isPending}>
+                <Button variant="outline" size="sm" onClick={resetGroupForm} disabled={createGroupOrderMutation.isPending || createGroupDraftMutation.isPending || commitGroupDraftMutation.isPending}>
                   Очистить
                 </Button>
-                <Button size="sm" onClick={handleCreateGroupOrder} disabled={createGroupOrderMutation.isPending || !unpaidLeaveType}>
-                  {createGroupOrderMutation.isPending ? "Создание..." : "Создать групповой приказ"}
-                </Button>
+                {!groupDraftId ? (
+                  <Button size="sm" onClick={handleCreateGroupDraft} disabled={createGroupDraftMutation.isPending || !unpaidLeaveType}>
+                    <FilePen className="mr-2 h-4 w-4" />
+                    {createGroupDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={handleCommitGroupDraft} disabled={commitGroupDraftMutation.isPending}>
+                    {commitGroupDraftMutation.isPending ? "Создание..." : "Создать"}
+                  </Button>
+                )}
               </div>
             </div>
           </TabsContent>
@@ -682,28 +781,45 @@ export function UnpaidLeavesPage() {
 
           {periodError && <p className="text-xs text-red-500">{periodError}</p>}
 
-          {employeesSummary.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Сотрудник</TableHead>
-                  <TableHead>Отпусков</TableHead>
-                  <TableHead>Дней отпуска</TableHead>
-                </TableRow>
-              </TableHeader>
+          <Table>
+            <TableHeader>
+              <TableRow
+                className="cursor-pointer select-none"
+                onClick={() => employeesSummary.length > 0 && setShowEmployeesTable(!showEmployeesTable)}
+              >
+                <TableHead className="w-10">
+                  {employeesSummary.length > 0 && (
+                    <span className="text-muted-foreground text-xs">
+                      {showEmployeesTable ? "▾" : "▸"}
+                    </span>
+                  )}
+                </TableHead>
+                <TableHead>Сотрудник</TableHead>
+                <TableHead>Дней отпуска</TableHead>
+                <TableHead>Отпусков</TableHead>
+              </TableRow>
+            </TableHeader>
+            {showEmployeesTable && (
               <TableBody>
-                {employeesSummary.map((employee) => (
-                  <TableRow key={employee.name}>
-                    <TableCell className="font-medium">{employee.name}</TableCell>
-                    <TableCell>{employee.orders}</TableCell>
-                    <TableCell>{employee.days}</TableCell>
+                {employeesSummary.length > 0 ? (
+                  employeesSummary.map((employee) => (
+                    <TableRow key={employee.name}>
+                      <TableCell className="w-10" />
+                      <TableCell className="font-medium">{employee.name}</TableCell>
+                      <TableCell>{employee.days}</TableCell>
+                      <TableCell>{employee.orders}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-4">
+                      Нет сотрудников с отпусками за выбранный период
+                    </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
-            </Table>
-          ) : (
-            <EmptyState message="Нет сотрудников с отпусками" description="За выбранный период отпуски отсутствуют" />
-          )}
+            )}
+          </Table>
 
           {filteredOrders.length === 0 ? (
             <EmptyState message="Нет отпусков за выбранный период" description="Измените фильтры периода или сотрудника" />
@@ -726,8 +842,8 @@ export function UnpaidLeavesPage() {
                   const isExpanded = expandedGroupIds.has(order.id)
 
                   return (
-                    <>
-                      <TableRow key={order.id}>
+                    <Fragment key={order.id}>
+                      <TableRow>
                         <TableCell className="font-mono">{order.order_number}</TableCell>
                         <TableCell>
                           {isGroup ? (
@@ -822,7 +938,7 @@ export function UnpaidLeavesPage() {
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   )
                 })}
               </TableBody>

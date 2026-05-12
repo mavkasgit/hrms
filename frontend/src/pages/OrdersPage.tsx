@@ -90,9 +90,9 @@ function DynamicField({ field, value, error, onChange }: DynamicFieldProps) {
 
   // text / number
   return (
-    <div>
+    <div className="space-y-1">
+      <label className="text-sm font-medium">{field.label}</label>
       <Input
-        label={field.label}
         type={field.type === "number" ? "number" : "text"}
         placeholder={field.label}
         value={displayValue}
