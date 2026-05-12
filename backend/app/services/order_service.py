@@ -1071,8 +1071,6 @@ class OrderService:
             "{vacation_start}": data.vacation_start.strftime("%d.%m.%Y"),
         }
 
-        self._replace_placeholders(doc, replacements)
-
         employee_table_replacements = []
         for idx, row_data in enumerate(employee_rows, 1):
             emp = row_data["employee"]
@@ -1086,6 +1084,7 @@ class OrderService:
                 "{vacation_days}": str(row_data["vacation_days"]),
             })
 
+        # Process employee table rows BEFORE general placeholder replacement
         for table in doc.tables:
             template_row = None
             for row in table.rows:
@@ -1113,6 +1112,8 @@ class OrderService:
                     for cell in target_row.cells:
                         for placeholder, value in emp_data.items():
                             self._replace_placeholders(cell.paragraphs[0], {placeholder: value})
+
+        self._replace_placeholders(doc, replacements)
 
         storage_name = f"prikaz_{order_number}_vacation_unpaid_group_{data.vacation_start.strftime('%Y-%m-%d')}.docx"
         display_name = f"Приказ №{order_number} от {data.order_date.strftime('%d.%m.%Y')} — отпуск за свой счет (групповой, {len(employee_rows)} сотр.)"

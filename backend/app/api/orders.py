@@ -53,6 +53,7 @@ from app.schemas.order import (
     OrderSettingsUpdate,
     OrderSyncResponse,
     OrderUpdate,
+    VacationUnpaidGroupOrderCreate,
 )
 from app.schemas.order_type import OrderTypeListResponse
 from app.services.order_service import order_service
@@ -111,6 +112,16 @@ async def create_order(
     current_user: str = Depends(_get_current_user_stub),
 ):
     order = await order_service.create_order(db, data)
+    return order_service._serialize_order(order)
+
+
+@router.post("/vacation-unpaid/group", status_code=201)
+async def create_vacation_unpaid_group_order(
+    data: VacationUnpaidGroupOrderCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    order = await order_service.create_vacation_unpaid_group_order(db, data)
     return order_service._serialize_order(order)
 
 
