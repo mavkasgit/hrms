@@ -17,10 +17,17 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
 import { EmployeeSearch } from "@/features/employee-search"
-import { useAllOrderTypes, useCancelOrder, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
-import { useCommitOrderDraft, useCreateOrderDraft, useDeleteOrderDraft } from "@/entities/order/useOnlyOffice"
+import { useAllOrderTypes, useCancelOrder, useCreateWeekendCallGroupOrder, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
+import { useCommitOrderDraft, useCreateGroupDraft, useCommitGroupDraft, useCreateOrderDraft, useDeleteOrderDraft } from "@/entities/order/useOnlyOffice"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
+import type { GroupEmployeeInfo, Order, WeekendCallGroupEmployeeCreate } from "@/entities/order/types"
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/shared/ui/tabs"
 
 const WEEKEND_CALL_CODE = "weekend_call"
 
@@ -31,15 +38,11 @@ interface CallRange {
   end: string
 }
 
-interface OrderWithRange {
-  order: {
-    id: number
-    order_number: string
-    employee_name: string | null
-    order_date: string
-    extra_fields: Record<string, unknown> | null
-  }
-  callRange: CallRange
+interface WeekendCallEntry {
+  orderId: number
+  employeeName: string
+  range: CallRange
+  isGroup: boolean
 }
 
 function formatDate(dateStr: string | null): string {
@@ -107,8 +110,40 @@ function callPeriodLabel(extra: Record<string, unknown>): string {
   return "—"
 }
 
+function toWeekendCallEntries(order: Order): WeekendCallEntry[] {
+  if (order.is_group) {
+    return (order.group_employees || []).flatMap((employee) => {
+      const range = parseCallRange({
+        call_date_start: employee.vacation_start,
+        call_date_end: employee.vacation_end,
+      })
+      if (!range) return []
+      return [{
+        orderId: order.id,
+        employeeName: employee.employee_full_name || "Неизвестный сотрудник",
+        range,
+        isGroup: true,
+      }]
+    })
+  }
+
+  const extra = (order.extra_fields || {}) as Record<string, unknown>
+  const range = parseCallRange(extra)
+  if (!range) return []
+
+  return [{
+    orderId: order.id,
+    employeeName: order.employee_name || "Неизвестный сотрудник",
+    range,
+    isGroup: false,
+  }]
+}
+
+interface GroupEmployeeRow extends WeekendCallGroupEmployeeCreate {
+  employee: Employee
+}
+
 export function WeekendCallsPage() {
-  const [collapsed, setCollapsed] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
   const [orderNumber, setOrderNumber] = useState("")
@@ -123,14 +158,26 @@ export function WeekendCallsPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [cancelOrderId, setCancelOrderId] = useState<number | null>(null)
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<number>>(new Set())
 
   const { data: orderTypes = [] } = useAllOrderTypes()
   const createDraftMutation = useCreateOrderDraft()
   const commitDraftMutation = useCommitOrderDraft()
   const deleteDraftMutation = useDeleteOrderDraft()
+  const createGroupDraftMutation = useCreateGroupDraft()
+  const commitGroupDraftMutation = useCommitGroupDraft()
   const cancelMutation = useCancelOrder()
   const deleteMutation = useDeleteOrder()
+  const createGroupOrderMutation = useCreateWeekendCallGroupOrder()
   const [draftId, setDraftId] = useState<string | null>(null)
+  const [groupDraftId, setGroupDraftId] = useState<string | null>(null)
+  const [orderMode, setOrderMode] = useState<"single" | "group">("single")
+  const [groupEmployees, setGroupEmployees] = useState<GroupEmployeeRow[]>([])
+  const [groupCallMode, setGroupCallMode] = useState<CallMode>("single")
+  const [groupCallDate, setGroupCallDate] = useState("")
+  const [groupCallDateStart, setGroupCallDateStart] = useState("")
+  const [groupCallDateEnd, setGroupCallDateEnd] = useState("")
+  const [groupErrors, setGroupErrors] = useState<Record<string, string>>({})
   const { data, isLoading } = useOrders({
     page: 1,
     per_page: 1000,
@@ -264,6 +311,18 @@ export function WeekendCallsPage() {
     return () => window.removeEventListener("message", handleDraftSave)
   }, [draftId, selectedEmployee, orderDate, orderNumber, callDate, callDateStart, callDateEnd, mode])
 
+  useEffect(() => {
+    const handleGroupDraftSave = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+      const message = event.data as { type?: string; draftId?: string }
+      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== groupDraftId) return
+      handleCommitGroupDraft()
+    }
+
+    window.addEventListener("message", handleGroupDraftSave)
+    return () => window.removeEventListener("message", handleGroupDraftSave)
+  }, [groupDraftId])
+
   const handleDownload = (orderId: number) => {
     window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
   }
@@ -282,43 +341,162 @@ export function WeekendCallsPage() {
     setDeleteOrderId(null)
   }
 
+  const toggleGroupExpand = (orderId: number) => {
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(orderId)) {
+        next.delete(orderId)
+      } else {
+        next.add(orderId)
+      }
+      return next
+    })
+  }
+
+  const addGroupEmployee = (employee: Employee) => {
+    if (groupEmployees.some((e) => e.employee_id === employee.id)) return
+    setGroupEmployees((prev) => [
+      ...prev,
+      {
+        employee_id: employee.id,
+        vacation_days: 1,
+        employee,
+      },
+    ])
+  }
+
+  const removeGroupEmployee = (employeeId: number) => {
+    setGroupEmployees((prev) => prev.filter((e) => e.employee_id !== employeeId))
+  }
+
+  const resetGroupForm = () => {
+    setGroupEmployees([])
+    setGroupCallMode("single")
+    setGroupCallDate("")
+    setGroupCallDateStart("")
+    setGroupCallDateEnd("")
+    setOrderNumber("")
+    setOrderDate(new Date().toISOString().split("T")[0])
+    setGroupDraftId(null)
+    setGroupErrors({})
+  }
+
+  const validateGroup = (): boolean => {
+    const nextErrors: Record<string, string> = {}
+    if (!orderDate) nextErrors.orderDate = "Укажите дату приказа"
+    if (!orderNumber) nextErrors.orderNumber = "Укажите номер приказа"
+    if (groupCallMode === "single" && !groupCallDate) nextErrors.callDate = "Укажите дату вызова"
+    if (groupCallMode === "range") {
+      if (!groupCallDateStart) nextErrors.callDateStart = "Укажите дату начала"
+      if (!groupCallDateEnd) nextErrors.callDateEnd = "Укажите дату окончания"
+      if (groupCallDateStart && groupCallDateEnd && groupCallDateEnd < groupCallDateStart) {
+        nextErrors.callDateEnd = "Дата окончания раньше даты начала"
+      }
+    }
+    if (groupEmployees.length === 0) nextErrors.employees = "Добавьте хотя бы одного сотрудника"
+    setGroupErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
+  const handleCreateGroupDraft = () => {
+    if (!validateGroup()) return
+    const editorWindow = window.open("about:blank", "_blank")
+    const callDays = groupCallMode === "single"
+      ? 1
+      : groupCallDateStart && groupCallDateEnd
+        ? daysInclusive(groupCallDateStart, groupCallDateEnd)
+        : 1
+
+    createGroupDraftMutation.mutate(
+      {
+        order_type_code: "weekend_call_group",
+        order_date: orderDate,
+        order_number: orderNumber,
+        mode: groupCallMode,
+        call_date: groupCallMode === "single" ? groupCallDate : undefined,
+        call_date_start: groupCallMode === "range" ? groupCallDateStart : undefined,
+        call_date_end: groupCallMode === "range" ? groupCallDateEnd : undefined,
+        employees: groupEmployees.map((e) => ({
+          employee_id: e.employee_id,
+          vacation_days: callDays,
+        })),
+      },
+      {
+        onSuccess: (draft) => {
+          setGroupDraftId(draft.draft_id)
+          const url = draft.edit_url
+          if (editorWindow && !editorWindow.closed) {
+            editorWindow.location.href = url
+          } else {
+            window.open(url, "_blank", "noopener,noreferrer")
+          }
+        },
+        onError: () => {
+          editorWindow?.close()
+        },
+      }
+    )
+  }
+
+  const handleCommitGroupDraft = () => {
+    if (!groupDraftId) return
+    commitGroupDraftMutation.mutate(groupDraftId, {
+      onSuccess: () => {
+        setGroupDraftId(null)
+        resetGroupForm()
+      },
+    })
+  }
+
+  const handleCreateGroupOrder = () => {
+    // Legacy direct creation — kept for fallback
+    if (!validateGroup()) return
+    const callDays = groupCallMode === "single"
+      ? 1
+      : groupCallDateStart && groupCallDateEnd
+        ? daysInclusive(groupCallDateStart, groupCallDateEnd)
+        : 1
+
+    createGroupOrderMutation.mutate({
+      order_date: orderDate,
+      order_number: orderNumber,
+      mode: groupCallMode,
+      call_date: groupCallMode === "single" ? groupCallDate : undefined,
+      call_date_start: groupCallMode === "range" ? groupCallDateStart : undefined,
+      call_date_end: groupCallMode === "range" ? groupCallDateEnd : undefined,
+      employees: groupEmployees.map((e) => ({
+        employee_id: e.employee_id,
+        vacation_days: callDays,
+      })),
+    }, {
+      onSuccess: (order) => {
+        resetGroupForm()
+        window.open(`/orders/${order.id}/edit-docx`, "_blank", "noopener,noreferrer")
+      },
+    })
+  }
+
   const orders = data?.items ?? []
   const periodError = periodStart && periodEnd && periodEnd < periodStart ? "Дата конца раньше даты начала" : ""
 
-  const accountedOrders: OrderWithRange[] = orders
-    .map((order) => {
-      const extra = (order.extra_fields || {}) as Record<string, unknown>
-      const callRange = parseCallRange(extra)
-      return callRange
-        ? {
-            order: {
-              id: order.id,
-              order_number: order.order_number,
-              employee_name: order.employee_name,
-              order_date: order.order_date,
-              extra_fields: order.extra_fields as Record<string, unknown> | null,
-            },
-            callRange,
-          }
-        : null
-    })
-    .filter((item): item is OrderWithRange => item !== null)
-    .filter((item) => {
-      if (!employeeFilter.trim()) return true
-      return (item.order.employee_name || "").toLowerCase().includes(employeeFilter.trim().toLowerCase())
-    })
-    .filter((item) => intersectsPeriod(item.callRange, periodStart, periodEnd))
+  const normalizedEmployeeFilter = employeeFilter.trim().toLowerCase()
+  const weekendEntries = orders.flatMap((order) => toWeekendCallEntries(order))
+  const filteredEntries = weekendEntries.filter((entry) => {
+    if (normalizedEmployeeFilter && !entry.employeeName.toLowerCase().includes(normalizedEmployeeFilter)) return false
+    return intersectsPeriod(entry.range, periodStart, periodEnd)
+  })
+  const filteredOrderIds = new Set(filteredEntries.map((entry) => entry.orderId))
+  const filteredOrders = orders.filter((order) => filteredOrderIds.has(order.id))
 
-  const totalCalls = accountedOrders.length
-  const totalDays = accountedOrders.reduce((sum, item) => sum + overlapDays(item.callRange, periodStart, periodEnd), 0)
+  const totalCalls = filteredEntries.length
+  const totalDays = filteredEntries.reduce((sum, entry) => sum + overlapDays(entry.range, periodStart, periodEnd), 0)
 
   const employeesMap = new Map<string, { name: string; calls: number; days: number }>()
-  for (const item of accountedOrders) {
-    const name = item.order.employee_name || "Неизвестный сотрудник"
-    const current = employeesMap.get(name) || { name, calls: 0, days: 0 }
+  for (const entry of filteredEntries) {
+    const current = employeesMap.get(entry.employeeName) || { name: entry.employeeName, calls: 0, days: 0 }
     current.calls += 1
-    current.days += overlapDays(item.callRange, periodStart, periodEnd)
-    employeesMap.set(name, current)
+    current.days += overlapDays(entry.range, periodStart, periodEnd)
+    employeesMap.set(entry.employeeName, current)
   }
   const employeesSummary = Array.from(employeesMap.values()).sort((a, b) => b.calls - a.calls)
 
@@ -329,17 +507,15 @@ export function WeekendCallsPage() {
       </div>
 
       <div className="border rounded-lg bg-card">
-        <div className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none" onClick={() => setCollapsed(!collapsed)}>
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-          <h2 className="text-lg font-semibold">Создать приказ</h2>
-        </div>
+        <Tabs value={orderMode} onValueChange={(v) => setOrderMode(v as "single" | "group")}>
+          <div className="px-4 py-3 border-b">
+            <TabsList>
+              <TabsTrigger value="single">Один сотрудник</TabsTrigger>
+              <TabsTrigger value="group">Групповой приказ</TabsTrigger>
+            </TabsList>
+          </div>
 
-        {!collapsed && (
-          <div className="border-t px-4 py-4">
+          <TabsContent value="single" className="px-4 py-4 m-0">
             <div className="grid gap-4">
               <div className="flex gap-4">
                 <EmployeeSearch
@@ -441,8 +617,151 @@ export function WeekendCallsPage() {
                 )}
               </div>
             </div>
-          </div>
-        )}
+          </TabsContent>
+
+          <TabsContent value="group" className="px-4 py-4 m-0">
+            <div className="grid gap-4">
+              <div className="flex gap-4">
+                <div className="w-[130px]">
+                  <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                  {groupErrors.orderDate && <p className="text-xs text-red-500 mt-1">{groupErrors.orderDate}</p>}
+                </div>
+                <OrderNumberField
+                  value={orderNumber}
+                  onChange={setOrderNumber}
+                  orderTypeId={weekendCallType?.id}
+                  orderTypes={orderTypes}
+                  required
+                  error={groupErrors.orderNumber}
+                />
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Режим</label>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={groupCallMode === "single" ? "default" : "outline"}
+                      onClick={() => {
+                        setGroupCallMode("single")
+                        setGroupCallDateStart("")
+                        setGroupCallDateEnd("")
+                      }}
+                    >
+                      Один день
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={groupCallMode === "range" ? "default" : "outline"}
+                      onClick={() => {
+                        setGroupCallMode("range")
+                        setGroupCallDate("")
+                      }}
+                    >
+                      Период
+                    </Button>
+                  </div>
+                </div>
+                {groupCallMode === "single" ? (
+                  <div className="w-[130px]">
+                    <DatePicker label="Дата вызова *" value={groupCallDate} onChange={setGroupCallDate} />
+                    {groupErrors.callDate && <p className="text-xs text-red-500 mt-1">{groupErrors.callDate}</p>}
+                  </div>
+                ) : (
+                  <>
+                    <div className="w-[130px]">
+                      <DatePicker label="Дата начала *" value={groupCallDateStart} onChange={setGroupCallDateStart} />
+                      {groupErrors.callDateStart && <p className="text-xs text-red-500 mt-1">{groupErrors.callDateStart}</p>}
+                    </div>
+                    <div className="w-[130px]">
+                      <DatePicker label="Дата конца *" value={groupCallDateEnd} onChange={setGroupCallDateEnd} />
+                      {groupErrors.callDateEnd && <p className="text-xs text-red-500 mt-1">{groupErrors.callDateEnd}</p>}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                {groupErrors.employees && <p className="text-xs text-red-500">{groupErrors.employees}</p>}
+
+                <div className="flex gap-2 items-center">
+                  <EmployeeSearch
+                    value={null}
+                    onChange={(emp) => {
+                      if (emp) {
+                        addGroupEmployee(emp)
+                      }
+                    }}
+                    placeholder="Добавить сотрудника..."
+                  />
+                </div>
+
+                {groupEmployees.length > 0 && (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Сотрудник</TableHead>
+                        <TableHead>Должность</TableHead>
+                        <TableHead>Подразделение</TableHead>
+                        <TableHead className="w-[50px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {groupEmployees.map((emp) => (
+                        <TableRow key={emp.employee_id}>
+                          <TableCell>{emp.employee.name}</TableCell>
+                          <TableCell>{emp.employee.position?.name || "—"}</TableCell>
+                          <TableCell>{emp.employee.department?.name || "—"}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeGroupEmployee(emp.employee_id)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+
+              {createGroupOrderMutation.isError && (
+                <p className="text-sm text-red-600">
+                  {(createGroupOrderMutation.error as any)?.response?.data?.detail || (createGroupOrderMutation.error as any)?.message || "Ошибка создания группового приказа"}
+                </p>
+              )}
+              {createGroupDraftMutation.isError && (
+                <p className="text-sm text-red-600">
+                  {(createGroupDraftMutation.error as any)?.response?.data?.detail || (createGroupDraftMutation.error as any)?.message || "Ошибка подготовки группового приказа"}
+                </p>
+              )}
+              {commitGroupDraftMutation.isError && (
+                <p className="text-sm text-red-600">
+                  {(commitGroupDraftMutation.error as any)?.response?.data?.detail || (commitGroupDraftMutation.error as any)?.message || "Ошибка создания группового приказа"}
+                </p>
+              )}
+
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={resetGroupForm} disabled={createGroupDraftMutation.isPending || commitGroupDraftMutation.isPending}>
+                  Очистить
+                </Button>
+                {!groupDraftId ? (
+                  <Button size="sm" onClick={handleCreateGroupDraft} disabled={createGroupDraftMutation.isPending}>
+                    <FilePen className="mr-2 h-4 w-4" />
+                    {createGroupDraftMutation.isPending ? "Подготовка..." : "Создать групповой приказ"}
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={handleCommitGroupDraft} disabled={commitGroupDraftMutation.isPending}>
+                    {commitGroupDraftMutation.isPending ? "Создание..." : "Создать"}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
       {isLoading ? (
@@ -525,7 +844,7 @@ export function WeekendCallsPage() {
             <EmptyState message="Нет сотрудников с вызовами" description="За выбранный период вызовы отсутствуют" />
           )}
 
-          {accountedOrders.length === 0 ? (
+          {filteredOrders.length === 0 ? (
             <EmptyState message="Нет вызовов за выбранный период" description="Измените период или создайте новый приказ" />
           ) : (
             <Table>
@@ -539,43 +858,100 @@ export function WeekendCallsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {accountedOrders.map(({ order }) => {
+                {filteredOrders.map((order) => {
                   const extra = (order.extra_fields || {}) as Record<string, unknown>
+                  const isGroup = order.is_group
+                  const isExpanded = expandedGroupIds.has(order.id)
+
                   return (
-                    <TableRow key={order.id}>
-                      <TableCell className="font-mono">{order.order_number}</TableCell>
-                      <TableCell>{order.employee_name || "—"}</TableCell>
-                      <TableCell>{callPeriodLabel(extra)}</TableCell>
-                      <TableCell>{formatDate(order.order_date)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" title="Быстрый просмотр" onClick={() => handlePreview(order.id)}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => handleDownload(order.id)}>
-                            <Download className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Отменить приказ"
-                            onClick={() => setCancelOrderId(order.id)}
-                            className="text-amber-500 hover:text-amber-700"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="Удалить приказ"
-                            onClick={() => setDeleteOrderId(order.id)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                    <>
+                      <TableRow key={order.id}>
+                        <TableCell className="font-mono">{order.order_number}</TableCell>
+                        <TableCell>
+                          {isGroup ? (
+                            <button
+                              className="flex items-center gap-1 hover:underline"
+                              onClick={() => toggleGroupExpand(order.id)}
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="h-3 w-3" />
+                              ) : (
+                                <ChevronRight className="h-3 w-3" />
+                              )}
+                              <span>Групповой приказ — {order.group_employee_count || 0} сотрудников</span>
+                            </button>
+                          ) : (
+                            order.employee_name || "—"
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {isGroup ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            callPeriodLabel(extra)
+                          )}
+                        </TableCell>
+                        <TableCell>{formatDate(order.order_date)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" title="Быстрый просмотр" onClick={() => handlePreview(order.id)}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => handleDownload(order.id)}>
+                              <Download className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Отменить приказ"
+                              onClick={() => setCancelOrderId(order.id)}
+                              className="text-amber-500 hover:text-amber-700"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Удалить приказ"
+                              onClick={() => setDeleteOrderId(order.id)}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {isGroup && isExpanded && order.group_employees && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="bg-muted/30 p-4">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Сотрудник</TableHead>
+                                  <TableHead>Должность</TableHead>
+                                  <TableHead>Подразделение</TableHead>
+                                  <TableHead>Дата начала</TableHead>
+                                  <TableHead>Дата окончания</TableHead>
+                                  <TableHead>Дней</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {order.group_employees.map((emp: GroupEmployeeInfo) => (
+                                  <TableRow key={emp.employee_id}>
+                                    <TableCell className="font-medium">{emp.employee_full_name}</TableCell>
+                                    <TableCell>{emp.position || "—"}</TableCell>
+                                    <TableCell>{emp.department || "—"}</TableCell>
+                                    <TableCell>{formatDate(emp.vacation_start)}</TableCell>
+                                    <TableCell>{formatDate(emp.vacation_end)}</TableCell>
+                                    <TableCell>{emp.vacation_days}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </>
                   )
                 })}
               </TableBody>
@@ -617,8 +993,6 @@ export function WeekendCallsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-
     </div>
   )
 }

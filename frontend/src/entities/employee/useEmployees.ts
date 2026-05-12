@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import * as api from "./api"
 import { tagApi } from "@/entities/tag/api"
-import type { EmployeeCreate, EmployeeUpdate, EmployeeStatus } from "./types"
+import type { EmployeeCreate, EmployeeUpdate } from "./types"
 
 export function useEmployees(params: {
   q?: string

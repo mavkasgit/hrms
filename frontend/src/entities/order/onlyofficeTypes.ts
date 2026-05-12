@@ -27,3 +27,8 @@ export interface OrderDraftResponse {
 }
 
 export type CommitOrderDraftResponse = Order
+
+export interface GroupDraftResponse {
+  draft_id: string
+  edit_url: string
+}

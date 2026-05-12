@@ -22,7 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
 import type { Employee, EmployeeCreate, EmployeeUpdate } from "@/entities/employee/types"
-import { useCreateEmployee, useUpdateEmployee, useRestoreEmployee, useDeleteEmployee, useResetEmployeePeriods, useHireOrder, useDismissEmployee } from "@/entities/employee/useEmployees"
+import { useCreateEmployee, useUpdateEmployee, useRestoreEmployee, useDeleteEmployee, useResetEmployeePeriods, useHireOrder } from "@/entities/employee/useEmployees"
 import { Archive, Trash2, RotateCcw, Building, Briefcase, CalendarClock } from "lucide-react"
 import { useDepartments, useCreateDepartment } from "@/entities/department"
 import { usePositions, useCreatePosition } from "@/entities/position"

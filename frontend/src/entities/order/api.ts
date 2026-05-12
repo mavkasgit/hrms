@@ -14,6 +14,7 @@ import type {
   OrderUpdate,
   OrderDeletionPreview,
   VacationUnpaidGroupOrderCreate,
+  WeekendCallGroupOrderCreate,
 } from "./types"
 
 export async function fetchOrders(params: OrdersQueryParams) {
@@ -82,6 +83,11 @@ export async function createOrder(order: OrderCreate) {
 
 export async function createVacationUnpaidGroupOrder(payload: VacationUnpaidGroupOrderCreate) {
   const { data } = await api.post<Order>("/orders/vacation-unpaid/group", payload)
+  return data
+}
+
+export async function createWeekendCallGroupOrder(payload: WeekendCallGroupOrderCreate) {
+  const { data } = await api.post<Order>("/orders/weekend-call/group", payload)
   return data
 }
 

@@ -68,6 +68,34 @@ export interface VacationUnpaidGroupOrderCreate {
   employees: VacationUnpaidGroupEmployeeCreate[]
 }
 
+export interface WeekendCallGroupEmployeeCreate {
+  employee_id: number
+  vacation_days: number
+}
+
+export interface WeekendCallGroupOrderCreate {
+  order_date: string
+  order_number?: string | null
+  mode: "single" | "range"
+  call_date?: string | null
+  call_date_start?: string | null
+  call_date_end?: string | null
+  employees: WeekendCallGroupEmployeeCreate[]
+}
+
+export interface GroupOrderCreate {
+  order_type_code: string
+  order_date: string
+  order_number?: string | null
+  employees: { employee_id: number; vacation_days: number }[]
+  // Type-specific fields (optional)
+  vacation_start?: string
+  mode?: "single" | "range"
+  call_date?: string | null
+  call_date_start?: string | null
+  call_date_end?: string | null
+}
+
 export interface OrderListResponse {
   items: Order[]
   total: number

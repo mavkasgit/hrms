@@ -13,6 +13,7 @@ from app.schemas.order_type import (
     OrderTypeUpdate,
     TemplateVariablesResponse,
 )
+from app.services.order_document_service import get_template_path
 from app.services.order_service import order_service
 
 router = APIRouter(prefix="/order-types", tags=["order-types"])
@@ -108,7 +109,7 @@ async def download_template(
     order_type = await order_service.get_order_type(db, order_type_id)
     if not order_type.template_filename:
         raise HTTPException(404, "Шаблон не найден")
-    file_path = Path(order_service._get_template_path(order_type))
+    file_path = get_template_path(order_type)
     if not file_path.exists():
         raise HTTPException(404, "Шаблон не найден")
     return FileResponse(

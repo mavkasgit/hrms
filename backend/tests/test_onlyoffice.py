@@ -76,8 +76,8 @@ async def test_order_draft_service_creates_docx(monkeypatch, tmp_path):
     async def fake_build_document(*_args, **_kwargs):
         return document, {"{order_number}": "1"}
 
-    monkeypatch.setattr("app.services.order_draft_service.order_service._build_document", fake_build_document)
-    monkeypatch.setattr("app.services.order_draft_service.order_service._build_filename", lambda *_args: "order.docx")
+    monkeypatch.setattr("app.services.order_draft_service._build_document", fake_build_document)
+    monkeypatch.setattr("app.services.order_draft_service._build_filename", lambda *_args: "order.docx")
 
     draft = await service.create_draft(
         OrderCreate(employee_id=1, order_type_id=2, order_date=date.today(), order_number="1"),
@@ -101,7 +101,7 @@ def test_order_draft_service_rejects_unknown_draft(tmp_path):
 
 @pytest.mark.asyncio
 async def test_order_service_uses_draft_docx(monkeypatch, tmp_path):
-    from app.services.order_service import order_service
+    from app.services.order_document_service import generate_document
 
     monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
 
@@ -112,10 +112,10 @@ async def test_order_service_uses_draft_docx(monkeypatch, tmp_path):
     draft_path.write_bytes(b"draft")
 
     monkeypatch.setattr("app.services.order_draft_service.order_draft_service", draft_service)
-    monkeypatch.setattr(order_service, "_build_document", AsyncMock(return_value=(Document(), {"{order_number}": "1"})))
-    monkeypatch.setattr(order_service, "_build_filename", lambda *_args: "final.docx")
+    monkeypatch.setattr("app.services.order_document_service._build_document", AsyncMock(return_value=(Document(), {"{order_number}": "1"})))
+    monkeypatch.setattr("app.services.order_document_service._build_filename", lambda *_args: "final.docx")
 
-    result = await order_service._generate_document(
+    result = await generate_document(
         "1",
         OrderCreate(
             employee_id=1,
@@ -129,5 +129,5 @@ async def test_order_service_uses_draft_docx(monkeypatch, tmp_path):
         tmp_path,
     )
 
-    assert (tmp_path / result).read_bytes() == b"draft"
+    assert (tmp_path / result[0]).read_bytes() == b"draft"
     assert not draft_path.exists()

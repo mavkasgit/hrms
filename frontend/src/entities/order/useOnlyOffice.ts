@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as api from "./onlyofficeApi"
-import type { OrderCreate } from "./types"
+import type { GroupOrderCreate, OrderCreate } from "./types"
 
 export function useOrderOnlyOfficeConfig(orderId: number, mode: "edit" | "view" = "edit") {
   return useQuery({
@@ -53,5 +53,24 @@ export function useTemplateOnlyOfficeConfig(orderTypeId: number, mode: "edit" | 
     queryKey: ["onlyoffice-config", "template", orderTypeId, mode],
     queryFn: () => api.fetchTemplateOnlyOfficeConfig(orderTypeId, mode),
     enabled: orderTypeId > 0,
+  })
+}
+
+export function useCreateGroupDraft() {
+  return useMutation({
+    mutationFn: (payload: GroupOrderCreate) => api.createGroupDraft(payload),
+  })
+}
+
+export function useCommitGroupDraft() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (draftId: string) => api.commitGroupDraft(draftId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
+    },
   })
 }

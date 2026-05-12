@@ -294,7 +294,7 @@ export function TemplatesPage() {
           if (!ot?.template_exists) return
           window.open(`${import.meta.env.VITE_API_URL || "/api"}/order-types/${id}/template`, "_blank")
         }}
-        onUploadTemplate={(id, file) => uploadMutation.mutate({ orderTypeId: id, file })}
+        onUploadTemplate={(id, file, onSuccess) => uploadMutation.mutate({ orderTypeId: id, file }, { onSuccess })}
         onDeleteTemplate={(id) => setDeleteTemplateDialog({ open: true, orderTypeId: id })}
       />
 

@@ -14,7 +14,8 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import EmployeeNotFoundError, HRMSException
 from app.core.paths import storage_path
-from app.schemas.order import OrderCreate
+from app.schemas.order import GroupOrderCreate, OrderCreate
+from app.services.order_document_service import get_template_path
 from app.services.onlyoffice_service import onlyoffice_service
 from app.services.order_draft_service import order_draft_service
 from app.services.order_service import order_service
@@ -233,16 +234,16 @@ async def create_order_draft(
     _ensure_onlyoffice_enabled()
     await order_service.ensure_default_order_types(db)
 
-    employee = await order_service.employee_repo.get_by_id(db, data.employee_id)
+    employee = await order_service.get_employee_by_id(db, data.employee_id)
     if not employee:
         raise EmployeeNotFoundError(data.employee_id)
 
-    order_type = await order_service.order_type_repo.get_by_id(db, data.order_type_id)
+    order_type = await order_service.get_order_type_by_id(db, data.order_type_id)
     if not order_type or not order_type.is_active:
         raise HRMSException("Активный тип приказа не найден", "order_type_not_found", status_code=404)
 
     if not data.order_number:
-        order_number = await order_service.order_repo.get_next_order_number(db, data.order_type_id)
+        order_number = await order_service.get_next_number(db, data.order_type_id)
         data = data.model_copy(update={"order_number": order_number})
 
     data = await _normalize_vacation_draft_fields(db, data, order_type.code)
@@ -351,6 +352,71 @@ async def delete_order_draft(
     return {"message": "Черновик удален"}
 
 
+@router.post("/orders/group-drafts")
+async def create_order_group_draft(
+    data: GroupOrderCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    await order_service.ensure_default_order_types(db)
+
+    order_type = await order_service.get_order_type_by_code(db, data.order_type_code)
+    if not order_type or not order_type.is_active:
+        raise HRMSException("Активный тип приказа не найден", "order_type_not_found", status_code=404)
+
+    # Load employees and attach to payload
+    employees_with_objs = []
+    for emp_item in data.employees:
+        employee = await order_service.get_employee_by_id(db, emp_item["employee_id"])
+        if not employee:
+            raise EmployeeNotFoundError(emp_item["employee_id"])
+        employees_with_objs.append({
+            "employee_id": emp_item["employee_id"],
+            "vacation_days": emp_item["vacation_days"],
+            "employee": employee,
+        })
+
+    # Build payload for draft service
+    payload = data.model_dump(exclude_unset=True)
+    # Replace employee IDs with full employee objects for rendering
+    payload["employees"] = employees_with_objs
+
+    draft = await order_draft_service.create_group_draft(
+        order_type_code=data.order_type_code,
+        payload=payload,
+        order_type=order_type,
+        user_id=current_user,
+    )
+
+    return {
+        "draft_id": draft["draft_id"],
+        "edit_url": f"/orders/drafts/{draft['draft_id']}/edit-docx",
+    }
+
+
+@router.post("/orders/group-drafts/{draft_id}/commit")
+async def commit_group_order_draft(
+    draft_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+
+    order = await order_service.create_group_order_from_draft(
+        db=db,
+        draft_id=draft_id,
+    )
+
+    try:
+        order_draft_service.delete_draft(draft_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Failed to delete committed group draft %s", draft_id)
+
+    return order_service._serialize_order(order)
+
+
 @router.get("/order-types/{order_type_id}/onlyoffice/config")
 async def template_onlyoffice_config(
     order_type_id: int,
@@ -360,10 +426,10 @@ async def template_onlyoffice_config(
     current_user: str = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
-    order_type = await order_service.order_type_repo.get_by_id(db, order_type_id)
+    order_type = await order_service.get_order_type_by_id(db, order_type_id)
     if not order_type:
         raise HRMSException("Тип приказа не найден", "order_type_not_found", status_code=404)
-    file_path = order_service._get_template_path(order_type)
+    file_path = get_template_path(order_type)
     if not file_path.exists():
         raise HRMSException("Шаблон не найден", "template_not_found", status_code=404)
 
@@ -386,10 +452,10 @@ async def template_onlyoffice_file(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    order_type = await order_service.order_type_repo.get_by_id(db, order_type_id)
+    order_type = await order_service.get_order_type_by_id(db, order_type_id)
     if not order_type:
         raise HRMSException("Тип приказа не найден", "order_type_not_found", status_code=404)
-    file_path = order_service._get_template_path(order_type)
+    file_path = get_template_path(order_type)
     if not file_path.exists():
         raise HRMSException("Шаблон не найден", "template_not_found", status_code=404)
     return _file_response(file_path)
@@ -408,9 +474,9 @@ async def template_onlyoffice_callback(
     _assert_valid_callback_token(request, body)
 
     if body.get("status") in (2, 6) and body.get("url"):
-        order_type = await order_service.order_type_repo.get_by_id(db, order_type_id)
+        order_type = await order_service.get_order_type_by_id(db, order_type_id)
         if order_type:
-            file_path = order_service._get_template_path(order_type)
+            file_path = get_template_path(order_type)
             await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
     return {"error": 0}
 

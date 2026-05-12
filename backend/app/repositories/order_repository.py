@@ -35,7 +35,22 @@ class OrderRepository:
 
         if order_type_code:
             joins.append(OrderType)
-            conditions.append(OrderType.code == order_type_code)
+            if order_type_code == "vacation_unpaid":
+                conditions.append(
+                    or_(
+                        OrderType.code == "vacation_unpaid",
+                        OrderType.code == "vacation_unpaid_group",
+                    )
+                )
+            elif order_type_code == "weekend_call":
+                conditions.append(
+                    or_(
+                        OrderType.code == "weekend_call",
+                        OrderType.code == "weekend_call_group",
+                    )
+                )
+            else:
+                conditions.append(OrderType.code == order_type_code)
 
         if order_letter:
             if OrderType not in joins:

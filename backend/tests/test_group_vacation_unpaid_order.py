@@ -128,6 +128,6 @@ async def test_create_vacation_unpaid_group_order(db_session, create_employee, c
             for cell in row.cells:
                 full_text += "\n" + cell.text
 
-    assert "Иванов Иван Иванович" in full_text
-    assert "Петров Пётр Петрович" in full_text
-    assert "Сидорова Анна Сергеевна" in full_text
+    assert "ИВАНОВ ИВАН ИВАНОВИЧ" in full_text
+    assert "ПЕТРОВ ПЁТР ПЕТРОВИЧ" in full_text
+    assert "СИДОРОВА АННА СЕРГЕЕВНА" in full_text
