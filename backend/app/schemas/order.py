@@ -27,13 +27,16 @@ class OrderResponse(BaseModel):
     order_type_id: int
     order_type_name: str
     order_type_code: str
-    employee_id: int
+    employee_id: Optional[int] = None
     employee_name: Optional[str] = None
     order_date: date
     created_date: Optional[datetime] = None
     file_path: Optional[str] = None
     notes: Optional[str] = None
     extra_fields: Optional[dict[str, Any]] = None
+    is_group: bool = False
+    group_employee_count: Optional[int] = None
+    group_employees: Optional[list["GroupEmployeeInfo"]] = None
 
     model_config = {"from_attributes": True}
 
@@ -69,7 +72,46 @@ class OrderUpdate(BaseModel):
     extra_fields: dict[str, Any] | None = None
 
 
-# --- Group vacation unpaid order schemas ---
+class GroupEmployeeInfo(BaseModel):
+    employee_id: int
+    employee_full_name: str
+    position: str | None = None
+    department: str | None = None
+    vacation_start: str
+    vacation_end: str
+    vacation_days: int
+
+
+# --- Generic group order schema (unified) ---
+
+class GroupOrderCreate(BaseModel):
+    """Generic schema for creating any group order draft."""
+    order_type_code: str  # "vacation_unpaid_group", "weekend_call_group", etc.
+    order_date: date
+    order_number: str | None = Field(None, max_length=50)
+    employees: list[dict[str, Any]] = Field(..., min_length=1)
+    # Type-specific fields (optional, used by specific order types)
+    vacation_start: date | None = None
+    mode: str | None = None  # "single" or "range" for weekend_call_group
+    call_date: date | None = None
+    call_date_start: date | None = None
+    call_date_end: date | None = None
+
+    @field_validator("employees")
+    @classmethod
+    def employees_valid(cls, v: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        ids = [e.get("employee_id") for e in v]
+        if len(ids) != len(set(ids)):
+            raise ValueError("employee_id не должны дублироваться")
+        for e in v:
+            if "employee_id" not in e:
+                raise ValueError("Каждый сотрудник должен иметь employee_id")
+            if "vacation_days" not in e:
+                raise ValueError("Каждый сотрудник должен иметь vacation_days")
+        return v
+
+
+# --- Legacy schemas (kept for backward compatibility) ---
 
 class VacationUnpaidGroupEmployeeCreate(BaseModel):
     employee_id: int = Field(..., gt=0)
@@ -91,31 +133,34 @@ class VacationUnpaidGroupOrderCreate(BaseModel):
         return v
 
 
-class GroupEmployeeInfo(BaseModel):
-    employee_id: int
-    employee_full_name: str
-    position: str | None = None
-    department: str | None = None
-    vacation_start: str
-    vacation_end: str
-    vacation_days: int
+class WeekendCallGroupEmployeeCreate(BaseModel):
+    employee_id: int = Field(..., gt=0)
+    vacation_days: int = Field(..., gt=0)
 
 
-class OrderResponse(BaseModel):
-    id: int
-    order_number: str
-    order_type_id: int
-    order_type_name: str
-    order_type_code: str
-    employee_id: int | None = None
-    employee_name: str | None = None
+class WeekendCallGroupOrderCreate(BaseModel):
     order_date: date
-    created_date: datetime | None = None
-    file_path: str | None = None
-    notes: str | None = None
-    extra_fields: dict[str, Any] | None = None
-    is_group: bool = False
-    group_employee_count: int | None = None
-    group_employees: list[GroupEmployeeInfo] | None = None
+    order_number: str | None = Field(None, max_length=50)
+    mode: str  # "single" or "range"
+    call_date: date | None = None
+    call_date_start: date | None = None
+    call_date_end: date | None = None
+    employees: list[WeekendCallGroupEmployeeCreate] = Field(..., min_length=1)
 
-    model_config = {"from_attributes": True}
+    @field_validator("employees")
+    @classmethod
+    def employees_unique(cls, v: list[WeekendCallGroupEmployeeCreate]) -> list[WeekendCallGroupEmployeeCreate]:
+        ids = [e.employee_id for e in v]
+        if len(ids) != len(set(ids)):
+            raise ValueError("employee_id не должны дублироваться")
+        return v
+
+    @field_validator("call_date_end")
+    @classmethod
+    def call_date_end_not_before_start(
+        cls, v: date | None, info: Any
+    ) -> date | None:
+        if v is not None and info.data.get("call_date_start") is not None:
+            if v < info.data["call_date_start"]:
+                raise ValueError("Дата окончания раньше даты начала")
+        return v

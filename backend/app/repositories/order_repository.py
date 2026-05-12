@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.models.order import Order
 from app.models.order_employee import OrderEmployee
 from app.models.order_type import OrderType
+from app.models.employee import Employee
 
 
 class OrderRepository:
@@ -34,7 +35,22 @@ class OrderRepository:
 
         if order_type_code:
             joins.append(OrderType)
-            conditions.append(OrderType.code == order_type_code)
+            if order_type_code == "vacation_unpaid":
+                conditions.append(
+                    or_(
+                        OrderType.code == "vacation_unpaid",
+                        OrderType.code == "vacation_unpaid_group",
+                    )
+                )
+            elif order_type_code == "weekend_call":
+                conditions.append(
+                    or_(
+                        OrderType.code == "weekend_call",
+                        OrderType.code == "weekend_call_group",
+                    )
+                )
+            else:
+                conditions.append(OrderType.code == order_type_code)
 
         if order_letter:
             if OrderType not in joins:
@@ -42,7 +58,6 @@ class OrderRepository:
             conditions.append(OrderType.letter == order_letter)
 
         if employee_id:
-            from app.models.order_employee import OrderEmployee
             group_order_subq = select(OrderEmployee.order_id).where(OrderEmployee.employee_id == employee_id)
             conditions.append(
                 or_(Order.employee_id == employee_id, Order.id.in_(group_order_subq))
@@ -72,7 +87,12 @@ class OrderRepository:
         data_query = select(Order).options(
             selectinload(Order.employee),
             selectinload(Order.order_type),
-            selectinload(Order.employees).selectinload(OrderEmployee.employee),
+            selectinload(Order.employees)
+                .selectinload(OrderEmployee.employee)
+                .selectinload(Employee.position),
+            selectinload(Order.employees)
+                .selectinload(OrderEmployee.employee)
+                .selectinload(Employee.department),
         )
         for join_model in joins:
             data_query = data_query.join(join_model)
@@ -102,7 +122,12 @@ class OrderRepository:
             .options(
                 selectinload(Order.employee),
                 selectinload(Order.order_type),
-                selectinload(Order.employees).selectinload(OrderEmployee.employee),
+                selectinload(Order.employees)
+                    .selectinload(OrderEmployee.employee)
+                    .selectinload(Employee.position),
+                selectinload(Order.employees)
+                    .selectinload(OrderEmployee.employee)
+                    .selectinload(Employee.department),
             )
             .where(where_clause)
             .order_by(Order.created_date.desc())
@@ -216,7 +241,12 @@ class OrderRepository:
             .options(
                 selectinload(Order.employee),
                 selectinload(Order.order_type),
-                selectinload(Order.employees).selectinload(OrderEmployee.employee),
+                selectinload(Order.employees)
+                    .selectinload(OrderEmployee.employee)
+                    .selectinload(Employee.position),
+                selectinload(Order.employees)
+                    .selectinload(OrderEmployee.employee)
+                    .selectinload(Employee.department),
             )
             .where(and_(*conditions))
         )
