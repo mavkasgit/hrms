@@ -69,21 +69,23 @@ export interface VacationCalendarDocument {
   original_filename: string
   file_type: string
   uploaded_at: string
-  uploaded_by: string
+  uploaded_by: string | null
 }
 
+const VACATION_CALENDAR_DOC_CODE = "vacation_calendar"
+
 export async function fetchCurrentVacationCalendar(): Promise<{ document: VacationCalendarDocument | null }> {
-  const { data } = await api.get("/vacation-plans/calendar/current")
+  const { data } = await api.get(`/documents/${VACATION_CALENDAR_DOC_CODE}/current`)
   return data
 }
 
 export async function fetchVacationCalendarList(): Promise<VacationCalendarDocument[]> {
-  const { data } = await api.get("/vacation-plans/calendar")
+  const { data } = await api.get(`/documents/${VACATION_CALENDAR_DOC_CODE}`)
   return data
 }
 
 export async function downloadVacationCalendar(docId: number, filename?: string): Promise<void> {
-  const { data } = await api.get(`/vacation-plans/calendar/${docId}/download`, {
+  const { data } = await api.get(`/documents/${VACATION_CALENDAR_DOC_CODE}/${docId}/file`, {
     responseType: "blob",
   })
   const url = window.URL.createObjectURL(new Blob([data]))
@@ -97,5 +99,5 @@ export async function downloadVacationCalendar(docId: number, filename?: string)
 }
 
 export async function deleteVacationCalendar(docId: number): Promise<void> {
-  await api.delete(`/vacation-plans/calendar/${docId}`)
+  await api.delete(`/documents/${VACATION_CALENDAR_DOC_CODE}/${docId}`)
 }

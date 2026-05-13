@@ -287,6 +287,7 @@ async def draft_onlyoffice_config(
         title=file_path.name,
         callback_url=_public_api_url(f"/orders/drafts/{draft_id}/onlyoffice/callback"),
         file_url=_public_api_url(f"/orders/drafts/{draft_id}/file"),
+        allow_print=False,
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config

@@ -17,14 +17,39 @@ from app.schemas.order import OrderCreate
 MISSING_TEMPLATE_WARNING = "ВНИМАНИЕ: документ сгенерирован без шаблона."
 
 
-def _build_short_name(full_name: str) -> str:
-    """Build short name from full name: 'LastName I.' format."""
-    parts = full_name.split()
-    if not parts:
-        return ""
-    last_name = parts[0]
-    initials = "".join(f"{p[0]}." for p in parts[1:] if p)
-    return f"{last_name} {initials}".strip()
+def _parse_employee_name(full_name: str) -> dict[str, str]:
+    """Parse full name into components for template replacements."""
+    name_parts = full_name.split()
+    last_name = name_parts[0] if name_parts else ""
+    first_name = name_parts[1] if len(name_parts) > 1 else ""
+    middle_name = name_parts[2] if len(name_parts) > 2 else ""
+    initials_underscore = "_".join(p[0] for p in name_parts[1:]) if len(name_parts) > 1 else ""
+    initials_nospace = "".join(f"{p[0]}." for p in name_parts[1:]) if len(name_parts) > 1 else ""
+
+    return {
+        "last_name": last_name,
+        "first_name": first_name,
+        "middle_name": middle_name,
+        "initials_underscore": initials_underscore,
+        "initials_nospace": initials_nospace,
+    }
+
+
+def _build_employee_name_replacements(full_name: str) -> dict[str, str]:
+    """Build all name-related placeholders for a single employee."""
+    p = _parse_employee_name(full_name)
+    return {
+        "{full_name}": full_name,
+        "{full_name_upper}": full_name.upper(),
+        "{full_name_title}": full_name.title(),
+        "{full_name_last_caps}": f"{p['last_name'].upper()} {p['first_name']} {p['middle_name']}".strip(),
+        "{last_name_upper}": p["last_name"].upper(),
+        "{short_name}": f"{p['last_name']} {p['initials_nospace']}".strip(),
+        "{initials_before}": f"{p['initials_nospace']}{p['last_name']}".strip(),
+        "{last_name_then_initials}": f"{p['last_name']} {p['initials_nospace']}".strip(),
+        "{last_name}": p["last_name"],
+        "{initials}": p["initials_underscore"],
+    }
 
 
 def _replace_text_in_paragraph(paragraph: Any, replacements: dict[str, str]) -> None:
@@ -166,6 +191,47 @@ async def generate_document(
     return storage_key(file_path, "ORDERS_PATH"), display_name
 
 
+def _build_group_general_replacements(
+    employee_rows: list[dict],
+    order_number: str,
+    order_date: date,
+    extra: dict[str, str],
+) -> dict[str, str]:
+    """Build general (non-per-employee) replacements for group orders."""
+    first_emp = employee_rows[0]["employee"] if employee_rows else None
+    first_emp_gender = first_emp.gender if first_emp else "male"
+    oznak = "ознакомлена" if first_emp_gender == "female" else "ознакомлен"
+
+    # Build initials_before from first employee: "И.О.Фамилия"
+    initials_before = ""
+    if first_emp:
+        parts = first_emp.name.split()
+        if len(parts) >= 3:
+            initials_before = f"{parts[1][0]}.{parts[2][0]}.{parts[0]}".strip()
+        elif len(parts) == 2:
+            initials_before = f"{parts[1][0]}.{parts[0]}".strip()
+        else:
+            initials_before = parts[0] if parts else ""
+
+    return {
+        "{order_number}": order_number,
+        "{order_date}": order_date.strftime("%d.%m.%Y"),
+        "{oznak_gender}": oznak,
+        "{initials_before}": initials_before,
+        **extra,
+    }
+
+
+def _build_employee_replacements(idx: int, emp: Employee, extra: dict[str, str]) -> dict[str, str]:
+    """Build per-employee placeholder replacements, consistent with _prepare_replacements for single orders."""
+    return {
+        "{index}": str(idx),
+        **_build_employee_name_replacements(emp.name),
+        "{position}": str(emp.position.name if emp.position else "").lower(),
+        **extra,
+    }
+
+
 async def render_vacation_unpaid_group_docx(
     order_number: str,
     data: "VacationUnpaidGroupOrderCreate",
@@ -200,16 +266,12 @@ async def render_vacation_unpaid_group_docx(
         emp = row_data["employee"]
         vacation_days = row_data["vacation_days"]
 
-        employee_rows_replacements.append({
-            "{index}": str(idx),
-            "{full_name_last_caps}": emp.name.upper(),
-            "{short_name}": _build_short_name(emp.name),
-            "{position}": str(emp.position.name if emp.position else ""),
+        employee_rows_replacements.append(_build_employee_replacements(idx, emp, {
             "{vacation_days}": str(vacation_days),
             "{vacation_start}": data.vacation_start.strftime("%d.%m.%Y"),
             "{vacation_end}": row_data["vacation_end"].strftime("%d.%m.%Y"),
             "{application_date}": row_data.get("application_date", data.order_date).strftime("%d.%m.%Y"),
-        })
+        }))
 
     # Render employee blocks
     _render_repeat_block(
@@ -228,30 +290,15 @@ async def render_vacation_unpaid_group_docx(
     )
 
     # General placeholders
-    # For oznak_gender and initials_before, use the first employee as reference
-    first_emp = employee_rows[0]["employee"] if employee_rows else None
-    first_emp_gender = first_emp.gender if first_emp else "male"
-    oznak = "ознакомлена" if first_emp_gender == "female" else "ознакомлен"
-
-    # Build initials_before from first employee: "И.О.Фамилия"
-    initials_before = ""
-    if first_emp:
-        parts = first_emp.name.split()
-        if len(parts) >= 3:
-            initials_before = f"{parts[1][0]}.{parts[2][0]}.{parts[0]}".strip()
-        elif len(parts) == 2:
-            initials_before = f"{parts[1][0]}.{parts[0]}".strip()
-        else:
-            initials_before = parts[0] if parts else ""
-
-    replacements = {
-        "{order_number}": order_number,
-        "{order_date}": data.order_date.strftime("%d.%m.%Y"),
-        "{vacation_start}": data.vacation_start.strftime("%d.%m.%Y"),
-        "{vacation_end}": data.vacation_start.strftime("%d.%m.%Y"),  # fallback; per-employee values override in blocks
-        "{oznak_gender}": oznak,
-        "{initials_before}": initials_before,
-    }
+    replacements = _build_group_general_replacements(
+        employee_rows,
+        order_number,
+        data.order_date,
+        extra={
+            "{vacation_start}": data.vacation_start.strftime("%d.%m.%Y"),
+            "{vacation_end}": data.vacation_start.strftime("%d.%m.%Y"),  # fallback; per-employee values override in blocks
+        },
+    )
 
     _replace_placeholders_in_element(doc, replacements)
 
@@ -324,18 +371,13 @@ async def generate_weekend_call_group_document(
         else:
             call_date_display = f"{call_start.strftime('%d.%m.%Y')} по {call_end.strftime('%d.%m.%Y')}"
 
-        employee_rows_replacements.append({
-            "{index}": str(idx),
-            "{full_name}": emp.name,
-            "{full_name_last_caps}": emp.name.upper(),
-            "{short_name}": _build_short_name(emp.name),
-            "{position}": str(emp.position.name if emp.position else ""),
+        employee_rows_replacements.append(_build_employee_replacements(idx, emp, {
             "{vacation_days}": str(vacation_days),
             "{call_date}": call_date_display,
             "{call_date_start}": call_start.strftime("%d.%m.%Y"),
             "{call_date_end}": call_end.strftime("%d.%m.%Y"),
             "{application_date}": row_data.get("application_date", data.order_date).strftime("%d.%m.%Y"),
-        })
+        }))
 
     # Render employee blocks
     _render_repeat_block(
@@ -354,37 +396,22 @@ async def generate_weekend_call_group_document(
     )
 
     # General placeholders
-    # For oznak_gender and initials_before, use the first employee as reference
-    first_emp = employee_rows[0]["employee"] if employee_rows else None
-    first_emp_gender = first_emp.gender if first_emp else "male"
-    oznak = "ознакомлена" if first_emp_gender == "female" else "ознакомлен"
-
-    # Build initials_before from first employee: "И.О.Фамилия"
-    initials_before = ""
-    if first_emp:
-        parts = first_emp.name.split()
-        if len(parts) >= 3:
-            initials_before = f"{parts[1][0]}.{parts[2][0]}.{parts[0]}".strip()
-        elif len(parts) == 2:
-            initials_before = f"{parts[1][0]}.{parts[0]}".strip()
-        else:
-            initials_before = parts[0] if parts else ""
-
-    # Format call_date for general replacements
+    # Format call_date: single date if start==end, otherwise range
     if call_start == call_end:
         call_date_display = call_start.strftime("%d.%m.%Y")
     else:
         call_date_display = f"{call_start.strftime('%d.%m.%Y')} по {call_end.strftime('%d.%m.%Y')}"
 
-    replacements = {
-        "{order_number}": order_number,
-        "{order_date}": data.order_date.strftime("%d.%m.%Y"),
-        "{call_date}": call_date_display,
-        "{call_date_start}": call_start.strftime("%d.%m.%Y"),
-        "{call_date_end}": call_end.strftime("%d.%m.%Y"),
-        "{oznak_gender}": oznak,
-        "{initials_before}": initials_before,
-    }
+    replacements = _build_group_general_replacements(
+        employee_rows,
+        order_number,
+        data.order_date,
+        extra={
+            "{call_date}": call_date_display,
+            "{call_date_start}": call_start.strftime("%d.%m.%Y"),
+            "{call_date_end}": call_end.strftime("%d.%m.%Y"),
+        },
+    )
 
     _replace_placeholders_in_element(doc, replacements)
 
@@ -467,13 +494,6 @@ def _prepare_replacements(
     order_type: OrderType,
 ) -> dict[str, str]:
     full_name = employee.name
-    name_parts = full_name.split()
-    last_name = name_parts[0] if name_parts else "Unknown"
-    first_name = name_parts[1] if len(name_parts) > 1 else ""
-    middle_name = name_parts[2] if len(name_parts) > 2 else ""
-    initials = "_".join([p[0] for p in name_parts[1:]]) if len(name_parts) > 1 else ""
-    initials_nospace = "".join([f"{p[0]}." for p in name_parts[1:]]) if len(name_parts) > 1 else ""
-
     position_name = str(employee.position.name if employee.position else "")
     position_cap = position_name.capitalize() if position_name else ""
 
@@ -486,16 +506,7 @@ def _prepare_replacements(
         "{order_type_name}": order_type.name,
         "{order_type_code}": order_type.code,
         "{order_type_lower}": order_type.name.lower(),
-        "{full_name}": full_name,
-        "{full_name_upper}": full_name.upper(),
-        "{full_name_title}": full_name.title(),
-        "{full_name_last_caps}": f"{last_name.upper()} {first_name} {middle_name}".strip(),
-        "{last_name_upper}": last_name.upper(),
-        "{short_name}": f"{last_name} {initials_nospace}".strip(),
-        "{initials_before}": f"{initials_nospace}{last_name}".strip(),
-        "{last_name_then_initials}": f"{last_name} {initials_nospace}".strip(),
-        "{last_name}": last_name,
-        "{initials}": initials,
+        **_build_employee_name_replacements(full_name),
         "{tab_number}": str(employee.tab_number or ""),
         "{department}": str(employee.department.name if employee.department else ""),
         "{position}": position_name.lower(),

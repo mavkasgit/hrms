@@ -119,7 +119,7 @@ async def test_create_vacation_unpaid_group_order(db_session, create_employee, c
     docx_path = storage_path(order.file_path, "ORDERS_PATH")
     assert docx_path.exists(), f"DOCX файл не найден: {docx_path}"
 
-    # Проверяем что DOCX содержит ФИО и дни всех сотрудников
+    # Проверяем что DOCX содержит ФИО всех сотрудников (формат: ФАМИЛИЯ Имя Отчество)
     from docx import Document
     doc = Document(docx_path)
     full_text = "\n".join(p.text for p in doc.paragraphs)
@@ -128,6 +128,6 @@ async def test_create_vacation_unpaid_group_order(db_session, create_employee, c
             for cell in row.cells:
                 full_text += "\n" + cell.text
 
-    assert "ИВАНОВ ИВАН ИВАНОВИЧ" in full_text
-    assert "ПЕТРОВ ПЁТР ПЕТРОВИЧ" in full_text
-    assert "СИДОРОВА АННА СЕРГЕЕВНА" in full_text
+    assert "ИВАНОВ Иван Иванович" in full_text
+    assert "ПЕТРОВ Пётр Петрович" in full_text
+    assert "СИДОРОВА Анна Сергеевна" in full_text

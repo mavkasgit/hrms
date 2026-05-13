@@ -317,16 +317,9 @@ export function VacationCalendarModal({ open, onOpenChange, year, onImportComple
                       {displayedHistory?.map((doc) => (
                         <tr key={doc.id} className="border-t hover:bg-muted/50">
                           <td className="px-3 py-2">
-                            <div className="flex items-center gap-2">
-                              {doc.is_current && (
-                                <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-                                  Текущий
-                                </span>
-                              )}
-                              <span className="truncate max-w-[200px]" title={doc.original_filename}>
-                                {doc.original_filename}
-                              </span>
-                            </div>
+                            <span className="truncate max-w-[200px]" title={doc.original_filename}>
+                              {doc.original_filename}
+                            </span>
                           </td>
                           <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                             {formatDate(doc.uploaded_at)}

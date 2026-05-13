@@ -14,6 +14,45 @@ from app.services.onlyoffice_service import OnlyOfficeService
 from app.services.order_draft_service import OrderDraftService
 
 
+def test_onlyoffice_config_print_allowed(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    docx_path = tmp_path / "order.docx"
+    docx_path.write_bytes(b"PK")
+
+    config = OnlyOfficeService().build_config(
+        doc_type="order",
+        doc_id=1,
+        file_path=docx_path,
+        title="order.docx",
+        callback_url="http://app/api/orders/1/onlyoffice/callback",
+        file_url="http://app/api/orders/1/onlyoffice/file",
+        allow_print=True,
+    )
+
+    assert config["document"]["permissions"]["print"] is True
+
+
+def test_onlyoffice_config_print_disabled(monkeypatch, tmp_path):
+    """Draft config should have print: False, and the JWT token should reflect it."""
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    docx_path = tmp_path / "draft.docx"
+    docx_path.write_bytes(b"PK")
+
+    config = OnlyOfficeService().build_config(
+        doc_type="draft",
+        doc_id="test-draft-id",
+        file_path=docx_path,
+        title="draft.docx",
+        callback_url="http://app/api/orders/drafts/test-draft-id/onlyoffice/callback",
+        file_url="http://app/api/orders/drafts/test-draft-id/onlyoffice/file",
+        allow_print=False,
+    )
+
+    assert config["document"]["permissions"]["print"] is False
+    decoded = jwt.decode(config["token"], "test-secret", algorithms=["HS256"])
+    assert decoded["document"]["permissions"]["print"] is False
+
+
 def test_onlyoffice_config_contains_signed_token(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
     docx_path = tmp_path / "order.docx"

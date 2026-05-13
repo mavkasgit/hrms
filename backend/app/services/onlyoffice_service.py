@@ -32,6 +32,7 @@ class OnlyOfficeService:
         callback_url: str,
         file_url: str,
         mode: str = "edit",
+        allow_print: bool = True,
     ) -> dict[str, Any]:
         can_edit = mode == "edit"
         file_type, doc_type_oo = self._get_file_types(file_path)
@@ -49,7 +50,7 @@ class OnlyOfficeService:
                     "fillForms": can_edit,
                     "modifyContentControl": can_edit,
                     "modifyFilter": can_edit,
-                    "print": True,
+                    "print": allow_print,
                     "review": can_edit,
                 },
             },
