@@ -63,3 +63,39 @@ export async function downloadVacationPlanTemplate(): Promise<Blob> {
   })
   return data
 }
+
+export interface VacationCalendarDocument {
+  id: number
+  original_filename: string
+  file_type: string
+  uploaded_at: string
+  uploaded_by: string
+}
+
+export async function fetchCurrentVacationCalendar(): Promise<{ document: VacationCalendarDocument | null }> {
+  const { data } = await api.get("/vacation-plans/calendar/current")
+  return data
+}
+
+export async function fetchVacationCalendarList(): Promise<VacationCalendarDocument[]> {
+  const { data } = await api.get("/vacation-plans/calendar")
+  return data
+}
+
+export async function downloadVacationCalendar(docId: number, filename?: string): Promise<void> {
+  const { data } = await api.get(`/vacation-plans/calendar/${docId}/download`, {
+    responseType: "blob",
+  })
+  const url = window.URL.createObjectURL(new Blob([data]))
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename || `vacation_calendar_${docId}.xlsx`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.URL.revokeObjectURL(url)
+}
+
+export async function deleteVacationCalendar(docId: number): Promise<void> {
+  await api.delete(`/vacation-plans/calendar/${docId}`)
+}

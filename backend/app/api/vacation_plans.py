@@ -1,18 +1,54 @@
 import os
+from datetime import datetime
 from typing import Optional
 from io import BytesIO
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.database import get_db
+from app.core.paths import storage_path, to_relative
 from app.models.employee import Employee
+from app.models.document import Document
 from app.schemas.vacation_plan import VacationPlanResponse, VacationPlanCreate, VacationPlanUpdate, VacationPlanSummary
 from app.services.vacation_plan_service import vacation_plan_service
 
 router = APIRouter(prefix="/vacation-plans", tags=["vacation-plans"])
+
+
+VACATION_CALENDAR_DOC_CODE = "vacation_calendar"
+
+
+def _vacation_calendar_dir() -> Path:
+    base = Path(settings.STAFFING_PATH)
+    path = base / VACATION_CALENDAR_DOC_CODE
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _resolve_vacation_calendar_path(relative_path: str) -> Path:
+    """Convert relative path stored in DB to absolute path on disk.
+
+    Supports both legacy keys (filename only) and new keys
+    ('vacation_calendar/filename').
+    """
+    key = str(relative_path).strip().replace("\\", "/")
+    if not key.startswith("vacation_calendar/"):
+        key = f"vacation_calendar/{key.lstrip('/')}"
+    return storage_path(key, "STAFFING_PATH")
+
+
+def _make_vacation_calendar_relative(absolute_path: Path) -> str:
+    """Convert absolute path to relative path for DB storage.
+
+    Stores portable key relative to STAFFING_PATH, for example
+    'vacation_calendar/filename.xlsx'.
+    """
+    return to_relative(absolute_path, "STAFFING_PATH")
 
 
 VacationPlanResponseOrNone = Optional[VacationPlanResponse]
@@ -81,6 +117,157 @@ async def delete_vacation_plan(
     current_user: str = Depends(_get_current_user_stub),
 ):
     await vacation_plan_service.delete(db, plan_id)
+
+
+@router.get("/calendar/current")
+async def get_current_vacation_calendar(
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Get the current uploaded vacation calendar file info."""
+    result = await db.execute(
+        select(Document)
+        .where(Document.doc_code == VACATION_CALENDAR_DOC_CODE, Document.is_current == True)
+        .order_by(Document.uploaded_at.desc())
+        .limit(1)
+    )
+    doc = result.scalar_one_or_none()
+    return {
+        "document": {
+            "id": doc.id,
+            "original_filename": doc.original_filename,
+            "file_type": doc.file_type,
+            "uploaded_at": doc.uploaded_at,
+            "uploaded_by": doc.uploaded_by,
+        } if doc else None
+    }
+
+
+@router.get("/calendar/{doc_id}/download")
+async def download_vacation_calendar(
+    doc_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Download a specific vacation calendar file."""
+    result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.doc_code == VACATION_CALENDAR_DOC_CODE)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Файл графика не найден")
+
+    file_path = _resolve_vacation_calendar_path(doc.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Файл отсутствует на диске")
+
+    return FileResponse(
+        str(file_path),
+        filename=doc.original_filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@router.get("/calendar/{doc_id}/onlyoffice/config")
+async def vacation_calendar_onlyoffice_config(
+    doc_id: int,
+    request: Request,
+    mode: str = Query("view", pattern="^(edit|view)$"),
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Get OnlyOffice config for viewing a vacation calendar file."""
+    from app.services.onlyoffice_service import onlyoffice_service
+    from urllib.parse import urlparse
+
+    result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.doc_code == VACATION_CALENDAR_DOC_CODE)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Файл графика не найден")
+
+    file_path = _resolve_vacation_calendar_path(doc.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Файл отсутствует на диске")
+
+    # Build public API URL
+    base_url = (settings.BACKEND_INTERNAL_CALLBACK_URL or settings.APP_PUBLIC_URL).rstrip("/")
+    file_url = f"{base_url}/api/vacation-plans/calendar/{doc_id}/download"
+    callback_url = f"{base_url}/api/vacation-plans/calendar/{doc_id}/onlyoffice/callback"
+
+    config = onlyoffice_service.build_config(
+        doc_type=VACATION_CALENDAR_DOC_CODE,
+        doc_id=doc_id,
+        file_path=file_path,
+        title=doc.original_filename,
+        callback_url=callback_url,
+        file_url=file_url,
+        mode=mode,
+    )
+
+    # Determine document server URL
+    configured = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
+    config["documentServerUrl"] = configured
+    return config
+
+
+@router.get("/calendar/{doc_id}/onlyoffice/callback")
+async def vacation_calendar_onlyoffice_callback(
+    doc_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """OnlyOffice callback for vacation calendar files."""
+    return {"error": 0}
+
+
+@router.get("/calendar")
+async def list_vacation_calendars(
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """List all uploaded vacation calendar files."""
+    result = await db.execute(
+        select(Document)
+        .where(Document.doc_code == VACATION_CALENDAR_DOC_CODE)
+        .order_by(Document.uploaded_at.desc())
+    )
+    docs = result.scalars().all()
+    return [
+        {
+            "id": doc.id,
+            "original_filename": doc.original_filename,
+            "file_type": doc.file_type,
+            "uploaded_at": doc.uploaded_at,
+            "uploaded_by": doc.uploaded_by,
+            "is_current": doc.is_current,
+        }
+        for doc in docs
+    ]
+
+
+@router.delete("/calendar/{doc_id}", status_code=204)
+async def delete_vacation_calendar(
+    doc_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Delete a vacation calendar file."""
+    result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.doc_code == VACATION_CALENDAR_DOC_CODE)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Файл графика не найден")
+
+    # Delete file from disk
+    file_path = _resolve_vacation_calendar_path(doc.file_path)
+    if file_path.exists():
+        file_path.unlink()
+
+    await db.delete(doc)
+    await db.commit()
 
 
 @router.get("/import/template")
@@ -296,6 +483,32 @@ async def import_vacation_plans(
         })
 
     if not preview_only:
+        await db.commit()
+
+        # Save the uploaded file as a document (reuse content read at the top)
+        vc_dir = _vacation_calendar_dir()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_name = Path(file.filename).stem.replace(" ", "_") if file.filename else "vacation_calendar"
+        storage_filename = f"{timestamp}_{safe_name}_{year}.xlsx"
+        file_path = vc_dir / storage_filename
+        file_path.write_bytes(content)
+
+        # Mark previous documents as non-current
+        await db.execute(
+            Document.__table__.update()
+            .where(Document.doc_code == VACATION_CALENDAR_DOC_CODE, Document.is_current == True)
+            .values(is_current=False)
+        )
+
+        doc = Document(
+            doc_code=VACATION_CALENDAR_DOC_CODE,
+            file_path=_make_vacation_calendar_relative(file_path),
+            original_filename=file.filename or storage_filename,
+            file_type="xlsx",
+            uploaded_by=current_user,
+            is_current=True,
+        )
+        db.add(doc)
         await db.commit()
 
     return {

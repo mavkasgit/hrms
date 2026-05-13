@@ -29,3 +29,31 @@ export interface VacationPlanUpdate {
   plan_count?: string
   comment?: string
 }
+
+export interface VacationCalendarDocument {
+  id: number
+  original_filename: string
+  file_type: string
+  uploaded_at: string
+  uploaded_by: string
+  is_current?: boolean
+}
+
+export interface VacationPlanImportResult {
+  created: number
+  updated: number
+  not_found: {
+    name: string
+    position: string
+    months: Record<string, string>
+  }[]
+  skipped_empty: string[]
+  total_processed: number
+  processed: {
+    name: string
+    position: string
+    months: Record<string, string>
+    is_update: boolean
+  }[]
+  preview_only: boolean
+}

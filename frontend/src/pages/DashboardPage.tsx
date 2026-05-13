@@ -9,16 +9,22 @@ export function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: () => fetchDashboardStats(),
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   })
 
   const { data: birthdays, isLoading: birthdaysLoading } = useQuery({
     queryKey: ["dashboard-birthdays"],
     queryFn: () => fetchBirthdays(30),
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   })
 
   const { data: contracts, isLoading: contractsLoading } = useQuery({
     queryKey: ["dashboard-contracts"],
     queryFn: () => fetchContracts(),
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   })
 
   return (

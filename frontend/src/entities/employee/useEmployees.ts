@@ -52,7 +52,7 @@ export function useUpdateEmployee() {
   return useMutation({
     mutationFn: ({ employeeId, data }: { employeeId: number; data: EmployeeUpdate }) =>
       api.updateEmployee(employeeId, data),
-    onSuccess: (_updated, { employeeId: _empId }) => {
+    onSuccess: (_updated, { employeeId: _empId, data }) => {
       queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
       queryClient.invalidateQueries({
         queryKey: ["vacation-employees-summary"],
@@ -62,6 +62,19 @@ export function useUpdateEmployee() {
         queryKey: ["vacation-periods"],
         refetchType: "all",
       })
+
+      // Dashboard: always invalidate stats (total, avg_age, etc. may change)
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] })
+
+      // Invalidate birthdays only if birth_date changed
+      if ("birth_date" in data) {
+        queryClient.invalidateQueries({ queryKey: ["dashboard-birthdays"] })
+      }
+
+      // Invalidate contracts only if contract dates changed
+      if ("contract_start" in data || "contract_end" in data) {
+        queryClient.invalidateQueries({ queryKey: ["dashboard-contracts"] })
+      }
     },
   })
 }

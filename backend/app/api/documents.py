@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import HRMSException
+from app.core.paths import storage_path, to_relative
 from app.models.document import Document
 from app.services.onlyoffice_service import onlyoffice_service
 
@@ -118,6 +119,21 @@ def _documents_dir(doc_code: str) -> Path:
     path = base / doc_code
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _resolve_file_path(relative_path: str, doc_code: str | None = None) -> Path:
+    """Convert path stored in DB to absolute path on disk."""
+    if doc_code == "vacation_calendar":
+        key = str(relative_path).strip().replace("\\", "/")
+        if not key.startswith("vacation_calendar/"):
+            key = f"vacation_calendar/{key.lstrip('/')}"
+        return storage_path(key, "STAFFING_PATH")
+    return storage_path(relative_path, "STAFFING_PATH")
+
+
+def _make_relative_path(absolute_path: Path) -> str:
+    """Convert absolute path to relative path for DB storage (relative to STAFFING_PATH)."""
+    return to_relative(absolute_path, "STAFFING_PATH")
 
 
 def _media_type_for_ext(ext: str) -> str:
@@ -240,7 +256,7 @@ async def upload_document(
 
     doc = Document(
         doc_code=doc_code,
-        file_path=str(file_path),
+        file_path=_make_relative_path(file_path),
         original_filename=file.filename,
         file_type=ext,
         uploaded_by=current_user,
@@ -271,7 +287,7 @@ async def document_onlyoffice_config(
     if not doc:
         raise HRMSException("Документ не найден", "doc_not_found", status_code=404)
 
-    file_path = Path(doc.file_path)
+    file_path = _resolve_file_path(doc.file_path, doc_code)
     if not file_path.exists():
         raise HRMSException("Файл отсутствует на диске", "doc_file_missing", status_code=404)
 
@@ -302,7 +318,7 @@ async def document_file(
     if not doc:
         raise HRMSException("Документ не найден", "doc_not_found", status_code=404)
 
-    file_path = Path(doc.file_path)
+    file_path = _resolve_file_path(doc.file_path, doc_code)
     if not file_path.exists():
         raise HRMSException("Файл отсутствует на диске", "doc_file_missing", status_code=404)
 
@@ -332,7 +348,8 @@ async def document_onlyoffice_callback(
         )
         doc = result.scalar_one_or_none()
         if doc:
-            await onlyoffice_service.download_and_replace(str(body["url"]), Path(doc.file_path))
+            file_path = _resolve_file_path(doc.file_path, doc_code)
+            await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
     return {"error": 0}
 
 
@@ -351,7 +368,7 @@ async def delete_document(
         raise HRMSException("Документ не найден", "doc_not_found", status_code=404)
 
     # Delete file from disk
-    file_path = Path(doc.file_path)
+    file_path = _resolve_file_path(doc.file_path, doc_code)
     if file_path.exists():
         file_path.unlink()
 

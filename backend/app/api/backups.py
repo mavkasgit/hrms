@@ -803,9 +803,14 @@ async def download_backup(filename: str) -> FileResponse:
     filepath = BACKUPS_DIR / filename
     if not filepath.exists() or not filepath.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Бэкап не найден")
+
+    meta = _read_backup_meta(filename)
+    comment = (meta or {}).get("comment", "").strip()
+    download_name = f"[{comment}] {filename}" if comment else filename
+
     return FileResponse(
         path=str(filepath),
-        filename=filename,
+        filename=download_name,
         media_type="application/octet-stream",
     )
 

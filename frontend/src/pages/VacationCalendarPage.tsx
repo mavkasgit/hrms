@@ -7,8 +7,8 @@ import {
   ChevronUp,
   Search,
   Tag,
-  Upload,
   X,
+  FileSpreadsheet,
 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
@@ -25,12 +25,12 @@ import {
   useVacationPlanSummary,
   useCreateOrUpdateVacationPlan,
 } from "@/entities/vacation-plan"
+import type { VacationPlanSummary } from "@/entities/vacation-plan/types"
 import { useEmployees } from "@/entities/employee/useEmployees"
 import { useTags } from "@/entities/tag/useTags"
-import type { VacationPlanSummary } from "@/entities/vacation-plan/types"
 import type { EmployeeTag } from "@/entities/employee/types"
 import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
-import { ImportVacationPlansModal } from "@/features/import-vacation-plans/ImportVacationPlansModal"
+import { VacationCalendarModal } from "@/features/vacation-calendar-modal/VacationCalendarModal"
 
 interface CalendarRow {
   employee_id: number
@@ -297,10 +297,12 @@ export function VacationCalendarPage() {
           </Button>
           <h1 className="text-2xl font-bold">Календарь отпусков</h1>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setImportModalOpen(true)}>
-          <Upload className="mr-2 h-4 w-4" />
-          Загрузить график
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setImportModalOpen(true)}>
+            <FileSpreadsheet className="mr-2 h-4 w-4" />
+            График отпусков
+          </Button>
+        </div>
       </div>
 
       {/* Фильтры */}
@@ -551,7 +553,7 @@ export function VacationCalendarPage() {
         </div>
       )}
 
-      <ImportVacationPlansModal
+      <VacationCalendarModal
         open={importModalOpen}
         onOpenChange={setImportModalOpen}
         year={year}
