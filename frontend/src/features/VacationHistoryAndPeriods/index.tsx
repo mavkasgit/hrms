@@ -16,7 +16,7 @@ import {
 import {
   useEmployeeVacationHistory,
 } from "@/entities/vacation"
-import { useVacationPeriods, useRecalculateVacationPeriods, useCancelTransaction } from "@/entities/vacation-period"
+import { useVacationPeriods, useRecalculateVacationPeriods, useDeleteManualClosureTransaction } from "@/entities/vacation-period"
 import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
 import { VacationPeriodVacationRow } from "@/entities/vacation-period/ui/VacationPeriodVacationRow"
 
@@ -78,8 +78,8 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
   const [showClosedPeriods, setShowClosedPeriods] = useState(false)
   const [recalculateAlertOpen, setRecalculateAlertOpen] = useState(false)
   const [isRecalculating, setIsRecalculating] = useState(false)
-  const [cancelTxId, setCancelTxId] = useState<number | null>(null)
-  const cancelTransactionMutation = useCancelTransaction()
+  const [deleteTxId, setDeleteTxId] = useState<number | null>(null)
+  const deleteManualClosureTransactionMutation = useDeleteManualClosureTransaction()
 
   const hasOpenPeriods = periods.filter(p => p.remaining_days > 0).length > 0
   const hasClosedPeriods = periods.filter(p => p.remaining_days === 0).length > 0
@@ -211,9 +211,9 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
                           {tx.created_at && <span className="text-muted-foreground ml-1">({formatDateTime(tx.created_at)})</span>}
                           {isManualClosure && (
                             <button
-                              onClick={() => setCancelTxId(tx.id)}
+                              onClick={() => setDeleteTxId(tx.id)}
                               className="ml-1 text-red-400 hover:text-red-600 opacity-0 group-hover/tx:opacity-100 transition-opacity"
-                              title="Отменить закрытие"
+                              title="Удалить закрытие"
                             >
                               <X className="h-3 w-3 inline" />
                             </button>
@@ -263,11 +263,11 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
         )
       })}
 
-      {/** Диалог отмены ручного закрытия */}
-      <AlertDialog open={cancelTxId !== null} onOpenChange={(open) => !open && setCancelTxId(null)}>
+      {/** Диалог удаления ручного закрытия */}
+      <AlertDialog open={deleteTxId !== null} onOpenChange={(open) => !open && setDeleteTxId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Отменить ручное закрытие?</AlertDialogTitle>
+            <AlertDialogTitle>Удалить ручное закрытие?</AlertDialogTitle>
             <AlertDialogDescription>
               Дни будут возвращены в остаток периода.
             </AlertDialogDescription>
@@ -276,13 +276,13 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (cancelTxId) cancelTransactionMutation.mutate(cancelTxId)
-                setCancelTxId(null)
+                if (deleteTxId) deleteManualClosureTransactionMutation.mutate(deleteTxId)
+                setDeleteTxId(null)
               }}
               className="bg-red-600 hover:bg-red-700"
               autoFocus
             >
-              Отменить закрытие
+              Удалить закрытие
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

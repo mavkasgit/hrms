@@ -19,7 +19,6 @@ import {
 import {
   useCreateSickLeave,
   useDeleteSickLeave,
-  useCancelSickLeave,
   useSickLeaves,
 } from "@/entities/sick-leave/useSickLeaves"
 import { EmployeeSearch } from "@/features/employee-search"
@@ -42,7 +41,6 @@ export function SickLeavesPage() {
   const [comment, setComment] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
-  const [cancelId, setCancelId] = useState<number | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
 
   const [statusFilter, setStatusFilter] = useState<string | undefined>("active")
@@ -56,7 +54,6 @@ export function SickLeavesPage() {
   })
 
   const createMutation = useCreateSickLeave()
-  const cancelMutation = useCancelSickLeave()
   const deleteMutation = useDeleteSickLeave()
 
   const resetForm = () => {
@@ -97,18 +94,6 @@ export function SickLeavesPage() {
         console.error(error)
       }
     })
-  }
-
-  const handleCancelConfirm = () => {
-    if (cancelId) {
-      cancelMutation.mutate(cancelId, {
-        onSuccess: () => {
-          setSuccessMessage("Больничный отменён")
-          setTimeout(() => setSuccessMessage(null), 3000)
-        }
-      })
-    }
-    setCancelId(null)
   }
 
   const handleDeleteConfirm = () => {
@@ -303,15 +288,6 @@ export function SickLeavesPage() {
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          className="h-7 w-7 p-0 text-amber-500 hover:text-amber-700" 
-                          onClick={() => setCancelId(sl.id)}
-                          title="Отменить"
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
                           className="h-7 w-7 p-0 text-red-400 hover:text-red-600" 
                           onClick={() => setDeleteId(sl.id)}
                           title="Удалить"
@@ -327,23 +303,6 @@ export function SickLeavesPage() {
           </table>
         </div>
       )}
-
-      <AlertDialog open={cancelId !== null} onOpenChange={(open) => !open && setCancelId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Отменить больничный?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Больничный будет отменён. Это действие нельзя отменить.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCancelConfirm} className="bg-amber-600 hover:bg-amber-700">
-              Отменить
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog open={deleteId !== null} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>

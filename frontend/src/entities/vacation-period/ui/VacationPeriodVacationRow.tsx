@@ -1,6 +1,6 @@
 import { Badge } from "@/shared/ui/badge"
 import { Button } from "@/shared/ui/button"
-import { Download, Eye, Trash2, X } from "lucide-react"
+import { Download, Eye, Trash2 } from "lucide-react"
 import type { VacationPeriodVacation } from "@/entities/vacation-period/types"
 
 type ParsedPostponeComment = {
@@ -104,7 +104,6 @@ type Props = {
   vacation: VacationPeriodVacation
   onPreview?: (orderId: number) => void
   onDownload?: (orderId: number) => void
-  onCancel?: (vacationId: number) => void
   onDelete?: (vacationId: number) => void
 }
 
@@ -112,7 +111,6 @@ export function VacationPeriodVacationRow({
   vacation,
   onPreview,
   onDownload,
-  onCancel,
   onDelete,
 }: Props) {
   const wasRecalled = Boolean(vacation.recall_order_id || vacation.recall_date || vacation.recall_order_number)
@@ -238,17 +236,6 @@ export function VacationPeriodVacationRow({
               </Button>
             </>
           )}
-          {onCancel && !vacation.is_cancelled && !wasRecalled && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-amber-500 hover:text-amber-700"
-              onClick={() => onCancel(vacation.id)}
-              title="Отменить"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          )}
           {onDelete && (
             <Button
               variant="ghost"
@@ -265,4 +252,3 @@ export function VacationPeriodVacationRow({
     </tr>
   )
 }
-
