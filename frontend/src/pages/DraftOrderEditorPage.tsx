@@ -12,25 +12,57 @@ export function DraftOrderEditorPage() {
   const { draftId } = useParams<{ draftId: string }>()
   const { data, isLoading, error } = useDraftOnlyOfficeConfig(draftId || null)
   const [isSaving, setIsSaving] = useState(false)
+  const [isSaveAndPrint, setIsSaveAndPrint] = useState(false)
 
-  const handleSaveOrder = async () => {
-    if (isSaving) return
-    setIsSaving(true)
+  const handleSave = async (openPrint: boolean) => {
+    if (isSaving || isSaveAndPrint) return
+    let printWindowName: string | undefined
+    if (openPrint) setIsSaveAndPrint(true)
+    else setIsSaving(true)
+    if (openPrint) {
+      const candidateWindowName = `hrms-order-print-${draftId ?? "draft"}-${Date.now()}`
+      const printWindow = window.open("about:blank", candidateWindowName)
+      if (printWindow) {
+        printWindowName = candidateWindowName
+        try {
+          printWindow.document.title = "Подготовка печати"
+          printWindow.document.body.innerHTML = `
+            <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f8fafc;margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
+              <div style="text-align:center;">
+                <div style="width:28px;height:28px;border:3px solid #cbd5e1;border-top-color:#0ea5e9;border-radius:50%;margin:0 auto 12px;animation:spin 0.9s linear infinite;"></div>
+                <div style="font-size:16px;font-weight:600;">Подготавливаем страницу печати...</div>
+                <div style="font-size:13px;color:#475569;margin-top:6px;">Окно автоматически обновится после сохранения приказа</div>
+              </div>
+            </div>
+            <style>
+              @keyframes spin { to { transform: rotate(360deg); } }
+              html, body { margin: 0; }
+            </style>
+          `
+        } catch (e) {
+          console.warn("[DraftOrderEditorPage] failed to render print placeholder", e)
+        }
+      }
+    }
     try {
       if (draftId && data?.document.key) {
         await forceSaveDraft(draftId, data.document.key)
         await wait(1200)
       }
       if (draftId && window.opener) {
-        window.opener.postMessage({ type: "hrms:draft-order-save", draftId }, window.location.origin)
+        window.opener.postMessage({ type: "hrms:draft-order-save", draftId, openPrint, printWindowName }, window.location.origin)
       }
       window.setTimeout(() => window.close(), 300)
     } catch (error) {
       console.error("[DraftOrderEditorPage] force save failed", error)
       setIsSaving(false)
+      setIsSaveAndPrint(false)
       alert("Не удалось сохранить документ. Попробуйте нажать Ctrl+S в OnlyOffice и повторить сохранение приказа.")
     }
   }
+
+  const handleSaveOrder = () => void handleSave(false)
+  const handleSaveAndOpenPrint = () => void handleSave(true)
 
   return (
     <div className="h-screen bg-background">
@@ -39,15 +71,26 @@ export function DraftOrderEditorPage() {
         isLoading={isLoading}
         error={error as Error | null}
       />
-      <Button
-        className="fixed bottom-6 right-6 z-50 bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 text-white shadow-2xl shadow-emerald-950/25 transition-all duration-300 hover:scale-[1.03] hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 hover:shadow-emerald-700/40 disabled:scale-100 disabled:opacity-90"
-        size="lg"
-        onClick={handleSaveOrder}
-        disabled={isSaving}
-      >
-        {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        {isSaving ? "Сохраняем..." : "Сохранить приказ"}
-      </Button>
+      <div className="fixed bottom-6 right-6 z-50 flex gap-2">
+        <Button
+          variant="outline"
+          size="lg"
+          onClick={handleSaveAndOpenPrint}
+          disabled={isSaving || isSaveAndPrint}
+        >
+          {isSaveAndPrint && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isSaveAndPrint ? "Сохраняем..." : "Сохранить и открыть печать"}
+        </Button>
+        <Button
+          className="bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 text-white shadow-2xl shadow-emerald-950/25 transition-all duration-300 hover:scale-[1.03] hover:from-emerald-500 hover:via-green-500 hover:to-teal-500 hover:shadow-emerald-700/40 disabled:scale-100 disabled:opacity-90"
+          size="lg"
+          onClick={handleSaveOrder}
+          disabled={isSaving || isSaveAndPrint}
+        >
+          {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {isSaving ? "Сохраняем..." : "Сохранить приказ"}
+        </Button>
+      </div>
     </div>
   )
 }

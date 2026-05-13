@@ -33,19 +33,19 @@ import {
 import {
   useCreateVacation,
   useDeleteVacation,
-  useCancelVacation,
   useVacationEmployeesSummary,
   useEmployeeVacationHistory,
   useHolidays,
   useVacationDeletionPreview,
 } from "@/entities/vacation"
-import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, useCancelTransaction } from "@/entities/vacation-period"
+import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, useDeleteManualClosureTransaction } from "@/entities/vacation-period"
 import { VacationPeriodVacationRow } from "@/entities/vacation-period/ui/VacationPeriodVacationRow"
 import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
 import { useUpdateEmployee } from "@/entities/employee/useEmployees"
 import { EmployeeSearch } from "@/features/employee-search"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
+import { openOrderPrint } from "@/entities/order/orderActions"
 import type { OrderCreate } from "@/entities/order/types"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { GlobalAuditLog } from "@/features/global-audit-log"
@@ -194,15 +194,13 @@ function EmployeeHistoryRow({
   const { data: adjustments } = useHireDateAdjustments(employeeId)
   const periods = Array.isArray(periodsRaw) ? periodsRaw : []
   const deleteVacationMutation = useDeleteVacation()
-  const cancelVacationMutation = useCancelVacation()
 
-  const [cancelId, setCancelId] = useState<number | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [showClosedPeriods, setShowClosedPeriods] = useState(false)
   const [recalculateAlertOpen, setRecalculateAlertOpen] = useState(false)
   const [isRecalculating, setIsRecalculating] = useState(false)
-  const [cancelTxId, setCancelTxId] = useState<number | null>(null)
-  const cancelTransactionMutation = useCancelTransaction()
+  const [deleteTxId, setDeleteTxId] = useState<number | null>(null)
+  const deleteManualClosureTransactionMutation = useDeleteManualClosureTransaction()
 
   // Определяем, есть ли открытые периоды (до early return для соблюдения Rules of Hooks)
   const hasOpenPeriods = periods.filter(p => p.remaining_days > 0).length > 0
@@ -213,11 +211,6 @@ function EmployeeHistoryRow({
       setShowClosedPeriods(true)
     }
   }, [periods, hasOpenPeriods, hasClosedPeriods])
-
-  const handleCancelConfirm = () => {
-    if (cancelId) cancelVacationMutation.mutate(cancelId)
-    setCancelId(null)
-  }
 
   const handleDeleteConfirm = () => {
     if (deleteId) deleteVacationMutation.mutate(deleteId)
@@ -392,9 +385,9 @@ function EmployeeHistoryRow({
                           )}
                           {isManualClosure && (
                             <button
-                              onClick={() => setCancelTxId(tx.id)}
+                              onClick={() => setDeleteTxId(tx.id)}
                               className="ml-1 text-red-400 hover:text-red-600 opacity-0 group-hover/tx:opacity-100 transition-opacity"
-                              title="Отменить закрытие"
+                              title="Удалить закрытие"
                             >
                               <X className="h-3 w-3 inline" />
                             </button>
@@ -495,7 +488,6 @@ function EmployeeHistoryRow({
                         vacation={v}
                         onPreview={handleOrderPreview}
                         onDownload={handleOrderDownload}
-                        onCancel={setCancelId}
                         onDelete={setDeleteId}
                       />
                     ))}
@@ -508,23 +500,6 @@ function EmployeeHistoryRow({
         )
       })}
     </div>
-
-    <AlertDialog open={cancelId !== null} onOpenChange={(open) => !open && setCancelId(null)}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Отменить отпуск?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Дни будут возвращены в остаток.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Отмена</AlertDialogCancel>
-          <AlertDialogAction onClick={handleCancelConfirm} className="bg-amber-600 hover:bg-amber-700" autoFocus>
-            Отменить
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
 
     <AlertDialog open={deleteId !== null} onOpenChange={(open) => !open && setDeleteId(null)}>
       <AlertDialogContent>
@@ -573,11 +548,11 @@ function EmployeeHistoryRow({
       </AlertDialogContent>
     </AlertDialog>
 
-    {/* Диалог отмены ручного закрытия */}
-    <AlertDialog open={cancelTxId !== null} onOpenChange={(open) => !open && setCancelTxId(null)}>
+    {/* Диалог удаления ручного закрытия */}
+    <AlertDialog open={deleteTxId !== null} onOpenChange={(open) => !open && setDeleteTxId(null)}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Отменить ручное закрытие?</AlertDialogTitle>
+          <AlertDialogTitle>Удалить ручное закрытие?</AlertDialogTitle>
           <AlertDialogDescription>
             Дни будут возвращены в остаток периода.
           </AlertDialogDescription>
@@ -586,13 +561,13 @@ function EmployeeHistoryRow({
           <AlertDialogCancel>Отмена</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => {
-              if (cancelTxId) cancelTransactionMutation.mutate(cancelTxId)
-              setCancelTxId(null)
+              if (deleteTxId) deleteManualClosureTransactionMutation.mutate(deleteTxId)
+              setDeleteTxId(null)
             }}
             className="bg-red-600 hover:bg-red-700"
             autoFocus
           >
-            Отменить закрытие
+            Удалить закрытие
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -760,12 +735,15 @@ export function VacationsPage() {
     })
   }
 
-  const handleCreateFromDraft = () => {
+  const handleCreateFromDraft = (openPrint = false, printTarget?: string) => {
     if (!draftId || !validate()) return
     createMutation.mutate(
       buildVacationPayload({ draft_id: draftId }),
       { 
-        onSuccess: () => {
+        onSuccess: (vacation) => {
+          if (openPrint && vacation?.order_id) {
+            openOrderPrint(vacation.order_id, printTarget || "_blank")
+          }
           setSuccessMessage("Отпуск успешно создан!")
           setTimeout(() => setSuccessMessage(null), 5000)
           resetForm()
@@ -780,9 +758,9 @@ export function VacationsPage() {
   useEffect(() => {
     const handleDraftSave = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string }
+      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
       if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
-      handleCreateFromDraft()
+      handleCreateFromDraft(Boolean(message.openPrint), message.printWindowName)
     }
 
     window.addEventListener("message", handleDraftSave)

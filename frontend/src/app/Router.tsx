@@ -22,6 +22,7 @@ const BackupsPage = lazy(async () => ({ default: (await import("@/pages/BackupsP
 const LoginPage = lazy(async () => ({ default: (await import("@/pages/LoginPage")).LoginPage }))
 const DevPage = lazy(async () => ({ default: (await import("@/pages/DevPage")).DevPage }))
 const OrderEditorPage = lazy(async () => ({ default: (await import("@/pages/OrderEditorPage")).OrderEditorPage }))
+const OrderPrintPage = lazy(async () => ({ default: (await import("@/pages/OrderPrintPage")).OrderPrintPage }))
 const DraftOrderEditorPage = lazy(async () => ({ default: (await import("@/pages/DraftOrderEditorPage")).DraftOrderEditorPage }))
 const DocumentViewPage = lazy(async () => ({ default: (await import("@/pages/DocumentViewPage")).DocumentViewPage }))
 const TemplateEditorPage = lazy(async () => ({ default: (await import("@/pages/TemplateEditorPage")).TemplateEditorPage }))
@@ -75,6 +76,10 @@ export const router = createBrowserRouter([
   {
     path: "/orders/:id/edit-docx",
     element: withSuspense(<OrderEditorPage />),
+  },
+  {
+    path: "/orders/:id/print",
+    element: withSuspense(<OrderPrintPage />),
   },
   {
     path: "/templates/:id/view",

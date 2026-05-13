@@ -2,6 +2,8 @@ from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+import os
+import time
 
 import pytest
 from docx import Document
@@ -9,9 +11,12 @@ from jose import jwt
 
 from app.core.config import settings
 from app.core.exceptions import HRMSException
+from app.api.orders import print_order_pdf
 from app.schemas.order import OrderCreate
 from app.services.onlyoffice_service import OnlyOfficeService
 from app.services.order_draft_service import OrderDraftService
+from app.services.order_print_service import OrderPrintService, order_print_service
+from app.services.order_service import order_service
 
 
 def test_onlyoffice_config_print_allowed(monkeypatch, tmp_path):
@@ -170,3 +175,116 @@ async def test_order_service_uses_draft_docx(monkeypatch, tmp_path):
 
     assert (tmp_path / result[0]).read_bytes() == b"draft"
     assert not draft_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_order_print_service_uses_cache(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    monkeypatch.setattr(settings, "BACKEND_INTERNAL_CALLBACK_URL", "http://app")
+    monkeypatch.setattr(settings, "APP_PUBLIC_URL", "http://app")
+    monkeypatch.setattr(settings, "ONLYOFFICE_PUBLIC_URL", "http://localhost:8085")
+    monkeypatch.setattr(settings, "ONLYOFFICE_INTERNAL_URL", "http://onlyoffice:80")
+
+    source_docx = tmp_path / "2026" / "order.docx"
+    source_docx.parent.mkdir(parents=True, exist_ok=True)
+    source_docx.write_bytes(b"PK")
+
+    service = OrderPrintService()
+    convert_calls: list[str] = []
+    download_calls: list[str] = []
+
+    async def fake_convert(order_id: int, docx_path: Path, cache_key: str) -> str:
+        convert_calls.append(cache_key)
+        return "http://onlyoffice/cache/converted.pdf"
+
+    async def fake_download(file_url: str) -> bytes:
+        download_calls.append(file_url)
+        return b"%PDF-1.7 test"
+
+    monkeypatch.setattr(service, "_convert_docx_to_pdf", fake_convert)
+    monkeypatch.setattr(service, "_download_pdf", fake_download)
+
+    first = await service.get_or_create_pdf(7, source_docx)
+    second = await service.get_or_create_pdf(7, source_docx)
+    new_mtime = time.time() + 5
+    os.utime(source_docx, (new_mtime, new_mtime))
+    third = await service.get_or_create_pdf(7, source_docx)
+
+    assert first == second
+    assert third != first
+    assert not first.exists()
+    assert third.exists()
+    assert third.read_bytes() == b"%PDF-1.7 test"
+    assert len(convert_calls) == 2
+    assert len(download_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_order_print_pdf_endpoint_returns_inline_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+
+    docx_path = tmp_path / "2026" / "order.docx"
+    docx_path.parent.mkdir(parents=True, exist_ok=True)
+    docx_path.write_bytes(b"PK")
+
+    pdf_path = tmp_path / ".print_cache" / "order-1-123.pdf"
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    pdf_path.write_bytes(b"%PDF-1.7")
+
+    async def fake_get_by_id(_db, _order_id):
+        return SimpleNamespace(file_path="2026/order.docx")
+
+    async def fake_get_or_create_pdf(_order_id, _docx_path: Path):
+        return pdf_path
+
+    monkeypatch.setattr(order_service, "get_by_id", fake_get_by_id)
+    monkeypatch.setattr(order_print_service, "get_or_create_pdf", fake_get_or_create_pdf)
+
+    response = await print_order_pdf(order_id=1, db=object(), current_user="admin")
+
+    assert response.media_type == "application/pdf"
+    assert response.headers["content-disposition"].startswith("inline;")
+
+
+@pytest.mark.asyncio
+async def test_order_print_pdf_endpoint_404_when_file_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+
+    async def fake_get_by_id(_db, _order_id):
+        return SimpleNamespace(file_path="2026/missing.docx")
+
+    monkeypatch.setattr(order_service, "get_by_id", fake_get_by_id)
+
+    with pytest.raises(HRMSException) as exc_info:
+        await print_order_pdf(order_id=1, db=object(), current_user="admin")
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.error_code == "order_file_missing"
+
+
+@pytest.mark.asyncio
+async def test_order_print_pdf_endpoint_propagates_conversion_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+
+    docx_path = tmp_path / "2026" / "order.docx"
+    docx_path.parent.mkdir(parents=True, exist_ok=True)
+    docx_path.write_bytes(b"PK")
+
+    async def fake_get_by_id(_db, _order_id):
+        return SimpleNamespace(file_path="2026/order.docx")
+
+    async def fake_get_or_create_pdf(_order_id, _docx_path: Path):
+        raise HRMSException("OnlyOffice conversion failed", "order_pdf_convert_failed", status_code=502)
+
+    monkeypatch.setattr(order_service, "get_by_id", fake_get_by_id)
+    monkeypatch.setattr(order_print_service, "get_or_create_pdf", fake_get_or_create_pdf)
+
+    with pytest.raises(HRMSException) as exc_info:
+        await print_order_pdf(order_id=1, db=object(), current_user="admin")
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.error_code == "order_pdf_convert_failed"

@@ -7,6 +7,7 @@ import { DatePicker } from "@/shared/ui/date-picker"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useExtendVacation } from "@/entities/vacation"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
+import { openOrderPrint } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { VacationSelector } from "@/features/VacationSelector"
 import { VacationHistoryAndPeriods } from "@/features/VacationHistoryAndPeriods"
@@ -97,10 +98,10 @@ export function VacationExtensionPage() {
     })
   }
 
-  const handleCreate = async () => {
+  const handleCreate = async (openPrint = false, printTarget?: string) => {
     if (!draftId || !validate() || !selectedVacation) return
     try {
-      await extendMutation.mutateAsync({
+      const result = await extendMutation.mutateAsync({
         vacationId: selectedVacation.id,
         data: {
           vacation_id: selectedVacation.id,
@@ -113,6 +114,9 @@ export function VacationExtensionPage() {
           draft_id: draftId,
         },
       })
+      if (openPrint && result?.extension_order_id) {
+        openOrderPrint(result.extension_order_id, printTarget || "_blank")
+      }
       setSuccessMessage("Продление отпуска оформлено успешно!")
       setTimeout(() => setSuccessMessage(null), 5000)
       setSelectedVacation(null); setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setDraftId(null)
@@ -126,9 +130,9 @@ export function VacationExtensionPage() {
   useEffect(() => {
     const handleDraftSave = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string }
+      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
       if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
-      void handleCreate()
+      void handleCreate(Boolean(message.openPrint), message.printWindowName)
     }
     window.addEventListener("message", handleDraftSave)
     return () => window.removeEventListener("message", handleDraftSave)

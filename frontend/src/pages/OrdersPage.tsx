@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen, Search, Filter } from "lucide-react"
+import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen, Search, Filter, Printer } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -32,12 +32,12 @@ import {
   useOrderYears,
   useOrderTypes,
   useCreateOrder,
-  useCancelOrder,
   useDeleteOrder,
   useOrderDeletionPreview,
 } from "@/entities/order/useOrders"
 import { useEmployee } from "@/entities/employee/useEmployees"
 import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
+import { downloadOrderDocx, openOrderEdit, openOrderPrint, openOrderView } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { EmployeeSearch } from "@/features/employee-search"
 import type { Employee } from "@/entities/employee/types"
@@ -212,10 +212,8 @@ export function OrdersPage() {
   const createMutation = useCreateOrder()
   const createDraftMutation = useCreateOrderDraft()
   const commitDraftMutation = useCommitOrderDraft()
-  const cancelMutation = useCancelOrder()
   const deleteMutation = useDeleteOrder()
 
-  const [cancelOrderId, setCancelOrderId] = useState<number | null>(null)
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
   const [showDismissalDialog, setShowDismissalDialog] = useState(false)
 
@@ -242,11 +240,6 @@ export function OrdersPage() {
       }
     }
   }, [preselectedEmployeeData, orderTypeParam, orderTypes])
-
-  const handleCancelOrderConfirm = () => {
-    if (cancelOrderId) cancelMutation.mutate(cancelOrderId)
-    setCancelOrderId(null)
-  }
 
   const handleDeleteOrderConfirm = () => {
     if (deleteOrderId) deleteMutation.mutate(deleteOrderId)
@@ -379,12 +372,17 @@ export function OrdersPage() {
     })
   }
 
-  const handleCommitDraft = () => {
+  const handleCommitDraft = (openPrint = false, printTarget?: string) => {
     if (!draftId || !validate()) return
     commitDraftMutation.mutate(
       { draftId, order: buildOrderPayload() },
       {
-        onSuccess: () => resetForm(),
+        onSuccess: (order) => {
+          if (openPrint && order?.id) {
+            openOrderPrint(order.id, printTarget || "_blank")
+          }
+          resetForm()
+        },
       }
     )
   }
@@ -392,26 +390,14 @@ export function OrdersPage() {
   useEffect(() => {
     const handleDraftSave = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string }
+      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
       if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
-      handleCommitDraft()
+      handleCommitDraft(Boolean(message.openPrint), message.printWindowName)
     }
 
     window.addEventListener("message", handleDraftSave)
     return () => window.removeEventListener("message", handleDraftSave)
   }, [draftId, selectedEmployee, selectedOrderTypeId, orderDate, orderNumber])
-
-  const handleDownload = (orderId: number) => {
-    window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
-  }
-
-  const handlePreview = (orderId: number) => {
-    window.open(`/orders/${orderId}/view-docx`, "_blank", "noopener,noreferrer")
-  }
-
-  const handleEditDocx = (orderId: number) => {
-    window.open(`/orders/${orderId}/edit-docx`, "_blank", "noopener,noreferrer")
-  }
 
   const isPending = createMutation.isPending || createDraftMutation.isPending || commitDraftMutation.isPending
 
@@ -815,35 +801,34 @@ export function OrdersPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      title="Редактировать DOCX"
-                      onClick={() => handleEditDocx(order.id)}
-                    >
-                      <FilePen className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Быстрый просмотр"
-                      onClick={() => handlePreview(order.id)}
+                      title="Просмотр DOCX"
+                      onClick={() => openOrderView(order.id)}
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      title="Скачать приказ"
-                      onClick={() => handleDownload(order.id)}
+                      title="Редактировать DOCX"
+                      onClick={() => openOrderEdit(order.id)}
                     >
-                      <Download className="h-4 w-4" />
+                      <FilePen className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      title="Отменить приказ"
-                      onClick={() => setCancelOrderId(order.id)}
-                      className="text-amber-500 hover:text-amber-700"
+                      title="Печать"
+                      onClick={() => openOrderPrint(order.id)}
                     >
-                      <X className="h-4 w-4" />
+                      <Printer className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Скачать приказ"
+                      onClick={() => downloadOrderDocx(order.id)}
+                    >
+                      <Download className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -874,23 +859,6 @@ export function OrdersPage() {
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmDismissal} className="bg-amber-600 hover:bg-amber-700">
               Уволить
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={cancelOrderId !== null} onOpenChange={(open) => !open && setCancelOrderId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Отменить приказ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Связанные отпуска также будут отменены, дни вернутся в остаток.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCancelOrderConfirm} className="bg-amber-600 hover:bg-amber-700">
-              Отменить
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

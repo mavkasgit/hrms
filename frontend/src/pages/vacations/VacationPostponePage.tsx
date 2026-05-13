@@ -6,6 +6,7 @@ import { Button } from "@/shared/ui/button"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
+import { openOrderPrint } from "@/entities/order/orderActions"
 import { useHolidays, usePostponeVacation } from "@/entities/vacation"
 import { VacationSelector } from "@/features/VacationSelector"
 import { VacationHistoryAndPeriods } from "@/features/VacationHistoryAndPeriods"
@@ -168,11 +169,11 @@ export function VacationPostponePage() {
     })
   }
 
-  const handlePostpone = async () => {
+  const handlePostpone = async (openPrint = false, printTarget?: string) => {
     if (!draftId || !validate() || !selectedVacation) return
 
     try {
-      await postponeMutation.mutateAsync({
+      const result = await postponeMutation.mutateAsync({
         vacationId: selectedVacation.id,
         data: {
           vacation_id: selectedVacation.id,
@@ -185,6 +186,9 @@ export function VacationPostponePage() {
         },
       })
 
+      if (openPrint && result?.postpone_order_id) {
+        openOrderPrint(result.postpone_order_id, printTarget || "_blank")
+      }
       setSuccessMessage("Приказ о переносе отпуска создан")
       setTimeout(() => setSuccessMessage(null), 5000)
       setOrderNumber("")
@@ -201,9 +205,9 @@ export function VacationPostponePage() {
   useEffect(() => {
     const handleDraftSave = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string }
+      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
       if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
-      void handlePostpone()
+      void handlePostpone(Boolean(message.openPrint), message.printWindowName)
     }
     window.addEventListener("message", handleDraftSave)
     return () => window.removeEventListener("message", handleDraftSave)

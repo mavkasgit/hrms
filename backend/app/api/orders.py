@@ -42,6 +42,7 @@ class UTF8FileResponse(FileResponse):
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import HRMSException
 from app.core.paths import storage_path
@@ -58,8 +59,10 @@ from app.schemas.order import (
 )
 from app.schemas.order_type import OrderTypeListResponse
 from app.services.order_service import order_service
+from app.services.order_print_service import order_print_service
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+PDF_MEDIA_TYPE = "application/pdf"
 
 
 class OrderDeletionPreview(BaseModel):
@@ -324,6 +327,29 @@ async def download_order(
         filename=order.display_name or file_path.name,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+
+@router.get("/{order_id}/print-pdf")
+async def print_order_pdf(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    if not settings.ONLYOFFICE_ENABLED:
+        raise HRMSException("OnlyOffice отключен", "onlyoffice_disabled", status_code=503)
+
+    order = await order_service.get_by_id(db, order_id)
+    if not order.file_path:
+        raise HRMSException("Файл приказа не найден", "order_file_not_found", status_code=404)
+
+    docx_path = storage_path(order.file_path, "ORDERS_PATH")
+    if not docx_path.exists():
+        raise HRMSException("Файл приказа отсутствует на диске", "order_file_missing", status_code=404)
+
+    pdf_path = await order_print_service.get_or_create_pdf(order_id, docx_path)
+    response = FileResponse(str(pdf_path), media_type=PDF_MEDIA_TYPE)
+    response.headers["Content-Disposition"] = f'inline; filename="{pdf_path.name}"'
+    return response
 
 
 @router.put("/{order_id}", response_model=OrderResponse)

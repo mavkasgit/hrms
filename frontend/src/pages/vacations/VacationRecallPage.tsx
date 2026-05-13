@@ -7,6 +7,7 @@ import { DatePicker } from "@/shared/ui/date-picker"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useRecallVacation, useHolidays } from "@/entities/vacation"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
+import { openOrderPrint } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { VacationSelector } from "@/features/VacationSelector"
 import { VacationHistoryAndPeriods } from "@/features/VacationHistoryAndPeriods"
@@ -98,7 +99,7 @@ export function VacationRecallPage() {
     })
   }
 
-  const handleRecall = () => {
+  const handleRecall = (openPrint = false, printTarget?: string) => {
     if (!draftId || !validate() || !selectedVacation) return
     recallMutation.mutate(
       {
@@ -106,7 +107,10 @@ export function VacationRecallPage() {
         data: { recall_date: recallDate, order_date: orderDate, order_number: orderNumber || null, draft_id: draftId },
       },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          if (openPrint && result?.recall_order_id) {
+            openOrderPrint(result.recall_order_id, printTarget || "_blank")
+          }
           setSuccessMessage("Отзыв из отпуска оформлен успешно!")
           setTimeout(() => setSuccessMessage(null), 5000)
           setSelectedVacation(null)
@@ -126,9 +130,9 @@ export function VacationRecallPage() {
   useEffect(() => {
     const handleDraftSave = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string }
+      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
       if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
-      handleRecall()
+      handleRecall(Boolean(message.openPrint), message.printWindowName)
     }
     window.addEventListener("message", handleDraftSave)
     return () => window.removeEventListener("message", handleDraftSave)
@@ -191,7 +195,7 @@ export function VacationRecallPage() {
                         {!draftId ? (
                           <Button onClick={handleEditBeforeCreate} disabled={isPending || !selectedVacation}><FilePen className="mr-2 h-4 w-4" />{createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}</Button>
                         ) : (
-                          <Button onClick={handleRecall} disabled={isPending || !selectedVacation}>{recallMutation.isPending ? "Оформление..." : "Оформить отзыв"}</Button>
+                          <Button onClick={() => handleRecall()} disabled={isPending || !selectedVacation}>{recallMutation.isPending ? "Оформление..." : "Оформить отзыв"}</Button>
                         )}
                       </div>
                       {(createDraftMutation.isError || recallMutation.isError) && (

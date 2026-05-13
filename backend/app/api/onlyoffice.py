@@ -3,6 +3,7 @@ from typing import Any
 from datetime import date
 import ipaddress
 import json
+import logging
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -193,6 +194,9 @@ async def order_onlyoffice_file(
     return _file_response(file_path)
 
 
+logger = logging.getLogger(__name__)
+
+
 @router.post("/orders/{order_id}/onlyoffice/callback")
 async def order_onlyoffice_callback(
     order_id: int,
@@ -203,12 +207,30 @@ async def order_onlyoffice_callback(
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})
     body = await request.json()
-    _assert_valid_callback_token(request, body)
+    status = body.get("status")
+    logger.info("[order callback] order_id=%s status=%s url=%s", order_id, status, body.get("url"))
 
-    if body.get("status") in (2, 6) and body.get("url"):
-        order = await order_service.get_by_id(db, order_id)
-        if order.file_path:
-            await onlyoffice_service.download_and_replace(str(body["url"]), storage_path(order.file_path, "ORDERS_PATH"))
+    try:
+        _assert_valid_callback_token(request, body)
+    except HRMSException as exc:
+        logger.warning("[order callback] invalid token for order_id=%s: %s", order_id, exc.detail)
+        return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
+
+    if status in (2, 6) and body.get("url"):
+        try:
+            order = await order_service.get_by_id(db, order_id)
+            if order and order.file_path:
+                file_path = storage_path(order.file_path, "ORDERS_PATH")
+                await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
+                logger.info("[order callback] saved successfully order_id=%s", order_id)
+            else:
+                logger.warning("[order callback] order or file_path missing order_id=%s", order_id)
+        except Exception as exc:
+            logger.error("[order callback] failed to save order_id=%s: %s", order_id, exc, exc_info=True)
+            return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
+    elif status == 7:
+        logger.warning("[order callback] force save error for order_id=%s", order_id)
+
     return {"error": 0}
 
 

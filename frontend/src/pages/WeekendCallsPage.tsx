@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { ChevronDown, ChevronRight, Download, Eye, FilePen, Trash2, X } from "lucide-react"
+import { ChevronDown, ChevronRight, Download, Eye, FilePen, Printer, Trash2, X } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { EmptyState } from "@/shared/ui/empty-state"
@@ -17,8 +17,9 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
 import { EmployeeSearch } from "@/features/employee-search"
-import { useAllOrderTypes, useCancelOrder, useCreateWeekendCallGroupOrder, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
+import { useAllOrderTypes, useCreateWeekendCallGroupOrder, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
 import { useCommitOrderDraft, useCreateGroupDraft, useCommitGroupDraft, useCreateOrderDraft, useDeleteOrderDraft } from "@/entities/order/useOnlyOffice"
+import { downloadOrderDocx, openOrderPrint, openOrderView } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
 import type { GroupEmployeeInfo, Order, WeekendCallGroupEmployeeCreate } from "@/entities/order/types"
@@ -156,7 +157,6 @@ export function WeekendCallsPage() {
   const [periodStart, setPeriodStart] = useState(defaultPeriodStartIso())
   const [periodEnd, setPeriodEnd] = useState(defaultPeriodEndIso())
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [cancelOrderId, setCancelOrderId] = useState<number | null>(null)
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<number>>(new Set())
 
@@ -166,7 +166,6 @@ export function WeekendCallsPage() {
   const deleteDraftMutation = useDeleteOrderDraft()
   const createGroupDraftMutation = useCreateGroupDraft()
   const commitGroupDraftMutation = useCommitGroupDraft()
-  const cancelMutation = useCancelOrder()
   const deleteMutation = useDeleteOrder()
   const createGroupOrderMutation = useCreateWeekendCallGroupOrder()
   const [draftId, setDraftId] = useState<string | null>(null)
@@ -271,7 +270,7 @@ export function WeekendCallsPage() {
     )
   }
 
-  const handleCommitDraft = () => {
+  const handleCommitDraft = (openPrint = false, printTarget?: string) => {
     if (!draftId || !validate() || !weekendCallType || !selectedEmployee) return
 
     const extraFields: Record<string, string> = {}
@@ -294,7 +293,12 @@ export function WeekendCallsPage() {
         },
       },
       {
-        onSuccess: () => resetForm(),
+        onSuccess: (order) => {
+          if (openPrint && order?.id) {
+            openOrderPrint(order.id, printTarget || "_blank")
+          }
+          resetForm()
+        },
       }
     )
   }
@@ -302,9 +306,9 @@ export function WeekendCallsPage() {
   useEffect(() => {
     const handleDraftSave = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string }
+      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
       if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
-      handleCommitDraft()
+      handleCommitDraft(Boolean(message.openPrint), message.printWindowName)
     }
 
     window.addEventListener("message", handleDraftSave)
@@ -322,19 +326,6 @@ export function WeekendCallsPage() {
     window.addEventListener("message", handleGroupDraftSave)
     return () => window.removeEventListener("message", handleGroupDraftSave)
   }, [groupDraftId])
-
-  const handleDownload = (orderId: number) => {
-    window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
-  }
-
-  const handlePreview = (orderId: number) => {
-    window.open(`/orders/${orderId}/view-docx`, "_blank", "noopener,noreferrer")
-  }
-
-  const handleCancelOrderConfirm = () => {
-    if (cancelOrderId) cancelMutation.mutate(cancelOrderId)
-    setCancelOrderId(null)
-  }
 
   const handleDeleteOrderConfirm = () => {
     if (deleteOrderId) deleteMutation.mutate(deleteOrderId)
@@ -444,34 +435,6 @@ export function WeekendCallsPage() {
       onSuccess: () => {
         setGroupDraftId(null)
         resetGroupForm()
-      },
-    })
-  }
-
-  const handleCreateGroupOrder = () => {
-    // Legacy direct creation — kept for fallback
-    if (!validateGroup()) return
-    const callDays = groupCallMode === "single"
-      ? 1
-      : groupCallDateStart && groupCallDateEnd
-        ? daysInclusive(groupCallDateStart, groupCallDateEnd)
-        : 1
-
-    createGroupOrderMutation.mutate({
-      order_date: orderDate,
-      order_number: orderNumber,
-      mode: groupCallMode,
-      call_date: groupCallMode === "single" ? groupCallDate : undefined,
-      call_date_start: groupCallMode === "range" ? groupCallDateStart : undefined,
-      call_date_end: groupCallMode === "range" ? groupCallDateEnd : undefined,
-      employees: groupEmployees.map((e) => ({
-        employee_id: e.employee_id,
-        vacation_days: callDays,
-      })),
-    }, {
-      onSuccess: (order) => {
-        resetGroupForm()
-        window.open(`/orders/${order.id}/edit-docx`, "_blank", "noopener,noreferrer")
       },
     })
   }
@@ -611,7 +574,7 @@ export function WeekendCallsPage() {
                     {createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}
                   </Button>
                 ) : (
-                  <Button size="sm" onClick={handleCommitDraft} disabled={commitDraftMutation.isPending}>
+                  <Button size="sm" onClick={() => handleCommitDraft()} disabled={commitDraftMutation.isPending}>
                     {commitDraftMutation.isPending ? "Создание..." : "Создать"}
                   </Button>
                 )}
@@ -894,20 +857,14 @@ export function WeekendCallsPage() {
                         <TableCell>{formatDate(order.order_date)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" title="Быстрый просмотр" onClick={() => handlePreview(order.id)}>
+                            <Button variant="ghost" size="icon" title="Просмотр DOCX" onClick={() => openOrderView(order.id)}>
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => handleDownload(order.id)}>
-                              <Download className="h-4 w-4" />
+                            <Button variant="ghost" size="icon" title="Печать" onClick={() => openOrderPrint(order.id)}>
+                              <Printer className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Отменить приказ"
-                              onClick={() => setCancelOrderId(order.id)}
-                              className="text-amber-500 hover:text-amber-700"
-                            >
-                              <X className="h-4 w-4" />
+                            <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => downloadOrderDocx(order.id)}>
+                              <Download className="h-4 w-4" />
                             </Button>
                             <Button
                               variant="ghost"
@@ -959,23 +916,6 @@ export function WeekendCallsPage() {
           )}
         </div>
       )}
-
-      <AlertDialog open={cancelOrderId !== null} onOpenChange={(open) => !open && setCancelOrderId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Отменить приказ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Приказ на вызов в выходной будет отменен. Это действие можно использовать вместо удаления.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCancelOrderConfirm} className="bg-amber-600 hover:bg-amber-700">
-              Отменить
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog open={deleteOrderId !== null} onOpenChange={(open) => !open && setDeleteOrderId(null)}>
         <AlertDialogContent>

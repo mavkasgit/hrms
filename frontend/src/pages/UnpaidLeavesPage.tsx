@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react"
-import { ChevronDown, ChevronRight, Download, Eye, FilePen, Trash2, X } from "lucide-react"
+import { ChevronDown, ChevronRight, Download, Eye, FilePen, Printer, Trash2, X } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { EmptyState } from "@/shared/ui/empty-state"
@@ -7,8 +7,9 @@ import { Input } from "@/shared/ui/input"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table"
 import { EmployeeSearch } from "@/features/employee-search"
-import { useAllOrderTypes, useCancelOrder, useCreateVacationUnpaidGroupOrder, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
+import { useAllOrderTypes, useCreateVacationUnpaidGroupOrder, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
 import { useCommitGroupDraft, useCommitOrderDraft, useCreateGroupDraft, useCreateOrderDraft, useDeleteOrderDraft } from "@/entities/order/useOnlyOffice"
+import { downloadOrderDocx, openOrderPrint, openOrderView } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
 import type { GroupEmployeeInfo, Order, VacationUnpaidGroupEmployeeCreate } from "@/entities/order/types"
@@ -157,10 +158,8 @@ export function UnpaidLeavesPage() {
   const deleteDraftMutation = useDeleteOrderDraft()
   const createGroupDraftMutation = useCreateGroupDraft()
   const commitGroupDraftMutation = useCommitGroupDraft()
-  const cancelMutation = useCancelOrder()
   const deleteMutation = useDeleteOrder()
   const createGroupOrderMutation = useCreateVacationUnpaidGroupOrder()
-  const [cancelOrderId, setCancelOrderId] = useState<number | null>(null)
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
   const [showEmployeesTable, setShowEmployeesTable] = useState(true)
   const [draftId, setDraftId] = useState<string | null>(null)
@@ -245,7 +244,7 @@ export function UnpaidLeavesPage() {
     )
   }
 
-  const handleCommitDraft = () => {
+  const handleCommitDraft = (openPrint = false, printTarget?: string) => {
     if (!draftId || !validate() || !unpaidLeaveType || !selectedEmployee) return
     commitDraftMutation.mutate(
       {
@@ -263,7 +262,12 @@ export function UnpaidLeavesPage() {
         },
       },
       {
-        onSuccess: () => resetForm(),
+        onSuccess: (order) => {
+          if (openPrint && order?.id) {
+            openOrderPrint(order.id, printTarget || "_blank")
+          }
+          resetForm()
+        },
       }
     )
   }
@@ -271,9 +275,9 @@ export function UnpaidLeavesPage() {
   useEffect(() => {
     const handleDraftSave = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string }
+      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
       if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
-      handleCommitDraft()
+      handleCommitDraft(Boolean(message.openPrint), message.printWindowName)
     }
 
     window.addEventListener("message", handleDraftSave)
@@ -291,19 +295,6 @@ export function UnpaidLeavesPage() {
     window.addEventListener("message", handleGroupDraftSave)
     return () => window.removeEventListener("message", handleGroupDraftSave)
   }, [groupDraftId])
-
-  const handleDownload = (orderId: number) => {
-    window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
-  }
-
-  const handlePreview = (orderId: number) => {
-    window.open(`/orders/${orderId}/view-docx`, "_blank", "noopener,noreferrer")
-  }
-
-  const handleCancelOrderConfirm = () => {
-    if (cancelOrderId) cancelMutation.mutate(cancelOrderId)
-    setCancelOrderId(null)
-  }
 
   const handleDeleteOrderConfirm = () => {
     if (deleteOrderId) deleteMutation.mutate(deleteOrderId)
@@ -410,24 +401,6 @@ export function UnpaidLeavesPage() {
     }
     setGroupErrors(nextErrors)
     return Object.keys(nextErrors).length === 0
-  }
-
-  const handleCreateGroupOrder = () => {
-    if (!validateGroup() || !unpaidLeaveType) return
-    createGroupOrderMutation.mutate({
-      order_date: orderDate,
-      order_number: orderNumber,
-      vacation_start: groupVacationStart,
-      employees: groupEmployees.map((e) => ({
-        employee_id: e.employee_id,
-        vacation_days: e.vacation_days,
-      })),
-    }, {
-      onSuccess: (order) => {
-        resetGroupForm()
-        window.open(`/orders/${order.id}/edit-docx`, "_blank", "noopener,noreferrer")
-      },
-    })
   }
 
   const handleCreateGroupDraft = () => {
@@ -597,7 +570,7 @@ export function UnpaidLeavesPage() {
                     {createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}
                   </Button>
                 ) : (
-                  <Button size="sm" onClick={handleCommitDraft} disabled={commitDraftMutation.isPending}>
+                  <Button size="sm" onClick={() => handleCommitDraft()} disabled={commitDraftMutation.isPending}>
                     {commitDraftMutation.isPending ? "Создание..." : "Создать"}
                   </Button>
                 )}
@@ -881,20 +854,14 @@ export function UnpaidLeavesPage() {
                         <TableCell>{formatDate(order.order_date)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" title="Быстрый просмотр" onClick={() => handlePreview(order.id)}>
+                            <Button variant="ghost" size="icon" title="Просмотр DOCX" onClick={() => openOrderView(order.id)}>
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => handleDownload(order.id)}>
-                              <Download className="h-4 w-4" />
+                            <Button variant="ghost" size="icon" title="Печать" onClick={() => openOrderPrint(order.id)}>
+                              <Printer className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Отменить приказ"
-                              onClick={() => setCancelOrderId(order.id)}
-                              className="text-amber-500 hover:text-amber-700"
-                            >
-                              <X className="h-4 w-4" />
+                            <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => downloadOrderDocx(order.id)}>
+                              <Download className="h-4 w-4" />
                             </Button>
                             <Button
                               variant="ghost"
@@ -946,23 +913,6 @@ export function UnpaidLeavesPage() {
           )}
         </div>
       )}
-
-      <AlertDialog open={cancelOrderId !== null} onOpenChange={(open) => !open && setCancelOrderId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Отменить приказ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Приказ на отпуск за свой счет будет отменен. Это действие можно использовать вместо удаления.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCancelOrderConfirm} className="bg-amber-600 hover:bg-amber-700">
-              Отменить
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog open={deleteOrderId !== null} onOpenChange={(open) => !open && setDeleteOrderId(null)}>
         <AlertDialogContent>
