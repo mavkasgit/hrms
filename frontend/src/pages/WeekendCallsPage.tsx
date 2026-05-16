@@ -159,6 +159,7 @@ export function WeekendCallsPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<number>>(new Set())
+  const [showEmployeesTable, setShowEmployeesTable] = useState(true)
 
   const { data: orderTypes = [] } = useAllOrderTypes()
   const createDraftMutation = useCreateOrderDraft()
@@ -784,27 +785,36 @@ export function WeekendCallsPage() {
 
           {periodError && <p className="text-xs text-red-500">{periodError}</p>}
 
-          {employeesSummary.length > 0 ? (
+          {employeesSummary.length > 0 && (
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow
+                  className="cursor-pointer select-none"
+                  onClick={() => setShowEmployeesTable(!showEmployeesTable)}
+                >
+                  <TableHead className="w-10">
+                    <span className="text-muted-foreground text-xs">
+                      {showEmployeesTable ? "▾" : "▸"}
+                    </span>
+                  </TableHead>
                   <TableHead>Сотрудник</TableHead>
                   <TableHead>Вызовов</TableHead>
                   <TableHead>Дней вызова</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
-                {employeesSummary.map((employee) => (
-                  <TableRow key={employee.name}>
-                    <TableCell className="font-medium">{employee.name}</TableCell>
-                    <TableCell>{employee.calls}</TableCell>
-                    <TableCell>{employee.days}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+              {showEmployeesTable && (
+                <TableBody>
+                  {employeesSummary.map((employee) => (
+                    <TableRow key={employee.name}>
+                      <TableCell className="w-10" />
+                      <TableCell className="font-medium">{employee.name}</TableCell>
+                      <TableCell>{employee.calls}</TableCell>
+                      <TableCell>{employee.days}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              )}
             </Table>
-          ) : (
-            <EmptyState message="Нет сотрудников с вызовами" description="За выбранный период вызовы отсутствуют" />
           )}
 
           {filteredOrders.length === 0 ? (

@@ -57,12 +57,12 @@ def _replace_text_in_paragraph(paragraph: Any, replacements: dict[str, str]) -> 
     _replace_in_paragraph(paragraph, replacements)
 
 
-def _find_block_paragraph_indexes(doc: Document, start_marker: str, end_marker: str) -> tuple[int | None, int | None]:
+def _find_block_paragraph_indexes(container: Any, start_marker: str, end_marker: str) -> tuple[int | None, int | None]:
     """Find the paragraph indexes for a block delimited by markers."""
     start_idx = None
     end_idx = None
 
-    for idx, paragraph in enumerate(doc.paragraphs):
+    for idx, paragraph in enumerate(container.paragraphs):
         text = paragraph.text
         if start_marker in text:
             start_idx = idx
@@ -79,77 +79,264 @@ def _find_block_paragraph_indexes(doc: Document, start_marker: str, end_marker: 
     return start_idx, end_idx
 
 
+def _iter_paragraph_containers(element: Any):
+    """Yield element itself and all nested table cells as paragraph containers."""
+    yield element
+    for table in element.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                yield from _iter_paragraph_containers(cell)
+
+
+def _iter_tables(element: Any):
+    """Yield tables in element recursively, including nested tables."""
+    for table in element.tables:
+        yield table
+        for row in table.rows:
+            for cell in row.cells:
+                yield from _iter_tables(cell)
+
+
+def _row_contains_marker(row: Any, marker: str) -> bool:
+    """Check whether any paragraph in the row contains marker text."""
+    for cell in row.cells:
+        for paragraph in cell.paragraphs:
+            if marker in paragraph.text:
+                return True
+    return False
+
+
+def _render_repeat_block_in_table_rows(
+    table: Any,
+    start_marker: str,
+    end_marker: str,
+    rows_replacements: list[dict[str, str]],
+) -> None:
+    """Render repeat blocks where markers are placed in different rows of the same table."""
+    from copy import deepcopy
+    from docx.table import _Row
+    from docx.text.paragraph import Paragraph
+
+    while True:
+        start_idx = None
+        end_idx = None
+
+        for idx, row in enumerate(table.rows):
+            if _row_contains_marker(row, start_marker):
+                start_idx = idx
+            if _row_contains_marker(row, end_marker) and start_idx is not None:
+                end_idx = idx
+                break
+
+        if start_idx is None:
+            return
+
+        if end_idx is None or end_idx <= start_idx:
+            raise ValueError(f"Некорректный блок в таблице: {start_marker} ... {end_marker}")
+
+        template_rows = list(table.rows[start_idx + 1 : end_idx])
+        if not template_rows:
+            # Special case: marker row may also contain template paragraphs in the same cell.
+            start_row = table.rows[start_idx]
+            end_row = table.rows[end_idx]
+
+            start_cell = None
+            start_paragraph_idx = None
+            for cell in start_row.cells:
+                for paragraph_idx, paragraph in enumerate(cell.paragraphs):
+                    if start_marker in paragraph.text:
+                        start_cell = cell
+                        start_paragraph_idx = paragraph_idx
+                        break
+                if start_cell is not None:
+                    break
+
+            end_marker_paragraphs = []
+            for cell in end_row.cells:
+                for paragraph in cell.paragraphs:
+                    if end_marker in paragraph.text:
+                        end_marker_paragraphs.append(paragraph)
+
+            if start_cell is not None and start_paragraph_idx is not None:
+                tail_template_paragraphs = start_cell.paragraphs[start_paragraph_idx + 1 :]
+                if tail_template_paragraphs:
+                    template_tail_xml = [deepcopy(paragraph._p) for paragraph in tail_template_paragraphs]
+                    paragraphs_to_delete = [start_cell.paragraphs[start_paragraph_idx]._p] + [p._p for p in tail_template_paragraphs]
+
+                    for row_replacements in rows_replacements:
+                        for paragraph_xml in template_tail_xml:
+                            new_paragraph_xml = deepcopy(paragraph_xml)
+                            start_cell._tc.append(new_paragraph_xml)
+                            _replace_text_in_paragraph(Paragraph(new_paragraph_xml, start_cell), row_replacements)
+
+                    for paragraph_xml in paragraphs_to_delete:
+                        paragraph_xml.getparent().remove(paragraph_xml)
+
+                    for paragraph in end_marker_paragraphs:
+                        paragraph._p.getparent().remove(paragraph._p)
+
+                    # If end row became empty, remove it.
+                    row_has_text = any(
+                        paragraph.text.strip()
+                        for cell in end_row.cells
+                        for paragraph in cell.paragraphs
+                    )
+                    if not row_has_text:
+                        end_row._tr.getparent().remove(end_row._tr)
+                    continue
+
+            # Nothing between markers — clear marker rows
+            for row in (table.rows[start_idx], table.rows[end_idx]):
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        paragraph.text = paragraph.text.replace(start_marker, "").replace(end_marker, "")
+            continue
+
+        template_row_xml = [deepcopy(row._tr) for row in template_rows]
+        rows_to_delete = [table.rows[start_idx]._tr, *[row._tr for row in template_rows], table.rows[end_idx]._tr]
+
+        insert_before = table.rows[end_idx]._tr
+        for row_replacements in rows_replacements:
+            for row_xml in template_row_xml:
+                new_row_xml = deepcopy(row_xml)
+                insert_before.addprevious(new_row_xml)
+                inserted_row = _Row(new_row_xml, table)
+                for cell in inserted_row.cells:
+                    _replace_placeholders_in_element(cell, row_replacements)
+
+        for row_elem in rows_to_delete:
+            row_elem.getparent().remove(row_elem)
+
+
+def _render_body_level_block_between_markers(
+    doc: Document,
+    start_paragraph: Any,
+    end_paragraph: Any,
+    rows_replacements: list[dict[str, str]],
+) -> bool:
+    """Render a block where markers are body paragraphs and template content between them may include tables."""
+    from copy import deepcopy
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    body_element = doc._body._element
+    start_elem = start_paragraph._element
+    end_elem = end_paragraph._element
+
+    if start_elem.getparent() is not body_element or end_elem.getparent() is not body_element:
+        return False
+
+    body_children = list(body_element)
+    try:
+        start_child_idx = body_children.index(start_elem)
+        end_child_idx = body_children.index(end_elem)
+    except ValueError:
+        return False
+
+    if end_child_idx <= start_child_idx:
+        return False
+
+    template_elements = body_children[start_child_idx + 1 : end_child_idx]
+    if not template_elements:
+        return False
+
+    insert_before = end_paragraph._p
+    parent = end_paragraph._parent
+
+    for row_replacements in rows_replacements:
+        for template_elem in template_elements:
+            new_elem = deepcopy(template_elem)
+            insert_before.addprevious(new_elem)
+
+            tag = new_elem.tag.rsplit("}", 1)[-1]
+            if tag == "p":
+                _replace_text_in_paragraph(Paragraph(new_elem, parent), row_replacements)
+            elif tag == "tbl":
+                _replace_placeholders_in_element(Table(new_elem, parent), row_replacements)
+
+    elements_to_delete = [start_elem, *template_elements, end_elem]
+    for elem in elements_to_delete:
+        elem.getparent().remove(elem)
+
+    return True
+
+
 def _render_repeat_block(
     doc: Document,
     start_marker: str,
     end_marker: str,
     rows_replacements: list[dict[str, str]],
 ) -> None:
-    """Find a block between markers, replicate it for each replacement dict, and substitute placeholders."""
-    start_idx, end_idx = _find_block_paragraph_indexes(doc, start_marker, end_marker)
-
-    if start_idx is None:
-        return
-
-    paragraphs = doc.paragraphs
-    start_p = paragraphs[start_idx]
-    end_p = paragraphs[end_idx]
-
-    # Paragraphs inside the block that should be replicated
-    template_paragraphs = paragraphs[start_idx + 1:end_idx]
-
-    if not template_paragraphs:
-        # Nothing between markers — just clear the markers
-        start_p.text = ""
-        end_p.text = ""
-        return
-
+    """Find ALL blocks between markers in doc and table cells, replicate each, and substitute placeholders."""
     from copy import deepcopy
+    from docx.text.paragraph import Paragraph
 
-    # Save XML copies of template paragraphs
-    template_xml = [deepcopy(p._p) for p in template_paragraphs]
+    def _render_repeat_block_in_container(container: Any) -> None:
+        while True:
+            start_idx, end_idx = _find_block_paragraph_indexes(container, start_marker, end_marker)
 
-    # Collect all paragraph elements that need to be deleted (markers + template)
-    # We must collect them BEFORE insertion, because insertion changes indices
-    paragraphs_to_delete = [paragraphs[start_idx]._element]  # start marker
-    for p in template_paragraphs:
-        paragraphs_to_delete.append(p._element)
-    paragraphs_to_delete.append(paragraphs[end_idx]._element)  # end marker
+            if start_idx is None:
+                return
 
-    # Insert new paragraphs before end_marker, one set per employee
-    insert_before = end_p._p
+            paragraphs = container.paragraphs
+            start_p = paragraphs[start_idx]
+            end_p = paragraphs[end_idx]
 
-    for row_replacements in rows_replacements:
-        for p_xml in template_xml:
-            new_p_xml = deepcopy(p_xml)
-            insert_before.addprevious(new_p_xml)
+            # Paragraphs inside the block that should be replicated
+            template_paragraphs = paragraphs[start_idx + 1:end_idx]
 
-        # Replace placeholders in the paragraphs we just inserted
-        inserted_paragraphs = doc.paragraphs
-        # Find the index of insert_before
-        end_idx_current = None
-        for idx, p in enumerate(inserted_paragraphs):
-            if p._element is insert_before:
-                end_idx_current = idx
-                break
+            if not template_paragraphs:
+                if _render_body_level_block_between_markers(doc, start_p, end_p, rows_replacements):
+                    continue
+                # Nothing between markers — just clear the markers
+                start_p.text = ""
+                end_p.text = ""
+                continue
 
-        if end_idx_current is not None:
-            inserted_start = end_idx_current - len(template_xml)
-            for paragraph in inserted_paragraphs[inserted_start:end_idx_current]:
-                _replace_text_in_paragraph(paragraph, row_replacements)
+            # Save XML copies of template paragraphs
+            template_xml = [deepcopy(p._p) for p in template_paragraphs]
 
-    # Remove template paragraphs and markers (use collected elements, not indices)
-    for p_elem in paragraphs_to_delete:
-        p_elem.getparent().remove(p_elem)
+            # Collect all paragraph elements that need to be deleted (markers + template)
+            paragraphs_to_delete = [paragraphs[start_idx]._element]  # start marker
+            for p in template_paragraphs:
+                paragraphs_to_delete.append(p._element)
+            paragraphs_to_delete.append(paragraphs[end_idx]._element)  # end marker
+
+            # Insert new paragraphs before end_marker, one set per employee
+            insert_before = end_p._p
+
+            for row_replacements in rows_replacements:
+                for p_xml in template_xml:
+                    new_p_xml = deepcopy(p_xml)
+                    insert_before.addprevious(new_p_xml)
+                    # Replace placeholders immediately on the inserted paragraph.
+                    # This avoids relying on element identity checks across lxml proxies.
+                    inserted_paragraph = Paragraph(new_p_xml, end_p._parent)
+                    _replace_text_in_paragraph(inserted_paragraph, row_replacements)
+
+            # Remove template paragraphs and markers (use collected elements, not indices)
+            for p_elem in paragraphs_to_delete:
+                p_elem.getparent().remove(p_elem)
+
+    for container in _iter_paragraph_containers(doc):
+        _render_repeat_block_in_container(container)
+
+    for table in _iter_tables(doc):
+        _render_repeat_block_in_table_rows(table, start_marker, end_marker, rows_replacements)
 
 
 def _replace_placeholders_in_element(element: Any, replacements: dict[str, str]) -> None:
     """Replace placeholders in a document element (paragraphs and tables)."""
-    for paragraph in element.paragraphs:
-        _replace_text_in_paragraph(paragraph, replacements)
+    if hasattr(element, "paragraphs"):
+        for paragraph in element.paragraphs:
+            _replace_text_in_paragraph(paragraph, replacements)
 
-    for table in element.tables:
-        for row in table.rows:
+    if hasattr(element, "tables"):
+        for table in element.tables:
+            _replace_placeholders_in_element(table, replacements)
+
+    if hasattr(element, "rows") and hasattr(element, "columns"):
+        for row in element.rows:
             for cell in row.cells:
                 _replace_placeholders_in_element(cell, replacements)
 
@@ -514,6 +701,56 @@ def _prepare_replacements(
         oznak = ""
         employee_replacements = _build_employee_name_replacements("")
 
+    # Apply extra_fields first so we can use them to override employee-derived values
+    extra_replacements: dict[str, str] = {}
+    for key, value in (data.extra_fields or {}).items():
+        extra_replacements[f"{{{key}}}"] = _format_placeholder_value(value)
+
+    # For hire orders, use only extra_fields dates (user input), not employee card dates
+    use_extra_hire_dates = order_type.code == "hire"
+
+    effective_hire_date = "" if use_extra_hire_dates else hire_date
+    if "{hire_date}" in extra_replacements:
+        effective_hire_date = extra_replacements["{hire_date}"]
+
+    effective_contract_start = "" if use_extra_hire_dates else contract_start
+    if "{contract_start}" in extra_replacements:
+        effective_contract_start = extra_replacements["{contract_start}"]
+
+    # Calculate trial period months from hire_date and trial_end
+    trial_end_months = ""
+    if use_extra_hire_dates:
+        hire_d = extra_replacements.get("{hire_date}")
+        trial_d = extra_replacements.get("{trial_end}")
+        if hire_d and trial_d:
+            try:
+                from datetime import date as _date
+                hd = _date.fromisoformat(hire_d)
+                td = _date.fromisoformat(trial_d)
+                months = (td.year - hd.year) * 12 + (td.month - hd.month)
+                if months > 0:
+                    trial_end_months = str(months)
+            except (ValueError, TypeError):
+                pass
+
+    # Calculate contract duration in years from hire_date and contract_end
+    contract_end_years = ""
+    if use_extra_hire_dates:
+        hire_d = extra_replacements.get("{hire_date}")
+        ce_d = extra_replacements.get("{contract_end}")
+        if hire_d and ce_d:
+            try:
+                from datetime import date as _date
+                hd = _date.fromisoformat(hire_d)
+                cd = _date.fromisoformat(ce_d)
+                years = cd.year - hd.year
+                if (cd.month, cd.day) < (hd.month, hd.day):
+                    years -= 1
+                if years > 0:
+                    contract_end_years = str(years)
+            except (ValueError, TypeError):
+                pass
+
     replacements = {
         "{order_number}": order_number,
         "{order_date}": data.order_date.strftime("%d.%m.%Y"),
@@ -525,15 +762,15 @@ def _prepare_replacements(
         "{department}": department,
         "{position}": position_name.lower(),
         "{position_cap}": position_cap,
-        "{hire_date}": hire_date,
-        "{contract_start}": contract_start,
-        "{hire_order_date}": hire_date,
+        "{hire_date}": effective_hire_date,
+        "{contract_start}": effective_contract_start,
+        "{hire_order_date}": effective_hire_date,
+        "{trial_end_months}": trial_end_months,
+        "{contract_end_years}": contract_end_years,
         "{oznak_gender}": oznak,
         "{notes}": data.notes or "",
+        **extra_replacements,
     }
-
-    for key, value in (data.extra_fields or {}).items():
-        replacements[f"{{{key}}}"] = _format_placeholder_value(value)
 
     return replacements
 
@@ -590,6 +827,9 @@ def _replace_in_paragraph(paragraph: Any, replacements: dict[str, str]) -> None:
 
     for start_pos, key, value in occurrences:
         key_len = len(key)
+        # If the key spans more characters than we have in the map, skip (likely split across runs in a way we can't handle)
+        if start_pos + key_len > len(p_map):
+            continue
         key_map = p_map[start_pos : start_pos + key_len]
         _replace_in_runs(paragraph.runs, key_map, value)
 

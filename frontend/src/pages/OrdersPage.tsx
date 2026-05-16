@@ -48,6 +48,173 @@ import { EmployeeSearch } from "@/features/employee-search"
 import type { Employee } from "@/entities/employee/types"
 import type { OrderType, OrderTypeFieldSchema } from "@/entities/order/types"
 
+// ─── Quick Options Row ────────────────────────────────────────────────────────
+
+type QuickOptionsRowProps = {
+  field: OrderTypeFieldSchema
+  extraFields: Record<string, string | number>
+  onChange: (key: string, value: string | number) => void
+}
+
+function QuickOptionsRow({ field, extraFields, onChange }: QuickOptionsRowProps) {
+  if (!field.quickOptions || field.quickOptions.length === 0) return null
+
+  const countKey = field.key === "contract_end" ? "contract_end_years" : "trial_end_months"
+  const unit = field.quickOptions[0]?.unit
+
+  return (
+    <div className="flex gap-2 items-center">
+      {field.quickOptions.map((opt) => (
+        <button
+          key={opt.label}
+          type="button"
+          className="text-xs px-2 py-0.5 rounded border border-input bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          onClick={() => {
+            const hireDateStr = extraFields["hire_date"] as string | undefined
+            if (hireDateStr) {
+              const d = new Date(hireDateStr + "T00:00:00")
+              if (opt.years) d.setFullYear(d.getFullYear() + opt.years)
+              else if (opt.months) d.setMonth(d.getMonth() + opt.months)
+              const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+              onChange(field.key, iso)
+              onChange(countKey, opt.years ?? opt.months ?? "")
+            }
+          }}
+        >
+          {opt.label}
+        </button>
+      ))}
+      <label className="text-xs text-muted-foreground whitespace-nowrap">
+        {unit === "years" ? "лет:" : "мес:"}
+      </label>
+      <input
+        type="number"
+        min="1"
+        max="99"
+        value={extraFields[countKey] !== undefined && extraFields[countKey] !== "" ? String(extraFields[countKey]) : ""}
+        onChange={(e) => {
+          const val = e.target.value
+          onChange(countKey, val === "" ? "" : Number(val))
+          if (val && Number(val) > 0) {
+            const hireDateStr = extraFields["hire_date"] as string | undefined
+            if (hireDateStr) {
+              const d = new Date(hireDateStr + "T00:00:00")
+              if (unit === "years") d.setFullYear(d.getFullYear() + Number(val))
+              else d.setMonth(d.getMonth() + Number(val))
+              const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+              onChange(field.key, iso)
+            }
+          }
+        }}
+        className="w-12 h-7 text-xs rounded border border-input bg-background px-1 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+    </div>
+  )
+}
+
+// ─── Hire Order Fields Layout ──────────────────────────────────────────────────
+
+type HireOrderFieldsProps = {
+  fieldSchema: OrderTypeFieldSchema[]
+  extraFields: Record<string, string | number>
+  extraFieldErrors: Record<string, string | undefined>
+  onFieldChange: (key: string, value: string | number) => void
+}
+
+function HireOrderFields({ fieldSchema, extraFields, extraFieldErrors, onFieldChange }: HireOrderFieldsProps) {
+  const fields = fieldSchema.map((f) => {
+    if (f.key === "trial_end") {
+      return { ...f, quickOptions: [
+        { label: "2 мес", months: 2, unit: "months" as const },
+        { label: "3 мес", months: 3, unit: "months" as const },
+      ]}
+    }
+    if (f.key === "contract_end") {
+      return { ...f, quickOptions: [
+        { label: "1 год", years: 1, unit: "years" as const },
+        { label: "2 года", years: 2, unit: "years" as const },
+        { label: "3 года", years: 3, unit: "years" as const },
+      ]}
+    }
+    return f
+  })
+
+  const hireDate = fields.find(f => f.key === "hire_date")
+  const contractEnd = fields.find(f => f.key === "contract_end")
+  const trialEnd = fields.find(f => f.key === "trial_end")
+  const otherFields = fields.filter(f => !["hire_date", "contract_end", "trial_end"].includes(f.key))
+
+  return (
+    <div className="space-y-3">
+      {/* Row 1: hire_date + contract_end date pickers side by side */}
+      <div className="flex gap-4 flex-wrap">
+        {hireDate && (
+          <DynamicField
+            key="hire_date"
+            field={{ ...hireDate, quickOptions: undefined }}
+            value={extraFields[hireDate.key]}
+            error={extraFieldErrors[`extra_${hireDate.key}`]}
+            onChange={onFieldChange}
+            extraFields={extraFields}
+          />
+        )}
+        {contractEnd && (
+          <DynamicField
+            key="contract_end"
+            field={{ ...contractEnd, quickOptions: undefined }}
+            value={extraFields[contractEnd.key]}
+            error={extraFieldErrors[`extra_${contractEnd.key}`]}
+            onChange={onFieldChange}
+            extraFields={extraFields}
+          />
+        )}
+        {otherFields.filter(f => f.type === "date").map((field) => (
+          <DynamicField
+            key={field.key}
+            field={field}
+            value={extraFields[field.key]}
+            error={extraFieldErrors[`extra_${field.key}`]}
+            onChange={onFieldChange}
+            extraFields={extraFields}
+          />
+        ))}
+      </div>
+      {/* contract_end quick options */}
+      {contractEnd?.quickOptions && (
+        <QuickOptionsRow field={contractEnd} extraFields={extraFields} onChange={onFieldChange} />
+      )}
+      {/* trial_end date picker */}
+      {trialEnd && (
+        <div className="flex gap-4 flex-wrap">
+          <DynamicField
+            key="trial_end"
+            field={{ ...trialEnd, quickOptions: undefined }}
+            value={extraFields[trialEnd.key]}
+            error={extraFieldErrors[`extra_${trialEnd.key}`]}
+            onChange={onFieldChange}
+            extraFields={extraFields}
+          />
+        </div>
+      )}
+      {/* trial_end quick options */}
+      {trialEnd?.quickOptions && (
+        <QuickOptionsRow field={trialEnd} extraFields={extraFields} onChange={onFieldChange} />
+      )}
+      {/* Other non-date fields */}
+      {otherFields.filter(f => f.type !== "date").map((field) => (
+        <DynamicField
+          key={field.key}
+          field={field}
+          value={extraFields[field.key]}
+          error={extraFieldErrors[`extra_${field.key}`]}
+          onChange={onFieldChange}
+          extraFields={extraFields}
+        />
+      ))}
+    </div>
+  )
+}
+
 // ─── Dynamic Field Renderer ───────────────────────────────────────────────────
 
 type DynamicFieldProps = {
@@ -55,9 +222,10 @@ type DynamicFieldProps = {
   value: string | number | undefined
   error?: string
   onChange: (key: string, value: string | number) => void
+  extraFields: Record<string, string | number>
 }
 
-function DynamicField({ field, value, error, onChange }: DynamicFieldProps) {
+function DynamicField({ field, value, error, onChange, extraFields }: DynamicFieldProps) {
   const displayValue = value !== undefined && value !== null ? String(value) : ""
 
   if (field.type === "date") {
@@ -70,6 +238,71 @@ function DynamicField({ field, value, error, onChange }: DynamicFieldProps) {
           required={field.required}
           className="w-[130px]"
         />
+        {field.quickOptions && field.quickOptions.length > 0 && (
+          <div className="flex gap-2 mt-1 items-end">
+            {field.quickOptions.map((opt) => (
+              <button
+                key={opt.label}
+                type="button"
+                className="text-xs px-2 py-0.5 rounded border border-input bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                onClick={() => {
+                  const hireDateStr = extraFields["hire_date"] as string | undefined
+                  if (hireDateStr) {
+                    const d = new Date(hireDateStr + "T00:00:00")
+                    if (opt.years) {
+                      d.setFullYear(d.getFullYear() + opt.years)
+                    } else if (opt.months) {
+                      d.setMonth(d.getMonth() + opt.months)
+                    }
+                    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+                    onChange(field.key, iso)
+                    // Also set the count field
+                    const countKey = field.key === "contract_end" ? "contract_end_years" : "trial_end_months"
+                    onChange(countKey, opt.years ?? opt.months ?? "")
+                  }
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+            <div className="flex items-center gap-1">
+              <label className="text-xs text-muted-foreground whitespace-nowrap">
+                {field.quickOptions[0]?.unit === "years" ? "лет:" : "мес:"}
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="99"
+                value={(() => {
+                  const countKey = field.key === "contract_end" ? "contract_end_years" : "trial_end_months"
+                  const v = extraFields[countKey]
+                  return v !== undefined && v !== null && v !== "" ? String(v) : ""
+                })()}
+                onChange={(e) => {
+                  const val = e.target.value
+                  const countKey = field.key === "contract_end" ? "contract_end_years" : "trial_end_months"
+                  onChange(countKey, val === "" ? "" : Number(val))
+                  // Also recalculate the date
+                  if (val && Number(val) > 0) {
+                    const hireDateStr = extraFields["hire_date"] as string | undefined
+                    if (hireDateStr) {
+                      const d = new Date(hireDateStr + "T00:00:00")
+                      const unit = field.quickOptions![0]?.unit
+                      if (unit === "years") {
+                        d.setFullYear(d.getFullYear() + Number(val))
+                      } else {
+                        d.setMonth(d.getMonth() + Number(val))
+                      }
+                      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+                      onChange(field.key, iso)
+                    }
+                  }
+                }}
+                className="w-12 h-7 text-xs rounded border border-input bg-background px-1 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            </div>
+          </div>
+        )}
         {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
       </div>
     )
@@ -698,9 +931,34 @@ export function OrdersPage() {
 
                 {/* Dynamic extra fields from field_schema */}
                 {selectedOrderType && Array.isArray(selectedOrderType.field_schema) && selectedOrderType.field_schema.length > 0 && (
+                  selectedOrderType.code === "hire" ? (
+                    <HireOrderFields
+                      fieldSchema={selectedOrderType.field_schema}
+                      extraFields={extraFields}
+                      extraFieldErrors={extraFieldErrors}
+                      onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                    />
+                  ) : (
                   <div className="space-y-4">
                     {(() => {
-                      const fields = selectedOrderType.field_schema.filter((f) => f.key !== "trial_end")
+                      const fields = selectedOrderType.field_schema.map((f) => {
+                        if (f.key === "trial_end") {
+                          return { ...f, quickOptions: [
+                            { label: "2 мес", months: 2, unit: "months" as const },
+                            { label: "3 мес", months: 3, unit: "months" as const },
+                          ]}
+                        }
+                        if (f.key === "contract_end") {
+                          return { ...f, quickOptions: [
+                            { label: "1 год", years: 1, unit: "years" as const },
+                            { label: "2 года", years: 2, unit: "years" as const },
+                            { label: "3 года", years: 3, unit: "years" as const },
+                          ]}
+                        }
+                        return f
+                      })
+
+                      // Default grouping for other order types
                       const rows: typeof fields[] = []
                       let currentRow: typeof fields = []
 
@@ -726,13 +984,14 @@ export function OrdersPage() {
                               value={extraFields[field.key]}
                               error={extraFieldErrors[`extra_${field.key}`]}
                               onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                              extraFields={extraFields}
                             />
                           ))}
                         </div>
                       ))
                     })()}
                   </div>
-                )}
+                ))}
               </div>
             </div>
           </div>

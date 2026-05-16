@@ -3,6 +3,7 @@ export interface OrderTypeFieldSchema {
   label: string
   type: "text" | "date" | "number" | "textarea"
   required: boolean
+  quickOptions?: { label: string; months?: number; years?: number; unit?: "months" | "years" }[]
 }
 
 export interface OrderType {
