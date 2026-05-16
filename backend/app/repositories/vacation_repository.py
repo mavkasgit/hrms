@@ -110,17 +110,6 @@ class VacationRepository:
         await db.flush()
         return True
 
-    async def cancel(self, db: AsyncSession, id: int, user_id: str) -> bool:
-        """Пометить отпуск как отменённый."""
-        vacation = await self.get_by_id(db, id)
-        if not vacation:
-            return False
-        vacation.is_cancelled = True
-        vacation.cancelled_at = func.now()
-        vacation.cancelled_by = user_id
-        await db.flush()
-        return True
-
     async def hard_delete(self, db: AsyncSession, id: int) -> bool:
         """Полное удаление отпуска из БД."""
         vacation = await self.get_by_id(db, id)
@@ -142,7 +131,6 @@ class VacationRepository:
             .options(selectinload(Vacation.employee), selectinload(Vacation.order))
             .where(
                 Vacation.is_deleted == False,
-                Vacation.is_cancelled == False,
                 Vacation.is_recalled == False,
                 Vacation.is_postponed == False,
                 Vacation.is_extended == False,
@@ -193,7 +181,6 @@ class VacationRepository:
                 Vacation.employee_id == employee_id,
                 Vacation.vacation_type == vacation_type,
                 Vacation.is_deleted == False,
-                Vacation.is_cancelled == False,
                 Vacation.start_date <= date(year, 12, 31),
                 Vacation.end_date >= date(year, 1, 1),
             )
@@ -237,7 +224,6 @@ class VacationRepository:
             select(func.coalesce(func.sum(Vacation.days_count), 0)).where(
                 Vacation.employee_id == period.employee_id,
                 Vacation.is_deleted == False,
-                Vacation.is_cancelled == False,
                 Vacation.start_date >= period.period_start,
                 Vacation.start_date <= period.period_end,
             )
@@ -656,7 +642,6 @@ class VacationRepository:
                             "vacation_type": v.vacation_type,
                             "order_number": v.order.order_number if getattr(v, "order", None) else None,
                             "comment": v.comment,
-                            "is_cancelled": v.is_cancelled,
                             "is_recalled": v.is_recalled,
                             "recall_date": str(v.recall_date) if v.recall_date else None,
                             "recall_order_number": v.recall_order.order_number if getattr(v, "recall_order", None) else None,

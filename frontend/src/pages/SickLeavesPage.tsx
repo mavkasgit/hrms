@@ -1,9 +1,8 @@
-import { useState } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { ChevronDown, ChevronRight, Trash2, X } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
-import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
 import {
@@ -43,15 +42,51 @@ export function SickLeavesPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<number | null>(null)
 
-  const [statusFilter, setStatusFilter] = useState<string | undefined>("active")
   const [nameFilter, setNameFilter] = useState("")
+  const [page, setPage] = useState(1)
+  const [allSickLeaves, setAllSickLeaves] = useState<SickLeave[]>([])
+  const loaderRef = useRef<HTMLDivElement>(null)
 
-  const { data: sickLeavesData, isLoading } = useSickLeaves({
+  const { data: sickLeavesData, isLoading, isFetching } = useSickLeaves({
     q: nameFilter || undefined,
-    status: statusFilter,
-    page: 1,
-    per_page: 50,
+    page,
+    per_page: 20,
   })
+
+  // Accumulate sick leaves as pages load
+  useEffect(() => {
+    if (sickLeavesData?.items) {
+      if (page === 1) {
+        setAllSickLeaves(sickLeavesData.items)
+      } else {
+        setAllSickLeaves(prev => {
+          const existingIds = new Set(prev.map(s => s.id))
+          const newItems = sickLeavesData.items.filter(s => !existingIds.has(s.id))
+          return [...prev, ...newItems]
+        })
+      }
+    }
+  }, [sickLeavesData, page])
+
+  // Reset on filter change
+  useEffect(() => {
+    setPage(1)
+    setAllSickLeaves([])
+  }, [nameFilter])
+
+  // IntersectionObserver for infinite scroll
+  const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
+    const [entry] = entries
+    if (entry.isIntersecting && sickLeavesData && sickLeavesData.page < sickLeavesData.pages && !isFetching) {
+      setPage(prev => prev + 1)
+    }
+  }, [sickLeavesData, isFetching])
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(handleObserver, { rootMargin: "200px" })
+    if (loaderRef.current) observer.observe(loaderRef.current)
+    return () => observer.disconnect()
+  }, [handleObserver])
 
   const createMutation = useCreateSickLeave()
   const deleteMutation = useDeleteSickLeave()
@@ -108,7 +143,7 @@ export function SickLeavesPage() {
     setDeleteId(null)
   }
 
-  const sickLeaves = sickLeavesData?.items || []
+  const sickLeaves = allSickLeaves
   
   return (
     <div className="space-y-4">
@@ -230,19 +265,6 @@ export function SickLeavesPage() {
           onChange={(e) => setNameFilter(e.target.value)}
           className="w-64 h-9 text-sm"
         />
-        <div className="flex gap-1">
-          {(["active", "cancelled", undefined] as const).map((f) => (
-            <Button
-              key={f ?? "all"}
-              variant={statusFilter === f ? "default" : "outline"}
-              size="sm"
-              onClick={() => setStatusFilter(f ?? undefined)}
-              className="text-xs"
-            >
-              {f === "active" ? "Активные" : f === "cancelled" ? "Отменённые" : "Все"}
-            </Button>
-          ))}
-        </div>
       </div>
 
       {isLoading ? (
@@ -254,54 +276,53 @@ export function SickLeavesPage() {
       ) : sickLeaves.length === 0 ? (
         <EmptyState message="Нет больничных" description="Создайте первый больничный лист" />
       ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium">Сотрудник</th>
-                <th className="text-left px-4 py-2 font-medium">Период</th>
-                <th className="text-left px-4 py-2 font-medium">Дней</th>
-                <th className="text-left px-4 py-2 font-medium">Описание</th>
-                <th className="text-left px-4 py-2 font-medium">Статус</th>
-                <th className="w-[80px]"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sickLeaves.map((sl: SickLeave) => (
-                <tr key={sl.id} className="border-t hover:bg-muted/30">
-                  <td className="px-4 py-2">{sl.employee_name}</td>
-                  <td className="px-4 py-2">
-                    {formatDate(sl.start_date)} — {formatDate(sl.end_date)}
-                  </td>
-                  <td className="px-4 py-2">{sl.days_count}</td>
-                  <td className="px-4 py-2 text-muted-foreground max-w-[200px] truncate">
-                    {sl.comment || "—"}
-                  </td>
-                  <td className="px-4 py-2">
-                    <Badge variant={sl.status === "active" ? "default" : "secondary"}>
-                      {sl.status === "active" ? "Активный" : "Отменён"}
-                    </Badge>
-                  </td>
-                  <td className="px-2 py-2">
-                    {sl.status === "active" && (
+        <>
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">Сотрудник</th>
+                  <th className="text-left px-4 py-2 font-medium">Период</th>
+                  <th className="text-left px-4 py-2 font-medium">Дней</th>
+                  <th className="text-left px-4 py-2 font-medium">Описание</th>
+                  <th className="w-[80px]"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sickLeaves.map((sl: SickLeave) => (
+                  <tr key={sl.id} className="border-t hover:bg-muted/30">
+                    <td className="px-4 py-2">{sl.employee_name}</td>
+                    <td className="px-4 py-2">
+                      {formatDate(sl.start_date)} — {formatDate(sl.end_date)}
+                    </td>
+                    <td className="px-4 py-2">{sl.days_count}</td>
+                    <td className="px-4 py-2 text-muted-foreground max-w-[200px] truncate">
+                      {sl.comment || "—"}
+                    </td>
+                    <td className="px-2 py-2">
                       <div className="flex gap-1">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-7 w-7 p-0 text-red-400 hover:text-red-600" 
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-red-400 hover:text-red-600"
                           onClick={() => setDeleteId(sl.id)}
                           title="Удалить"
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div ref={loaderRef} className="flex justify-center py-4">
+            {isFetching && (
+              <div className="text-sm text-muted-foreground">Загрузка...</div>
+            )}
+          </div>
+        </>
       )}
 
       <AlertDialog open={deleteId !== null} onOpenChange={(open) => !open && setDeleteId(null)}>

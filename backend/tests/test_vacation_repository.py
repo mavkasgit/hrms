@@ -101,15 +101,6 @@ async def test_get_used_days_counts_only_days_inside_requested_year(
     )
     await create_vacation(
         employee=employee,
-        start_date=date(2026, 7, 1),
-        end_date=date(2026, 7, 2),
-        days_count=2,
-        vacation_year=2026,
-        vacation_type=vacation_type,
-        is_cancelled=True,
-    )
-    await create_vacation(
-        employee=employee,
         start_date=date(2026, 8, 1),
         end_date=date(2026, 8, 2),
         days_count=2,
@@ -121,7 +112,7 @@ async def test_get_used_days_counts_only_days_inside_requested_year(
     repo = VacationRepository()
     used_days = await repo.get_used_days(db_session, employee.id, 2026, vacation_type=vacation_type)
 
-    assert used_days == 8
+    assert used_days == 10
 
 
 async def test_get_vacation_balance_returns_zero_for_missing_employee(db_session):

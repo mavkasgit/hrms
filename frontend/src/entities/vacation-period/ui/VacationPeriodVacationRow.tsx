@@ -133,7 +133,7 @@ export function VacationPeriodVacationRow({
 
   return (
     <tr
-      className={`border-b border-muted/30 ${vacation.is_cancelled ? "opacity-40" : ""} ${
+      className={`border-b border-muted/30 ${
         wasRecalled ? "bg-amber-50" : extensionInfo ? "bg-green-50/60" : postponeInfo ? "bg-sky-50/60" : ""
       }`}
     >

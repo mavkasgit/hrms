@@ -200,27 +200,3 @@ async def test_delete_vacation_restores_period_usage(
     assert len(periods) > 0
     total_used = sum(p.used_days for p in periods)
     assert total_used == 0
-
-
-async def test_cancel_vacation_marks_vacation_as_cancelled(
-    db_session,
-    create_employee,
-    create_vacation,
-):
-    employee = await create_employee()
-    vacation = await create_vacation(
-        employee=employee,
-        start_date=date(2024, 6, 10),
-        end_date=date(2024, 6, 14),
-        days_count=5,
-        vacation_year=2024,
-        vacation_type=WORK_VACATION_TYPE,
-    )
-
-    result = await vacation_service.cancel_vacation(db_session, vacation.id, "admin")
-    cancelled_vacation = await vacation_repository.get_by_id(db_session, vacation.id)
-
-    assert result is True
-    assert cancelled_vacation is not None
-    assert cancelled_vacation.is_cancelled is True
-    assert cancelled_vacation.cancelled_by == "admin"

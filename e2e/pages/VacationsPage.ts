@@ -296,18 +296,6 @@ export class VacationsPage {
   // ДЕЙСТВИЯ С ОТПУСКАМИ
   // ============================================================================
 
-  async cancelVacation(row: Locator, vacationIndex = 0) {
-    const vacationRow = this.getVacationsForRow(row).nth(vacationIndex)
-    const cancelBtn = vacationRow.getByRole('button', { name: /отменить/i })
-    await expect(cancelBtn).toBeVisible({ timeout: 3000 })
-    await cancelBtn.click()
-
-    const confirmDialog = this.page.getByRole('alertdialog')
-    await expect(confirmDialog).toBeVisible({ timeout: 3000 })
-    await confirmDialog.getByRole('button', { name: /отменить/i }).click()
-    await expect(confirmDialog).not.toBeVisible({ timeout: 5000 })
-  }
-
   async deleteVacation(row: Locator, vacationIndex = 0) {
     const vacationRow = this.getVacationsForRow(row).nth(vacationIndex)
     const deleteBtn = vacationRow.getByRole('button', { name: /удалить/i })

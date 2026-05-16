@@ -190,6 +190,49 @@ async def get_order_years(
     return {"years": years}
 
 
+@router.get("/registry")
+async def get_orders_registry(
+    letter: str = Query(..., max_length=1),
+    year: int = Query(..., ge=2000),
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Return all orders with the given letter for the specified year."""
+    items, total = await order_service.get_all(
+        db,
+        page=1,
+        per_page=10000,
+        year=year,
+        order_letter=letter,
+    )
+    registry_items = []
+    for o in items:
+        # For group orders, each employee is a separate row
+        if o.get("is_group") and o.get("group_employees"):
+            for emp in o["group_employees"]:
+                registry_items.append({
+                    "order_id": o["id"],
+                    "employee_name": emp["employee_full_name"],
+                    "order_type_name": o["order_type_name"],
+                    "order_number": o["order_number"],
+                    "order_date": str(o["order_date"]),
+                })
+        else:
+            registry_items.append({
+                "order_id": o["id"],
+                "employee_name": o["employee_name"] or "",
+                "order_type_name": o["order_type_name"],
+                "order_number": o["order_number"],
+                "order_date": str(o["order_date"]),
+            })
+
+    return {
+        "items": registry_items,
+        "letter": letter,
+        "year": year,
+    }
+
+
 @router.get("/log")
 async def get_order_log(
     db: AsyncSession = Depends(get_db),
@@ -361,16 +404,6 @@ async def update_order(
 ):
     order = await order_service.update_order(db, order_id, data, current_user)
     return order_service._serialize_order(order)
-
-
-@router.put("/{order_id}/cancel")
-async def cancel_order(
-    order_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
-):
-    await order_service.cancel_order(db, order_id, current_user)
-    return {"message": "Приказ отменен"}
 
 
 @router.delete("/{order_id}")

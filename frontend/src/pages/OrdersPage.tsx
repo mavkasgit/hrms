@@ -10,6 +10,11 @@ import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "@/shared/ui/tabs"
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -166,6 +171,7 @@ export function OrdersPage() {
   const [collapsed, setCollapsed] = useState(false)
   const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [filterCollapsed, setFilterCollapsed] = useState(true)
+  const [activeTab, setActiveTab] = useState<"all" | "general">("all")
 
   // Filter state
   const [filterEmployee, setFilterEmployee] = useState<Employee | null>(null)
@@ -175,8 +181,8 @@ export function OrdersPage() {
   const [filterOrderNumber, setFilterOrderNumber] = useState("")
   const [filterDateFrom, setFilterDateFrom] = useState("")
   const [filterDateTo, setFilterDateTo] = useState("")
-  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "cancelled">("all")
   const [filterLetter, setFilterLetter] = useState<string | undefined>(undefined)
+  const [filterLS, setFilterLS] = useState<boolean>(false)
   const filterOrderTypeRef = useRef<HTMLDivElement>(null)
 
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
@@ -207,8 +213,39 @@ export function OrdersPage() {
     order_number: debouncedOrderNumber || undefined,
   })
 
+  const LS_ORDER_CODES = ["hire", "dismissal", "contract_extension"]
+
+  // General orders query
+  const { data: generalOrdersData, isLoading: generalOrdersLoading } = useOrders({
+    page: 1,
+    per_page: 1000,
+    year,
+    order_type_code: "general_order",
+    date_from: filterDateFrom || undefined,
+    date_to: filterDateTo || undefined,
+    order_number: debouncedOrderNumber || undefined,
+  })
+
+  // General order form state
+  const [generalOrderDate, setGeneralOrderDate] = useState(new Date().toISOString().split("T")[0])
+  const [generalOrderNumber, setGeneralOrderNumber] = useState("")
+  const [generalOrderErrors, setGeneralOrderErrors] = useState<Record<string, string>>({})
+  const [generalDraftId, setGeneralDraftId] = useState<string | null>(null)
+
+  // Apply LS filter client-side
+  const filteredData = useMemo(() => {
+    if (!data?.items) return data
+    if (!filterLS) return data
+    return {
+      ...data,
+      items: data.items.filter((order) => LS_ORDER_CODES.includes(order.order_type_code)),
+      total: data.items.filter((order) => LS_ORDER_CODES.includes(order.order_type_code)).length,
+    }
+  }, [data, filterLS])
+
   const { data: years } = useOrderYears()
   const { data: orderTypes = [] } = useOrderTypes(true)
+  const generalOrderType = orderTypes.find(t => t.code === "general_order") ?? null
   const createMutation = useCreateOrder()
   const createDraftMutation = useCreateOrderDraft()
   const commitDraftMutation = useCommitOrderDraft()
@@ -296,6 +333,71 @@ export function OrdersPage() {
     setExtraFields({})
     setDraftId(null)
   }
+
+  const resetGeneralForm = () => {
+    setGeneralOrderDate(new Date().toISOString().split("T")[0])
+    setGeneralOrderNumber("")
+    setGeneralOrderErrors({})
+    setGeneralDraftId(null)
+  }
+
+  const validateGeneralOrder = (): boolean => {
+    const newErrors: Record<string, string> = {}
+    if (!generalOrderDate) newErrors.orderDate = "Укажите дату приказа"
+    if (!generalOrderNumber) newErrors.orderNumber = "Укажите номер приказа"
+    setGeneralOrderErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  const buildGeneralOrderPayload = () => ({
+    employee_id: null,
+    order_type_id: generalOrderType?.id ?? 0,
+    order_date: generalOrderDate,
+    order_number: generalOrderNumber || undefined,
+  })
+
+  const handleGeneralEditBeforeCreate = () => {
+    if (!validateGeneralOrder()) return
+    const editorWindow = window.open("about:blank", "_blank")
+    createDraftMutation.mutate(buildGeneralOrderPayload(), {
+      onSuccess: (draft) => {
+        setGeneralDraftId(draft.draft_id)
+        const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+        if (editorWindow && !editorWindow.closed) {
+          editorWindow.location.href = url
+        } else {
+          window.open(url, "_blank", "noopener,noreferrer")
+        }
+      },
+      onError: () => {
+        editorWindow?.close()
+      },
+    })
+  }
+
+  const handleGeneralCommitDraft = () => {
+    if (!generalDraftId || !validateGeneralOrder()) return
+    commitDraftMutation.mutate(
+      { draftId: generalDraftId, order: buildGeneralOrderPayload() },
+      {
+        onSuccess: () => {
+          resetGeneralForm()
+        },
+      }
+    )
+  }
+
+  useEffect(() => {
+    const handleGeneralDraftSave = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
+      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== generalDraftId) return
+      handleGeneralCommitDraft()
+    }
+
+    window.addEventListener("message", handleGeneralDraftSave)
+    return () => window.removeEventListener("message", handleGeneralDraftSave)
+  }, [generalDraftId, generalOrderDate, generalOrderNumber])
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
@@ -409,11 +511,11 @@ export function OrdersPage() {
     if (filterOrderNumber) count++
     if (filterDateFrom) count++
     if (filterDateTo) count++
-    if (filterStatus !== "all") count++
     if (year) count++
     if (filterLetter) count++
+    if (filterLS) count++
     return count
-  }, [filterEmployee, filterOrderType, filterOrderNumber, filterDateFrom, filterDateTo, filterStatus, year, filterLetter])
+  }, [filterEmployee, filterOrderType, filterOrderNumber, filterDateFrom, filterDateTo, year, filterLetter, filterLS])
 
   const clearFilters = () => {
     setFilterEmployee(null)
@@ -422,9 +524,9 @@ export function OrdersPage() {
     setFilterOrderNumber("")
     setFilterDateFrom("")
     setFilterDateTo("")
-    setFilterStatus("all")
     setYear(undefined)
     setFilterLetter(undefined)
+    setFilterLS(false)
   }
 
   // Close filter type dropdown on outside click
@@ -454,6 +556,19 @@ export function OrdersPage() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="border rounded-lg bg-card">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "all" | "general")}>
+          <div className="px-4 py-3 border-b">
+            <TabsList>
+              <TabsTrigger value="all">Все приказы</TabsTrigger>
+              <TabsTrigger value="general">По основной деятельности</TabsTrigger>
+            </TabsList>
+          </div>
+        </Tabs>
+      </div>
+
+      {activeTab === "all" && (
       <div className="border rounded-lg bg-card">
         <div
           className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
@@ -615,8 +730,71 @@ export function OrdersPage() {
           </div>
         )}
       </div>
+      )}
 
-      {/* Filter panel */}
+      {/* General order create form */}
+      {activeTab === "general" && (
+      <div className="border rounded-lg bg-card">
+        <div
+          className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
+          onClick={() => setCollapsed(!collapsed)}
+        >
+          {collapsed ? (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
+          <h2 className="text-lg font-semibold">Создать приказ по основной деятельности</h2>
+        </div>
+
+        {!collapsed && (
+          <div className="border-t px-4 py-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+              <div className="w-[130px]">
+                <DatePicker
+                  label="Дата приказа"
+                  value={generalOrderDate}
+                  onChange={setGeneralOrderDate}
+                  required
+                />
+                {generalOrderErrors.orderDate && <p className="text-xs text-red-500 mt-1">{generalOrderErrors.orderDate}</p>}
+              </div>
+
+              <OrderNumberField
+                value={generalOrderNumber}
+                onChange={setGeneralOrderNumber}
+                orderTypeId={generalOrderType?.id}
+                orderTypes={orderTypes}
+                required
+                error={generalOrderErrors.orderNumber}
+                isGeneralOrder
+              />
+
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" onClick={(e) => { e.stopPropagation(); resetGeneralForm(); }} disabled={isPending}>
+                  Очистить
+                </Button>
+                {!generalDraftId ? (
+                  <Button
+                    onClick={(e) => { e.stopPropagation(); handleGeneralEditBeforeCreate(); }}
+                    disabled={isPending}
+                  >
+                    {createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}
+                  </Button>
+                ) : (
+                  <Button onClick={(e) => { e.stopPropagation(); handleGeneralCommitDraft(); }} disabled={isPending}>
+                    {commitDraftMutation.isPending ? "Создание..." : "Создать приказ"}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      )}
+
+      {/* Filter panel for "all" tab */}
+      {activeTab === "all" && (
       <div className="border rounded-lg bg-card">
         <div
           className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
@@ -706,22 +884,13 @@ export function OrdersPage() {
               </div>
             </div>
 
-            {/* Row 2: Date range, Status */}
+            {/* Row 2: Date range */}
             <div className="flex flex-wrap gap-4 items-end">
               <div className="w-[130px]">
                 <DatePicker label="Дата с" value={filterDateFrom} onChange={setFilterDateFrom} />
               </div>
               <div className="w-[130px]">
                 <DatePicker label="Дата по" value={filterDateTo} onChange={setFilterDateTo} />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium">Статус</label>
-                <div className="flex gap-1 mt-1">
-                  <Button variant={filterStatus === "all" ? "default" : "outline"} size="sm" onClick={() => setFilterStatus("all")}>Все</Button>
-                  <Button variant={filterStatus === "active" ? "default" : "outline"} size="sm" onClick={() => setFilterStatus("active")}>Активные</Button>
-                  <Button variant={filterStatus === "cancelled" ? "default" : "outline"} size="sm" onClick={() => setFilterStatus("cancelled")}>Отменённые</Button>
-                </div>
               </div>
             </div>
 
@@ -740,13 +909,73 @@ export function OrdersPage() {
                 <Button variant={filterLetter === "л" ? "default" : "outline"} size="sm" onClick={() => setFilterLetter("л")}>-л</Button>
               </div>
 
+              <div className="flex gap-1">
+                <Button variant={!filterLS ? "default" : "outline"} size="sm" onClick={() => setFilterLS(false)}>Все типы</Button>
+                <Button variant={filterLS ? "default" : "outline"} size="sm" onClick={() => setFilterLS(true)}>ЛС</Button>
+              </div>
+
               <Button variant="outline" size="sm" onClick={clearFilters} className="ml-auto">Сбросить фильтры</Button>
             </div>
           </div>
         )}
       </div>
+      )}
 
-      {error && (
+      {/* Simplified filter for "general" tab */}
+      {activeTab === "general" && (
+      <div className="border rounded-lg bg-card">
+        <div
+          className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
+          onClick={() => setFilterCollapsed(!filterCollapsed)}
+        >
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-medium">Фильтры</h2>
+          </div>
+          {filterCollapsed ? (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
+        </div>
+
+        {!filterCollapsed && (
+          <div className="border-t px-4 py-4 space-y-4">
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="w-[130px]">
+                <label className="text-sm font-medium">Номер приказа</label>
+                <div className="relative mt-1">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Поиск..."
+                    value={filterOrderNumber}
+                    onChange={(e) => setFilterOrderNumber(e.target.value)}
+                    className="pl-8 h-10 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="w-[130px]">
+                <DatePicker label="Дата с" value={filterDateFrom} onChange={setFilterDateFrom} />
+              </div>
+              <div className="w-[130px]">
+                <DatePicker label="Дата по" value={filterDateTo} onChange={setFilterDateTo} />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="flex gap-1">
+                <Button variant={!year ? "default" : "outline"} size="sm" onClick={() => setYear(undefined)}>Все года</Button>
+                {years?.map((y) => (
+                  <Button key={y} variant={year === y ? "default" : "outline"} size="sm" onClick={() => setYear(y)}>{y}</Button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      )}
+
+      {error && activeTab === "all" && (
         <Alert variant="destructive">
           <AlertDescription>
             {(error as Error).message || "Ошибка загрузки данных"}
@@ -754,97 +983,119 @@ export function OrdersPage() {
         </Alert>
       )}
 
-      {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <Skeleton key={i} className="h-8 w-full" />
-          ))}
-        </div>
-      ) : !data?.items?.length ? (
-        <EmptyState
-          message="Приказы не найдены"
-          description="Создайте первый приказ или измените фильтры"
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>№</TableHead>
-              <TableHead>Тип</TableHead>
-              <TableHead>Сотрудник</TableHead>
-              <TableHead>Дата приказа</TableHead>
-              <TableHead>Дата создания</TableHead>
-              <TableHead className="text-right">Действия</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.items.map((order) => (
-              <TableRow key={order.id}>
-                <TableCell className="font-mono text-sm">{order.order_number}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={ORDER_TYPE_BADGE_COLORS[order.order_type_name] || ""}
-                  >
-                    {order.order_type_name}
-                  </Badge>
-                </TableCell>
-                <TableCell className="font-medium">{order.employee_name || "—"}</TableCell>
-                <TableCell>
-                  {order.order_date ? (() => { const d = new Date(order.order_date); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` })() : "—"}
-                </TableCell>
-                <TableCell>
-                  {order.created_date ? (() => { const d = new Date(order.created_date); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` })() : "—"}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Просмотр DOCX"
-                      onClick={() => openOrderView(order.id)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Редактировать DOCX"
-                      onClick={() => openOrderEdit(order.id)}
-                    >
-                      <FilePen className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Печать"
-                      onClick={() => openOrderPrint(order.id)}
-                    >
-                      <Printer className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Скачать приказ"
-                      onClick={() => downloadOrderDocx(order.id)}
-                    >
-                      <Download className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Удалить приказ"
-                      onClick={() => setDeleteOrderId(order.id)}
-                      className="text-red-500 hover:text-red-700"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
+      {/* Orders table for "all" tab */}
+      {activeTab === "all" && (
+        isLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-full" />
             ))}
-          </TableBody>
-        </Table>
+          </div>
+        ) : !filteredData?.items?.length ? (
+          <EmptyState
+            message="Приказы не найдены"
+            description="Создайте первый приказ или измените фильтры"
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>№</TableHead>
+                <TableHead>Тип</TableHead>
+                <TableHead>Сотрудник</TableHead>
+                <TableHead>Дата приказа</TableHead>
+                <TableHead>Дата создания</TableHead>
+                <TableHead className="text-right">Действия</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredData.items.map((order) => (
+                <TableRow key={order.id}>
+                  <TableCell className="font-mono text-sm">{order.order_number}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={ORDER_TYPE_BADGE_COLORS[order.order_type_name] || ""}
+                    >
+                      {order.order_type_name}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-medium">{order.employee_name || "—"}</TableCell>
+                  <TableCell>
+                    {order.order_date ? (() => { const d = new Date(order.order_date); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` })() : "—"}
+                  </TableCell>
+                  <TableCell>
+                    {order.created_date ? (() => { const d = new Date(order.created_date); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` })() : "—"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon" title="Просмотр DOCX" onClick={() => openOrderView(order.id)}><Eye className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" title="Редактировать DOCX" onClick={() => openOrderEdit(order.id)}><FilePen className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" title="Печать" onClick={() => openOrderPrint(order.id)}><Printer className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => downloadOrderDocx(order.id)}><Download className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" title="Удалить приказ" onClick={() => setDeleteOrderId(order.id)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )
+      )}
+
+      {/* Orders table for "general" tab */}
+      {activeTab === "general" && (
+        generalOrdersLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-full" />
+            ))}
+          </div>
+        ) : !generalOrdersData?.items?.length ? (
+          <EmptyState
+            message="Приказы по основной деятельности не найдены"
+            description="Создайте первый приказ"
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>№</TableHead>
+                <TableHead>Тип</TableHead>
+                <TableHead>Дата приказа</TableHead>
+                <TableHead>Дата создания</TableHead>
+                <TableHead className="text-right">Действия</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {generalOrdersData.items.map((order) => (
+                <TableRow key={order.id}>
+                  <TableCell className="font-mono text-sm">{order.order_number}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline">
+                      {order.order_type_name}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {order.order_date ? (() => { const d = new Date(order.order_date); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` })() : "—"}
+                  </TableCell>
+                  <TableCell>
+                    {order.created_date ? (() => { const d = new Date(order.created_date); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` })() : "—"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon" title="Просмотр DOCX" onClick={() => openOrderView(order.id)}><Eye className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" title="Редактировать DOCX" onClick={() => openOrderEdit(order.id)}><FilePen className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" title="Печать" onClick={() => openOrderPrint(order.id)}><Printer className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => downloadOrderDocx(order.id)}><Download className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" title="Удалить приказ" onClick={() => setDeleteOrderId(order.id)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )
       )}
 
       <AlertDialog open={showDismissalDialog} onOpenChange={setShowDismissalDialog}>

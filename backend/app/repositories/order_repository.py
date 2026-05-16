@@ -27,7 +27,7 @@ class OrderRepository:
         date_to: Optional[datetime] = None,
         order_number: Optional[str] = None,
     ) -> tuple[list[Order], int]:
-        conditions = [Order.is_deleted == False, Order.is_cancelled == False]
+        conditions = [Order.is_deleted == False]
         joins = []
 
         if year:
@@ -110,7 +110,7 @@ class OrderRepository:
         limit: int = 10,
         year: Optional[int] = None,
     ) -> list[Order]:
-        conditions = [Order.is_deleted == False, Order.is_cancelled == False]
+        conditions = [Order.is_deleted == False]
 
         if year:
             conditions.append(extract("year", Order.order_date) == year)
@@ -139,7 +139,7 @@ class OrderRepository:
         """Возвращает следующий номер приказа для заданного типа (по литере).
 
         Нумерация сквозная: берем последний приказ с той же литерой (по id DESC),
-        парсим числовую часть, +1. Формат: '{N}-{letter}'.
+        парсим числовую часть, +1. Формат: '{N}-{letter}' или '{N}' для приказов без литеры.
         """
         from app.models.order_type import OrderType
 
@@ -148,8 +148,28 @@ class OrderRepository:
             select(OrderType.letter).where(OrderType.id == order_type_id)
         )
         letter = type_result.scalar_one_or_none()
+
+        # Для приказов без литеры — простая нумерация без суффикса
         if not letter:
-            raise ValueError(f"Тип приказа {order_type_id} не имеет литеры")
+            result = await db.execute(
+                select(Order.order_number)
+                .join(OrderType, Order.order_type_id == OrderType.id)
+                .where(
+                    Order.is_deleted == False,
+                    OrderType.letter.is_(None),
+                )
+                .order_by(Order.id.desc())
+                .limit(1)
+            )
+            last_order = result.scalar_one_or_none()
+
+            if not last_order:
+                return "1"
+
+            import re
+            match = re.search(r'\d+', last_order)
+            last_num = int(match.group()) if match else 0
+            return str(last_num + 1)
 
         # Ищем последний приказ с той же литерой
         result = await db.execute(
@@ -157,7 +177,6 @@ class OrderRepository:
             .join(OrderType, Order.order_type_id == OrderType.id)
             .where(
                 Order.is_deleted == False,
-                Order.is_cancelled == False,
                 OrderType.letter == letter,
             )
             .order_by(Order.id.desc())
@@ -212,17 +231,6 @@ class OrderRepository:
         await db.flush()
         return True
 
-    async def cancel(self, db: AsyncSession, order_id: int, user_id: str) -> bool:
-        """Пометить заказ как отменённый (не удаляет из БД)."""
-        order = await self.get_by_id(db, order_id)
-        if not order:
-            return False
-        order.is_cancelled = True
-        order.cancelled_at = datetime.now()
-        order.cancelled_by = user_id
-        await db.flush()
-        return True
-
     async def hard_delete(self, db: AsyncSession, order_id: int) -> bool:
         """Полное удаление заказа из БД."""
         order = await self.get_by_id(db, order_id, include_deleted=True)
@@ -251,24 +259,6 @@ class OrderRepository:
             .where(and_(*conditions))
         )
         return result.scalar_one_or_none()
-
-    async def get_cancelled_orders(self, db: AsyncSession, page: int = 1, per_page: int = 20) -> tuple[list[Order], int]:
-        """Получить отменённые заказы."""
-        conditions = [Order.is_deleted == False, Order.is_cancelled == True]
-        where_clause = and_(*conditions)
-        count_query = select(func.count(Order.id)).where(where_clause)
-        total_result = await db.execute(count_query)
-        total = total_result.scalar()
-        data_query = (
-            select(Order)
-            .where(where_clause)
-            .order_by(Order.created_date.desc())
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-        )
-        result = await db.execute(data_query)
-        items = list(result.scalars().all())
-        return items, total
 
 
 order_repository = OrderRepository()

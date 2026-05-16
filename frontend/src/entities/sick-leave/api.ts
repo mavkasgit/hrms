@@ -31,11 +31,6 @@ export async function deleteSickLeave(id: number): Promise<void> {
   await api.delete(`/sick-leaves/${id}`)
 }
 
-export async function cancelSickLeave(id: number): Promise<{ message: string; data: SickLeave }> {
-  const response = await api.put(`/sick-leaves/${id}/cancel`)
-  return response.data
-}
-
 export async function getSickLeave(id: number): Promise<SickLeave> {
   const response = await api.get(`/sick-leaves/${id}`)
   return response.data

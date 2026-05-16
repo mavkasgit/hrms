@@ -451,18 +451,6 @@ class VacationService:
 
         return True
 
-    async def cancel_vacation(self, db: AsyncSession, id: int, user_id: str) -> bool:
-        vacation = await vacation_repository.get_by_id(db, id)
-        if not vacation:
-            raise VacationNotFoundError(id)
-
-        if vacation.order_id:
-            await order_service.cancel_order(db, vacation.order_id, user_id)
-
-        result = await vacation_repository.cancel(db, id, user_id)
-        await db.commit()
-        return result
-
     async def recall_vacation(self, db: AsyncSession, vacation_id: int, data: dict, user_id: str) -> dict:
         vacation = await vacation_repository.get_by_id(db, vacation_id)
         if not vacation:

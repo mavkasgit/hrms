@@ -310,11 +310,6 @@ async function apiCreateOrder(
   return resp.json()
 }
 
-async function apiCancelOrder(request: APIRequestContext, id: number): Promise<void> {
-  const resp = await request.put(`${API_BASE}/api/orders/${id}/cancel`)
-  expect([200, 204]).toContain(resp.status())
-}
-
 async function apiDeleteOrder(request: APIRequestContext, id: number): Promise<void> {
   const resp = await request.delete(`${API_BASE}/api/orders/${id}?hard=true&confirm=true`)
   expect([200, 204]).toContain(resp.status())
@@ -387,7 +382,6 @@ type ApiOperations = {
       extra_fields?: Record<string, unknown>
     }
   ) => Promise<Order>
-  cancelOrder: (id: number) => Promise<void>
   deleteOrder: (id: number) => Promise<void>
   getOrders: (filters?: Record<string, unknown>) => Promise<Order[]>
   // Cleanup
@@ -515,7 +509,6 @@ export const test = base.extend<CommonFixtures>({
         resources.orders.push(order.id)
         return order
       },
-      cancelOrder: async (id: number) => apiCancelOrder(request, id),
       deleteOrder: async (id: number) => apiDeleteOrder(request, id),
       getOrders: async (filters?: Record<string, unknown>) => apiGetOrders(request, filters),
 

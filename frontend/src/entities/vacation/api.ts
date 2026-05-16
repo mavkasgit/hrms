@@ -116,11 +116,6 @@ export async function updateEmployeeCorrection(
   return response.data
 }
 
-export async function cancelVacation(id: number): Promise<{ message: string }> {
-  const response = await api.put(`/vacations/${id}/cancel`)
-  return response.data
-}
-
 export async function getActiveVacations(employeeId: number): Promise<Vacation[]> {
   const response = await api.get(`/vacations/employees/${employeeId}/active`)
   return response.data

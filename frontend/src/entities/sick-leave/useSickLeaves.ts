@@ -55,17 +55,6 @@ export function useDeleteSickLeave() {
   })
 }
 
-export function useCancelSickLeave() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.cancelSickLeave(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sick-leaves"] })
-      queryClient.invalidateQueries({ queryKey: ["sick-leave-employees-summary"] })
-    },
-  })
-}
-
 export function useSickLeave(id: number | null) {
   return useQuery({
     queryKey: ["sick-leave", id],

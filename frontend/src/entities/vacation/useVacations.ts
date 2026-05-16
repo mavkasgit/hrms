@@ -120,21 +120,6 @@ export function useDeleteVacation() {
   })
 }
 
-export function useCancelVacation() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (id: number) => api.cancelVacation(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacation-balance"] })
-    },
-  })
-}
-
 export function usePositionVacationConfig() {
   return useQuery({
     queryKey: ["position-vacation-config"],

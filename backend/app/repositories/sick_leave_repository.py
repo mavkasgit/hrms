@@ -106,18 +106,6 @@ class SickLeaveRepository:
         await db.commit()
         return True
 
-    async def cancel(
-        self, db: AsyncSession, sick_leave: SickLeave, user_id: int
-    ) -> bool:
-        """Отмена больничного."""
-        if sick_leave.status != SickLeaveStatus.ACTIVE:
-            return False
-
-        sick_leave.status = SickLeaveStatus.CANCELLED
-        sick_leave.cancelled_by = user_id
-        await db.commit()
-        return True
-
     async def check_overlap(
         self,
         db: AsyncSession,

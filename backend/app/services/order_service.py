@@ -158,9 +158,11 @@ class OrderService:
         else:
             order_number = order_number.strip()
 
-        employee = await self.employee_repo.get_by_id(db, data.employee_id)
-        if not employee:
-            raise EmployeeNotFoundError(data.employee_id)
+        employee = None
+        if data.employee_id is not None:
+            employee = await self.employee_repo.get_by_id(db, data.employee_id)
+            if not employee:
+                raise EmployeeNotFoundError(data.employee_id)
 
         if not data.order_type_id:
             raise HRMSException("Не передан order_type_id", "order_type_not_found", status_code=422)
@@ -282,40 +284,6 @@ class OrderService:
 
         await db.commit()
         return {"message": f"Синхронизация завершена: удалено {deleted}, добавление новых файлов отключено", "deleted": deleted, "added": 0}
-
-    # === Cancel order ===
-    async def cancel_order(self, db: AsyncSession, order_id: int, user_id: str) -> bool:
-        order = await self.order_repo.get_by_id(db, order_id)
-        if not order:
-            raise OrderNotFoundError(order_id)
-        await self.order_repo.cancel(db, order_id, user_id)
-
-        # Восстановление сотрудника при отмене приказа об увольнении
-        order_type = order.order_type
-        if not order_type:
-            type_result = await db.execute(
-                select(OrderType).where(OrderType.id == order.order_type_id)
-            )
-            order_type = type_result.scalar_one_or_none()
-        if order_type and order_type.code == "dismissal":
-            employee = await self.employee_repo.get_by_id(db, order.employee_id)
-            if employee and employee.is_dismissed:
-                employee.is_dismissed = False
-                employee.dismissal_date = None
-                employee.dismissal_reason = None
-                employee.dismissed_by = None
-                employee.dismissed_at = None
-                await db.flush()
-
-        # Восстановление contract_end при отмене приказа о продлении
-        if order_type and order_type.code == "contract_extension":
-            employee = await self.employee_repo.get_by_id(db, order.employee_id)
-            if employee and order.extra_fields and order.extra_fields.get("old_contract_end"):
-                employee.contract_end = date.fromisoformat(order.extra_fields["old_contract_end"])
-                await db.flush()
-
-        await db.commit()
-        return True
 
     # === Cleanup delegation ===
     async def hard_delete_order(self, db: AsyncSession, order_id: int) -> bool:

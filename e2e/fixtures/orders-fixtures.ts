@@ -56,7 +56,6 @@ type OrdersApiFixtures = {
         extra_fields?: Record<string, unknown>
       }
     ) => Promise<Order>
-    cancelOrder: (orderId: number) => Promise<void>
     deleteOrder: (orderId: number) => Promise<void>
     cleanup: () => Promise<void>
   }
@@ -137,10 +136,6 @@ export const test = base.extend<OrdersApiFixtures>({
         const order = await resp.json()
         orders.push(order.id)
         return order
-      },
-      cancelOrder: async (orderId) => {
-        const resp = await request.put(`${API_BASE}/api/orders/${orderId}/cancel`)
-        expect([200, 204]).toContain(resp.status())
       },
       deleteOrder: async (orderId) => {
         const resp = await request.delete(`${API_BASE}/api/orders/${orderId}?hard=true&confirm=true`)

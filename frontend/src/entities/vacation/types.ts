@@ -93,7 +93,6 @@ export interface VacationHistoryItem {
   vacation_type: string
   order_number: string | null
   comment: string | null
-  is_cancelled: boolean
 }
 
 export interface YearGroup {

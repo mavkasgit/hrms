@@ -36,9 +36,9 @@ async def test_employees_summary():
             
             # Test query for vacations
             vac_result = await db.execute(text("""
-                SELECT COALESCE(SUM(days_count), 0) as used 
-                FROM vacations 
-                WHERE employee_id = :emp_id AND is_deleted = false AND is_cancelled = false
+                SELECT COALESCE(SUM(days_count), 0) as used
+                FROM vacations
+                WHERE employee_id = :emp_id AND is_deleted = false
             """), {"emp_id": emp_id})
             used_vac = vac_result.scalar()
             print(f"  Used days from vacations: {used_vac}")

@@ -39,37 +39,6 @@ async def test_dismissal_order_archives_employee(db_session, create_employee):
     assert order is not None
 
 
-async def test_cancel_dismissal_order_restores_employee(db_session, create_employee, create_order_type, create_order):
-    """При отмене приказа об увольнении сотрудник восстанавливается."""
-    await order_service.ensure_default_order_types(db_session)
-
-    employee = await create_employee(name="Petrov Petr")
-    dismissal_type = await order_service.get_order_type_by_code(db_session, "dismissal")
-
-    # Сначала вручную архивируем (как если бы приказ уже был создан)
-    from app.repositories.employee_repository import EmployeeRepository
-    repo = EmployeeRepository()
-    employee.is_dismissed = True
-    employee.dismissal_date = date(2026, 5, 6)
-    employee.dismissal_reason = "Test"
-    await db_session.flush()
-
-    order = await create_order(
-        employee=employee,
-        order_type_obj=dismissal_type,
-        order_number="1-к",
-        order_date=date(2026, 5, 6),
-    )
-
-    # Отменяем приказ
-    await order_service.cancel_order(db_session, order.id, "admin")
-
-    restored_employee = await repo.get_by_id(db_session, employee.id)
-    assert restored_employee.is_dismissed is False
-    assert restored_employee.dismissal_date is None
-    assert restored_employee.dismissal_reason is None
-
-
 async def test_delete_dismissal_order_restores_employee(db_session, create_employee, create_order_type, create_order):
     """При удалении приказа об увольнении сотрудник восстанавливается."""
     await order_service.ensure_default_order_types(db_session)

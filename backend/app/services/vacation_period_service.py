@@ -315,7 +315,6 @@ class VacationPeriodService:
                     "order_id": vacation.order_id,
                     "order_number": vacation.order.order_number if getattr(vacation, "order", None) else None,
                     "comment": vacation.comment,
-                    "is_cancelled": vacation.is_cancelled,
                     "is_recalled": vacation.is_recalled,
                     "recall_date": str(vacation.recall_date) if vacation.recall_date else None,
                     "recall_order_id": vacation.recall_order_id,
@@ -690,7 +689,6 @@ class VacationPeriodService:
             .where(
                 Vacation.employee_id == employee_id,
                 Vacation.is_deleted == False,
-                Vacation.is_cancelled == False,
                 Vacation.order_id.isnot(None),
             )
             .order_by(Vacation.start_date.asc(), Vacation.id.asc())
@@ -761,7 +759,6 @@ class VacationPeriodService:
             .where(
                 Vacation.employee_id == employee_id,
                 Vacation.is_deleted == False,
-                Vacation.is_cancelled == False,
                 Vacation.order_id.isnot(None),
             )
             .order_by(Vacation.start_date.asc(), Vacation.id.asc())

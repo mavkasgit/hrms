@@ -94,7 +94,6 @@ class VacationPeriodRepository:
                     Vacation.start_date >= period.period_start,
                     Vacation.start_date <= end_date,
                     Vacation.is_deleted == False,
-                    Vacation.is_cancelled == False,
                 )
             )
         )
@@ -113,7 +112,6 @@ class VacationPeriodRepository:
                 Vacation.start_date >= period.period_start,
                 Vacation.start_date <= period.period_end,
                 Vacation.is_deleted == False,
-                Vacation.is_cancelled == False,
             )
         )
         result = await db.execute(query)

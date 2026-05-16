@@ -60,7 +60,6 @@ class VacationHistoryItem(BaseModel):
     vacation_type: str
     order_number: Optional[str]
     comment: Optional[str]
-    is_cancelled: bool
 
 
 class YearGroup(BaseModel):
@@ -346,27 +345,16 @@ async def delete_vacation(
     return {"message": "Отпуск удалён"}
 
 
-@router.put("/{vacation_id}/cancel")
-async def cancel_vacation(
-    vacation_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
-):
-    await vacation_service.cancel_vacation(db, vacation_id, current_user)
-    return {"message": "Отпуск отменён"}
-
-
 @router.get("/employees/{employee_id}/active", response_model=list[VacationResponse])
 async def get_active_vacations(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    """Возвращает активные (не удалённые, не отменённые) отпуски сотрудника."""
+    """Возвращает активные отпуски сотрудника."""
     items, _ = await vacation_repository.get_all(
         db, employee_id=employee_id, page=1, per_page=1000
     )
-    active = [v for v in items if not v.is_cancelled]
     return [
         {
             "id": v.id,

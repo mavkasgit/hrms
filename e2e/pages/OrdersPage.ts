@@ -250,17 +250,6 @@ export class OrdersPage {
     return downloadPromise
   }
 
-  async cancelOrder(number: string) {
-    const row = await this.getOrderRow(number)
-    await row.getByRole('button', { name: /отменить|cancel/i }).click()
-
-    // Подтверждение
-    const confirmDialog = this.page.getByRole('alertdialog')
-    await expect(confirmDialog).toBeVisible({ timeout: 3000 })
-    await confirmDialog.getByRole('button', { name: /отменить|удалить/i }).click()
-    await expect(confirmDialog).not.toBeVisible({ timeout: 5000 })
-  }
-
   async deleteOrder(number: string) {
     const row = await this.getOrderRow(number)
     await row.getByRole('button', { name: /удалить|trash/i }).click()

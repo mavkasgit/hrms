@@ -146,17 +146,3 @@ async def delete_sick_leave(
     """
     await sick_leave_service.delete_sick_leave(db, sick_leave_id, current_user)
     return {"message": "Больничный удалён"}
-
-
-@router.put("/{sick_leave_id}/cancel")
-async def cancel_sick_leave(
-    sick_leave_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
-):
-    """
-    Отменить активный больничный.
-    Можно отменить только больничный со статусом ACTIVE.
-    """
-    result = await sick_leave_service.cancel_sick_leave(db, sick_leave_id, current_user)
-    return {"message": "Больничный отменён", "data": result}

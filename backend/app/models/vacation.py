@@ -24,10 +24,6 @@ class Vacation(Base):
     comment = Column(String(500), nullable=True)
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
 
-    is_cancelled = Column(Boolean, default=False, nullable=False, index=True)
-    cancelled_at = Column(DateTime(timezone=True))
-    cancelled_by = Column(String(100))
-
     is_recalled = Column(Boolean, default=False, nullable=False, index=True)
     recall_date = Column(Date, nullable=True)
     recall_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)

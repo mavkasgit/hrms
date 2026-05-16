@@ -101,34 +101,6 @@ async def test_contract_extension_sequential(db_session, create_employee):
     assert order2.extra_fields.get("old_contract_end") == "2026-12-31"
 
 
-async def test_cancel_contract_extension_restores_contract_end(db_session, create_employee, create_order_type, create_order):
-    """При отмене приказа о продлении восстанавливается предыдущая contract_end."""
-    await order_service.ensure_default_order_types(db_session)
-
-    employee = await create_employee(name="Kozlov Ivan", contract_end=date(2025, 12, 31))
-    extension_type = await order_service.get_order_type_by_code(db_session, "contract_extension")
-
-    order = await create_order(
-        employee=employee,
-        order_type_obj=extension_type,
-        order_number="5-к",
-        order_date=date(2025, 12, 1),
-        extra_fields={"contract_new_end": "2026-12-31", "old_contract_end": "2025-12-31"},
-    )
-
-    # Обновляем contract_end вручную (как если бы приказ был создан через сервис)
-    from app.repositories.employee_repository import EmployeeRepository
-    repo = EmployeeRepository()
-    employee.contract_end = date(2026, 12, 31)
-    await db_session.flush()
-
-    # Отменяем приказ
-    await order_service.cancel_order(db_session, order.id, "admin")
-
-    restored_employee = await repo.get_by_id(db_session, employee.id)
-    assert restored_employee.contract_end == date(2025, 12, 31)
-
-
 async def test_delete_contract_extension_restores_contract_end(db_session, create_employee, create_order_type, create_order):
     """При удалении приказа о продлении восстанавливается предыдущая contract_end."""
     await order_service.ensure_default_order_types(db_session)

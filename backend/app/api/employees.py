@@ -428,7 +428,6 @@ async def get_hire_order(
         .where(
             Order.employee_id == employee_id,
             Order.is_deleted == False,
-            Order.is_cancelled == False,
             Order.order_type.has(code="hire"),
         )
         .order_by(Order.order_date.asc())

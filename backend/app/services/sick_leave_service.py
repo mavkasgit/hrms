@@ -222,46 +222,6 @@ class SickLeaveService:
 
         return True
 
-    async def cancel_sick_leave(
-        self, db: AsyncSession, sick_leave_id: int, current_user: Any
-    ) -> Dict[str, Any]:
-        """
-        Отменить больничный.
-
-        Args:
-            db: Сессия базы данных
-            sick_leave_id: ID больничного
-            current_user: Текущий пользователь
-
-        Returns:
-            dict: Данные отмененного больничного
-        """
-        sick_leave = await self.repo.get_by_id(db, sick_leave_id)
-        if not sick_leave:
-            raise SickLeaveNotFoundError(sick_leave_id)
-
-        if sick_leave.status != SickLeaveStatus.ACTIVE:
-            raise InvalidSickLeaveDatesError(
-                f"Можно отменить только активный больничный. Текущий статус: {sick_leave.status}"
-            )
-
-        user_id = await self._resolve_user_id(db, current_user)
-
-        await self.repo.cancel(db, sick_leave, user_id)
-
-        audit_logger.info(
-            "SICK LEAVE CANCELLED",
-            extra={
-                "action": "sick_leave_cancel",
-                "entity_type": "sick_leave",
-                "entity_id": sick_leave_id,
-                "performed_by": str(user_id),
-                "changes": {"status": "cancelled"},
-            },
-        )
-
-        return await self._build_response(db, sick_leave)
-
     async def get_sick_leave(
         self, db: AsyncSession, sick_leave_id: int
     ) -> Dict[str, Any]:

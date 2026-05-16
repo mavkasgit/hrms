@@ -16,7 +16,6 @@ class SickLeaveStatus(str, Enum):
     """Статусы больничного листа."""
 
     ACTIVE = "active"  # Действующий
-    CANCELLED = "cancelled"  # Отменен
     DELETED = "deleted"  # Удален (soft delete)
 
 
@@ -54,11 +53,8 @@ class SickLeave(Base):
         ForeignKey("users.id"), nullable=True
     )
 
-    # Для soft-delete и отмены
+    # Для soft-delete
     deleted_by: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    cancelled_by: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
 

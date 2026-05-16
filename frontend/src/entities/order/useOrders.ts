@@ -161,22 +161,6 @@ export function useSyncOrders() {
   })
 }
 
-export function useCancelOrder() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (orderId: number) => api.cancelOrder(orderId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
-      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
-    },
-  })
-}
-
 export function useDeleteOrder() {
   const queryClient = useQueryClient()
   return useMutation({

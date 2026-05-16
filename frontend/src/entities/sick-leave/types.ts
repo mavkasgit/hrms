@@ -1,4 +1,4 @@
-export type SickLeaveStatus = 'active' | 'cancelled' | 'deleted';
+export type SickLeaveStatus = 'active' | 'deleted';
 
 export interface SickLeave {
   id: number;

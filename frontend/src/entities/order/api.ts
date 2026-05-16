@@ -145,11 +145,6 @@ export async function syncOrders(year?: number) {
   return data
 }
 
-export async function cancelOrder(orderId: number): Promise<{ message: string }> {
-  const { data } = await api.put(`/orders/${orderId}/cancel`)
-  return data
-}
-
 export async function deleteOrder(orderId: number): Promise<{ message: string }> {
   const { data } = await api.delete(`/orders/${orderId}`)
   return data
