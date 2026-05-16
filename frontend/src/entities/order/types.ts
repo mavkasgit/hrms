@@ -119,7 +119,7 @@ export interface OrdersQueryParams {
 }
 
 export interface OrderCreate {
-  employee_id: number
+  employee_id: number | null
   order_type_id: number
   order_date: string
   order_number?: string | null

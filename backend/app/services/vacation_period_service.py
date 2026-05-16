@@ -295,6 +295,7 @@ class VacationPeriodService:
                     Vacation.start_date >= period.period_start,
                     Vacation.start_date <= period.period_end,
                     Vacation.is_deleted == False,
+                    Vacation.vacation_type == "Трудовой",
                 )
             .order_by(Vacation.start_date.desc())
             )
@@ -690,6 +691,7 @@ class VacationPeriodService:
                 Vacation.employee_id == employee_id,
                 Vacation.is_deleted == False,
                 Vacation.order_id.isnot(None),
+                Vacation.vacation_type == "Трудовой",
             )
             .order_by(Vacation.start_date.asc(), Vacation.id.asc())
         )
@@ -753,13 +755,14 @@ class VacationPeriodService:
         await self._repo.delete_auto_transactions_for_employee(db, employee_id)
         await self._repo.delete_manual_transactions_for_employee(db, employee_id)
 
-        # Получаем все отпуска сотрудника (не удалённые, не отменённые, с приказом)
+        # Получаем все трудовые отпуска сотрудника (не удалённые, не отменённые, с приказом)
         result = await db.execute(
             select(Vacation)
             .where(
                 Vacation.employee_id == employee_id,
                 Vacation.is_deleted == False,
                 Vacation.order_id.isnot(None),
+                Vacation.vacation_type == "Трудовой",
             )
             .order_by(Vacation.start_date.asc(), Vacation.id.asc())
         )

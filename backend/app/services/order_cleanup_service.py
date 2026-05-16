@@ -105,6 +105,17 @@ class OrderCleanupService:
                 )
             )
         )
+        # Сначала удаляем транзакции, ссылающиеся на manual closures этого приказа
+        closure_ids_result = await db.execute(
+            select(VacationPeriodManualClosure.id).where(VacationPeriodManualClosure.order_id == order_id)
+        )
+        closure_ids = [row[0] for row in closure_ids_result.all()]
+        if closure_ids:
+            await db.execute(
+                sa_delete(VacationPeriodTransaction).where(
+                    VacationPeriodTransaction.manual_closure_id.in_(closure_ids)
+                )
+            )
         await db.execute(sa_delete(VacationPeriodManualClosure).where(VacationPeriodManualClosure.order_id == order_id))
 
         # Delete order file

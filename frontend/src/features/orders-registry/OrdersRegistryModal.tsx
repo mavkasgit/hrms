@@ -1,5 +1,5 @@
-import { useState, useRef } from "react"
-import { X, Printer, Loader2 } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Printer, Loader2 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import {
   Dialog,
@@ -7,6 +7,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/ui/select"
 import api from "@/shared/api/axios"
 
 interface RegistryEntry {
@@ -20,96 +27,185 @@ interface RegistryEntry {
 interface OrdersRegistryModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  year: number
+  year?: number
 }
 
-export function OrdersRegistryModal({ open, onOpenChange, year }: OrdersRegistryModalProps) {
+export function OrdersRegistryModal({ open, onOpenChange, year: defaultYear }: OrdersRegistryModalProps) {
   const [items, setItems] = useState<RegistryEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const printRef = useRef<HTMLDivElement>(null)
+  const [yearOptions, setYearOptions] = useState<number[]>([])
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
+  const [debugTotal, setDebugTotal] = useState<number | null>(null)
+  const [isPdfLoading, setIsPdfLoading] = useState(false)
 
-  const fetchRegistry = async () => {
+  // Fetch available years when modal opens
+  const fetchYears = async () => {
+    try {
+      const { data } = await api.get("/orders/registry/years", {
+        params: { letter: "л" },
+      })
+      const years = data.years as number[]
+      setYearOptions(years)
+      if (years.length > 0) {
+        const initialYear = defaultYear && years.includes(defaultYear) ? defaultYear : years[0]
+        setSelectedYear(initialYear)
+      }
+    } catch {
+      setYearOptions([])
+    }
+  }
+
+  // Fetch registry when selectedYear is set
+  useEffect(() => {
+    if (selectedYear && open) {
+      fetchRegistry(selectedYear)
+    }
+  }, [selectedYear, open])
+
+  // Controlled dialog: load years when parent opens modal.
+  useEffect(() => {
+    if (open) {
+      void fetchYears()
+      return
+    }
+
+    setLoaded(false)
+    setItems([])
+    setDebugTotal(null)
+    setSelectedYear(null)
+    setYearOptions([])
+  }, [open])
+
+  const fetchRegistry = async (year: number) => {
     setLoading(true)
     try {
       const { data } = await api.get("/orders/registry", {
         params: { letter: "л", year },
       })
       setItems(data.items)
+      setDebugTotal(data.debug_total ?? null)
       setLoaded(true)
     } catch {
       setItems([])
+      setDebugTotal(null)
     } finally {
       setLoading(false)
     }
   }
 
   const handleOpenChange = (newOpen: boolean) => {
-    if (newOpen && !loaded) {
-      fetchRegistry()
-    }
-    if (!newOpen) {
-      setLoaded(false)
-      setItems([])
-    }
     onOpenChange(newOpen)
   }
 
-  const handlePrint = () => {
-    if (!printRef.current) return
-    const printWindow = window.open("", "_blank")
-    if (!printWindow) return
+  const handleYearChange = (val: string) => {
+    const y = Number(val)
+    setSelectedYear(y)
+    setLoaded(false)
+    setItems([])
+    setDebugTotal(null)
+  }
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Реестр приказов ${year}</title>
-        <style>
-          body { font-family: "Times New Roman", serif; margin: 20px; }
-          h1 { text-align: center; font-size: 18px; margin-bottom: 4px; }
-          .subtitle { text-align: center; font-size: 14px; margin-bottom: 16px; color: #555; }
-          table { width: 100%; border-collapse: collapse; font-size: 12px; }
-          th, td { border: 1px solid #000; padding: 4px 6px; text-align: left; }
-          th { background: #f0f0f0; font-weight: bold; }
-          .num { text-align: center; }
-          @media print { body { margin: 10mm; } }
-        </style>
-      </head>
-      <body>
-        <h1>Реестр приказов</h1>
-        <div class="subtitle">Литера: л | Год: ${year}</div>
-        <table>
-          <thead>
-            <tr>
-              <th class="num">№</th>
-              <th>ФИО сотрудника</th>
-              <th>Тип приказа</th>
-              <th>Номер приказа</th>
-              <th class="num">Дата приказа</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${items.map((item, i) => `
-              <tr>
-                <td class="num">${i + 1}</td>
-                <td>${item.employee_name}</td>
-                <td>${item.order_type_name}</td>
-                <td>${item.order_number}</td>
-                <td class="num">${formatDate(item.order_date)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-        <div style="margin-top: 16px; font-size: 12px; color: #555;">
-          Всего записей: ${items.length}
-        </div>
-      </body>
-      </html>
-    `)
-    printWindow.document.close()
-    printWindow.print()
+  const handleDownloadPdf = async () => {
+    setIsPdfLoading(true)
+    try {
+      const pdfMake = (await import("pdfmake/build/pdfmake")).default as any
+      const pdfFonts = (await import("pdfmake/build/vfs_fonts")).default as any
+      pdfMake.vfs = pdfFonts.pdfMake ? pdfFonts.pdfMake.vfs : pdfFonts
+
+      const MARGIN_PT = 8 * 2.8346456693
+      const A4_W_PT = 595.28
+      const USABLE_W_PT = A4_W_PT - 2 * MARGIN_PT
+      const TABLE_FONT_PT = 9 * 0.75
+
+      const colWidths = [
+        0.08 * USABLE_W_PT,  // №
+        0.32 * USABLE_W_PT,  // ФИО
+        0.22 * USABLE_W_PT,  // Тип приказа
+        0.15 * USABLE_W_PT,  // Номер
+        0.15 * USABLE_W_PT,  // Дата
+      ]
+
+      const title = `Реестр по личному составу — ${selectedYear}`
+
+      const content: any[] = [
+        {
+          text: title,
+          alignment: "center",
+          fontSize: 12,
+          bold: true,
+          margin: [0, 0, 0, 2],
+        },
+        {
+          text: `Дата формирования: ${new Date().toLocaleDateString("ru-RU")}`,
+          alignment: "center",
+          fontSize: 8,
+          margin: [0, 0, 0, 6],
+        },
+      ]
+
+      const tableBody: any[][] = []
+      tableBody.push(
+        [
+          { text: "№", bold: true, fontSize: 8, fillColor: "#e5e5e5", alignment: "center" },
+          { text: "ФИО сотрудника", bold: true, fontSize: 8, fillColor: "#e5e5e5" },
+          { text: "Тип приказа", bold: true, fontSize: 8, fillColor: "#e5e5e5" },
+          { text: "Номер приказа", bold: true, fontSize: 8, fillColor: "#e5e5e5" },
+          { text: "Дата приказа", bold: true, fontSize: 8, fillColor: "#e5e5e5", alignment: "center" },
+        ]
+      )
+
+      items.forEach((item, i) => {
+        tableBody.push([
+          { text: String(i + 1), fontSize: TABLE_FONT_PT, alignment: "center" },
+          { text: item.employee_name, fontSize: TABLE_FONT_PT },
+          { text: item.order_type_name, fontSize: TABLE_FONT_PT },
+          { text: item.order_number, fontSize: TABLE_FONT_PT },
+          { text: formatDate(item.order_date), fontSize: TABLE_FONT_PT, alignment: "center" },
+        ])
+      })
+
+      content.push({
+        table: {
+          headerRows: 1,
+          widths: colWidths,
+          body: tableBody,
+        },
+        layout: {
+          hLineWidth: () => 0.5,
+          vLineWidth: () => 0.5,
+          hLineColor: () => "#000000",
+          vLineColor: () => "#000000",
+          paddingLeft: () => 3,
+          paddingRight: () => 3,
+          paddingTop: () => 0.75,
+          paddingBottom: () => 0.75,
+        },
+      })
+
+      content.push({
+        text: `Всего записей: ${items.length}`,
+        fontSize: 8,
+        margin: [0, 6, 0, 0],
+      })
+
+      const docDefinition = {
+        pageSize: "A4" as const,
+        pageMargins: [MARGIN_PT, MARGIN_PT, MARGIN_PT, MARGIN_PT] as [number, number, number, number],
+        content,
+        defaultStyle: {
+          font: "Roboto",
+          fontSize: TABLE_FONT_PT,
+        },
+      }
+
+      const filename = `реестр-по-личному-составу-${selectedYear}-${new Date().toISOString().split("T")[0]}.pdf`
+      pdfMake.createPdf(docDefinition).open()
+    } catch (error) {
+      console.error("Error generating PDF:", error)
+    } finally {
+      setIsPdfLoading(false)
+    }
   }
 
   const formatDate = (dateStr: string) => {
@@ -121,23 +217,42 @@ export function OrdersRegistryModal({ open, onOpenChange, year }: OrdersRegistry
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Реестр приказов (литера л) — {year}</DialogTitle>
+          <DialogTitle>Реестр по личному составу</DialogTitle>
         </DialogHeader>
 
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-sm text-muted-foreground">
-            {loaded ? `Всего: ${items.length}` : ""}
-          </span>
-          <div className="flex gap-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {yearOptions.length > 0 ? (
+              <>
+                <Select value={selectedYear !== null ? String(selectedYear) : undefined} onValueChange={handleYearChange}>
+                  <SelectTrigger className="w-[100px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {yearOptions.map((y) => (
+                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">
+                  {loaded ? `Записей: ${items.length}${debugTotal !== null && debugTotal !== items.length ? ` (всего в БД: ${debugTotal})` : ""}` : ""}
+                </span>
+              </>
+            ) : (
+              <span className="text-sm text-muted-foreground">Нет приказов с литерой л</span>
+            )}
+          </div>
+          <div>
             {loaded && items.length > 0 && (
-              <Button variant="outline" size="sm" onClick={handlePrint}>
-                <Printer className="mr-1.5 h-4 w-4" />
-                Печать
+              <Button variant="outline" size="sm" onClick={handleDownloadPdf} disabled={isPdfLoading}>
+                {isPdfLoading ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Printer className="mr-1.5 h-4 w-4" />
+                )}
+                {isPdfLoading ? "Загрузка..." : "Печать"}
               </Button>
             )}
-            <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
-              <X className="h-4 w-4" />
-            </Button>
           </div>
         </div>
 
@@ -162,7 +277,7 @@ export function OrdersRegistryModal({ open, onOpenChange, year }: OrdersRegistry
                 {items.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="text-center py-8 text-muted-foreground">
-                      Нет приказов с литерой л за {year} год
+                      Нет приказов с литерой л за {selectedYear} год
                     </td>
                   </tr>
                 ) : (

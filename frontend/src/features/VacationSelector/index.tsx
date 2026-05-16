@@ -63,6 +63,7 @@ export function VacationSelector({
   } = useVacations({
     page: tablePage,
     per_page: TABLE_PAGE_SIZE,
+    vacation_type: "Трудовой",
   })
 
   const {
@@ -75,6 +76,7 @@ export function VacationSelector({
       getVacations({
         q: searchQuery,
         employee_id: searchEmployeeId,
+        vacation_type: "Трудовой",
         page: 1,
         per_page: searchEmployeeId ? 1000 : 100,
       }),

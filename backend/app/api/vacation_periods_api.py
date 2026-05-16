@@ -65,6 +65,7 @@ async def get_period_breakdown(
             Vacation.start_date >= period.period_start,
             Vacation.start_date <= period.period_end,
             Vacation.is_deleted == False,
+            Vacation.vacation_type == "Трудовой",
         )
     )
 

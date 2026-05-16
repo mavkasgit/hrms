@@ -706,14 +706,17 @@ def _build_storage_name(
     order_number: str,
     order_date: date,
     order_type: OrderType,
-    employee: Employee,
+    employee: Employee | None,
     extra_dates: list[date] | None = None,
 ) -> str:
     """Build a filesystem-safe filename (ASCII only, no spaces)."""
     type_code = order_type.code
-    last_name = employee.name.split()[0] if employee.name else "unknown"
-    transliterated = _transliterate(last_name).lower()
-    transliterated = re.sub(r'[^a-z0-9-]', '', transliterated.replace(' ', '-'))
+    if employee and employee.name:
+        last_name = employee.name.split()[0]
+        transliterated = _transliterate(last_name).lower()
+        transliterated = re.sub(r'[^a-z0-9-]', '', transliterated.replace(' ', '-'))
+    else:
+        transliterated = "group"
 
     parts = [
         order_date.isoformat(),
@@ -731,12 +734,13 @@ def _build_display_name(
     order_number: str,
     order_date: date,
     order_type: OrderType,
-    employee: Employee,
+    employee: Employee | None,
     extra_info: str = "",
 ) -> str:
     """Build a human-readable display name in Russian."""
     date_str = order_date.strftime("%d.%m.%Y")
-    name = f"Приказ №{order_number} от {date_str} - {order_type.name} - {employee.name}"
+    emp_name = employee.name if employee else "Групповой"
+    name = f"Приказ №{order_number} от {date_str} - {order_type.name} - {emp_name}"
     if extra_info:
         name += f" - {extra_info}"
     return name + ".docx"

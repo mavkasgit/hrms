@@ -183,6 +183,7 @@ export function OrdersPage() {
   const [filterDateTo, setFilterDateTo] = useState("")
   const [filterLetter, setFilterLetter] = useState<string | undefined>(undefined)
   const [filterLS, setFilterLS] = useState<boolean>(false)
+  const [filterShowGeneral, setFilterShowGeneral] = useState<boolean>(false)
   const filterOrderTypeRef = useRef<HTMLDivElement>(null)
 
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
@@ -232,16 +233,22 @@ export function OrdersPage() {
   const [generalOrderErrors, setGeneralOrderErrors] = useState<Record<string, string>>({})
   const [generalDraftId, setGeneralDraftId] = useState<string | null>(null)
 
-  // Apply LS filter client-side
+  // Apply client-side filters for the "all" tab list.
   const filteredData = useMemo(() => {
     if (!data?.items) return data
-    if (!filterLS) return data
+    let items = data.items
+    if (!filterShowGeneral) {
+      items = items.filter((order) => order.order_type_code !== "general_order")
+    }
+    if (filterLS) {
+      items = items.filter((order) => LS_ORDER_CODES.includes(order.order_type_code))
+    }
     return {
       ...data,
-      items: data.items.filter((order) => LS_ORDER_CODES.includes(order.order_type_code)),
-      total: data.items.filter((order) => LS_ORDER_CODES.includes(order.order_type_code)).length,
+      items,
+      total: items.length,
     }
-  }, [data, filterLS])
+  }, [data, filterLS, filterShowGeneral])
 
   const { data: years } = useOrderYears()
   const { data: orderTypes = [] } = useOrderTypes(true)
@@ -300,7 +307,7 @@ export function OrdersPage() {
   }, [selectedOrderTypeId])
 
   const filteredTypes = orderTypes.filter((t) =>
-    t.name.toLowerCase().includes(orderTypeSearch.toLowerCase())
+    t.code !== "general_order" && t.name.toLowerCase().includes(orderTypeSearch.toLowerCase())
   )
 
   const selectOrderType = (type: OrderType) => {
@@ -527,6 +534,7 @@ export function OrdersPage() {
     setYear(undefined)
     setFilterLetter(undefined)
     setFilterLS(false)
+    setFilterShowGeneral(false)
   }
 
   // Close filter type dropdown on outside click
@@ -866,7 +874,7 @@ export function OrdersPage() {
                       />
                       {filterOrderTypeOpen && (
                         <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
-                          {orderTypes.filter((t) => t.name.toLowerCase().includes(filterOrderTypeSearch.toLowerCase())).map((t) => (
+                          {orderTypes.filter((t) => t.code !== "general_order" && t.name.toLowerCase().includes(filterOrderTypeSearch.toLowerCase())).map((t) => (
                             <button
                               key={t.id}
                               type="button"
@@ -912,6 +920,15 @@ export function OrdersPage() {
               <div className="flex gap-1">
                 <Button variant={!filterLS ? "default" : "outline"} size="sm" onClick={() => setFilterLS(false)}>Все типы</Button>
                 <Button variant={filterLS ? "default" : "outline"} size="sm" onClick={() => setFilterLS(true)}>ЛС</Button>
+              </div>
+
+              <div className="flex gap-1">
+                <Button variant={filterShowGeneral ? "default" : "outline"} size="sm" onClick={() => setFilterShowGeneral(true)}>
+                  Показывать ОД
+                </Button>
+                <Button variant={!filterShowGeneral ? "default" : "outline"} size="sm" onClick={() => setFilterShowGeneral(false)}>
+                  Скрыть ОД
+                </Button>
               </div>
 
               <Button variant="outline" size="sm" onClick={clearFilters} className="ml-auto">Сбросить фильтры</Button>

@@ -35,7 +35,7 @@ export interface VacationCalendarDocument {
   original_filename: string
   file_type: string
   uploaded_at: string
-  uploaded_by: string
+  uploaded_by: string | null
   is_current?: boolean
 }
 

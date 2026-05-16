@@ -5,7 +5,6 @@ import {
   downloadVacationCalendar,
   deleteVacationCalendar,
 } from "@/entities/vacation-plan/api"
-import type { VacationCalendarDocument } from "@/entities/vacation-plan/types"
 
 export function useVacationCalendarList() {
   return useQuery({

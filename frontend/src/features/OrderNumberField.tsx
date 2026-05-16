@@ -1,4 +1,4 @@
-import { useState, useEffect, useId, useRef } from "react"
+import { useState, useEffect, useId, useRef, useMemo } from "react"
 import { ListFilter } from "lucide-react"
 import { Input } from "@/shared/ui/input"
 import { useNextOrderNumber, useRecentOrders } from "@/entities/order/useOrders"
@@ -63,8 +63,28 @@ export function OrderNumberField({
 
   const { data: suggestedNumber } = useNextOrderNumber(orderTypeId)
   const { data: recentOrdersData } = useRecentOrders(100)
+
+  const knownLetters = useMemo(
+    () =>
+      new Set(
+        (orderTypes ?? [])
+          .map((t) => t.letter)
+          .filter((v): v is string => Boolean(v))
+          .map((v) => v.toLowerCase()),
+      ),
+    [orderTypes],
+  )
+
+  const hasLetterSuffix = (orderNumber: string): boolean => {
+    const idx = orderNumber.lastIndexOf("-")
+    if (idx < 0 || idx === orderNumber.length - 1) return false
+    const suffix = orderNumber.slice(idx + 1).toLowerCase()
+    if (knownLetters.has(suffix)) return true
+    return /^[a-zа-яё]$/i.test(suffix)
+  }
+
   const recentOrders = (recentOrdersData || []).filter((o) => {
-    if (!letter) return true
+    if (!letter) return !hasLetterSuffix(o.order_number)
     return o.order_number.endsWith(`-${letter}`)
   })
 
@@ -158,7 +178,9 @@ export function OrderNumberField({
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
           >
-            <p className="text-xs font-semibold mb-2 text-muted-foreground">Последние приказы ({letter ? `литера ${letter}` : "все"})</p>
+            <p className="text-xs font-semibold mb-2 text-muted-foreground">
+              Последние приказы ({letter ? `литера ${letter}` : "без литеры"})
+            </p>
             <RecentOrdersList
               orders={recentOrders}
               onSelect={(num) => {

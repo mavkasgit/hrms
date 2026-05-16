@@ -21,6 +21,9 @@ def upgrade() -> None:
     # Drop the column we don't need
     op.drop_column('sick_leaves', 'cancelled_by')
 
+    # Default старого enum-типа нужно снять до смены типа колонки.
+    op.execute("ALTER TABLE sick_leaves ALTER COLUMN status DROP DEFAULT")
+
     # Recreate enum without 'cancelled'
     op.execute("ALTER TYPE sickleavestatus RENAME TO sickleavestatus_old")
     sa.Enum("active", "deleted", name="sickleavestatus").create(op.get_bind())
@@ -28,12 +31,16 @@ def upgrade() -> None:
         "ALTER TABLE sick_leaves ALTER COLUMN status TYPE sickleavestatus "
         "USING status::text::sickleavestatus"
     )
+    op.execute("ALTER TABLE sick_leaves ALTER COLUMN status SET DEFAULT 'active'::sickleavestatus")
     op.execute("DROP TYPE sickleavestatus_old")
 
 
 def downgrade() -> None:
     # Add column back
     op.add_column('sick_leaves', sa.Column('cancelled_by', sa.Integer(), nullable=True))
+
+    # Аналогично снимаем default перед обратной сменой enum-типа.
+    op.execute("ALTER TABLE sick_leaves ALTER COLUMN status DROP DEFAULT")
 
     # Recreate old enum with cancelled
     op.execute("ALTER TYPE sickleavestatus RENAME TO sickleavestatus_old")
@@ -42,4 +49,5 @@ def downgrade() -> None:
         "ALTER TABLE sick_leaves ALTER COLUMN status TYPE sickleavestatus "
         "USING status::text::sickleavestatus"
     )
+    op.execute("ALTER TABLE sick_leaves ALTER COLUMN status SET DEFAULT 'active'::sickleavestatus")
     op.execute("DROP TYPE sickleavestatus_old")

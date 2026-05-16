@@ -227,6 +227,21 @@ class EmployeeRepository:
 
         await db.execute(delete(VacationAdjustment).where(VacationAdjustment.employee_id == employee_id))
 
+        from app.models.vacation_period_transaction import VacationPeriodTransaction
+        from app.models.vacation_period_manual_closure import VacationPeriodManualClosure
+
+        # Сначала удаляем транзакции, ссылающиеся на manual closures
+        closure_ids = await db.execute(
+            select(VacationPeriodManualClosure.id).where(VacationPeriodManualClosure.employee_id == employee_id)
+        )
+        closure_ids = [row[0] for row in closure_ids.all()]
+        if closure_ids:
+            await db.execute(
+                delete(VacationPeriodTransaction).where(
+                    VacationPeriodTransaction.manual_closure_id.in_(closure_ids)
+                )
+            )
+
         await db.execute(delete(VacationPeriodManualClosure).where(VacationPeriodManualClosure.employee_id == employee_id))
 
         await db.execute(delete(VacationPeriod).where(VacationPeriod.employee_id == employee_id))

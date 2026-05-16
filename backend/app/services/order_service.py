@@ -110,6 +110,7 @@ class OrderService:
         date_to: Optional[date] = None,
         order_number: Optional[str] = None,
     ) -> dict[str, Any]:
+        await self.ensure_default_order_types(db)
         items, total = await self.order_repo.get_all(
             db,
             page=page,
@@ -170,6 +171,12 @@ class OrderService:
         order_type = await self.order_type_repo.get_by_id(db, data.order_type_id)
         if not order_type or not order_type.is_active:
             raise HRMSException("Активный тип приказа не найден", "order_type_not_found", status_code=404)
+        if data.employee_id is None and order_type.code != "general_order":
+            raise HRMSException(
+                "Для данного типа приказа требуется сотрудник",
+                "employee_required",
+                status_code=422,
+            )
 
         year_dir = Path(settings.ORDERS_PATH) / str(data.order_date.year)
         year_dir.mkdir(parents=True, exist_ok=True)
@@ -203,7 +210,7 @@ class OrderService:
         )
 
         # Автоматическая архивация сотрудника при приказе об увольнении
-        if order_type.code == "dismissal" and not employee.is_dismissed:
+        if order_type.code == "dismissal" and employee and not employee.is_dismissed:
             dismissal_date = data.order_date
             if data.extra_fields and data.extra_fields.get("dismissal_date"):
                 try:
@@ -217,11 +224,12 @@ class OrderService:
             employee.dismissed_by = "system"
             await db.flush()
 
+        employee_name = employee.name if employee else None
         audit_logger.info(
-            f"ORDER CREATED: number={order_number}, type={order_type.name}, employee_id={data.employee_id}, employee_name={employee.name}",
+            f"ORDER CREATED: number={order_number}, type={order_type.name}, employee_id={data.employee_id}, employee_name={employee_name}",
             extra={
                 "employee_id": data.employee_id,
-                "employee_name": employee.name,
+                "employee_name": employee_name,
                 "action": "order_created",
                 "user_id": "system",
                 "order_id": order.id,

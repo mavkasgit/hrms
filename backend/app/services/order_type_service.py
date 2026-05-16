@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -195,16 +196,52 @@ class OrderTypeService:
     async def ensure_default_order_types(self, db: AsyncSession) -> list[OrderType]:
         existing = await self.order_type_repo.list_all(db)
         existing_by_code = {item.code: item for item in existing}
+        existing_by_name = {item.name: item for item in existing}
         changed = False
 
         for item in DEFAULT_ORDER_TYPES:
             current = existing_by_code.get(item["code"])
             display_name = f"Шаблон - {item['name']}.docx"
             if not current:
-                created = await self.order_type_repo.create(db, {**item, "display_name": display_name})
-                existing_by_code[created.code] = created
-                changed = True
-                continue
+                # Healing path: тип с нужным name уже есть, но с неверным code.
+                by_name = existing_by_name.get(item["name"])
+                if by_name:
+                    if by_name.code != item["code"]:
+                        owner = existing_by_code.get(item["code"]) or await self.order_type_repo.get_by_code(
+                            db, item["code"]
+                        )
+                        if owner and owner.id != by_name.id:
+                            current = owner
+                        else:
+                            await self.order_type_repo.update(db, by_name, {"code": item["code"]})
+                            changed = True
+                            by_name.code = item["code"]
+                            existing_by_code[item["code"]] = by_name
+                            current = by_name
+                    else:
+                        current = by_name
+                else:
+                    created: OrderType | None = None
+                    try:
+                        # Savepoint: защищаемся от конкурентных вставок.
+                        async with db.begin_nested():
+                            created = await self.order_type_repo.create(
+                                db, {**item, "display_name": display_name}
+                            )
+                    except IntegrityError:
+                        created = (
+                            await self.order_type_repo.get_by_code(db, item["code"])
+                            or await self.order_type_repo.get_by_name(db, item["name"])
+                        )
+                    if not created:
+                        raise RuntimeError(
+                            f"Failed to ensure default order type for code={item['code']}, name={item['name']}"
+                        )
+                    existing_by_code[created.code] = created
+                    existing_by_name[created.name] = created
+                    current = created
+                    if created.code == item["code"]:
+                        changed = True
 
             updates: dict[str, Any] = {}
             for key in ("name", "show_in_orders_page", "filename_pattern", "letter"):
@@ -213,7 +250,10 @@ class OrderTypeService:
             if not current.display_name or current.display_name.startswith("Шаблон - "):
                 updates["display_name"] = display_name
             if updates:
-                await self.order_type_repo.update(db, current, updates)
+                old_name = current.name
+                updated = await self.order_type_repo.update(db, current, updates)
+                existing_by_name.pop(old_name, None)
+                existing_by_name[updated.name] = updated
                 changed = True
 
         if changed:

@@ -190,6 +190,30 @@ async def get_order_years(
     return {"years": years}
 
 
+@router.get("/registry/years")
+async def get_registry_years(
+    letter: str = Query(..., max_length=1),
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Return years that have orders with the given letter."""
+    from sqlalchemy import select, distinct, extract
+    from app.models.order import Order
+    from app.models.order_type import OrderType
+
+    result = await db.execute(
+        select(distinct(extract("year", Order.order_date)))
+        .join(OrderType, Order.order_type_id == OrderType.id)
+        .where(
+            Order.is_deleted == False,
+            OrderType.letter == letter,
+        )
+        .order_by(extract("year", Order.order_date).desc())
+    )
+    years = [int(row[0]) for row in result.all() if row[0]]
+    return {"years": years}
+
+
 @router.get("/registry")
 async def get_orders_registry(
     letter: str = Query(..., max_length=1),
@@ -198,13 +222,15 @@ async def get_orders_registry(
     current_user: str = Depends(_get_current_user_stub),
 ):
     """Return all orders with the given letter for the specified year."""
-    items, total = await order_service.get_all(
+    result = await order_service.get_all(
         db,
         page=1,
         per_page=10000,
         year=year,
         order_letter=letter,
     )
+    items = result["items"]
+    total = result["total"]
     registry_items = []
     for o in items:
         # For group orders, each employee is a separate row
@@ -230,6 +256,7 @@ async def get_orders_registry(
         "items": registry_items,
         "letter": letter,
         "year": year,
+        "debug_total": total,
     }
 
 
