@@ -104,25 +104,9 @@ def _external_origin_from_headers(request: Request) -> str | None:
 
 
 def _document_server_url(request: Request) -> str:
-    configured = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
-    if not configured:
-        return _request_origin(request)
-    try:
-        configured_host = urlparse(configured).hostname
-    except Exception:
-        return configured
-    external_origin = _external_origin_from_headers(request)
-    if external_origin and _is_private_or_loopback_host(configured_host):
-        return external_origin
-
-    request_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.hostname or "").split(":")[0]
-    if (
-        _is_private_or_loopback_host(configured_host)
-        and request_host
-        and not _is_private_or_loopback_host(request_host)
-    ):
-        return _request_origin(request)
-    return configured
+    # OnlyOffice is always proxied through the same nginx on /onlyoffice/.
+    # Use the request origin so the frontend can reach it from any network.
+    return _request_origin(request)
 
 
 def _extract_callback_token(request: Request, body: dict[str, Any]) -> str | None:
