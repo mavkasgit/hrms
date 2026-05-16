@@ -21,9 +21,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
-import type { Employee, EmployeeCreate, EmployeeUpdate } from "@/entities/employee/types"
+import type { Employee, EmployeeCreate, EmployeeUpdate, EmployeeTransfer } from "@/entities/employee/types"
 import { useCreateEmployee, useUpdateEmployee, useRestoreEmployee, useDeleteEmployee, useResetEmployeePeriods, useHireOrder } from "@/entities/employee/useEmployees"
-import { Archive, Trash2, RotateCcw, Building, Briefcase, CalendarClock } from "lucide-react"
+import { Archive, Trash2, RotateCcw, Building, Briefcase, CalendarClock, FileText } from "lucide-react"
 import { useDepartments, useCreateDepartment } from "@/entities/department"
 import { usePositions, useCreatePosition } from "@/entities/position"
 import { ComboboxCreate } from "@/shared/ui/combobox-create"
@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from "@/shared/ui/select"
 import { HireDateAdjustmentDialog } from "./HireDateAdjustmentDialog"
+import { TransferHistoryModal } from "./TransferHistoryModal"
 
 interface EmployeeFormProps {
   open: boolean
@@ -74,6 +75,8 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
   const [showAdjustmentDialog, setShowAdjustmentDialog] = useState(false)
   const [showDismissalDialog, setShowDismissalDialog] = useState(false)
   const [showHireDialog, setShowHireDialog] = useState(false)
+  const [transfers, setTransfers] = useState<EmployeeTransfer[]>([])
+  const [showTransferModal, setShowTransferModal] = useState(false)
 
   const createMutation = useCreateEmployee()
   const updateMutation = useUpdateEmployee()
@@ -102,9 +105,11 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
     if (employee) {
       console.log(`[FORM] Загрузка данных сотрудника:`, employee)
       setForm(employee)
+      setTransfers(employee.transfers ?? [])
     } else {
       console.log(`[FORM] Очистка формы`)
       setForm(emptyForm)
+      setTransfers([])
     }
     setErrors({})
   }, [employee, open])
@@ -172,6 +177,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         personal_number: form.personal_number,
         insurance_number: form.insurance_number,
         passport_number: form.passport_number,
+        transfers,
       }
       console.log(`[FORM] Данные для обновления:`, updateData)
 
@@ -353,6 +359,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
     return newPos.id
   }, [createPos])
 
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -478,69 +485,136 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
           </div>
 
-          <div className="grid grid-cols-[165px_1fr_140px] gap-4 items-center">
-            <div className="flex items-end">
-              <DatePicker
-                label="Дата приёма"
-                value={form.hire_date || ""}
-                onChange={(value) => updateField("hire_date", value || null)}
-                className="w-[130px]"
-              />
-              {isEdit && employee && (
+          {isEdit ? (
+            <div className="grid grid-cols-[165px_minmax(0,1fr)_130px_140px] gap-4 items-center">
+              <div className="flex items-end">
+                <DatePicker
+                  label="Дата приёма"
+                  value={form.hire_date || ""}
+                  onChange={(value) => updateField("hire_date", value || null)}
+                  className="w-[130px]"
+                />
+                {employee && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-10 w-7 px-0 shrink-0 ml-0.5"
+                    title="Корректировка рабочего года"
+                    onClick={() => setShowAdjustmentDialog(true)}
+                  >
+                    <CalendarClock className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+
+              <div className="min-w-0 self-end">
+                {hireOrder ? (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:text-foreground hover:underline cursor-pointer leading-relaxed block w-full text-left whitespace-normal break-words"
+                    onClick={() => {
+                      if (hireOrder.file_path) {
+                        window.open(`/orders/${hireOrder.id}/view-docx`, "_blank", "noopener,noreferrer")
+                      } else {
+                        alert("Файл приказа ещё не сгенерирован. Создайте приказ через страницу приказов.")
+                      }
+                    }}
+                    title="Открыть приказ"
+                    style={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    Приказ №{hireOrder.order_number} от {new Date(hireOrder.order_date).toLocaleDateString("ru-RU")}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="text-xs text-amber-600 hover:text-amber-700 hover:underline cursor-pointer leading-relaxed block w-full text-left whitespace-normal break-words"
+                    onClick={handleHireOrder}
+                    title="Добавить приказ о приёме"
+                    style={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    Приказ о приёме не добавлен
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-1 block">Переводы</label>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="h-10 w-7 px-0 shrink-0 ml-0.5"
-                  title="Корректировка рабочего года"
-                  onClick={() => setShowAdjustmentDialog(true)}
+                  className="w-full justify-start h-10"
+                  onClick={() => setShowTransferModal(true)}
                 >
-                  <CalendarClock className="h-4 w-4" />
+                  <FileText className="h-4 w-4 mr-2 shrink-0" />
+                  <span className="truncate">
+                    {transfers.length > 0
+                      ? "Открыть"
+                      : "Добавить"}
+                  </span>
                 </Button>
-              )}
-            </div>
-            <div>
-              {isEdit && hireOrder ? (
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground hover:underline cursor-pointer whitespace-nowrap leading-relaxed"
-                  onClick={() => {
-                    if (hireOrder.file_path) {
-                      window.open(`/orders/${hireOrder.id}/view-docx`, "_blank", "noopener,noreferrer")
-                    } else {
-                      alert("Файл приказа ещё не сгенерирован. Создайте приказ через страницу приказов.")
-                    }
-                  }}
-                  title="Открыть приказ"
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-1 block">Форма оплаты</label>
+                <Select
+                  value={form.payment_form || ""}
+                  onValueChange={(v) => updateField("payment_form", v || null)}
                 >
-                  Приказ №{hireOrder.order_number} от {new Date(hireOrder.order_date).toLocaleDateString("ru-RU")}
-                </button>
-              ) : isEdit ? (
-                <button
-                  type="button"
-                  className="text-xs text-amber-600 hover:text-amber-700 hover:underline cursor-pointer whitespace-nowrap leading-relaxed"
-                  onClick={handleHireOrder}
-                  title="Добавить приказ о приёме"
+                  <SelectTrigger>
+                    <SelectValue placeholder="Не указана" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Повременная">Повременная</SelectItem>
+                    <SelectItem value="Сдельная">Сдельная</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-[165px_1fr_140px] gap-4 items-center">
+              <div className="flex items-end">
+                <DatePicker
+                  label="Дата приёма"
+                  value={form.hire_date || ""}
+                  onChange={(value) => updateField("hire_date", value || null)}
+                  className="w-[130px]"
+                />
+              </div>
+              <div />
+              <div />
+            </div>
+          )}
+
+          {!isEdit && (
+            <div className="grid grid-cols-[180px_140px] gap-4 items-center">
+              <div />
+              <div>
+                <label className="text-sm font-medium">Форма оплаты</label>
+                <Select
+                  value={form.payment_form || ""}
+                  onValueChange={(v) => updateField("payment_form", v || null)}
                 >
-                  Приказ о приёме не добавлен
-                </button>
-              ) : null}
+                  <SelectTrigger>
+                    <SelectValue placeholder="Не указана" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Повременная">Повременная</SelectItem>
+                    <SelectItem value="Сдельная">Сдельная</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div>
-              <label className="text-sm font-medium">Форма оплаты</label>
-              <Select
-                value={form.payment_form || ""}
-                onValueChange={(v) => updateField("payment_form", v || null)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Не указана" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Повременная">Повременная</SelectItem>
-                  <SelectItem value="Сдельная">Сдельная</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          )}
 
           <div className="grid items-end" style={{ gridTemplateColumns: "130px 16px 130px 40px 80px 16px 1fr" }}>
             <div className="flex flex-col gap-1">
@@ -771,6 +845,13 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    <TransferHistoryModal
+      open={showTransferModal}
+      onOpenChange={setShowTransferModal}
+      transfers={transfers}
+      onSave={(newTransfers) => setTransfers(newTransfers)}
+    />
   </>
   )
 }

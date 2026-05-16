@@ -16,6 +16,14 @@ export interface EmployeeTag {
   color?: string
 }
 
+export interface EmployeeTransfer {
+  date: string
+  order_number: string
+  old_position_id: number | null
+  new_position_id: number | null
+  reason?: string
+}
+
 export interface Employee {
   id: number
   tab_number: number | null
@@ -49,6 +57,7 @@ export interface Employee {
   dismissed_at: string | null
   is_deleted: boolean
   periods_need_reset?: boolean
+  transfers?: EmployeeTransfer[]
 }
 
 export interface EmployeeListResponse {
@@ -101,6 +110,7 @@ export interface EmployeeUpdate {
   insurance_number?: string | null
   passport_number?: string | null
   additional_vacation_days?: number
+  transfers?: EmployeeTransfer[]
 }
 
 export interface EmployeeAuditLog {

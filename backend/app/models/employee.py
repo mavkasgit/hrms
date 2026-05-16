@@ -42,6 +42,8 @@ class Employee(Base):
     deleted_at = Column(DateTime(timezone=True))
     deleted_by = Column(String(100))
 
+    transfers = Column(JSON, nullable=True, default=list)
+
     vacations = relationship("Vacation", back_populates="employee")
     vacation_periods = relationship("VacationPeriod", back_populates="employee", order_by="VacationPeriod.year_number")
     vacation_plans = relationship("VacationPlan", back_populates="employee")

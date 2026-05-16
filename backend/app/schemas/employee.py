@@ -25,6 +25,7 @@ class EmployeeBase(BaseModel):
     insurance_number: Optional[str] = Field(None, max_length=50)
     passport_number: Optional[str] = Field(None, max_length=50)
     additional_vacation_days: int = 0
+    transfers: Optional[list[dict]] = []
 
 
 class EmployeeCreate(EmployeeBase):
@@ -71,6 +72,7 @@ class EmployeeUpdate(BaseModel):
     insurance_number: Optional[str] = Field(None, max_length=50)
     passport_number: Optional[str] = Field(None, max_length=50)
     additional_vacation_days: Optional[int] = None
+    transfers: Optional[list[dict]] = None
 
     @field_validator("birth_date")
     @classmethod
@@ -145,6 +147,7 @@ class EmployeeResponse(BaseModel):
     dismissed_at: Optional[datetime] = None
     is_deleted: bool
     periods_need_reset: Optional[bool] = None
+    transfers: Optional[list[dict]] = []
 
     model_config = {"from_attributes": True}
 
