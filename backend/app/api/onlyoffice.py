@@ -256,9 +256,11 @@ async def create_order_draft(
     _ensure_onlyoffice_enabled()
     await order_service.ensure_default_order_types(db)
 
-    employee = await order_service.get_employee_by_id(db, data.employee_id)
-    if not employee:
-        raise EmployeeNotFoundError(data.employee_id)
+    employee = None
+    if data.employee_id is not None:
+        employee = await order_service.get_employee_by_id(db, data.employee_id)
+        if not employee:
+            raise EmployeeNotFoundError(data.employee_id)
 
     order_type = await order_service.get_order_type_by_id(db, data.order_type_id)
     if not order_type or not order_type.is_active:

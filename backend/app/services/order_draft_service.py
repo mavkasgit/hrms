@@ -22,7 +22,7 @@ class OrderDraftService:
         self._drafts_dir.mkdir(parents=True, exist_ok=True)
         return self._drafts_dir
 
-    async def create_draft(self, data: OrderCreate, employee: Employee, order_type: OrderType) -> dict[str, Any]:
+    async def create_draft(self, data: OrderCreate, employee: Employee | None, order_type: OrderType) -> dict[str, Any]:
         draft_id = str(uuid.uuid4())
         order_number = data.order_number.strip() if data.order_number else "DRAFT"
         doc, replacements = await _build_document(order_number, data, employee, order_type)

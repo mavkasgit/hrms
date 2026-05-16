@@ -173,6 +173,15 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
         "letter": "л",
     },
+    {
+        "code": "general_order",
+        "name": "Приказ по основной деятельности",
+        "show_in_orders_page": True,
+        "template_filename": "template__order__general_order.docx",
+        "field_schema": [],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{order_date}.docx",
+        "letter": None,
+    },
 ]
 
 STANDARD_ORDER_CODES = frozenset(item["code"] for item in DEFAULT_ORDER_TYPES)

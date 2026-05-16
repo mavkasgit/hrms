@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class OrderCreate(BaseModel):
-    employee_id: int = Field(..., gt=0)
+    employee_id: Optional[int] = Field(None, ge=0)
     order_type_id: int = Field(..., gt=0)
     order_date: date
     order_number: Optional[str] = Field(None, max_length=50)

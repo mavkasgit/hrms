@@ -43,6 +43,7 @@ interface OrderNumberFieldProps {
   orderTypes?: OrderType[]
   required?: boolean
   error?: string
+  isGeneralOrder?: boolean
 }
 
 export function OrderNumberField({
@@ -52,6 +53,7 @@ export function OrderNumberField({
   orderTypes,
   required,
   error,
+  isGeneralOrder,
 }: OrderNumberFieldProps) {
   const id = useId()
   const [letter, setLetter] = useState<string | null>(null)
@@ -140,11 +142,15 @@ export function OrderNumberField({
             />
             <ListFilter className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           </div>
-          {letter && (
+          {isGeneralOrder ? (
+            <span className="text-xs text-muted-foreground px-2 py-2 h-10 border rounded-md bg-muted flex items-center">
+              Без литеры
+            </span>
+          ) : letter ? (
             <span className="text-sm text-muted-foreground px-2 py-2 h-10 border rounded-md bg-muted flex items-center">
               -{letter}
             </span>
-          )}
+          ) : null}
         </div>
         {popoverOpen && (
           <div

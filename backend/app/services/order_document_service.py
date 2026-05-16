@@ -459,7 +459,7 @@ def get_template_path_for_filename(filename: str) -> Path:
 async def _build_document(
     order_number: str,
     data: OrderCreate,
-    employee: Employee,
+    employee: Employee | None,
     order_type: OrderType,
 ) -> tuple[Document, dict[str, str]]:
     template_path = get_template_path(order_type)
@@ -477,7 +477,8 @@ async def _build_document(
         warning_run.font.color.rgb = RGBColor(0xDC, 0x26, 0x26)
         doc.add_paragraph(f"Тип: {order_type.name}")
         doc.add_paragraph(f"Дата: {data.order_date.strftime('%d.%m.%Y')}")
-        doc.add_paragraph(f"Сотрудник: {employee.name}")
+        if employee:
+            doc.add_paragraph(f"Сотрудник: {employee.name}")
 
     replacements = _prepare_replacements(order_number, data, employee, order_type)
     await asyncio.wait_for(
@@ -490,15 +491,28 @@ async def _build_document(
 def _prepare_replacements(
     order_number: str,
     data: OrderCreate,
-    employee: Employee,
+    employee: Employee | None,
     order_type: OrderType,
 ) -> dict[str, str]:
-    full_name = employee.name
-    position_name = str(employee.position.name if employee.position else "")
-    position_cap = position_name.capitalize() if position_name else ""
-
-    # Gender-aware acknowledgment
-    oznak = "ознакомлена" if employee.gender == "female" else "ознакомлен"
+    if employee is not None:
+        full_name = employee.name
+        position_name = str(employee.position.name if employee.position else "")
+        position_cap = position_name.capitalize() if position_name else ""
+        oznak = "ознакомлена" if employee.gender == "female" else "ознакомлен"
+        tab_number = str(employee.tab_number or "")
+        department = str(employee.department.name if employee.department else "")
+        hire_date = employee.hire_date.strftime("%d.%m.%Y") if employee.hire_date else ""
+        contract_start = employee.contract_start.strftime("%d.%m.%Y") if employee.contract_start else ""
+        employee_replacements = _build_employee_name_replacements(full_name)
+    else:
+        tab_number = ""
+        department = ""
+        hire_date = ""
+        contract_start = ""
+        position_name = ""
+        position_cap = ""
+        oznak = ""
+        employee_replacements = _build_employee_name_replacements("")
 
     replacements = {
         "{order_number}": order_number,
@@ -506,14 +520,14 @@ def _prepare_replacements(
         "{order_type_name}": order_type.name,
         "{order_type_code}": order_type.code,
         "{order_type_lower}": order_type.name.lower(),
-        **_build_employee_name_replacements(full_name),
-        "{tab_number}": str(employee.tab_number or ""),
-        "{department}": str(employee.department.name if employee.department else ""),
+        **employee_replacements,
+        "{tab_number}": tab_number,
+        "{department}": department,
         "{position}": position_name.lower(),
         "{position_cap}": position_cap,
-        "{hire_date}": employee.hire_date.strftime("%d.%m.%Y") if employee.hire_date else "",
-        "{contract_start}": employee.contract_start.strftime("%d.%m.%Y") if employee.contract_start else "",
-        "{hire_order_date}": employee.hire_date.strftime("%d.%m.%Y") if employee.hire_date else "",
+        "{hire_date}": hire_date,
+        "{contract_start}": contract_start,
+        "{hire_order_date}": hire_date,
         "{oznak_gender}": oznak,
         "{notes}": data.notes or "",
     }

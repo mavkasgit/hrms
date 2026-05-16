@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
+import re
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import AsyncIterator, Callable
 
 import pytest
@@ -22,6 +24,13 @@ from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
 
 DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_test"
+TEST_DATABASE_PREFIX = "hrms_test_"
+STALE_TEST_DATABASE_TTL_HOURS = int(os.getenv("HRMS_TEST_DB_STALE_TTL_HOURS", "24"))
+CLEANUP_LEGACY_TEST_DATABASES = os.getenv("HRMS_TEST_DB_CLEANUP_LEGACY", "0") == "1"
+TEST_DATABASE_TIMESTAMP_FORMAT = "%Y%m%d%H%M%S"
+TEST_DATABASE_PATTERN = re.compile(
+    r"^hrms_test_(?P<created_at>\d{14})_(?P<module>[a-z0-9_]+)_[0-9a-f]{8}$"
+)
 
 
 def _quote_ident(value: str) -> str:
@@ -33,10 +42,69 @@ def _build_truncate_sql() -> str:
     return f"TRUNCATE {table_names} RESTART IDENTITY CASCADE"
 
 
+def _normalize_name_fragment(value: str, *, max_len: int = 20) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_]+", "_", value).strip("_").lower()
+    if not cleaned:
+        return "module"
+    return cleaned[:max_len]
+
+
+def _build_test_database_name(module_name: str) -> str:
+    created_at = datetime.now(timezone.utc).strftime(TEST_DATABASE_TIMESTAMP_FORMAT)
+    module_token = _normalize_name_fragment(module_name)
+    return f"{TEST_DATABASE_PREFIX}{created_at}_{module_token}_{uuid.uuid4().hex[:8]}"
+
+
+def _parse_database_created_at(db_name: str) -> datetime | None:
+    match = TEST_DATABASE_PATTERN.match(db_name)
+    if not match:
+        return None
+    return datetime.strptime(match.group("created_at"), TEST_DATABASE_TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc)
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
+async def cleanup_stale_test_databases() -> AsyncIterator[None]:
+    base_url = make_url(DEFAULT_TEST_DATABASE_URL)
+    admin_url = base_url.set(database="postgres")
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max(STALE_TEST_DATABASE_TTL_HOURS, 1))
+
+    admin_engine = create_async_engine(
+        admin_url.render_as_string(hide_password=False),
+        isolation_level="AUTOCOMMIT",
+        poolclass=NullPool,
+    )
+
+    async with admin_engine.connect() as conn:
+        db_rows = await conn.execute(
+            text("SELECT datname FROM pg_database WHERE datname LIKE :prefix"),
+            {"prefix": f"{TEST_DATABASE_PREFIX}%"},
+        )
+        db_names = [row[0] for row in db_rows.fetchall()]
+
+        for db_name in db_names:
+            created_at = _parse_database_created_at(db_name)
+            if created_at is None and not CLEANUP_LEGACY_TEST_DATABASES:
+                continue
+            if created_at is not None and created_at >= cutoff:
+                continue
+
+            activity_result = await conn.execute(
+                text("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = :db_name"),
+                {"db_name": db_name},
+            )
+            if int(activity_result.scalar_one()) > 0:
+                continue
+
+            await conn.execute(text(f"DROP DATABASE IF EXISTS {_quote_ident(db_name)} WITH (FORCE)"))
+
+    await admin_engine.dispose()
+    yield
+
+
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def test_database_url(request) -> AsyncIterator[str]:
     base_url = make_url(DEFAULT_TEST_DATABASE_URL)
-    db_name = f"hrms_test_{request.module.__name__.split('.')[-1]}_{uuid.uuid4().hex[:8]}"
+    db_name = _build_test_database_name(request.module.__name__.split(".")[-1])
     test_url = base_url.set(database=db_name)
     admin_url = base_url.set(database="postgres")
 
@@ -82,7 +150,7 @@ def db_session_factory(db_engine: AsyncEngine) -> async_sessionmaker[AsyncSessio
     return async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 
 
-@pytest_asyncio.fixture(loop_scope="module")
+@pytest_asyncio.fixture(scope="function", loop_scope="module")
 async def db_session(db_session_factory: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncSession]:
     async with db_session_factory() as session:
         yield session

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { useNavigate } from "react-router-dom"
-import { ChevronDown, ChevronRight, X, ScrollText, RefreshCw, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Printer, FilePen, Cake } from "lucide-react"
+import { ChevronDown, ChevronRight, X, ScrollText, RefreshCw, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Printer, FilePen, Cake, FileText } from "lucide-react"
 import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
 import {
   Tooltip,
@@ -51,6 +51,7 @@ import { OrderNumberField } from "@/features/OrderNumberField"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 import { useTags } from "@/entities/tag/useTags"
 import { PrintPreviewDialog } from "@/features/print-preview"
+import { OrdersRegistryModal } from "@/features/orders-registry/OrdersRegistryModal"
 import type { Employee } from "@/entities/employee/types"
 import type { EmployeeVacationSummary } from "@/entities/vacation/types"
 
@@ -643,6 +644,7 @@ export function VacationsPage() {
 
   // Print preview state
   const [printOpen, setPrintOpen] = useState(false)
+  const [registryOpen, setRegistryOpen] = useState(false)
 
   const { data: allTags } = useTags()
 
@@ -938,6 +940,10 @@ export function VacationsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Трудовой отпуск</h1>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setRegistryOpen(true)}>
+            <FileText className="mr-2 h-4 w-4" />
+            Сформировать реестр
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setPrintOpen(true)}>
             <Printer className="mr-2 h-4 w-4" />
             Печать
@@ -1409,6 +1415,9 @@ export function VacationsPage() {
         getTags={(emp) => emp.tags || []}
         allTags={allTags}
       />
+
+      {/* --- Orders registry dialog --- */}
+      <OrdersRegistryModal open={registryOpen} onOpenChange={setRegistryOpen} year={new Date().getFullYear()} />
     </div>
   )
 }

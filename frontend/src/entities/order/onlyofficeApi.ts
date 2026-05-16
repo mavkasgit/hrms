@@ -1,5 +1,5 @@
 import api from "@/shared/api/axios"
-import type { GroupOrderCreate, OrderCreate } from "./types"
+import type { GroupOrderCreate, Order, OrderCreate } from "./types"
 import type { CommitOrderDraftResponse, GroupDraftResponse, OnlyOfficeConfig, OrderDraftResponse } from "./onlyofficeTypes"
 
 export async function fetchOrderOnlyOfficeConfig(orderId: number, mode: "edit" | "view" = "edit") {

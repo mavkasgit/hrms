@@ -9,6 +9,7 @@ import {
   Tag,
   X,
   FileSpreadsheet,
+  FileText,
 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
@@ -31,6 +32,7 @@ import { useTags } from "@/entities/tag/useTags"
 import type { EmployeeTag } from "@/entities/employee/types"
 import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
 import { VacationCalendarModal } from "@/features/vacation-calendar-modal/VacationCalendarModal"
+import { OrdersRegistryModal } from "@/features/orders-registry/OrdersRegistryModal"
 
 interface CalendarRow {
   employee_id: number
@@ -93,6 +95,7 @@ export function VacationCalendarPage() {
   const [activeMonthFilters, setActiveMonthFilters] = useState<number[]>([])
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [importSuccess, setImportSuccess] = useState(false)
+  const [registryModalOpen, setRegistryModalOpen] = useState(false)
 
   const { data: summaries, isLoading: plansLoading } = useVacationPlanSummary(year)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000, status: "active" })
