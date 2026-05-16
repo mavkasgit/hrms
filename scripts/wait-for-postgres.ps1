@@ -1,6 +1,7 @@
 param(
     [string]$ContainerName = "hrms-postgres",
     [string]$PgUser = "hrms_user",
+    [string]$PgDatabase = "hrms_dev",
     [int]$TimeoutSec = 60,
     [int]$IntervalSec = 2
 )
@@ -23,7 +24,7 @@ if (-not $started) {
 }
 
 for ($elapsed = 0; $elapsed -lt $TimeoutSec; $elapsed += $IntervalSec) {
-    docker exec $ContainerName pg_isready -U $PgUser -q 2>$null
+    docker exec $ContainerName pg_isready -U $PgUser -d $PgDatabase -q 2>$null
     if ($LASTEXITCODE -eq 0) {
         Write-Host "PostgreSQL is ready"
         exit 0

@@ -3,13 +3,14 @@ set -euo pipefail
 
 CONTAINER="${1:-hrms-postgres}"
 PG_USER="${2:-hrms_user}"
-TIMEOUT="${3:-60}"
+PG_DB="${3:-hrms_dev}"
+TIMEOUT="${4:-60}"
 ELAPSED=0
 INTERVAL=2
 
-echo "Waiting for PostgreSQL in '${CONTAINER}' as '${PG_USER}' (timeout: ${TIMEOUT}s)..."
+echo "Waiting for PostgreSQL in '${CONTAINER}' as '${PG_USER}' on db '${PG_DB}' (timeout: ${TIMEOUT}s)..."
 
-until docker exec "${CONTAINER}" pg_isready -U "${PG_USER}" -q 2>/dev/null; do
+until docker exec "${CONTAINER}" pg_isready -U "${PG_USER}" -d "${PG_DB}" -q 2>/dev/null; do
   if [ "${ELAPSED}" -ge "${TIMEOUT}" ]; then
     echo "PostgreSQL is not ready after ${TIMEOUT}s"
     exit 1
