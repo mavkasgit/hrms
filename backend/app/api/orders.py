@@ -222,6 +222,25 @@ async def get_orders_registry(
     current_user: str = Depends(_get_current_user_stub),
 ):
     """Return all orders with the given letter for the specified year."""
+    from sqlalchemy import select
+    from app.models.employee import Employee
+    from app.models.vacation_period import VacationPeriod
+
+    # Fetch all employees
+    employees_result = await db.execute(select(Employee))
+    employees_map = {emp.id: emp for emp in employees_result.scalars().all()}
+
+    # Fetch all open vacation periods (remaining_days > 0) grouped by employee_id
+    periods_result = await db.execute(
+        select(VacationPeriod).where(VacationPeriod.remaining_days > 0)
+    )
+    # For each employee, keep only the most recent open period (latest period_start)
+    employee_period_map: dict[int, VacationPeriod] = {}
+    for period in periods_result.scalars().all():
+        existing = employee_period_map.get(period.employee_id)
+        if not existing or period.period_start > existing.period_start:
+            employee_period_map[period.employee_id] = period
+
     result = await order_service.get_all(
         db,
         page=1,
@@ -236,20 +255,27 @@ async def get_orders_registry(
         # For group orders, each employee is a separate row
         if o.get("is_group") and o.get("group_employees"):
             for emp in o["group_employees"]:
+                employee_id = emp.get("employee_id")
+                work_period = _get_work_period_from_vacation(employee_id, employee_period_map)
                 registry_items.append({
                     "order_id": o["id"],
                     "employee_name": emp["employee_full_name"],
                     "order_type_name": o["order_type_name"],
                     "order_number": o["order_number"],
                     "order_date": str(o["order_date"]),
+                    "work_period": work_period,
                 })
         else:
+            employee_name = o["employee_name"] or ""
+            employee_id = o.get("employee_id")
+            work_period = _get_work_period_from_vacation(employee_id, employee_period_map)
             registry_items.append({
                 "order_id": o["id"],
-                "employee_name": o["employee_name"] or "",
+                "employee_name": employee_name,
                 "order_type_name": o["order_type_name"],
                 "order_number": o["order_number"],
                 "order_date": str(o["order_date"]),
+                "work_period": work_period,
             })
 
     return {
@@ -258,6 +284,18 @@ async def get_orders_registry(
         "year": year,
         "debug_total": total,
     }
+
+
+def _get_work_period_from_vacation(employee_id, period_map: dict) -> str:
+    """Get work period string from vacation period map for the given employee."""
+    if not employee_id:
+        return "—"
+    period = period_map.get(employee_id)
+    if not period:
+        return "—"
+    start = period.period_start.strftime("%d.%m.%Y") if period.period_start else "—"
+    end = period.period_end.strftime("%d.%m.%Y") if period.period_end else "—"
+    return f"{start} — {end}"
 
 
 @router.get("/log")

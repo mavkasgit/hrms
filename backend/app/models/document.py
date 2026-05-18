@@ -14,4 +14,5 @@ class Document(Base):
     file_type = Column(String(10), nullable=False)  # docx, xlsx, pdf
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
     uploaded_by = Column(String(100))
+    edited_at = Column(DateTime(timezone=True))
     is_current = Column(Boolean, default=True, nullable=False, index=True)

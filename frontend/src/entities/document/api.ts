@@ -2,8 +2,10 @@ import axios from "@/shared/api/axios"
 import type { Document, DocumentCurrentResponse } from "./types"
 import type { OnlyOfficeConfig } from "@/entities/order/onlyofficeTypes"
 
-export async function getDocuments(docCode: string): Promise<Document[]> {
-  const { data } = await axios.get<Document[]>(`/documents/${docCode}`)
+export async function getDocuments(docCode: string, limit = 10): Promise<Document[]> {
+  const { data } = await axios.get<Document[]>(`/documents/${docCode}`, {
+    params: { limit },
+  })
   return data
 }
 
@@ -32,6 +34,13 @@ export async function fetchDocumentOnlyOfficeConfig(
 ): Promise<OnlyOfficeConfig> {
   const { data } = await axios.get<OnlyOfficeConfig>(`/documents/${docCode}/${docId}/onlyoffice/config`, {
     params: { mode },
+  })
+  return data
+}
+
+export async function forceSaveDocument(docCode: string, docId: number, documentKey: string) {
+  const { data } = await axios.post<{ message: string }>(`/documents/${docCode}/${docId}/onlyoffice/forcesave`, {
+    document_key: documentKey,
   })
   return data
 }

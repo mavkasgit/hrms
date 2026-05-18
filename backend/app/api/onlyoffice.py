@@ -104,8 +104,37 @@ def _external_origin_from_headers(request: Request) -> str | None:
 
 
 def _document_server_url(request: Request) -> str:
-    # OnlyOffice is always proxied through the same nginx on /onlyoffice/.
-    # Use the request origin so the frontend can reach it from any network.
+    # ========================================================================
+    # ARCHITECTURE REFERENCE: How OnlyOffice URLs work
+    # ========================================================================
+    #
+    # DEV MODE (docker compose up for postgres + onlyoffice, local backend/frontend):
+    #   - Frontend: Vite dev server on localhost:5173
+    #   - Backend:  uvicorn on localhost:8000
+    #   - OnlyOffice: Docker container on localhost:8085
+    #   - No nginx proxy in dev
+    #   - Browser needs direct access to OnlyOffice at http://localhost:8085
+    #   - Solution: use ONLYOFFICE_PUBLIC_URL from .env.dev (http://localhost:8085)
+    #
+    # DOCKER / PROD MODE (full docker compose with all services):
+    #   - All containers share the same Docker network (hrms_default)
+    #   - nginx listens on :80 and proxies:
+    #       /api/        -> backend:8000
+    #       /web-apps/   -> onlyoffice:80  (internal Docker DNS)
+    #   - Frontend container serves static files through nginx
+    #   - Browser makes ALL requests to one origin (e.g. http://server:80)
+    #   - /web-apps/... reaches OnlyOffice via nginx proxy to onlyoffice:80
+    #   - Request origin (http://server:80) IS the correct documentServerUrl
+    #   - .env.prod sets ONLYOFFICE_PUBLIC_URL=${PUBLIC_URL}/onlyoffice
+    #     but since this is the same as request origin, the fallback works
+    #
+    # KEY INSIGHT:
+    #   In dev the backend returns http://localhost:8085 (OnlyOffice container direct)
+    #   In prod the backend returns http://server:80 (nginx origin, which proxies to OnlyOffice)
+    #   The ONLYOFFICE_PUBLIC_URL check handles dev; the fallback handles prod.
+    # ========================================================================
+    if settings.ONLYOFFICE_PUBLIC_URL:
+        return settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
     return _request_origin(request)
 
 

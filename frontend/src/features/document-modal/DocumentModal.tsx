@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { FileText, Upload, Eye, Clock, Trash2 } from "lucide-react"
+import { FileText, Upload, Eye, Clock, Trash2, FilePen, Printer } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -35,7 +35,9 @@ interface DocumentModalProps {
 export function DocumentModal({ docCode, title, open, onOpenChange }: DocumentModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { data: currentData } = useCurrentDocument(docCode)
-  const { data: history, isLoading: historyLoading } = useDocuments(docCode)
+  const [showAll, setShowAll] = useState(false)
+  const limit = showAll ? 100 : 10
+  const { data: history, isLoading: historyLoading } = useDocuments(docCode, limit)
   const uploadMutation = useUploadDocument(docCode)
   const deleteMutation = useDeleteDocument(docCode)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -55,8 +57,13 @@ export function DocumentModal({ docCode, title, open, onOpenChange }: DocumentMo
     }
   }
 
-  const handleOpenDocument = (doc: Document) => {
-    window.open(`/documents/${docCode}/${doc.id}/view`, "_blank", "noopener,noreferrer")
+  const handleOpenDocument = (doc: Document, mode: "view" | "edit" = "view") => {
+    const url = `/documents/${docCode}/${doc.id}/view${mode === "edit" ? "?mode=edit" : ""}`
+    window.open(url, "_blank", "noopener,noreferrer")
+  }
+
+  const handlePrintDocument = (doc: Document) => {
+    window.open(`/documents/${docCode}/${doc.id}/view?print=1`, "_blank", "noopener,noreferrer")
   }
 
   const handleDeleteConfirm = async () => {
@@ -80,7 +87,7 @@ export function DocumentModal({ docCode, title, open, onOpenChange }: DocumentMo
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(newOpen) => { if (!newOpen) setShowAll(false); onOpenChange(newOpen); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -96,19 +103,20 @@ export function DocumentModal({ docCode, title, open, onOpenChange }: DocumentMo
               <>
                 <div className="flex items-center gap-2 text-sm">
                   <Clock className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">Последнее обновление:</span>
+                  <span className="text-muted-foreground">Загружен:</span>
                   <span className="font-medium">{formatDate(currentDoc.uploaded_at)}</span>
                 </div>
+                {currentDoc.edited_at && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FilePen className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Редактирование:</span>
+                    <span className="font-medium">{formatDate(currentDoc.edited_at)}</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2 text-sm">
                   <FileText className="h-4 w-4 text-muted-foreground" />
                   <span className="text-muted-foreground">Файл:</span>
                   <span className="font-medium">{currentDoc.original_filename}</span>
-                </div>
-                <div className="pt-1">
-                  <Button className="w-full" onClick={() => handleOpenDocument(currentDoc)}>
-                    <Eye className="mr-2 h-4 w-4" />
-                    Открыть {title.toLowerCase()}
-                  </Button>
                 </div>
               </>
             ) : (
@@ -184,15 +192,33 @@ export function DocumentModal({ docCode, title, open, onOpenChange }: DocumentMo
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleOpenDocument(doc)}
+                              onClick={() => handleOpenDocument(doc, "view")}
+                              title="Просмотр"
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="sm"
+                              onClick={() => handleOpenDocument(doc, "edit")}
+                              title="Редактировать"
+                            >
+                              <FilePen className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handlePrintDocument(doc)}
+                              title="Печать"
+                            >
+                              <Printer className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               className="text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => setDeleteDocId(doc.id)}
+                              title="Удалить"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -203,6 +229,16 @@ export function DocumentModal({ docCode, title, open, onOpenChange }: DocumentMo
                   </tbody>
                 </table>
               </div>
+            )}
+            {!historyLoading && history && history.length >= 10 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full mt-2 text-xs text-muted-foreground"
+                onClick={() => setShowAll(!showAll)}
+              >
+                {showAll ? "Свернуть" : `Показать все (${history.length})`}
+              </Button>
             )}
           </div>
         </div>

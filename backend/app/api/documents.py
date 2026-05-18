@@ -93,25 +93,38 @@ def _external_origin_from_headers(request: Request) -> str | None:
 
 
 def _document_server_url(request: Request) -> str:
-    configured = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
-    if not configured:
-        return _request_origin(request)
-    try:
-        configured_host = urlparse(configured).hostname
-    except Exception:
-        return configured
-    external_origin = _external_origin_from_headers(request)
-    if external_origin and _is_private_or_loopback_host(configured_host):
-        return external_origin
-
-    request_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.hostname or "").split(":")[0]
-    if (
-        _is_private_or_loopback_host(configured_host)
-        and request_host
-        and not _is_private_or_loopback_host(request_host)
-    ):
-        return _request_origin(request)
-    return configured
+    # ========================================================================
+    # ARCHITECTURE REFERENCE: How OnlyOffice URLs work
+    # ========================================================================
+    #
+    # DEV MODE (docker compose up for postgres + onlyoffice, local backend/frontend):
+    #   - Frontend: Vite dev server on localhost:5173
+    #   - Backend:  uvicorn on localhost:8000
+    #   - OnlyOffice: Docker container on localhost:8085
+    #   - No nginx proxy in dev
+    #   - Browser needs direct access to OnlyOffice at http://localhost:8085
+    #   - Solution: use ONLYOFFICE_PUBLIC_URL from .env.dev (http://localhost:8085)
+    #
+    # DOCKER / PROD MODE (full docker compose with all services):
+    #   - All containers share the same Docker network (hrms_default)
+    #   - nginx listens on :80 and proxies:
+    #       /api/        -> backend:8000
+    #       /web-apps/   -> onlyoffice:80  (internal Docker DNS)
+    #   - Frontend container serves static files through nginx
+    #   - Browser makes ALL requests to one origin (e.g. http://server:80)
+    #   - /web-apps/... reaches OnlyOffice via nginx proxy to onlyoffice:80
+    #   - Request origin (http://server:80) IS the correct documentServerUrl
+    #   - .env.prod sets ONLYOFFICE_PUBLIC_URL=${PUBLIC_URL}/onlyoffice
+    #     but since this is the same as request origin, the fallback works
+    #
+    # KEY INSIGHT:
+    #   In dev the backend returns http://localhost:8085 (OnlyOffice container direct)
+    #   In prod the backend returns http://server:80 (nginx origin, which proxies to OnlyOffice)
+    #   The ONLYOFFICE_PUBLIC_URL check handles dev; the fallback handles prod.
+    # ========================================================================
+    if settings.ONLYOFFICE_PUBLIC_URL:
+        return settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
+    return _request_origin(request)
 
 
 def _documents_dir(doc_code: str) -> Path:
@@ -171,6 +184,7 @@ class DocumentResponse(BaseModel):
     file_type: str
     uploaded_at: datetime
     uploaded_by: str | None
+    edited_at: datetime | None
     is_current: bool
 
     class Config:
@@ -350,7 +364,28 @@ async def document_onlyoffice_callback(
         if doc:
             file_path = _resolve_file_path(doc.file_path, doc_code)
             await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
+            doc.edited_at = datetime.now()
+            await db.commit()
     return {"error": 0}
+
+
+class OnlyOfficeForceSaveRequest(BaseModel):
+    document_key: str
+
+
+@router.post("/{doc_id}/onlyoffice/forcesave")
+async def document_onlyoffice_forcesave(
+    doc_code: str,
+    doc_id: int,
+    data: OnlyOfficeForceSaveRequest,
+    current_user: str = Depends(_get_current_user_stub),
+):
+    if not settings.ONLYOFFICE_ENABLED:
+        raise HRMSException("OnlyOffice отключен", "onlyoffice_disabled", status_code=503)
+    if not data.document_key.startswith(f"{doc_code}-{doc_id}-"):
+        raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
+    await onlyoffice_service.force_save(data.document_key)
+    return {"message": "save_requested"}
 
 
 @router.delete("/{doc_id}", status_code=204)

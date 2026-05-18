@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen, Search, Filter, Printer } from "lucide-react"
+import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen, Search, Filter, Printer, FileText } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -45,6 +45,7 @@ import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOn
 import { downloadOrderDocx, openOrderEdit, openOrderPrint, openOrderView } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { EmployeeSearch } from "@/features/employee-search"
+import { DocumentModal } from "@/features/document-modal/DocumentModal"
 import type { Employee } from "@/entities/employee/types"
 import type { OrderType, OrderTypeFieldSchema } from "@/entities/order/types"
 
@@ -74,7 +75,10 @@ function QuickOptionsRow({ field, extraFields, onChange }: QuickOptionsRowProps)
             if (hireDateStr) {
               const d = new Date(hireDateStr + "T00:00:00")
               if (opt.years) d.setFullYear(d.getFullYear() + opt.years)
-              else if (opt.months) d.setMonth(d.getMonth() + opt.months)
+              else if (opt.months) {
+                d.setMonth(d.getMonth() + opt.months)
+                d.setDate(d.getDate() - 1)
+              }
               const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
               onChange(field.key, iso)
               onChange(countKey, opt.years ?? opt.months ?? "")
@@ -100,7 +104,10 @@ function QuickOptionsRow({ field, extraFields, onChange }: QuickOptionsRowProps)
             if (hireDateStr) {
               const d = new Date(hireDateStr + "T00:00:00")
               if (unit === "years") d.setFullYear(d.getFullYear() + Number(val))
-              else d.setMonth(d.getMonth() + Number(val))
+              else {
+                d.setMonth(d.getMonth() + Number(val))
+                d.setDate(d.getDate() - 1)
+              }
               const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
               onChange(field.key, iso)
             }
@@ -253,6 +260,7 @@ function DynamicField({ field, value, error, onChange, extraFields }: DynamicFie
                       d.setFullYear(d.getFullYear() + opt.years)
                     } else if (opt.months) {
                       d.setMonth(d.getMonth() + opt.months)
+                      d.setDate(d.getDate() - 1)
                     }
                     const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
                     onChange(field.key, iso)
@@ -292,6 +300,7 @@ function DynamicField({ field, value, error, onChange, extraFields }: DynamicFie
                         d.setFullYear(d.getFullYear() + Number(val))
                       } else {
                         d.setMonth(d.getMonth() + Number(val))
+                        d.setDate(d.getDate() - 1)
                       }
                       const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
                       onChange(field.key, iso)
@@ -405,6 +414,7 @@ export function OrdersPage() {
   const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [filterCollapsed, setFilterCollapsed] = useState(true)
   const [activeTab, setActiveTab] = useState<"all" | "general">("all")
+  const [contractsOpen, setContractsOpen] = useState(false)
 
   // Filter state
   const [filterEmployee, setFilterEmployee] = useState<Employee | null>(null)
@@ -786,6 +796,10 @@ export function OrdersPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Приказы</h1>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setContractsOpen(true)}>
+            <FileText className="mr-2 h-4 w-4" />
+            Контракты
+          </Button>
           <Button variant="outline" size="sm" onClick={() => navigate("/templates")}>
             <Settings className="mr-2 h-4 w-4" />
             Типы и шаблоны
@@ -1407,6 +1421,8 @@ export function OrdersPage() {
       </AlertDialog>
 
       <GlobalAuditLog open={auditLogOpen} onOpenChange={setAuditLogOpen} initialActionFilter="order" />
+
+      <DocumentModal docCode="contracts" title="Контракты" open={contractsOpen} onOpenChange={setContractsOpen} />
     </div>
   )
 }

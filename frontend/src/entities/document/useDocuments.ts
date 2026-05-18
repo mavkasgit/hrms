@@ -5,12 +5,13 @@ import {
   uploadDocument,
   deleteDocument,
   fetchDocumentOnlyOfficeConfig,
+  forceSaveDocument,
 } from "./api"
 
-export function useDocuments(docCode: string | null) {
+export function useDocuments(docCode: string | null, limit = 10) {
   return useQuery({
-    queryKey: ["documents", docCode],
-    queryFn: () => getDocuments(docCode!),
+    queryKey: ["documents", docCode, limit],
+    queryFn: () => getDocuments(docCode!, limit),
     enabled: !!docCode,
   })
 }
@@ -50,5 +51,16 @@ export function useDocumentOnlyOfficeConfig(docCode: string | null, docId: numbe
     queryKey: ["documents", docCode, docId, "onlyoffice", mode],
     queryFn: () => fetchDocumentOnlyOfficeConfig(docCode!, docId, mode),
     enabled: !!docCode && Number.isFinite(docId) && docId > 0,
+  })
+}
+
+export function useForceSaveDocument(docCode: string, docId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (documentKey: string) => forceSaveDocument(docCode, docId, documentKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents", docCode] })
+      queryClient.invalidateQueries({ queryKey: ["documents", docCode, "current"] })
+    },
   })
 }

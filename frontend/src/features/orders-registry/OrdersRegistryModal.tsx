@@ -22,6 +22,7 @@ interface RegistryEntry {
   order_type_name: string
   order_number: string
   order_date: string
+  work_period: string
 }
 
 interface OrdersRegistryModalProps {
@@ -119,11 +120,12 @@ export function OrdersRegistryModal({ open, onOpenChange, year: defaultYear }: O
       const TABLE_FONT_PT = 9 * 0.75
 
       const colWidths = [
-        0.08 * USABLE_W_PT,  // №
-        0.32 * USABLE_W_PT,  // ФИО
-        0.22 * USABLE_W_PT,  // Тип приказа
-        0.15 * USABLE_W_PT,  // Номер
-        0.15 * USABLE_W_PT,  // Дата
+        0.07 * USABLE_W_PT,  // №
+        0.25 * USABLE_W_PT,  // ФИО
+        0.18 * USABLE_W_PT,  // Тип приказа
+        0.12 * USABLE_W_PT,  // Номер
+        0.12 * USABLE_W_PT,  // Дата
+        0.18 * USABLE_W_PT,  // Трудовой период
       ]
 
       const title = `Реестр по личному составу — ${selectedYear}`
@@ -152,6 +154,7 @@ export function OrdersRegistryModal({ open, onOpenChange, year: defaultYear }: O
           { text: "Тип приказа", bold: true, fontSize: 8, fillColor: "#e5e5e5" },
           { text: "Номер приказа", bold: true, fontSize: 8, fillColor: "#e5e5e5" },
           { text: "Дата приказа", bold: true, fontSize: 8, fillColor: "#e5e5e5", alignment: "center" },
+          { text: "Трудовой период", bold: true, fontSize: 8, fillColor: "#e5e5e5" },
         ]
       )
 
@@ -162,6 +165,7 @@ export function OrdersRegistryModal({ open, onOpenChange, year: defaultYear }: O
           { text: item.order_type_name, fontSize: TABLE_FONT_PT },
           { text: item.order_number, fontSize: TABLE_FONT_PT },
           { text: formatDate(item.order_date), fontSize: TABLE_FONT_PT, alignment: "center" },
+          { text: item.work_period || "—", fontSize: TABLE_FONT_PT },
         ])
       })
 
@@ -271,12 +275,13 @@ export function OrdersRegistryModal({ open, onOpenChange, year: defaultYear }: O
                   <th className="text-left font-medium py-2 px-3">Тип приказа</th>
                   <th className="text-left font-medium py-2 px-3">Номер приказа</th>
                   <th className="text-center font-medium py-2 px-3 w-28">Дата</th>
+                  <th className="text-left font-medium py-2 px-3">Трудовой период</th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <td colSpan={6} className="text-center py-8 text-muted-foreground">
                       Нет приказов с литерой л за {selectedYear} год
                     </td>
                   </tr>
@@ -288,6 +293,7 @@ export function OrdersRegistryModal({ open, onOpenChange, year: defaultYear }: O
                       <td className="py-1.5 px-3">{item.order_type_name}</td>
                       <td className="py-1.5 px-3">{item.order_number}</td>
                       <td className="text-center py-1.5 px-3">{formatDate(item.order_date)}</td>
+                      <td className="py-1.5 px-3">{item.work_period || "—"}</td>
                     </tr>
                   ))
                 )}
