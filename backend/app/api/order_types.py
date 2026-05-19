@@ -36,7 +36,7 @@ async def list_order_types(
 async def get_template_variables(
     current_user: str = Depends(_get_current_user_stub),
 ):
-    return {"variables": get_all_template_variables("order")}
+    return {"variables": get_all_template_variables()}
 
 
 @router.post("", response_model=OrderTypeResponse, status_code=201)

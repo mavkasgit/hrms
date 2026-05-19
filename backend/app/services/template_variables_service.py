@@ -1,8 +1,8 @@
 from typing import Optional
 
 COMMON_TEMPLATE_VARIABLES = [
-    {"name": "{doc_number}", "description": "Номер документа", "category": "Документ", "doc_types": ["order", "notification", "statement"]},
-    {"name": "{doc_date}", "description": "Дата документа (ДД.ММ.ГГГГ)", "category": "Документ", "doc_types": ["order", "notification", "statement"]},
+    {"name": "{doc_number}", "description": "Номер документа", "category": "Документ", "doc_types": ["order"]},
+    {"name": "{doc_date}", "description": "Дата документа (ДД.ММ.ГГГГ)", "category": "Документ", "doc_types": ["order"]},
     {"name": "{doc_title}", "description": "Заголовок документа", "category": "Документ", "doc_types": ["order", "notification", "statement"]},
 
     {"name": "{full_name}", "description": "ФИО полностью", "category": "ФИО", "doc_types": ["order", "notification", "statement"]},

@@ -115,17 +115,22 @@ async def get_next_notification_number(
 async def get_notifications(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=1000),
+    number: Optional[str] = Query(None),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     employee_id: Optional[int] = Query(None),
     notification_type_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
+    from sqlalchemy import or_
+
     query = (
         select(Notification)
         .options(joinedload(Notification.notification_type), joinedload(Notification.employee))
     )
 
+    if number:
+        query = query.where(Notification.number.ilike(f"%{number}%"))
     if date_from:
         query = query.where(Notification.date >= date_from)
     if date_to:
@@ -137,6 +142,8 @@ async def get_notifications(
 
     # Count
     count_query = select(func.count()).select_from(Notification)
+    if number:
+        count_query = count_query.where(Notification.number.ilike(f"%{number}%"))
     if date_from:
         count_query = count_query.where(Notification.date >= date_from)
     if date_to:

@@ -1,4 +1,6 @@
 import { useNavigate } from "react-router-dom"
+import { Settings } from "lucide-react"
+import { Button } from "@/shared/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/tabs"
 import { NotificationsSection } from "@/features/notifications-section/NotificationsSection"
 
@@ -21,7 +23,15 @@ export function NotificationsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Уведомления</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Уведомления</h1>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate("/templates")}>
+            <Settings className="mr-2 h-4 w-4" />
+            Типы и шаблоны
+          </Button>
+        </div>
+      </div>
 
       <div className="border rounded-lg bg-card">
         <div className="px-4 py-3 border-b">

@@ -83,11 +83,14 @@ export function StatementsSection() {
   const [filterDateFrom, setFilterDateFrom] = useState("")
   const [filterDateTo, setFilterDateTo] = useState("")
   const [filterStatementTypeId, setFilterStatementTypeId] = useState<number | undefined>(undefined)
+  const [filterNumber, setFilterNumber] = useState("")
   const debouncedFilterEmployeeId = useDebounce(filterEmployee?.id ?? null, 300)
+  const debouncedFilterNumber = useDebounce(filterNumber, 300)
 
   const { data, isLoading, error, refetch } = useStatements({
     page: 1,
     per_page: 1000,
+    number: debouncedFilterNumber || undefined,
     date_from: filterDateFrom || undefined,
     date_to: filterDateTo || undefined,
     employee_id: debouncedFilterEmployeeId ?? undefined,
@@ -107,14 +110,16 @@ export function StatementsSection() {
     if (filterDateFrom) count++
     if (filterDateTo) count++
     if (filterStatementTypeId) count++
+    if (filterNumber) count++
     return count
-  }, [filterEmployee, filterDateFrom, filterDateTo, filterStatementTypeId])
+  }, [filterEmployee, filterDateFrom, filterDateTo, filterStatementTypeId, filterNumber])
 
   const clearFilters = () => {
     setFilterEmployee(null)
     setFilterDateFrom("")
     setFilterDateTo("")
     setFilterStatementTypeId(undefined)
+    setFilterNumber("")
   }
 
   const resetForm = () => {
@@ -383,7 +388,7 @@ export function StatementsSection() {
 
         {!filterCollapsed && (
           <div className="border-t px-4 py-4 space-y-4">
-            {/* Row 1: Employee, Statement type */}
+            {/* Row 1: Employee, Statement type, Number */}
             <div className="flex flex-wrap gap-6 items-end">
               <div className="w-[280px]">
                 <label className="text-sm font-medium">Сотрудник</label>
@@ -414,6 +419,16 @@ export function StatementsSection() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="w-[160px]">
+                <label className="text-sm font-medium">Номер</label>
+                <Input
+                  className="mt-1"
+                  placeholder="Поиск по номеру"
+                  value={filterNumber}
+                  onChange={(e) => setFilterNumber(e.target.value)}
+                />
               </div>
             </div>
 

@@ -74,8 +74,10 @@ function QuickOptionsRow({ field, extraFields, onChange }: QuickOptionsRowProps)
             const hireDateStr = extraFields["hire_date"] as string | undefined
             if (hireDateStr) {
               const d = new Date(hireDateStr + "T00:00:00")
-              if (opt.years) d.setFullYear(d.getFullYear() + opt.years)
-              else if (opt.months) {
+              if (opt.years) {
+                d.setFullYear(d.getFullYear() + opt.years)
+                d.setDate(d.getDate() - 1)
+              } else if (opt.months) {
                 d.setMonth(d.getMonth() + opt.months)
                 d.setDate(d.getDate() - 1)
               }
@@ -103,8 +105,10 @@ function QuickOptionsRow({ field, extraFields, onChange }: QuickOptionsRowProps)
             const hireDateStr = extraFields["hire_date"] as string | undefined
             if (hireDateStr) {
               const d = new Date(hireDateStr + "T00:00:00")
-              if (unit === "years") d.setFullYear(d.getFullYear() + Number(val))
-              else {
+              if (unit === "years") {
+                d.setFullYear(d.getFullYear() + Number(val))
+                d.setDate(d.getDate() - 1)
+              } else {
                 d.setMonth(d.getMonth() + Number(val))
                 d.setDate(d.getDate() - 1)
               }

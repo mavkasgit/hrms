@@ -115,6 +115,7 @@ async def get_next_statement_number(
 async def get_statements(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=1000),
+    number: Optional[str] = Query(None),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     employee_id: Optional[int] = Query(None),
@@ -126,6 +127,8 @@ async def get_statements(
         .options(joinedload(Statement.statement_type), joinedload(Statement.employee))
     )
 
+    if number:
+        query = query.where(Statement.number.ilike(f"%{number}%"))
     if date_from:
         query = query.where(Statement.date >= date_from)
     if date_to:
@@ -137,6 +140,8 @@ async def get_statements(
 
     # Count
     count_query = select(func.count()).select_from(Statement)
+    if number:
+        count_query = count_query.where(Statement.number.ilike(f"%{number}%"))
     if date_from:
         count_query = count_query.where(Statement.date >= date_from)
     if date_to:
