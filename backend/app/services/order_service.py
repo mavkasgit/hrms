@@ -77,9 +77,6 @@ class OrderService:
     async def bulk_upload_templates(self, db: AsyncSession, files: list) -> dict[str, Any]:
         return await self.order_type_service.bulk_upload_templates(db, files)
 
-    def get_template_variables(self) -> list[dict[str, str]]:
-        return self.order_type_service.get_template_variables()
-
     # === Repository delegation ===
     async def get_employee_by_id(self, db: AsyncSession, employee_id: int):
         """Get employee by ID (public wrapper to avoid direct repo access)."""

@@ -4,8 +4,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 
 from app.core.config import settings
-from app.schemas.order import TemplateListResponse, TemplateVariablesResponse
-from app.services.order_service import order_service
+from app.schemas.order import TemplateListResponse
 from app.utils.file_helpers import ORDER_TYPES
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -19,16 +18,10 @@ def _get_current_user_stub() -> str:
 async def list_templates(
     current_user: str = Depends(_get_current_user_stub),
 ):
+    from app.services.order_service import order_service
+
     templates = order_service.list_all_templates()
     return {"templates": templates}
-
-
-@router.get("/variables", response_model=TemplateVariablesResponse)
-async def get_template_variables(
-    current_user: str = Depends(_get_current_user_stub),
-):
-    variables = order_service.get_template_variables()
-    return {"variables": variables}
 
 
 @router.get("/{order_type}")

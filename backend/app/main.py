@@ -4,7 +4,6 @@ import traceback
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi import Query
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -34,7 +33,6 @@ from app.api.notifications import router as notifications_router
 from app.api.notification_types import router as notification_types_router
 from app.api.statements import router as statements_router
 from app.api.statement_types import router as statement_types_router
-from app.services.template_variables_service import get_template_variables
 
 
 @asynccontextmanager
@@ -98,19 +96,6 @@ app.include_router(notifications_router, prefix="/api")
 app.include_router(notification_types_router, prefix="/api")
 app.include_router(statements_router, prefix="/api")
 app.include_router(statement_types_router, prefix="/api")
-
-
-@app.get("/api/template-variables")
-async def get_template_variables_endpoint(
-    doc_type: str | None = Query(None, pattern="^(order|notification|statement)$"),
-):
-    """Unified template variables endpoint.
-
-    Supports filtering by doc_type (order, notification, statement).
-    Returns all variables when doc_type is omitted for backward compatibility.
-    """
-    variables = get_template_variables(doc_type)
-    return {"variables": variables}
 
 
 @app.get("/api/health")

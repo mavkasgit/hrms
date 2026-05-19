@@ -305,9 +305,9 @@ class OrderTypeService:
         payload = data.model_dump(exclude_unset=True)
 
         # Стандартные типы приказов нельзя редактировать — их поля задаются миграцией/кодом.
-        # Разрешена только загрузка/удаление шаблона.
+        # Разрешены только загрузка/удаление шаблона и обновление field_schema.
         if order_type.code in STANDARD_ORDER_CODES:
-            blocked = set(payload.keys()) - {"template_filename"}
+            blocked = set(payload.keys()) - {"template_filename", "field_schema"}
             if blocked:
                 raise HRMSException(
                     f"Нельзя изменить стандартный тип приказа. Заблокированные поля: {', '.join(sorted(blocked))}",
@@ -412,58 +412,6 @@ class OrderTypeService:
                 results["skipped"] += 1
         await db.commit()
         return results
-
-    def get_template_variables(self) -> list[dict[str, str]]:
-        """Возвращает список всех доступных переменных для шаблонов с описаниями"""
-        return [
-            {"name": "{order_number}", "description": "Номер приказа", "category": "Приказ"},
-            {"name": "{order_date}", "description": "Дата приказа (ДД.ММ.ГГГГ)", "category": "Приказ"},
-            {"name": "{order_type_name}", "description": "Название типа приказа", "category": "Приказ"},
-            {"name": "{order_type_code}", "description": "Код типа приказа", "category": "Приказ"},
-            {"name": "{order_type_lower}", "description": "Тип приказа строчными буквами", "category": "Приказ"},
-
-            {"name": "{full_name}", "description": "ФИО полностью", "category": "ФИО"},
-            {"name": "{full_name_upper}", "description": "ФИО заглавными буквами", "category": "ФИО"},
-            {"name": "{full_name_title}", "description": "ФИО с заглавной буквы", "category": "ФИО"},
-            {"name": "{full_name_last_caps}", "description": "Фамилия заглавными, имя отчество обычными", "category": "ФИО"},
-            {"name": "{last_name_upper}", "description": "Фамилия заглавными буквами", "category": "ФИО"},
-            {"name": "{short_name}", "description": "Фамилия И.О.", "category": "ФИО"},
-            {"name": "{initials_before}", "description": "И.О.Фамилия (без пробелов)", "category": "ФИО"},
-            {"name": "{last_name_then_initials}", "description": "Фамилия И.О. (без пробела)", "category": "ФИО"},
-            {"name": "{last_name}", "description": "Фамилия", "category": "ФИО"},
-            {"name": "{initials}", "description": "Инициалы через подчеркивание (для имени файла)", "category": "ФИО"},
-
-            {"name": "{position}", "description": "Должность (все строчные)", "category": "Работа"},
-            {"name": "{position_cap}", "description": "Должность (с заглавной буквы)", "category": "Работа"},
-            {"name": "{department}", "description": "Подразделение", "category": "Работа"},
-            {"name": "{tab_number}", "description": "Табельный номер", "category": "Работа"},
-
-            {"name": "{hire_date}", "description": "Дата приема на работу (из карточки сотрудника)", "category": "Даты"},
-            {"name": "{contract_start}", "description": "Дата начала контракта", "category": "Даты"},
-            {"name": "{contract_end}", "description": "Дата окончания контракта (вводится вручную)", "category": "Даты"},
-            {"name": "{contract_end_years}", "description": "Срок контракта в годах (вычисляется)", "category": "Даты"},
-            {"name": "{trial_end}", "description": "Дата окончания испытательного срока (вводится вручную)", "category": "Даты"},
-            {"name": "{trial_end_months}", "description": "Кол-во месяцев испытательного срока (вычисляется)", "category": "Даты"},
-            {"name": "{hire_order_date}", "description": "Дата приема (для приказа «Прием на работу»)", "category": "Даты"},
-            {"name": "{dismissal_date}", "description": "Дата увольнения (для приказа «Увольнение»)", "category": "Даты"},
-            {"name": "{vacation_start}", "description": "Начало отпуска (для приказов «Отпуск»)", "category": "Даты"},
-            {"name": "{vacation_end}", "description": "Конец отпуска (для приказов «Отпуск»)", "category": "Даты"},
-            {"name": "{vacation_days}", "description": "Кол-во дней отпуска", "category": "Даты"},
-            {"name": "{sick_leave_start}", "description": "Начало больничного", "category": "Даты"},
-            {"name": "{sick_leave_end}", "description": "Конец больничного", "category": "Даты"},
-            {"name": "{sick_leave_days}", "description": "Кол-во дней больничного", "category": "Даты"},
-            {"name": "{transfer_date}", "description": "Дата перевода", "category": "Даты"},
-            {"name": "{contract_new_end}", "description": "Новая дата конца контракта (для «Продление контракта»)", "category": "Даты"},
-            {"name": "{call_date}", "description": "Дата вызова (для «Вызов в выходной»)", "category": "Даты"},
-            {"name": "{call_date_start}", "description": "Дата начала вызова (для «Вызов в выходной»)", "category": "Даты"},
-            {"name": "{call_date_end}", "description": "Дата окончания вызова (для «Вызов в выходной»)", "category": "Даты"},
-            {"name": "{recall_date}", "description": "Дата отзыва из отпуска (для «Отзыв из отпуска»)", "category": "Даты"},
-
-            {"name": "{oznak_gender}", "description": "ознакомлен/ознакомлена (по полу сотрудника, с маленькой буквы)", "category": "Прочее"},
-            {"name": "{notes}", "description": "Комментарий к приказу", "category": "Прочее"},
-
-            {"name": "{<key из field_schema>}", "description": "Любое дополнительное поле типа приказа", "category": "Поля типа"},
-        ]
 
     def _serialize_order_type(self, order_type: OrderType) -> dict[str, Any]:
         template_path = get_template_path(order_type)
