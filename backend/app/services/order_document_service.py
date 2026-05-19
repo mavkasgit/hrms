@@ -1,6 +1,6 @@
 import asyncio
 import re
-from datetime import date, datetime
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -13,43 +13,19 @@ from app.core.paths import storage_key, storage_path
 from app.models.employee import Employee
 from app.models.order_type import OrderType
 from app.schemas.order import OrderCreate
+from app.services.template_replacements import (
+    build_order_replacements,
+    build_group_order_general_replacements,
+    build_group_order_employee_replacements,
+    build_vacation_group_extra,
+    build_call_group_extra,
+    EMPLOYEES_BLOCK_START,
+    EMPLOYEES_BLOCK_END,
+    APPLICATIONS_BLOCK_START,
+    APPLICATIONS_BLOCK_END,
+)
 
 MISSING_TEMPLATE_WARNING = "ВНИМАНИЕ: документ сгенерирован без шаблона."
-
-
-def _parse_employee_name(full_name: str) -> dict[str, str]:
-    """Parse full name into components for template replacements."""
-    name_parts = full_name.split()
-    last_name = name_parts[0] if name_parts else ""
-    first_name = name_parts[1] if len(name_parts) > 1 else ""
-    middle_name = name_parts[2] if len(name_parts) > 2 else ""
-    initials_underscore = "_".join(p[0] for p in name_parts[1:]) if len(name_parts) > 1 else ""
-    initials_nospace = "".join(f"{p[0]}." for p in name_parts[1:]) if len(name_parts) > 1 else ""
-
-    return {
-        "last_name": last_name,
-        "first_name": first_name,
-        "middle_name": middle_name,
-        "initials_underscore": initials_underscore,
-        "initials_nospace": initials_nospace,
-    }
-
-
-def _build_employee_name_replacements(full_name: str) -> dict[str, str]:
-    """Build all name-related placeholders for a single employee."""
-    p = _parse_employee_name(full_name)
-    return {
-        "{full_name}": full_name,
-        "{full_name_upper}": full_name.upper(),
-        "{full_name_title}": full_name.title(),
-        "{full_name_last_caps}": f"{p['last_name'].upper()} {p['first_name']} {p['middle_name']}".strip(),
-        "{last_name_upper}": p["last_name"].upper(),
-        "{short_name}": f"{p['last_name']} {p['initials_nospace']}".strip(),
-        "{initials_before}": f"{p['initials_nospace']}{p['last_name']}".strip(),
-        "{last_name_then_initials}": f"{p['last_name']} {p['initials_nospace']}".strip(),
-        "{last_name}": p["last_name"],
-        "{initials}": p["initials_underscore"],
-    }
 
 
 def _replace_text_in_paragraph(paragraph: Any, replacements: dict[str, str]) -> None:
@@ -385,35 +361,27 @@ def _build_group_general_replacements(
     extra: dict[str, str],
 ) -> dict[str, str]:
     """Build general (non-per-employee) replacements for group orders."""
-    first_emp = employee_rows[0]["employee"] if employee_rows else None
-    first_emp_gender = first_emp.gender if first_emp else "male"
-    oznak = "ознакомлена" if first_emp_gender == "female" else "ознакомлен"
+    from app.services.template_replacements import build_template_replacements_for_employee
 
-    # Build initials_before from first employee: "И.О.Фамилия"
-    initials_before = ""
-    if first_emp:
-        parts = first_emp.name.split()
-        if len(parts) >= 3:
-            initials_before = f"{parts[1][0]}.{parts[2][0]}.{parts[0]}".strip()
-        elif len(parts) == 2:
-            initials_before = f"{parts[1][0]}.{parts[0]}".strip()
-        else:
-            initials_before = parts[0] if parts else ""
+    first_emp = employee_rows[0]["employee"] if employee_rows else None
+    emp_replacements = build_template_replacements_for_employee(first_emp)
 
     return {
         "{order_number}": order_number,
         "{order_date}": order_date.strftime("%d.%m.%Y"),
-        "{oznak_gender}": oznak,
-        "{initials_before}": initials_before,
+        "{oznak_gender}": emp_replacements.get("{oznak}", ""),
+        "{initials_before}": emp_replacements.get("{initials_before}", ""),
         **extra,
     }
 
 
 def _build_employee_replacements(idx: int, emp: Employee, extra: dict[str, str]) -> dict[str, str]:
     """Build per-employee placeholder replacements, consistent with _prepare_replacements for single orders."""
+    from app.services.template_replacements import build_template_replacements_for_employee
+
     return {
         "{index}": str(idx),
-        **_build_employee_name_replacements(emp.name),
+        **build_template_replacements_for_employee(emp),
         "{position}": str(emp.position.name if emp.position else "").lower(),
         **extra,
     }
@@ -453,31 +421,31 @@ async def render_vacation_unpaid_group_docx(
         emp = row_data["employee"]
         vacation_days = row_data["vacation_days"]
 
-        employee_rows_replacements.append(_build_employee_replacements(idx, emp, {
-            "{vacation_days}": str(vacation_days),
-            "{vacation_start}": data.vacation_start.strftime("%d.%m.%Y"),
-            "{vacation_end}": row_data["vacation_end"].strftime("%d.%m.%Y"),
-            "{application_date}": row_data.get("application_date", data.order_date).strftime("%d.%m.%Y"),
-        }))
+        employee_rows_replacements.append(build_group_order_employee_replacements(idx, emp, build_vacation_group_extra(
+            vacation_start=data.vacation_start,
+            vacation_end=row_data["vacation_end"],
+            vacation_days=vacation_days,
+            application_date=row_data.get("application_date", data.order_date),
+        )))
 
     # Render employee blocks
     _render_repeat_block(
         doc,
-        "{employees_block_start}",
-        "{employees_block_end}",
+        EMPLOYEES_BLOCK_START,
+        EMPLOYEES_BLOCK_END,
         employee_rows_replacements,
     )
 
     # Render application blocks
     _render_repeat_block(
         doc,
-        "{applications_block_start}",
-        "{applications_block_end}",
+        APPLICATIONS_BLOCK_START,
+        APPLICATIONS_BLOCK_END,
         employee_rows_replacements,
     )
 
     # General placeholders
-    replacements = _build_group_general_replacements(
+    replacements = build_group_order_general_replacements(
         employee_rows,
         order_number,
         data.order_date,
@@ -552,33 +520,26 @@ async def generate_weekend_call_group_document(
         emp = row_data["employee"]
         vacation_days = row_data["vacation_days"]
 
-        # Format call_date: single date if start==end, otherwise range
-        if call_start == call_end:
-            call_date_display = call_start.strftime("%d.%m.%Y")
-        else:
-            call_date_display = f"{call_start.strftime('%d.%m.%Y')} по {call_end.strftime('%d.%m.%Y')}"
-
-        employee_rows_replacements.append(_build_employee_replacements(idx, emp, {
-            "{vacation_days}": str(vacation_days),
-            "{call_date}": call_date_display,
-            "{call_date_start}": call_start.strftime("%d.%m.%Y"),
-            "{call_date_end}": call_end.strftime("%d.%m.%Y"),
-            "{application_date}": row_data.get("application_date", data.order_date).strftime("%d.%m.%Y"),
-        }))
+        employee_rows_replacements.append(build_group_order_employee_replacements(idx, emp, build_call_group_extra(
+            call_start=call_start,
+            call_end=call_end,
+            vacation_days=vacation_days,
+            application_date=row_data.get("application_date", data.order_date),
+        )))
 
     # Render employee blocks
     _render_repeat_block(
         doc,
-        "{employees_block_start}",
-        "{employees_block_end}",
+        EMPLOYEES_BLOCK_START,
+        EMPLOYEES_BLOCK_END,
         employee_rows_replacements,
     )
 
     # Render application blocks
     _render_repeat_block(
         doc,
-        "{applications_block_start}",
-        "{applications_block_end}",
+        APPLICATIONS_BLOCK_START,
+        APPLICATIONS_BLOCK_END,
         employee_rows_replacements,
     )
 
@@ -589,7 +550,7 @@ async def generate_weekend_call_group_document(
     else:
         call_date_display = f"{call_start.strftime('%d.%m.%Y')} по {call_end.strftime('%d.%m.%Y')}"
 
-    replacements = _build_group_general_replacements(
+    replacements = build_group_order_general_replacements(
         employee_rows,
         order_number,
         data.order_date,
@@ -667,112 +628,20 @@ async def _build_document(
         if employee:
             doc.add_paragraph(f"Сотрудник: {employee.name}")
 
-    replacements = _prepare_replacements(order_number, data, employee, order_type)
+    replacements = build_order_replacements(
+        order_number=order_number,
+        order_date=data.order_date,
+        order_type_name=order_type.name,
+        order_type_code=order_type.code,
+        employee=employee,
+        extra_fields=data.extra_fields,
+        notes=data.notes or "",
+    )
     await asyncio.wait_for(
         asyncio.to_thread(_replace_placeholders, doc, replacements),
         timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
     )
     return doc, replacements
-
-
-def _prepare_replacements(
-    order_number: str,
-    data: OrderCreate,
-    employee: Employee | None,
-    order_type: OrderType,
-) -> dict[str, str]:
-    if employee is not None:
-        full_name = employee.name
-        position_name = str(employee.position.name if employee.position else "")
-        position_cap = position_name.capitalize() if position_name else ""
-        oznak = "ознакомлена" if employee.gender == "female" else "ознакомлен"
-        tab_number = str(employee.tab_number or "")
-        department = str(employee.department.name if employee.department else "")
-        hire_date = employee.hire_date.strftime("%d.%m.%Y") if employee.hire_date else ""
-        contract_start = employee.contract_start.strftime("%d.%m.%Y") if employee.contract_start else ""
-        employee_replacements = _build_employee_name_replacements(full_name)
-    else:
-        tab_number = ""
-        department = ""
-        hire_date = ""
-        contract_start = ""
-        position_name = ""
-        position_cap = ""
-        oznak = ""
-        employee_replacements = _build_employee_name_replacements("")
-
-    # Apply extra_fields first so we can use them to override employee-derived values
-    extra_replacements: dict[str, str] = {}
-    for key, value in (data.extra_fields or {}).items():
-        extra_replacements[f"{{{key}}}"] = _format_placeholder_value(value)
-
-    # For hire orders, use only extra_fields dates (user input), not employee card dates
-    use_extra_hire_dates = order_type.code == "hire"
-
-    effective_hire_date = "" if use_extra_hire_dates else hire_date
-    if "{hire_date}" in extra_replacements:
-        effective_hire_date = extra_replacements["{hire_date}"]
-
-    effective_contract_start = "" if use_extra_hire_dates else contract_start
-    if "{contract_start}" in extra_replacements:
-        effective_contract_start = extra_replacements["{contract_start}"]
-
-    # Calculate trial period months from hire_date and trial_end
-    trial_end_months = ""
-    if use_extra_hire_dates:
-        hire_d = extra_replacements.get("{hire_date}")
-        trial_d = extra_replacements.get("{trial_end}")
-        if hire_d and trial_d:
-            try:
-                from datetime import date as _date
-                hd = _date.fromisoformat(hire_d)
-                td = _date.fromisoformat(trial_d)
-                months = (td.year - hd.year) * 12 + (td.month - hd.month)
-                if months > 0:
-                    trial_end_months = str(months)
-            except (ValueError, TypeError):
-                pass
-
-    # Calculate contract duration in years from hire_date and contract_end
-    contract_end_years = ""
-    if use_extra_hire_dates:
-        hire_d = extra_replacements.get("{hire_date}")
-        ce_d = extra_replacements.get("{contract_end}")
-        if hire_d and ce_d:
-            try:
-                from datetime import date as _date
-                hd = _date.fromisoformat(hire_d)
-                cd = _date.fromisoformat(ce_d)
-                years = cd.year - hd.year
-                if (cd.month, cd.day) < (hd.month, hd.day):
-                    years -= 1
-                if years > 0:
-                    contract_end_years = str(years)
-            except (ValueError, TypeError):
-                pass
-
-    replacements = {
-        "{order_number}": order_number,
-        "{order_date}": data.order_date.strftime("%d.%m.%Y"),
-        "{order_type_name}": order_type.name,
-        "{order_type_code}": order_type.code,
-        "{order_type_lower}": order_type.name.lower(),
-        **employee_replacements,
-        "{tab_number}": tab_number,
-        "{department}": department,
-        "{position}": position_name.lower(),
-        "{position_cap}": position_cap,
-        "{hire_date}": effective_hire_date,
-        "{contract_start}": effective_contract_start,
-        "{hire_order_date}": effective_hire_date,
-        "{trial_end_months}": trial_end_months,
-        "{contract_end_years}": contract_end_years,
-        "{oznak_gender}": oznak,
-        "{notes}": data.notes or "",
-        **extra_replacements,
-    }
-
-    return replacements
 
 
 def _replace_placeholders(target: Any, replacements: dict[str, str]) -> None:
@@ -995,13 +864,3 @@ def _build_filename(order_number: str, order_type: OrderType, replacements: dict
         filename = f"{filename}.docx"
     sanitized = re.sub(r'[<>:"/\\\\|?*]+', "_", filename).strip()
     return sanitized or f"order_{order_number}.docx"
-
-
-def _format_placeholder_value(value: Any) -> str:
-    if isinstance(value, str):
-        try:
-            parsed = datetime.strptime(value, "%Y-%m-%d")
-            return parsed.strftime("%d.%m.%Y")
-        except ValueError:
-            return value
-    return str(value)

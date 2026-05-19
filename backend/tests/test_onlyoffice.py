@@ -194,7 +194,9 @@ async def test_order_print_service_uses_cache(monkeypatch, tmp_path):
     convert_calls: list[str] = []
     download_calls: list[str] = []
 
-    async def fake_convert(order_id: int, docx_path: Path, cache_key: str) -> str:
+    async def fake_convert(entity_kind: str, entity_id: int, docx_path: Path, cache_key: str) -> str:
+        assert entity_kind == "order"
+        assert entity_id == 7
         convert_calls.append(cache_key)
         return "http://onlyoffice/cache/converted.pdf"
 
@@ -205,11 +207,11 @@ async def test_order_print_service_uses_cache(monkeypatch, tmp_path):
     monkeypatch.setattr(service, "_convert_docx_to_pdf", fake_convert)
     monkeypatch.setattr(service, "_download_pdf", fake_download)
 
-    first = await service.get_or_create_pdf(7, source_docx)
-    second = await service.get_or_create_pdf(7, source_docx)
+    first = await service.get_or_create_pdf("order", 7, source_docx)
+    second = await service.get_or_create_pdf("order", 7, source_docx)
     new_mtime = time.time() + 5
     os.utime(source_docx, (new_mtime, new_mtime))
-    third = await service.get_or_create_pdf(7, source_docx)
+    third = await service.get_or_create_pdf("order", 7, source_docx)
 
     assert first == second
     assert third != first
@@ -218,6 +220,43 @@ async def test_order_print_service_uses_cache(monkeypatch, tmp_path):
     assert third.read_bytes() == b"%PDF-1.7 test"
     assert len(convert_calls) == 2
     assert len(download_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_order_print_service_uses_distinct_cache_namespace(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    monkeypatch.setattr(settings, "BACKEND_INTERNAL_CALLBACK_URL", "http://app")
+    monkeypatch.setattr(settings, "APP_PUBLIC_URL", "http://app")
+    monkeypatch.setattr(settings, "ONLYOFFICE_PUBLIC_URL", "http://localhost:8085")
+    monkeypatch.setattr(settings, "ONLYOFFICE_INTERNAL_URL", "http://onlyoffice:80")
+
+    source_docx = tmp_path / "2026" / "doc.docx"
+    source_docx.parent.mkdir(parents=True, exist_ok=True)
+    source_docx.write_bytes(b"PK")
+
+    service = OrderPrintService()
+    convert_calls: list[str] = []
+
+    async def fake_convert(_entity_kind: str, _entity_id: int, _docx_path: Path, cache_key: str) -> str:
+        convert_calls.append(cache_key)
+        return f"http://onlyoffice/cache/{cache_key}.pdf"
+
+    async def fake_download(file_url: str) -> bytes:
+        return f"%PDF-{file_url}".encode("utf-8")
+
+    monkeypatch.setattr(service, "_convert_docx_to_pdf", fake_convert)
+    monkeypatch.setattr(service, "_download_pdf", fake_download)
+
+    order_pdf = await service.get_or_create_pdf("order", 42, source_docx)
+    notification_pdf = await service.get_or_create_pdf("notification", 42, source_docx)
+
+    assert order_pdf != notification_pdf
+    assert order_pdf.exists()
+    assert notification_pdf.exists()
+    assert order_pdf.name.startswith("order-42-")
+    assert notification_pdf.name.startswith("notification-42-")
+    assert len(convert_calls) == 2
 
 
 @pytest.mark.asyncio
@@ -236,7 +275,7 @@ async def test_order_print_pdf_endpoint_returns_inline_file(monkeypatch, tmp_pat
     async def fake_get_by_id(_db, _order_id):
         return SimpleNamespace(file_path="2026/order.docx")
 
-    async def fake_get_or_create_pdf(_order_id, _docx_path: Path):
+    async def fake_get_or_create_pdf(_entity_kind, _order_id, _docx_path: Path):
         return pdf_path
 
     monkeypatch.setattr(order_service, "get_by_id", fake_get_by_id)
@@ -277,7 +316,7 @@ async def test_order_print_pdf_endpoint_propagates_conversion_error(monkeypatch,
     async def fake_get_by_id(_db, _order_id):
         return SimpleNamespace(file_path="2026/order.docx")
 
-    async def fake_get_or_create_pdf(_order_id, _docx_path: Path):
+    async def fake_get_or_create_pdf(_entity_kind, _order_id, _docx_path: Path):
         raise HRMSException("OnlyOffice conversion failed", "order_pdf_convert_failed", status_code=502)
 
     monkeypatch.setattr(order_service, "get_by_id", fake_get_by_id)

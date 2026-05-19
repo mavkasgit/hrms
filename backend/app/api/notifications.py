@@ -8,11 +8,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.core.config import settings
 from app.core.database import get_db
+from app.core.exceptions import HRMSException
 from app.core.paths import notifications_path
 from app.models.employee import Employee
 from app.models.notification import Notification
 from app.models.notification_type import NotificationType
+from app.services.order_print_service import order_print_service
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -275,3 +278,30 @@ async def download_notification(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=file_path.name,
     )
+
+
+PDF_MEDIA_TYPE = "application/pdf"
+
+
+@router.get("/{notification_id}/print-pdf")
+async def print_notification_pdf(
+    notification_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    if not settings.ONLYOFFICE_ENABLED:
+        raise HRMSException("OnlyOffice отключен", "onlyoffice_disabled", status_code=503)
+
+    notification = await db.get(Notification, notification_id)
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    if not notification.file_path:
+        raise HRMSException("Файл уведомления не найден", "notification_file_not_found", status_code=404)
+
+    docx_path = notifications_path(notification.file_path)
+    if not docx_path.exists():
+        raise HRMSException("Файл уведомления отсутствует на диске", "notification_file_missing", status_code=404)
+
+    pdf_path = await order_print_service.get_or_create_pdf("notification", notification_id, docx_path)
+    response = FileResponse(str(pdf_path), media_type=PDF_MEDIA_TYPE)
+    response.headers["Content-Disposition"] = f'inline; filename="{pdf_path.name}"'
+    return response

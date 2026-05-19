@@ -8,11 +8,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.core.config import settings
 from app.core.database import get_db
+from app.core.exceptions import HRMSException
 from app.core.paths import statements_path
 from app.models.employee import Employee
 from app.models.statement import Statement
 from app.models.statement_type import StatementType
+from app.services.order_print_service import order_print_service
 
 router = APIRouter(prefix="/statements", tags=["statements"])
 
@@ -273,3 +276,30 @@ async def download_statement(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=file_path.name,
     )
+
+
+PDF_MEDIA_TYPE = "application/pdf"
+
+
+@router.get("/{statement_id}/print-pdf")
+async def print_statement_pdf(
+    statement_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    if not settings.ONLYOFFICE_ENABLED:
+        raise HRMSException("OnlyOffice отключен", "onlyoffice_disabled", status_code=503)
+
+    statement = await db.get(Statement, statement_id)
+    if not statement:
+        raise HTTPException(status_code=404, detail="Statement not found")
+    if not statement.file_path:
+        raise HRMSException("Файл заявления не найден", "statement_file_not_found", status_code=404)
+
+    docx_path = statements_path(statement.file_path)
+    if not docx_path.exists():
+        raise HRMSException("Файл заявления отсутствует на диске", "statement_file_missing", status_code=404)
+
+    pdf_path = await order_print_service.get_or_create_pdf("statement", statement_id, docx_path)
+    response = FileResponse(str(pdf_path), media_type=PDF_MEDIA_TYPE)
+    response.headers["Content-Disposition"] = f'inline; filename="{pdf_path.name}"'
+    return response

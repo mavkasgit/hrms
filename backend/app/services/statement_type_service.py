@@ -13,6 +13,13 @@ from app.models.statement_type import StatementType
 
 DEFAULT_STATEMENT_TYPES: list[dict[str, Any]] = [
     {
+        "code": "simple",
+        "name": "Заявление",
+        "template_filename": None,
+        "field_schema": [],
+        "filename_pattern": "Заявление_№{doc_number}_{doc_date}.docx",
+    },
+    {
         "code": "personal",
         "name": "Личное заявление",
         "template_filename": None,

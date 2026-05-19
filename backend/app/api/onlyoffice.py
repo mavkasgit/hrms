@@ -12,7 +12,9 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -26,6 +28,10 @@ from app.services.order_service import order_service
 from app.services.docx_renderer import load_template_or_create_blank, render_docx_placeholders, build_basic_doc_replacements
 from app.repositories.references_repository import references_repository
 from app.utils.working_days import calculate_vacation_days, count_holidays_in_range
+from app.services.notification_type_service import notification_type_service, get_template_path as get_notification_template_path
+from app.services.statement_type_service import statement_type_service, get_template_path as get_statement_template_path
+from app.api.notifications import NotificationCreate
+from app.api.statements import StatementCreate
 
 router = APIRouter(tags=["onlyoffice"])
 
@@ -536,6 +542,12 @@ async def template_onlyoffice_forcesave(
     return {"message": "save_requested"}
 
 
+from app.services.template_replacements import (
+    build_notification_replacements,
+    build_statement_replacements,
+)
+
+
 # ─── Notifications OnlyOffice ──────────────────────────────────────────────────
 
 import uuid
@@ -543,45 +555,111 @@ import shutil
 from pathlib import Path
 
 from app.core.paths import notifications_path
+from app.models.employee import Employee
 from app.models.notification import Notification
 
 
 @router.post("/notifications/drafts")
 async def create_notification_draft(
+    data: NotificationCreate,
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
+    await notification_type_service.ensure_default_notification_types(db)
 
-    draft_id = str(uuid.uuid4())
+    notification_type = None
+    if data.notification_type_id is not None:
+        notification_type = await notification_type_service.get_notification_type(db, data.notification_type_id)
+
+    employee = None
+    if data.employee_id is not None:
+        emp_result = await db.execute(
+            select(Employee)
+            .options(joinedload(Employee.position), joinedload(Employee.department))
+            .where(Employee.id == data.employee_id)
+        )
+        employee = emp_result.scalar_one_or_none()
+
+    # Auto-generate number if not provided
+    number = data.number or ""
+    if not number:
+        result = await db.execute(
+            select(Notification.number)
+            .where(Notification.number.isnot(None))
+            .order_by(Notification.id.desc())
+            .limit(1)
+        )
+        last_number = result.scalar_one_or_none()
+        if last_number:
+            import re as _re
+            match = _re.search(r'\d+', last_number)
+            last_num = int(match.group()) if match else 0
+            number = str(last_num + 1)
+        else:
+            number = "1"
+
+    title = data.title or f"Уведомление {notification_type.name if notification_type else ''} {number}"
+    doc_date = data.date
+
+    replacements = build_notification_replacements(
+        title=title,
+        number=number,
+        doc_date=doc_date,
+        employee=employee,
+        notification_type_name=notification_type.name if notification_type else "",
+        notification_type_code=notification_type.code if notification_type else "",
+        extra_fields=data.extra_fields,
+    )
+
+    # Load template or create blank
+    if notification_type and notification_type.template_filename:
+        template_path = get_notification_template_path(notification_type)
+        if template_path.exists():
+            doc = await load_template_or_create_blank(template_path)
+        else:
+            try:
+                from docx import Document
+                doc = Document()
+            except ImportError:
+                raise HRMSException("Шаблон уведомления не найден", "template_not_found", status_code=404)
+    else:
+        notifications_dir = storage_root("NOTIFICATIONS_PATH")
+        default_template = notifications_dir / "template.docx"
+        if default_template.exists():
+            doc = await load_template_or_create_blank(default_template)
+        else:
+            try:
+                from docx import Document
+                doc = Document()
+            except ImportError:
+                raise HRMSException("Шаблон уведомления не найден", "template_not_found", status_code=404)
+
+    render_docx_placeholders(doc, replacements)
+
     notifications_dir = storage_root("NOTIFICATIONS_PATH")
     notifications_dir.mkdir(parents=True, exist_ok=True)
-    file_path = notifications_dir / f"{draft_id}.docx"
+    safe_title = title[:50].replace("/", "_").replace("\\", "_")
+    file_path = notifications_dir / f"{number}_{safe_title}.docx"
+    # Ensure unique filename
+    counter = 1
+    while file_path.exists():
+        file_path = notifications_dir / f"{number}_{safe_title}_{counter}.docx"
+        counter += 1
 
-    # Load template or create blank, then apply basic placeholders
-    default_template = notifications_dir / "template.docx"
-    if default_template.exists():
-        doc = await load_template_or_create_blank(default_template)
-        replacements = build_basic_doc_replacements(
-            title="Новое уведомление",
-            date_str=date.today().strftime("%d.%m.%Y"),
-        )
-        render_docx_placeholders(doc, replacements)
-        await asyncio.wait_for(
-            asyncio.to_thread(doc.save, str(file_path)),
-            timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
-        )
-    else:
-        try:
-            from docx import Document
-            doc = Document()
-            doc.save(str(file_path))
-        except ImportError:
-            raise HRMSException("Шаблон уведомления не найден", "template_not_found", status_code=404)
+    await asyncio.wait_for(
+        asyncio.to_thread(doc.save, str(file_path)),
+        timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
+    )
 
     notification = Notification(
-        title="Новое уведомление",
-        date=date.today(),
+        title=title,
+        number=number,
+        date=doc_date,
+        employee_id=data.employee_id,
+        notification_type_id=data.notification_type_id,
+        content=data.content,
+        extra_fields=data.extra_fields,
         file_path=file_path.name,
         is_draft=True,
     )
@@ -693,39 +771,105 @@ from app.models.statement import Statement
 
 @router.post("/statements/drafts")
 async def create_statement_draft(
+    data: StatementCreate,
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
+    await statement_type_service.ensure_default_statement_types(db)
 
-    draft_id = str(uuid.uuid4())
+    statement_type = None
+    if data.statement_type_id is not None:
+        statement_type = await statement_type_service.get_statement_type(db, data.statement_type_id)
+
+    employee = None
+    if data.employee_id is not None:
+        emp_result = await db.execute(
+            select(Employee)
+            .options(joinedload(Employee.position), joinedload(Employee.department))
+            .where(Employee.id == data.employee_id)
+        )
+        employee = emp_result.scalar_one_or_none()
+
+    # Auto-generate number if not provided
+    number = data.number or ""
+    if not number:
+        result = await db.execute(
+            select(Statement.number)
+            .where(Statement.number.isnot(None))
+            .order_by(Statement.id.desc())
+            .limit(1)
+        )
+        last_number = result.scalar_one_or_none()
+        if last_number:
+            import re as _re
+            match = _re.search(r'\d+', last_number)
+            last_num = int(match.group()) if match else 0
+            number = str(last_num + 1)
+        else:
+            number = "1"
+
+    title = data.title or f"Заявление {statement_type.name if statement_type else ''} {number}"
+    doc_date = data.date
+
+    replacements = build_statement_replacements(
+        title=title,
+        number=number,
+        doc_date=doc_date,
+        employee=employee,
+        statement_type_name=statement_type.name if statement_type else "",
+        statement_type_code=statement_type.code if statement_type else "",
+        extra_fields=data.extra_fields,
+    )
+
+    # Load template or create blank
+    if statement_type and statement_type.template_filename:
+        template_path = get_statement_template_path(statement_type)
+        if template_path.exists():
+            doc = await load_template_or_create_blank(template_path)
+        else:
+            try:
+                from docx import Document
+                doc = Document()
+            except ImportError:
+                raise HRMSException("Шаблон заявления не найден", "template_not_found", status_code=404)
+    else:
+        statements_dir = storage_root("STATEMENTS_PATH")
+        default_template = statements_dir / "template.docx"
+        if default_template.exists():
+            doc = await load_template_or_create_blank(default_template)
+        else:
+            try:
+                from docx import Document
+                doc = Document()
+            except ImportError:
+                raise HRMSException("Шаблон заявления не найден", "template_not_found", status_code=404)
+
+    render_docx_placeholders(doc, replacements)
+
     statements_dir = storage_root("STATEMENTS_PATH")
     statements_dir.mkdir(parents=True, exist_ok=True)
-    file_path = statements_dir / f"{draft_id}.docx"
+    safe_title = title[:50].replace("/", "_").replace("\\", "_")
+    file_path = statements_dir / f"{number}_{safe_title}.docx"
+    # Ensure unique filename
+    counter = 1
+    while file_path.exists():
+        file_path = statements_dir / f"{number}_{safe_title}_{counter}.docx"
+        counter += 1
 
-    default_template = statements_dir / "template.docx"
-    if default_template.exists():
-        doc = await load_template_or_create_blank(default_template)
-        replacements = build_basic_doc_replacements(
-            title="Новое заявление",
-            date_str=date.today().strftime("%d.%m.%Y"),
-        )
-        render_docx_placeholders(doc, replacements)
-        await asyncio.wait_for(
-            asyncio.to_thread(doc.save, str(file_path)),
-            timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
-        )
-    else:
-        try:
-            from docx import Document
-            doc = Document()
-            doc.save(str(file_path))
-        except ImportError:
-            raise HRMSException("Шаблон заявления не найден", "template_not_found", status_code=404)
+    await asyncio.wait_for(
+        asyncio.to_thread(doc.save, str(file_path)),
+        timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
+    )
 
     statement = Statement(
-        title="Новое заявление",
-        date=date.today(),
+        title=title,
+        number=number,
+        date=doc_date,
+        employee_id=data.employee_id,
+        statement_type_id=data.statement_type_id,
+        content=data.content,
+        extra_fields=data.extra_fields,
         file_path=file_path.name,
         is_draft=True,
     )

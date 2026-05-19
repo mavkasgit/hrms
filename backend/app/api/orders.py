@@ -454,7 +454,7 @@ async def print_order_pdf(
     if not docx_path.exists():
         raise HRMSException("Файл приказа отсутствует на диске", "order_file_missing", status_code=404)
 
-    pdf_path = await order_print_service.get_or_create_pdf(order_id, docx_path)
+    pdf_path = await order_print_service.get_or_create_pdf("order", order_id, docx_path)
     response = FileResponse(str(pdf_path), media_type=PDF_MEDIA_TYPE)
     response.headers["Content-Disposition"] = f'inline; filename="{pdf_path.name}"'
     return response
