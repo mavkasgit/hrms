@@ -203,7 +203,6 @@ export function OrdersRegistryModal({ open, onOpenChange, year: defaultYear }: O
         },
       }
 
-      const filename = `реестр-по-личному-составу-${selectedYear}-${new Date().toISOString().split("T")[0]}.pdf`
       pdfMake.createPdf(docDefinition).open()
     } catch (error) {
       console.error("Error generating PDF:", error)

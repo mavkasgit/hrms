@@ -11,7 +11,6 @@ export function DocumentViewPage() {
   const { docCode, id } = useParams<{ docCode: string; id: string }>()
   const [searchParams] = useSearchParams()
   const mode = searchParams.get("mode") === "edit" ? "edit" : "view"
-  const autoPrint = searchParams.get("print") === "1"
 
   const docId = id ? Number.parseInt(id, 10) : 0
   const { data, isLoading, error } = useDocumentOnlyOfficeConfig(
