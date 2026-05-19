@@ -7,6 +7,8 @@ const DashboardPage = lazy(async () => ({ default: (await import("@/pages/Dashbo
 const EmployeesPage = lazy(async () => ({ default: (await import("@/pages/EmployeesPage")).EmployeesPage }))
 const StructurePage = lazy(async () => ({ default: (await import("@/pages/StructurePage")).StructurePage }))
 const OrdersPage = lazy(async () => ({ default: (await import("@/pages/OrdersPage")).OrdersPage }))
+const NotificationsPage = lazy(async () => ({ default: (await import("@/pages/NotificationsPage")).NotificationsPage }))
+const StatementsPage = lazy(async () => ({ default: (await import("@/pages/StatementsPage")).StatementsPage }))
 const VacationsPage = lazy(async () => ({ default: (await import("@/pages/vacations/VacationsPage")).VacationsPage }))
 const VacationRecallPage = lazy(async () => ({ default: (await import("@/pages/vacations/VacationRecallPage")).VacationRecallPage }))
 const VacationPostponePage = lazy(async () => ({ default: (await import("@/pages/vacations/VacationPostponePage")).VacationPostponePage }))
@@ -25,7 +27,11 @@ const OrderEditorPage = lazy(async () => ({ default: (await import("@/pages/Orde
 const OrderPrintPage = lazy(async () => ({ default: (await import("@/pages/OrderPrintPage")).OrderPrintPage }))
 const DraftOrderEditorPage = lazy(async () => ({ default: (await import("@/pages/DraftOrderEditorPage")).DraftOrderEditorPage }))
 const DocumentViewPage = lazy(async () => ({ default: (await import("@/pages/DocumentViewPage")).DocumentViewPage }))
+const NotificationEditorPage = lazy(async () => ({ default: (await import("@/pages/NotificationEditorPage")).NotificationEditorPage }))
+const StatementEditorPage = lazy(async () => ({ default: (await import("@/pages/StatementEditorPage")).StatementEditorPage }))
 const TemplateEditorPage = lazy(async () => ({ default: (await import("@/pages/TemplateEditorPage")).TemplateEditorPage }))
+const NotificationTemplateEditorPage = lazy(async () => ({ default: (await import("@/pages/NotificationTemplateEditorPage")).NotificationTemplateEditorPage }))
+const StatementTemplateEditorPage = lazy(async () => ({ default: (await import("@/pages/StatementTemplateEditorPage")).StatementTemplateEditorPage }))
 
 const withSuspense = (component: ReactNode) => (
   <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Загрузка...</div>}>
@@ -42,6 +48,8 @@ export const router = createBrowserRouter([
       { path: "employees", element: withSuspense(<EmployeesPage />) },
       { path: "structure", element: withSuspense(<StructurePage />) },
       { path: "orders", element: withSuspense(<OrdersPage />) },
+      { path: "orders/notifications", element: withSuspense(<NotificationsPage />) },
+      { path: "orders/statements", element: withSuspense(<StatementsPage />) },
       { path: "vacations", element: withSuspense(<VacationsPage />) },
       { path: "vacations/recall", element: withSuspense(<VacationRecallPage />) },
       { path: "vacations/postpone", element: withSuspense(<VacationPostponePage />) },
@@ -78,6 +86,22 @@ export const router = createBrowserRouter([
     element: withSuspense(<OrderEditorPage />),
   },
   {
+    path: "/notifications/:notificationId/edit-docx",
+    element: withSuspense(<NotificationEditorPage />),
+  },
+  {
+    path: "/notifications/:notificationId/view-docx",
+    element: withSuspense(<NotificationEditorPage />),
+  },
+  {
+    path: "/statements/:statementId/edit-docx",
+    element: withSuspense(<StatementEditorPage />),
+  },
+  {
+    path: "/statements/:statementId/view-docx",
+    element: withSuspense(<StatementEditorPage />),
+  },
+  {
     path: "/orders/:id/print",
     element: withSuspense(<OrderPrintPage />),
   },
@@ -88,5 +112,21 @@ export const router = createBrowserRouter([
   {
     path: "/templates/:id/edit",
     element: withSuspense(<TemplateEditorPage />),
+  },
+  {
+    path: "/notification-templates/:id/view",
+    element: withSuspense(<NotificationTemplateEditorPage />),
+  },
+  {
+    path: "/notification-templates/:id/edit",
+    element: withSuspense(<NotificationTemplateEditorPage />),
+  },
+  {
+    path: "/statement-templates/:id/view",
+    element: withSuspense(<StatementTemplateEditorPage />),
+  },
+  {
+    path: "/statement-templates/:id/edit",
+    element: withSuspense(<StatementTemplateEditorPage />),
   },
 ])

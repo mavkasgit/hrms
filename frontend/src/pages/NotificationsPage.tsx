@@ -1,0 +1,42 @@
+import { useNavigate } from "react-router-dom"
+import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/tabs"
+import { NotificationsSection } from "@/features/notifications-section/NotificationsSection"
+
+export function NotificationsPage() {
+  const navigate = useNavigate()
+
+  const handleTabsChange = (value: string) => {
+    if (value === "all") {
+      navigate("/orders")
+      return
+    }
+    if (value === "general") {
+      navigate("/orders?tab=general")
+      return
+    }
+    if (value === "statements") {
+      navigate("/orders/statements")
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold">Уведомления</h1>
+
+      <div className="border rounded-lg bg-card">
+        <div className="px-4 py-3 border-b">
+          <Tabs value="notifications" onValueChange={handleTabsChange}>
+            <TabsList className="w-full justify-start gap-1 overflow-x-auto">
+              <TabsTrigger className="shrink-0" value="all">Все приказы</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="general">По основной деятельности</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="notifications">Уведомления</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="statements">Заявления</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+      </div>
+
+      <NotificationsSection />
+    </div>
+  )
+}
