@@ -4,6 +4,9 @@ from datetime import date
 import ipaddress
 import json
 import logging
+import uuid
+import shutil
+import asyncio
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -14,12 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import EmployeeNotFoundError, HRMSException
-from app.core.paths import storage_path
+from app.core.paths import storage_path, storage_root
 from app.schemas.order import GroupOrderCreate, OrderCreate
 from app.services.order_document_service import get_template_path
 from app.services.onlyoffice_service import onlyoffice_service
 from app.services.order_draft_service import order_draft_service
 from app.services.order_service import order_service
+from app.services.docx_renderer import load_template_or_create_blank, render_docx_placeholders, build_basic_doc_replacements
 from app.repositories.references_repository import references_repository
 from app.utils.working_days import calculate_vacation_days, count_holidays_in_range
 
@@ -527,6 +531,299 @@ async def template_onlyoffice_forcesave(
 ):
     _ensure_onlyoffice_enabled()
     if not data.document_key.startswith(f"template-{order_type_id}-"):
+        raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
+    await onlyoffice_service.force_save(data.document_key)
+    return {"message": "save_requested"}
+
+
+# ─── Notifications OnlyOffice ──────────────────────────────────────────────────
+
+import uuid
+import shutil
+from pathlib import Path
+
+from app.core.paths import notifications_path
+from app.models.notification import Notification
+
+
+@router.post("/notifications/drafts")
+async def create_notification_draft(
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+
+    draft_id = str(uuid.uuid4())
+    notifications_dir = storage_root("NOTIFICATIONS_PATH")
+    notifications_dir.mkdir(parents=True, exist_ok=True)
+    file_path = notifications_dir / f"{draft_id}.docx"
+
+    # Load template or create blank, then apply basic placeholders
+    default_template = notifications_dir / "template.docx"
+    if default_template.exists():
+        doc = await load_template_or_create_blank(default_template)
+        replacements = build_basic_doc_replacements(
+            title="Новое уведомление",
+            date_str=date.today().strftime("%d.%m.%Y"),
+        )
+        render_docx_placeholders(doc, replacements)
+        await asyncio.wait_for(
+            asyncio.to_thread(doc.save, str(file_path)),
+            timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
+        )
+    else:
+        try:
+            from docx import Document
+            doc = Document()
+            doc.save(str(file_path))
+        except ImportError:
+            raise HRMSException("Шаблон уведомления не найден", "template_not_found", status_code=404)
+
+    notification = Notification(
+        title="Новое уведомление",
+        date=date.today(),
+        file_path=file_path.name,
+        is_draft=True,
+    )
+    db.add(notification)
+    await db.commit()
+    await db.refresh(notification)
+
+    return {"draft_id": str(notification.id), "notification_id": notification.id}
+
+
+@router.get("/notifications/{notification_id}/onlyoffice/config")
+async def notification_onlyoffice_config(
+    notification_id: int,
+    request: Request,
+    mode: str = Query("edit", pattern="^(edit|view)$"),
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    notification = await db.get(Notification, notification_id)
+    if not notification:
+        raise HRMSException("Уведомление не найдено", "notification_not_found", status_code=404)
+    if not notification.file_path:
+        raise HRMSException("Файл уведомления не найден", "notification_file_not_found", status_code=404)
+    file_path = notifications_path(notification.file_path)
+    if not file_path.exists():
+        raise HRMSException("Файл уведомления отсутствует на диске", "notification_file_missing", status_code=404)
+
+    config = onlyoffice_service.build_config(
+        doc_type="notification",
+        doc_id=notification_id,
+        file_path=file_path,
+        title=notification.file_path.split("/")[-1],
+        callback_url=_public_api_url(f"/notifications/{notification_id}/onlyoffice/callback"),
+        file_url=_public_api_url(f"/notifications/{notification_id}/onlyoffice/file"),
+        mode=mode,
+    )
+    config["documentServerUrl"] = _document_server_url(request)
+    return config
+
+
+@router.get("/notifications/{notification_id}/onlyoffice/file")
+async def notification_onlyoffice_file(
+    notification_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    notification = await db.get(Notification, notification_id)
+    if not notification:
+        raise HRMSException("Уведомление не найдено", "notification_not_found", status_code=404)
+    if not notification.file_path:
+        raise HRMSException("Файл уведомления не найден", "notification_file_not_found", status_code=404)
+    file_path = notifications_path(notification.file_path)
+    if not file_path.exists():
+        raise HRMSException("Файл уведомления отсутствует на диске", "notification_file_missing", status_code=404)
+    return _file_response(file_path)
+
+
+@router.post("/notifications/{notification_id}/onlyoffice/callback")
+async def notification_onlyoffice_callback(
+    notification_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    if not settings.ONLYOFFICE_ENABLED:
+        return JSONResponse(content={"error": 0})
+    body = await request.json()
+    status = body.get("status")
+
+    try:
+        _assert_valid_callback_token(request, body)
+    except HRMSException as exc:
+        return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
+
+    if status in (2, 6) and body.get("url"):
+        try:
+            notification = await db.get(Notification, notification_id)
+            if notification and notification.file_path:
+                file_path = notifications_path(notification.file_path)
+                await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
+                if notification.is_draft:
+                    notification.is_draft = False
+                    await db.commit()
+        except Exception as exc:
+            return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
+
+    return {"error": 0}
+
+
+@router.post("/notifications/{notification_id}/onlyoffice/forcesave")
+async def notification_onlyoffice_forcesave(
+    notification_id: int,
+    data: OnlyOfficeForceSaveRequest,
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    if not data.document_key.startswith(f"notification-{notification_id}-"):
+        raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
+    await onlyoffice_service.force_save(data.document_key)
+    return {"message": "save_requested"}
+
+
+# ─── Statements OnlyOffice ─────────────────────────────────────────────────────
+
+from app.core.paths import statements_path
+from app.models.statement import Statement
+
+
+@router.post("/statements/drafts")
+async def create_statement_draft(
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+
+    draft_id = str(uuid.uuid4())
+    statements_dir = storage_root("STATEMENTS_PATH")
+    statements_dir.mkdir(parents=True, exist_ok=True)
+    file_path = statements_dir / f"{draft_id}.docx"
+
+    default_template = statements_dir / "template.docx"
+    if default_template.exists():
+        doc = await load_template_or_create_blank(default_template)
+        replacements = build_basic_doc_replacements(
+            title="Новое заявление",
+            date_str=date.today().strftime("%d.%m.%Y"),
+        )
+        render_docx_placeholders(doc, replacements)
+        await asyncio.wait_for(
+            asyncio.to_thread(doc.save, str(file_path)),
+            timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
+        )
+    else:
+        try:
+            from docx import Document
+            doc = Document()
+            doc.save(str(file_path))
+        except ImportError:
+            raise HRMSException("Шаблон заявления не найден", "template_not_found", status_code=404)
+
+    statement = Statement(
+        title="Новое заявление",
+        date=date.today(),
+        file_path=file_path.name,
+        is_draft=True,
+    )
+    db.add(statement)
+    await db.commit()
+    await db.refresh(statement)
+
+    return {"draft_id": str(statement.id), "statement_id": statement.id}
+
+
+@router.get("/statements/{statement_id}/onlyoffice/config")
+async def statement_onlyoffice_config(
+    statement_id: int,
+    request: Request,
+    mode: str = Query("edit", pattern="^(edit|view)$"),
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    statement = await db.get(Statement, statement_id)
+    if not statement:
+        raise HRMSException("Заявление не найдено", "statement_not_found", status_code=404)
+    if not statement.file_path:
+        raise HRMSException("Файл заявления не найден", "statement_file_not_found", status_code=404)
+    file_path = statements_path(statement.file_path)
+    if not file_path.exists():
+        raise HRMSException("Файл заявления отсутствует на диске", "statement_file_missing", status_code=404)
+
+    config = onlyoffice_service.build_config(
+        doc_type="statement",
+        doc_id=statement_id,
+        file_path=file_path,
+        title=statement.file_path.split("/")[-1],
+        callback_url=_public_api_url(f"/statements/{statement_id}/onlyoffice/callback"),
+        file_url=_public_api_url(f"/statements/{statement_id}/onlyoffice/file"),
+        mode=mode,
+    )
+    config["documentServerUrl"] = _document_server_url(request)
+    return config
+
+
+@router.get("/statements/{statement_id}/onlyoffice/file")
+async def statement_onlyoffice_file(
+    statement_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    statement = await db.get(Statement, statement_id)
+    if not statement:
+        raise HRMSException("Заявление не найдено", "statement_not_found", status_code=404)
+    if not statement.file_path:
+        raise HRMSException("Файл заявления не найден", "statement_file_not_found", status_code=404)
+    file_path = statements_path(statement.file_path)
+    if not file_path.exists():
+        raise HRMSException("Файл заявления отсутствует на диске", "statement_file_missing", status_code=404)
+    return _file_response(file_path)
+
+
+@router.post("/statements/{statement_id}/onlyoffice/callback")
+async def statement_onlyoffice_callback(
+    statement_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    if not settings.ONLYOFFICE_ENABLED:
+        return JSONResponse(content={"error": 0})
+    body = await request.json()
+    status = body.get("status")
+
+    try:
+        _assert_valid_callback_token(request, body)
+    except HRMSException as exc:
+        return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
+
+    if status in (2, 6) and body.get("url"):
+        try:
+            statement = await db.get(Statement, statement_id)
+            if statement and statement.file_path:
+                file_path = statements_path(statement.file_path)
+                await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
+                if statement.is_draft:
+                    statement.is_draft = False
+                    await db.commit()
+        except Exception as exc:
+            return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
+
+    return {"error": 0}
+
+
+@router.post("/statements/{statement_id}/onlyoffice/forcesave")
+async def statement_onlyoffice_forcesave(
+    statement_id: int,
+    data: OnlyOfficeForceSaveRequest,
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    if not data.document_key.startswith(f"statement-{statement_id}-"):
         raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
     await onlyoffice_service.force_save(data.document_key)
     return {"message": "save_requested"}

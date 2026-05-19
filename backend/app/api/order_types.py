@@ -15,6 +15,7 @@ from app.schemas.order_type import (
 )
 from app.services.order_document_service import get_template_path
 from app.services.order_service import order_service
+from app.services.template_variables_service import get_template_variables as get_all_template_variables
 
 router = APIRouter(prefix="/order-types", tags=["order-types"])
 
@@ -35,7 +36,7 @@ async def list_order_types(
 async def get_template_variables(
     current_user: str = Depends(_get_current_user_stub),
 ):
-    return {"variables": order_service.get_template_variables()}
+    return {"variables": get_all_template_variables("order")}
 
 
 @router.post("", response_model=OrderTypeResponse, status_code=201)

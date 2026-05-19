@@ -9,6 +9,8 @@ STORAGE_MARKERS: dict[str, str] = {
     "TEMPLATES_PATH": "templates",
     "PERSONAL_FILES_PATH": "personal",
     "BACKUPS_PATH": "backups",
+    "NOTIFICATIONS_PATH": "notifications",
+    "STATEMENTS_PATH": "statements",
 }
 
 
@@ -100,3 +102,11 @@ def _normalize_relative_key(path: str | Path) -> str:
     if not parts:
         return ""
     return PurePosixPath(*parts).as_posix()
+
+
+def notifications_path(key: str | Path) -> Path:
+    return storage_path(key, "NOTIFICATIONS_PATH")
+
+
+def statements_path(key: str | Path) -> Path:
+    return storage_path(key, "STATEMENTS_PATH")

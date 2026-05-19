@@ -528,6 +528,15 @@ export function OrdersPage() {
     }
   }, [preselectedEmployeeData, orderTypeParam, orderTypes])
 
+  useEffect(() => {
+    const tabParam = searchParams.get("tab")
+    if (tabParam === "general") {
+      setActiveTab("general")
+      return
+    }
+    setActiveTab("all")
+  }, [searchParams])
+
   const handleDeleteOrderConfirm = () => {
     if (deleteOrderId) deleteMutation.mutate(deleteOrderId)
     setDeleteOrderId(null)
@@ -791,6 +800,21 @@ export function OrdersPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
+  const handleTabsChange = (value: string) => {
+    if (value === "all" || value === "general") {
+      setActiveTab(value)
+      navigate(value === "general" ? "/orders?tab=general" : "/orders")
+      return
+    }
+    if (value === "notifications") {
+      navigate("/orders/notifications")
+      return
+    }
+    if (value === "statements") {
+      navigate("/orders/statements")
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -813,14 +837,16 @@ export function OrdersPage() {
 
       {/* Tabs */}
       <div className="border rounded-lg bg-card">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "all" | "general")}>
-          <div className="px-4 py-3 border-b">
-            <TabsList>
-              <TabsTrigger value="all">Все приказы</TabsTrigger>
-              <TabsTrigger value="general">По основной деятельности</TabsTrigger>
+        <div className="px-4 py-3 border-b">
+          <Tabs value={activeTab} onValueChange={handleTabsChange}>
+            <TabsList className="w-full justify-start gap-1 overflow-x-auto">
+              <TabsTrigger className="shrink-0" value="all">Все приказы</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="general">По основной деятельности</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="notifications">Уведомления</TabsTrigger>
+              <TabsTrigger className="shrink-0" value="statements">Заявления</TabsTrigger>
             </TabsList>
-          </div>
-        </Tabs>
+          </Tabs>
+        </div>
       </div>
 
       {activeTab === "all" && (

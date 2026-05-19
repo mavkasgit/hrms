@@ -53,6 +53,8 @@ class Employee(Base):
     department = relationship("Department", foreign_keys=[department_id], back_populates="employees")
     position = relationship("Position", foreign_keys=[position_id], back_populates="employees")
     tags = relationship("EmployeeTag", back_populates="employee")
+    notifications = relationship("Notification", back_populates="employee")
+    statements = relationship("Statement", back_populates="employee")
 
 
 class EmployeeAuditLog(Base):

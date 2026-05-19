@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     BACKUPS_PATH: str = str(BASE_DIR / "data" / "backups")
     POSTGRES_CONTAINER_NAME: str = "hrms-postgres"
     STAFFING_PATH: str = str(BASE_DIR / "data" / "staffing")
+    NOTIFICATIONS_PATH: str = str(BASE_DIR / "data" / "notifications")
+    STATEMENTS_PATH: str = str(BASE_DIR / "data" / "statements")
 
     MAX_PHOTO_SIZE: int = 5 * 1024 * 1024
     MAX_DOCUMENT_SIZE: int = 10 * 1024 * 1024
