@@ -25,3 +25,6 @@ from app.models.hire_date_adjustment import HireDateAdjustment  # noqa: F401, E4
 from app.models.document import Document  # noqa: F401, E402
 from app.models.vacation_adjustment import VacationAdjustment  # noqa: F401, E402
 from app.models.vacation_period_manual_closure import VacationPeriodManualClosure  # noqa: F401, E402
+from app.models.notification import Notification  # noqa: F401, E402
+from app.models.notification_type import NotificationType  # noqa: F401, E402
+from app.models.statement import Statement  # noqa: F401, E402
