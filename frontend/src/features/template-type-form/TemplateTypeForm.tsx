@@ -76,7 +76,7 @@ const STANDARD_ORDER_CODES = ["hire", "dismissal", "transfer", "contract_extensi
 
 const STANDARD_NOTIFICATION_CODES = ["standard", "contract_extension"]
 
-const STANDARD_STATEMENT_CODES = ["personal", "transfer", "dismissal", "vacation", "other"]
+const STANDARD_STATEMENT_CODES = ["simple", "personal", "transfer", "dismissal", "vacation", "other"]
 
 export function TemplateTypeForm({
   open,

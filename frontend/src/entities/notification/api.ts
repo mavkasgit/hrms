@@ -64,12 +64,21 @@ export function openNotificationEdit(notificationId: number) {
   window.open(`/notifications/${notificationId}/edit-docx`, "_blank", "noopener,noreferrer")
 }
 
+export function openNotificationPrint(notificationId: number, target = "_blank") {
+  const url = `/notifications/${notificationId}/print`
+  if (target === "_blank") {
+    window.open(url, "_blank", "noopener,noreferrer")
+    return
+  }
+  window.open(url, target)
+}
+
 export function downloadNotificationDocx(notificationId: number) {
   window.open(`${import.meta.env.VITE_API_URL || "/api"}/notifications/${notificationId}/download`, "_blank")
 }
 
-export async function createNotificationDraft(): Promise<{ draft_id: string; notification_id: number }> {
-  const { data } = await axios.post("/notifications/drafts")
+export async function createNotificationDraft(payload: NotificationCreate): Promise<{ draft_id: string; notification_id: number }> {
+  const { data } = await axios.post("/notifications/drafts", payload)
   return data
 }
 

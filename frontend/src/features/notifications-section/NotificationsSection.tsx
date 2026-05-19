@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { ChevronDown, ChevronRight, Download, Eye, Trash2, FilePen, Filter, X, Check } from "lucide-react"
+import { ChevronDown, ChevronRight, Download, Eye, Trash2, FilePen, Filter, X, Check, Printer } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -39,12 +39,12 @@ import type { Employee } from "@/entities/employee/types"
 import type { NotificationType } from "@/entities/notification/types"
 import {
   useNotifications,
-  useCreateNotification,
+  useCreateNotificationDraft,
   useDeleteNotification,
   useNotificationTypes,
   useNextNotificationNumber,
 } from "@/entities/notification/hooks"
-import { openNotificationView, openNotificationEdit, downloadNotificationDocx } from "@/entities/notification/api"
+import { openNotificationView, openNotificationEdit, openNotificationPrint, downloadNotificationDocx } from "@/entities/notification/api"
 import type { NotificationCreate } from "@/entities/notification/types"
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -98,7 +98,7 @@ export function NotificationsSection() {
   })
 
   const { data: notificationTypes = [] } = useNotificationTypes(true)
-  const createMutation = useCreateNotification()
+  const createDraftMutation = useCreateNotificationDraft()
   const deleteMutation = useDeleteNotification()
   const [deleteId, setDeleteId] = useState<number | null>(null)
 
@@ -188,28 +188,61 @@ export function NotificationsSection() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
     if (!validate()) return
-    try {
-      const cleanedExtraFields = Object.fromEntries(
-        Object.entries(extraFields).filter(
-          ([, value]) => value !== "" && value !== null && value !== undefined
-        )
-      )
-      const payload: NotificationCreate = {
-        title: `Уведомление ${selectedNotificationType?.name || ""} ${notificationNumber}`,
-        number: notificationNumber || undefined,
-        date: notificationDate,
-        employee_id: selectedEmployee?.id ?? null,
-        notification_type_id: selectedNotificationTypeId,
-        extra_fields: Object.keys(cleanedExtraFields).length > 0 ? cleanedExtraFields : undefined,
+    const editorWindowName = `hrms-notification-editor-${Date.now()}`
+    const editorWindow = window.open("about:blank", editorWindowName)
+    if (editorWindow) {
+      try {
+        editorWindow.document.title = "Подготовка редактора"
+        editorWindow.document.body.innerHTML = `
+          <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f8fafc;margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
+            <div style="text-align:center;">
+              <div style="width:28px;height:28px;border:3px solid #cbd5e1;border-top-color:#0ea5e9;border-radius:50%;margin:0 auto 12px;animation:spin 0.9s linear infinite;"></div>
+              <div style="font-size:16px;font-weight:600;">Подготавливаем документ...</div>
+              <div style="font-size:13px;color:#475569;margin-top:6px;">Окно автоматически откроет редактор уведомления</div>
+            </div>
+          </div>
+          <style>
+            @keyframes spin { to { transform: rotate(360deg); } }
+            html, body { margin: 0; }
+          </style>
+        `
+      } catch (e) {
+        console.warn("[NotificationsSection] failed to render editor placeholder", e)
       }
-      await createMutation.mutateAsync(payload)
-      resetForm()
-      refetch()
-    } catch (e) {
-      console.error("Failed to create notification", e)
     }
+    const cleanedExtraFields = Object.fromEntries(
+      Object.entries(extraFields).filter(
+        ([, value]) => value !== "" && value !== null && value !== undefined
+      )
+    )
+    const payload: NotificationCreate = {
+      title: `Уведомление ${selectedNotificationType?.name || ""} ${notificationNumber}`,
+      number: notificationNumber || undefined,
+      date: notificationDate,
+      employee_id: selectedEmployee?.id ?? null,
+      notification_type_id: selectedNotificationTypeId,
+      extra_fields: Object.keys(cleanedExtraFields).length > 0 ? cleanedExtraFields : undefined,
+    }
+    createDraftMutation.mutate(payload, {
+      onSuccess: (draft) => {
+        console.log("[NotificationsSection] draft created:", draft)
+        const url = `/notifications/${draft.notification_id}/edit-docx`
+        console.log("[NotificationsSection] redirecting to:", url)
+        if (editorWindow && !editorWindow.closed) {
+          window.open(url, editorWindowName)
+        } else {
+          console.log("[NotificationsSection] window closed, opening new one")
+          window.open(url, "_blank", "noopener,noreferrer")
+        }
+        resetForm()
+      },
+      onError: (err) => {
+        console.error("[NotificationsSection] draft creation failed:", err)
+        editorWindow?.close()
+      },
+    })
   }
 
   const handleDelete = () => {
@@ -288,11 +321,11 @@ export function NotificationsSection() {
                 </div>
 
                 <div className="flex gap-2 pt-2">
-                  <Button variant="outline" onClick={(e) => { e.stopPropagation(); resetForm(); }} disabled={createMutation.isPending}>
+                  <Button variant="outline" onClick={(e) => { e.stopPropagation(); resetForm(); }} disabled={createDraftMutation.isPending}>
                     Очистить
                   </Button>
-                  <Button onClick={(e) => { e.stopPropagation(); handleCreate(); }} disabled={createMutation.isPending}>
-                    {createMutation.isPending ? "Создание..." : "Создать уведомление"}
+                  <Button onClick={(e) => { e.stopPropagation(); handleCreate(); }} disabled={createDraftMutation.isPending}>
+                    {createDraftMutation.isPending ? "Подготовка..." : "Создать уведомление"}
                   </Button>
                 </div>
               </div>
@@ -473,7 +506,6 @@ export function NotificationsSection() {
           <TableHeader>
             <TableRow>
               <TableHead>№</TableHead>
-              <TableHead>Заголовок</TableHead>
               <TableHead>Тип</TableHead>
               <TableHead>Сотрудник</TableHead>
               <TableHead>Дата</TableHead>
@@ -485,7 +517,6 @@ export function NotificationsSection() {
             {data.items.map((item) => (
               <TableRow key={item.id}>
                 <TableCell className="font-mono text-sm">{item.number || "—"}</TableCell>
-                <TableCell className="font-medium">{item.title}</TableCell>
                 <TableCell>{item.notification_type_name || "—"}</TableCell>
                 <TableCell>{item.employee_name || "—"}</TableCell>
                 <TableCell>
@@ -504,6 +535,7 @@ export function NotificationsSection() {
                   <div className="flex justify-end gap-1">
                     <Button variant="ghost" size="icon" title="Просмотр" onClick={() => openNotificationView(item.id)}><Eye className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" title="Редактировать" onClick={() => openNotificationEdit(item.id)}><FilePen className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" title="Печать" onClick={() => openNotificationPrint(item.id)}><Printer className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" title="Скачать" onClick={() => downloadNotificationDocx(item.id)}><Download className="h-4 w-4" /></Button>
                     <Button
                       variant="ghost"

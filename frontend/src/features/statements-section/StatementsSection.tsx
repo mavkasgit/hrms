@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { ChevronDown, ChevronRight, Trash2, FilePen, Filter, Eye, Download, X, Check } from "lucide-react"
+import { ChevronDown, ChevronRight, Trash2, FilePen, Filter, Eye, Download, X, Check, Printer } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -39,12 +39,12 @@ import type { Employee } from "@/entities/employee/types"
 import type { StatementType } from "@/entities/statement/types"
 import {
   useStatements,
-  useCreateStatement,
+  useCreateStatementDraft,
   useDeleteStatement,
   useStatementTypes,
   useNextStatementNumber,
 } from "@/entities/statement/hooks"
-import { openStatementView, openStatementEdit, downloadStatementDocx } from "@/entities/statement/api"
+import { openStatementView, openStatementEdit, openStatementPrint, downloadStatementDocx } from "@/entities/statement/api"
 import type { StatementCreate } from "@/entities/statement/types"
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -98,7 +98,7 @@ export function StatementsSection() {
   })
 
   const { data: statementTypes = [] } = useStatementTypes(true)
-  const createMutation = useCreateStatement()
+  const createDraftMutation = useCreateStatementDraft()
   const deleteMutation = useDeleteStatement()
   const [deleteId, setDeleteId] = useState<number | null>(null)
 
@@ -189,28 +189,58 @@ export function StatementsSection() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
     if (!validate()) return
-    try {
-      const cleanedExtraFields = Object.fromEntries(
-        Object.entries(extraFields).filter(
-          ([, value]) => value !== "" && value !== null && value !== undefined
-        )
-      )
-      const payload: StatementCreate = {
-        title: `Заявление ${selectedStatementType?.name || ""} ${statementNumber}`,
-        number: statementNumber || undefined,
-        date: statementDate,
-        employee_id: selectedEmployee?.id ?? null,
-        statement_type_id: selectedStatementTypeId,
-        extra_fields: Object.keys(cleanedExtraFields).length > 0 ? cleanedExtraFields : undefined,
+    const editorWindowName = `hrms-statement-editor-${Date.now()}`
+    const editorWindow = window.open("about:blank", editorWindowName)
+    if (editorWindow) {
+      try {
+        editorWindow.document.title = "Подготовка редактора"
+        editorWindow.document.body.innerHTML = `
+          <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f8fafc;margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
+            <div style="text-align:center;">
+              <div style="width:28px;height:28px;border:3px solid #cbd5e1;border-top-color:#0ea5e9;border-radius:50%;margin:0 auto 12px;animation:spin 0.9s linear infinite;"></div>
+              <div style="font-size:16px;font-weight:600;">Подготавливаем документ...</div>
+              <div style="font-size:13px;color:#475569;margin-top:6px;">Окно автоматически откроет редактор заявления</div>
+            </div>
+          </div>
+          <style>
+            @keyframes spin { to { transform: rotate(360deg); } }
+            html, body { margin: 0; }
+          </style>
+        `
+      } catch (e) {
+        console.warn("[StatementsSection] failed to render editor placeholder", e)
       }
-      await createMutation.mutateAsync(payload)
-      resetForm()
-      refetch()
-    } catch (e) {
-      console.error("Failed to create statement", e)
     }
+    const cleanedExtraFields = Object.fromEntries(
+      Object.entries(extraFields).filter(
+        ([, value]) => value !== "" && value !== null && value !== undefined
+      )
+    )
+    const payload: StatementCreate = {
+      title: `Заявление ${selectedStatementType?.name || ""} ${statementNumber}`,
+      number: statementNumber || undefined,
+      date: statementDate,
+      employee_id: selectedEmployee?.id ?? null,
+      statement_type_id: selectedStatementTypeId,
+      extra_fields: Object.keys(cleanedExtraFields).length > 0 ? cleanedExtraFields : undefined,
+    }
+    createDraftMutation.mutate(payload, {
+      onSuccess: (draft) => {
+        const url = `/statements/${draft.statement_id}/edit-docx`
+        if (editorWindow && !editorWindow.closed) {
+          window.open(url, editorWindowName)
+        } else {
+          window.open(url, "_blank", "noopener,noreferrer")
+        }
+        resetForm()
+      },
+      onError: (err) => {
+        console.error("[StatementsSection] draft creation failed", err)
+        editorWindow?.close()
+      },
+    })
   }
 
   const handleDelete = () => {
@@ -289,11 +319,11 @@ export function StatementsSection() {
                 </div>
 
                 <div className="flex gap-2 pt-2">
-                  <Button variant="outline" onClick={(e) => { e.stopPropagation(); resetForm(); }} disabled={createMutation.isPending}>
+                  <Button variant="outline" onClick={(e) => { e.stopPropagation(); resetForm(); }} disabled={createDraftMutation.isPending}>
                     Очистить
                   </Button>
-                  <Button onClick={(e) => { e.stopPropagation(); handleCreate(); }} disabled={createMutation.isPending}>
-                    {createMutation.isPending ? "Создание..." : "Создать заявление"}
+                  <Button onClick={(e) => { e.stopPropagation(); handleCreate(); }} disabled={createDraftMutation.isPending}>
+                    {createDraftMutation.isPending ? "Подготовка..." : "Создать заявление"}
                   </Button>
                 </div>
               </div>
@@ -474,7 +504,6 @@ export function StatementsSection() {
           <TableHeader>
             <TableRow>
               <TableHead>№</TableHead>
-              <TableHead>Заголовок</TableHead>
               <TableHead>Тип</TableHead>
               <TableHead>Сотрудник</TableHead>
               <TableHead>Дата</TableHead>
@@ -486,7 +515,6 @@ export function StatementsSection() {
             {data.items.map((item) => (
               <TableRow key={item.id}>
                 <TableCell className="font-mono text-sm">{item.number || "—"}</TableCell>
-                <TableCell className="font-medium">{item.title}</TableCell>
                 <TableCell>{item.statement_type_name || "—"}</TableCell>
                 <TableCell>{item.employee_name || "—"}</TableCell>
                 <TableCell>
@@ -505,6 +533,7 @@ export function StatementsSection() {
                   <div className="flex justify-end gap-1">
                     <Button variant="ghost" size="icon" title="Просмотр" onClick={() => openStatementView(item.id)}><Eye className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" title="Редактировать" onClick={() => openStatementEdit(item.id)}><FilePen className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" title="Печать" onClick={() => openStatementPrint(item.id)}><Printer className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="icon" title="Скачать" onClick={() => downloadStatementDocx(item.id)}><Download className="h-4 w-4" /></Button>
                     <Button
                       variant="ghost"

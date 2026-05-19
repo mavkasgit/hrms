@@ -44,6 +44,16 @@ export function useCreateStatement() {
   })
 }
 
+export function useCreateStatementDraft() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: StatementCreate) => api.createStatementDraft(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["statements"] })
+    },
+  })
+}
+
 export function useUpdateStatement() {
   const queryClient = useQueryClient()
   return useMutation({

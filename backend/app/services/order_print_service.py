@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote
 from urllib.parse import urlparse, urlunparse
 
@@ -8,6 +9,8 @@ from jose import jwt
 
 from app.core.config import settings
 from app.core.exceptions import HRMSException
+
+EntityKind = Literal["order", "notification", "statement"]
 
 
 class OrderPrintService:
@@ -26,19 +29,19 @@ class OrderPrintService:
                 candidates.append(normalized)
         return candidates
 
-    def _source_file_url(self, order_id: int) -> str:
+    def _source_file_url(self, entity_kind: EntityKind, entity_id: int) -> str:
         base_url = (settings.BACKEND_INTERNAL_CALLBACK_URL or settings.APP_PUBLIC_URL).rstrip("/")
-        return f"{base_url}/api/orders/{order_id}/onlyoffice/file"
+        return f"{base_url}/api/{entity_kind}s/{entity_id}/onlyoffice/file"
 
-    def _cache_key(self, order_id: int, docx_path: Path) -> str:
+    def _cache_key(self, entity_kind: EntityKind, entity_id: int, docx_path: Path) -> str:
         mtime = int(docx_path.stat().st_mtime)
-        return f"order-{order_id}-{mtime}"
+        return f"{entity_kind}-{entity_id}-{mtime}"
 
     def _cache_file_path(self, cache_key: str) -> Path:
         return self._cache_dir() / f"{cache_key}.pdf"
 
-    def _cleanup_old_cache_files(self, order_id: int, keep_file: Path) -> None:
-        for candidate in self._cache_dir().glob(f"order-{order_id}-*.pdf"):
+    def _cleanup_old_cache_files(self, entity_kind: EntityKind, entity_id: int, keep_file: Path) -> None:
+        for candidate in self._cache_dir().glob(f"{entity_kind}-{entity_id}-*.pdf"):
             if candidate == keep_file:
                 continue
             try:
@@ -46,16 +49,16 @@ class OrderPrintService:
             except OSError:
                 continue
 
-    async def get_or_create_pdf(self, order_id: int, docx_path: Path) -> Path:
+    async def get_or_create_pdf(self, entity_kind: EntityKind, entity_id: int, docx_path: Path) -> Path:
         if not docx_path.exists():
-            raise HRMSException("Файл приказа отсутствует на диске", "order_file_missing", status_code=404)
+            raise HRMSException("Файл документа отсутствует на диске", "document_file_missing", status_code=404)
 
-        cache_key = self._cache_key(order_id, docx_path)
+        cache_key = self._cache_key(entity_kind, entity_id, docx_path)
         cache_file = self._cache_file_path(cache_key)
         if cache_file.exists():
             return cache_file
 
-        converted_url = await self._convert_docx_to_pdf(order_id, docx_path, cache_key)
+        converted_url = await self._convert_docx_to_pdf(entity_kind, entity_id, docx_path, cache_key)
         pdf_bytes = await self._download_pdf(converted_url)
 
         temp_file = cache_file.with_name(f".{cache_file.name}.tmp")
@@ -70,17 +73,17 @@ class OrderPrintService:
                 "order_pdf_write_failed",
                 status_code=500,
             ) from exc
-        self._cleanup_old_cache_files(order_id, keep_file=cache_file)
+        self._cleanup_old_cache_files(entity_kind, entity_id, keep_file=cache_file)
         return cache_file
 
-    async def _convert_docx_to_pdf(self, order_id: int, docx_path: Path, cache_key: str) -> str:
+    async def _convert_docx_to_pdf(self, entity_kind: EntityKind, entity_id: int, docx_path: Path, cache_key: str) -> str:
         payload = {
             "async": False,
             "filetype": "docx",
             "key": cache_key,
             "outputtype": "pdf",
             "title": docx_path.name,
-            "url": self._source_file_url(order_id),
+            "url": self._source_file_url(entity_kind, entity_id),
             "documentLayout": {"isPrint": True},
         }
         token = jwt.encode(payload, settings.ONLYOFFICE_JWT_SECRET, algorithm="HS256")

@@ -44,6 +44,16 @@ export function useCreateNotification() {
   })
 }
 
+export function useCreateNotificationDraft() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: NotificationCreate) => api.createNotificationDraft(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications"] })
+    },
+  })
+}
+
 export function useUpdateNotification() {
   const queryClient = useQueryClient()
   return useMutation({

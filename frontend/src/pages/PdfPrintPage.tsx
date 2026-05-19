@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react"
-import { useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 
-export function OrderPrintPage() {
-  const { id } = useParams<{ id: string }>()
-  const orderId = id ? Number.parseInt(id, 10) : NaN
-  const pdfUrl = Number.isFinite(orderId)
-    ? `${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/print-pdf`
-    : null
+interface PdfPrintPageProps {
+  pdfUrl: string | null
+  title: string
+  invalidIdMessage: string
+}
+
+export function PdfPrintPage({ pdfUrl, title, invalidIdMessage }: PdfPrintPageProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -15,13 +15,14 @@ export function OrderPrintPage() {
 
   useEffect(() => {
     if (!pdfUrl) {
-      setError("Некорректный ID приказа")
+      setError(invalidIdMessage)
       setIsLoading(false)
-    } else {
-      setIsLoading(true)
-      setError(null)
+      return
     }
-  }, [pdfUrl])
+    setIsLoading(true)
+    setError(null)
+    setAutoPrintRequested(false)
+  }, [pdfUrl, invalidIdMessage])
 
   const triggerPrint = () => {
     const frameWindow = iframeRef.current?.contentWindow
@@ -42,28 +43,39 @@ export function OrderPrintPage() {
     }, 150)
   }
 
+  const handleFrameError = () => {
+    setIsLoading(false)
+    setError("Не удалось загрузить PDF")
+  }
+
+  useEffect(() => {
+    const frame = iframeRef.current
+    if (!frame) return
+    frame.addEventListener("error", handleFrameError)
+    return () => {
+      frame.removeEventListener("error", handleFrameError)
+    }
+  }, [pdfUrl])
+
   return (
     <div className="h-screen bg-background">
       {isLoading && (
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-2 text-sm text-muted-foreground bg-background/90 px-2 py-1 rounded">
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded bg-background/90 px-2 py-1 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Подготавливаем PDF...
         </div>
       )}
 
-      {error && <div className="absolute top-3 left-3 z-10 text-sm text-red-600 bg-background/90 px-2 py-1 rounded">{error}</div>}
+      {error && <div className="absolute top-3 left-3 z-10 rounded bg-background/90 px-2 py-1 text-sm text-red-600">{error}</div>}
 
       {!error && pdfUrl && (
         <iframe
           ref={iframeRef}
-          title={`Печать приказа ${orderId}`}
+          title={`Печать: ${title}`}
           src={pdfUrl}
-          className="w-full h-full border-0"
+          className="h-full w-full border-0"
           onLoad={handleFrameLoad}
-          onError={() => {
-            setIsLoading(false)
-            setError("Не удалось загрузить PDF")
-          }}
+          onError={handleFrameError}
         />
       )}
     </div>

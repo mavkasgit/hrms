@@ -6,6 +6,7 @@ import { forceSaveOrder } from "@/entities/order/onlyofficeApi"
 import { openOrderPrint } from "@/entities/order/orderActions"
 import { OrderEditor } from "@/features/onlyoffice-editor/OrderEditor"
 import { Button } from "@/shared/ui/button"
+import { openPrintPlaceholderWindow } from "@/shared/utils/print-window"
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
@@ -25,28 +26,11 @@ export function OrderEditorPage() {
     else setIsSaving(true)
     if (openPrint) {
       const candidateWindowName = `hrms-order-print-${orderId}-${Date.now()}`
-      const printWindow = window.open("about:blank", candidateWindowName)
-      if (printWindow) {
-        printWindowName = candidateWindowName
-        try {
-          printWindow.document.title = "Подготовка печати"
-          printWindow.document.body.innerHTML = `
-            <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f8fafc;margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
-              <div style="text-align:center;">
-                <div style="width:28px;height:28px;border:3px solid #cbd5e1;border-top-color:#0ea5e9;border-radius:50%;margin:0 auto 12px;animation:spin 0.9s linear infinite;"></div>
-                <div style="font-size:16px;font-weight:600;">Подготавливаем страницу печати...</div>
-                <div style="font-size:13px;color:#475569;margin-top:6px;">Окно автоматически обновится после сохранения приказа</div>
-              </div>
-            </div>
-            <style>
-              @keyframes spin { to { transform: rotate(360deg); } }
-              html, body { margin: 0; }
-            </style>
-          `
-        } catch (e) {
-          console.warn("[OrderEditorPage] failed to render print placeholder", e)
-        }
-      }
+      printWindowName = openPrintPlaceholderWindow({
+        windowName: candidateWindowName,
+        savedEntityLabel: "приказа",
+        logPrefix: "[OrderEditorPage]",
+      })
     }
     try {
       if (orderId && data?.document.key) {

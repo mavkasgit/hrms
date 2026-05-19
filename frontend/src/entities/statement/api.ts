@@ -64,12 +64,21 @@ export function openStatementEdit(statementId: number) {
   window.open(`/statements/${statementId}/edit-docx`, "_blank", "noopener,noreferrer")
 }
 
+export function openStatementPrint(statementId: number, target = "_blank") {
+  const url = `/statements/${statementId}/print`
+  if (target === "_blank") {
+    window.open(url, "_blank", "noopener,noreferrer")
+    return
+  }
+  window.open(url, target)
+}
+
 export function downloadStatementDocx(statementId: number) {
   window.open(`${import.meta.env.VITE_API_URL || "/api"}/statements/${statementId}/download`, "_blank")
 }
 
-export async function createStatementDraft(): Promise<{ draft_id: string; statement_id: number }> {
-  const { data } = await axios.post("/statements/drafts")
+export async function createStatementDraft(payload: StatementCreate): Promise<{ draft_id: string; statement_id: number }> {
+  const { data } = await axios.post("/statements/drafts", payload)
   return data
 }
 

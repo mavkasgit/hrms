@@ -24,11 +24,11 @@ const BackupsPage = lazy(async () => ({ default: (await import("@/pages/BackupsP
 const LoginPage = lazy(async () => ({ default: (await import("@/pages/LoginPage")).LoginPage }))
 const DevPage = lazy(async () => ({ default: (await import("@/pages/DevPage")).DevPage }))
 const OrderEditorPage = lazy(async () => ({ default: (await import("@/pages/OrderEditorPage")).OrderEditorPage }))
-const OrderPrintPage = lazy(async () => ({ default: (await import("@/pages/OrderPrintPage")).OrderPrintPage }))
 const DraftOrderEditorPage = lazy(async () => ({ default: (await import("@/pages/DraftOrderEditorPage")).DraftOrderEditorPage }))
 const DocumentViewPage = lazy(async () => ({ default: (await import("@/pages/DocumentViewPage")).DocumentViewPage }))
 const NotificationEditorPage = lazy(async () => ({ default: (await import("@/pages/NotificationEditorPage")).NotificationEditorPage }))
 const StatementEditorPage = lazy(async () => ({ default: (await import("@/pages/StatementEditorPage")).StatementEditorPage }))
+const DocumentPrintPage = lazy(async () => ({ default: (await import("@/pages/DocumentPrintPage")).DocumentPrintPage }))
 const TemplateEditorPage = lazy(async () => ({ default: (await import("@/pages/TemplateEditorPage")).TemplateEditorPage }))
 
 const withSuspense = (component: ReactNode) => (
@@ -101,7 +101,36 @@ export const router = createBrowserRouter([
   },
   {
     path: "/orders/:id/print",
-    element: withSuspense(<OrderPrintPage />),
+    element: withSuspense(
+      <DocumentPrintPage
+        routeParam="id"
+        endpoint="orders"
+        titlePrefix="Приказ"
+        invalidIdMessage="Некорректный ID приказа"
+      />
+    ),
+  },
+  {
+    path: "/notifications/:notificationId/print",
+    element: withSuspense(
+      <DocumentPrintPage
+        routeParam="notificationId"
+        endpoint="notifications"
+        titlePrefix="Уведомление"
+        invalidIdMessage="Некорректный ID уведомления"
+      />
+    ),
+  },
+  {
+    path: "/statements/:statementId/print",
+    element: withSuspense(
+      <DocumentPrintPage
+        routeParam="statementId"
+        endpoint="statements"
+        titlePrefix="Заявление"
+        invalidIdMessage="Некорректный ID заявления"
+      />
+    ),
   },
   {
     path: "/templates/:kind/:id/view",
