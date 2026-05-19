@@ -3,33 +3,46 @@ import { useLocation, useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { useTemplateOnlyOfficeConfig } from "@/entities/order/useOnlyOffice"
 import { forceSaveTemplate } from "@/entities/order/onlyofficeApi"
+import { useNotificationTypeOnlyOfficeConfig } from "@/entities/notification/hooks"
+import { forceSaveNotificationTypeTemplate } from "@/entities/notification/api"
+import { useStatementTypeOnlyOfficeConfig } from "@/entities/statement/hooks"
+import { forceSaveStatementTypeTemplate } from "@/entities/statement/api"
 import { OrderEditor } from "@/features/onlyoffice-editor/OrderEditor"
 import { Button } from "@/shared/ui/button"
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
 export function TemplateEditorPage() {
-  const { id } = useParams<{ id: string }>()
+  const { kind, id } = useParams<{ kind: string; id: string }>()
   const location = useLocation()
-  const orderTypeId = id ? Number.parseInt(id, 10) : 0
+  const templateId = id ? Number.parseInt(id, 10) : 0
   const isViewMode = location.pathname.endsWith("/view")
-  const { data, isLoading, error } = useTemplateOnlyOfficeConfig(
-    Number.isFinite(orderTypeId) ? orderTypeId : 0,
-    isViewMode ? "view" : "edit"
-  )
+  const mode = isViewMode ? "view" as const : "edit" as const
   const [isSaving, setIsSaving] = useState(false)
 
+  // Fetch config based on kind
+  const orderConfig = useTemplateOnlyOfficeConfig(kind === "order" && Number.isFinite(templateId) ? templateId : 0, mode)
+  const notifConfig = useNotificationTypeOnlyOfficeConfig(kind === "notification" && Number.isFinite(templateId) ? templateId : null, mode)
+  const stmtConfig = useStatementTypeOnlyOfficeConfig(kind === "statement" && Number.isFinite(templateId) ? templateId : null, mode)
+
+  const config = kind === "notification" ? notifConfig : kind === "statement" ? stmtConfig : orderConfig
+  const { data, isLoading, error } = config
+
   const handleSaveTemplate = async () => {
-    if (isSaving) return
+    if (isSaving || !templateId || !data?.document.key) return
     setIsSaving(true)
     try {
-      if (orderTypeId && data?.document.key) {
-        await forceSaveTemplate(orderTypeId, data.document.key)
-        await wait(1200)
+      if (kind === "notification") {
+        await forceSaveNotificationTypeTemplate(templateId, data.document.key)
+      } else if (kind === "statement") {
+        await forceSaveStatementTypeTemplate(templateId, data.document.key)
+      } else {
+        await forceSaveTemplate(templateId, data.document.key)
       }
+      await wait(1200)
       window.setTimeout(() => window.close(), 300)
-    } catch (error) {
-      console.error("[TemplateEditorPage] force save failed", error)
+    } catch (err) {
+      console.error("[TemplateEditorPage] force save failed", err)
       setIsSaving(false)
       alert("Не удалось сохранить шаблон. Попробуйте нажать Ctrl+S в OnlyOffice и повторить сохранение.")
     }

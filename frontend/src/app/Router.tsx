@@ -30,8 +30,6 @@ const DocumentViewPage = lazy(async () => ({ default: (await import("@/pages/Doc
 const NotificationEditorPage = lazy(async () => ({ default: (await import("@/pages/NotificationEditorPage")).NotificationEditorPage }))
 const StatementEditorPage = lazy(async () => ({ default: (await import("@/pages/StatementEditorPage")).StatementEditorPage }))
 const TemplateEditorPage = lazy(async () => ({ default: (await import("@/pages/TemplateEditorPage")).TemplateEditorPage }))
-const NotificationTemplateEditorPage = lazy(async () => ({ default: (await import("@/pages/NotificationTemplateEditorPage")).NotificationTemplateEditorPage }))
-const StatementTemplateEditorPage = lazy(async () => ({ default: (await import("@/pages/StatementTemplateEditorPage")).StatementTemplateEditorPage }))
 
 const withSuspense = (component: ReactNode) => (
   <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Загрузка...</div>}>
@@ -106,27 +104,11 @@ export const router = createBrowserRouter([
     element: withSuspense(<OrderPrintPage />),
   },
   {
-    path: "/templates/:id/view",
+    path: "/templates/:kind/:id/view",
     element: withSuspense(<TemplateEditorPage />),
   },
   {
-    path: "/templates/:id/edit",
+    path: "/templates/:kind/:id/edit",
     element: withSuspense(<TemplateEditorPage />),
-  },
-  {
-    path: "/notification-templates/:id/view",
-    element: withSuspense(<NotificationTemplateEditorPage />),
-  },
-  {
-    path: "/notification-templates/:id/edit",
-    element: withSuspense(<NotificationTemplateEditorPage />),
-  },
-  {
-    path: "/statement-templates/:id/view",
-    element: withSuspense(<StatementTemplateEditorPage />),
-  },
-  {
-    path: "/statement-templates/:id/edit",
-    element: withSuspense(<StatementTemplateEditorPage />),
   },
 ])

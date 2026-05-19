@@ -17,6 +17,7 @@ import type { StatementType } from "@/entities/statement/types"
 interface ImportTemplatesModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  scope?: "orders" | "notifications" | "statements" | "all"
 }
 
 type TemplateKind = "order" | "notification" | "statement"
@@ -27,7 +28,11 @@ interface UploadStatus {
   status: "uploading" | "success" | "error"
 }
 
-export function ImportTemplatesModal({ open, onOpenChange }: ImportTemplatesModalProps) {
+export function ImportTemplatesModal({ open, onOpenChange, scope = "all" }: ImportTemplatesModalProps) {
+  const showOrders = scope === "all" || scope === "orders"
+  const showNotifications = scope === "all" || scope === "notifications"
+  const showStatements = scope === "all" || scope === "statements"
+
   const { data: orderTypes = [] } = useAllOrderTypes()
   const { data: notificationTypes = [] } = useNotificationTypes()
   const { data: statementTypes = [] } = useStatementTypes()
@@ -107,23 +112,30 @@ export function ImportTemplatesModal({ open, onOpenChange }: ImportTemplatesModa
     const selected = Array.from(e.target.files || [])
     if (!selected.length) return
 
-    // Match files to types by code
+    // Match files to types by code, respecting scope
     for (const file of selected) {
       if (!file.name.endsWith(".docx")) continue
       const code = file.name.replace(/\.docx$/i, "")
-      const matchingOrder = orderTypes.find((ot) => ot.code === code)
-      if (matchingOrder) {
-        handleFileForOrder(matchingOrder, file)
-        continue
+
+      if (showOrders) {
+        const matchingOrder = orderTypes.find((ot) => ot.code === code)
+        if (matchingOrder) {
+          handleFileForOrder(matchingOrder, file)
+          continue
+        }
       }
-      const matchingNotif = notificationTypes.find((nt) => nt.code === code)
-      if (matchingNotif) {
-        handleFileForNotification(matchingNotif, file)
-        continue
+      if (showNotifications) {
+        const matchingNotif = notificationTypes.find((nt) => nt.code === code)
+        if (matchingNotif) {
+          handleFileForNotification(matchingNotif, file)
+          continue
+        }
       }
-      const matchingStmt = statementTypes.find((st) => st.code === code)
-      if (matchingStmt) {
-        handleFileForStatement(matchingStmt, file)
+      if (showStatements) {
+        const matchingStmt = statementTypes.find((st) => st.code === code)
+        if (matchingStmt) {
+          handleFileForStatement(matchingStmt, file)
+        }
       }
     }
 
@@ -160,11 +172,17 @@ export function ImportTemplatesModal({ open, onOpenChange }: ImportTemplatesModa
 
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm text-muted-foreground">
-            Приказы: {orderTypes.filter((ot) => ot.template_exists).length}/{orderTypes.length}
-            {" · "}
-            Уведомления: {notificationTypes.filter((nt) => nt.template_exists).length}/{notificationTypes.length}
-            {" · "}
-            Заявления: {statementTypes.filter((st) => st.template_exists).length}/{statementTypes.length}
+            {showOrders && (
+              <>Приказы: {orderTypes.filter((ot) => ot.template_exists).length}/{orderTypes.length}</>
+            )}
+            {showOrders && (showNotifications || showStatements) && <span className="mx-1">·</span>}
+            {showNotifications && (
+              <>Уведомления: {notificationTypes.filter((nt) => nt.template_exists).length}/{notificationTypes.length}</>
+            )}
+            {showNotifications && showStatements && <span className="mx-1">·</span>}
+            {showStatements && (
+              <>Заявления: {statementTypes.filter((st) => st.template_exists).length}/{statementTypes.length}</>
+            )}
           </p>
           <Button size="sm" onClick={() => fileInputRef.current?.click()}>
             <Upload className="mr-2 h-4 w-4" />
@@ -181,7 +199,7 @@ export function ImportTemplatesModal({ open, onOpenChange }: ImportTemplatesModa
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-4">
-          {renderTemplateSection("Приказы", orderTypes.map((ot) => ({
+          {showOrders && renderTemplateSection("Приказы", orderTypes.map((ot) => ({
             id: ot.id,
             key: String(ot.id),
             kind: "order" as TemplateKind,
@@ -189,7 +207,7 @@ export function ImportTemplatesModal({ open, onOpenChange }: ImportTemplatesModa
             template_exists: ot.template_exists,
             display_name: ot.display_name || ot.template_filename,
           })))}
-          {renderTemplateSection("Уведомления", notificationTypes.map((nt) => ({
+          {showNotifications && renderTemplateSection("Уведомления", notificationTypes.map((nt) => ({
             id: nt.id,
             key: String(nt.id),
             kind: "notification" as TemplateKind,
@@ -197,7 +215,7 @@ export function ImportTemplatesModal({ open, onOpenChange }: ImportTemplatesModa
             template_exists: nt.template_exists,
             display_name: nt.display_name || nt.template_filename,
           })))}
-          {renderTemplateSection("Заявления", statementTypes.map((st) => ({
+          {showStatements && renderTemplateSection("Заявления", statementTypes.map((st) => ({
             id: st.id,
             key: String(st.id),
             kind: "statement" as TemplateKind,
@@ -252,10 +270,7 @@ export function ImportTemplatesModal({ open, onOpenChange }: ImportTemplatesModa
                     size="sm"
                     className="h-7 w-7 p-0"
                     title="Превью"
-                    onClick={() => {
-                      const route = item.kind === "notification" ? "notification-templates" : item.kind === "statement" ? "statement-templates" : "templates"
-                      window.open(`/${route}/${item.id}/view`, "_blank", "noopener,noreferrer")
-                    }}
+                    onClick={() => window.open(`/templates/${item.kind}/${item.id}/view`, "_blank", "noopener,noreferrer")}
                   >
                     <Eye className="h-4 w-4" />
                   </Button>
@@ -266,10 +281,7 @@ export function ImportTemplatesModal({ open, onOpenChange }: ImportTemplatesModa
                     size="sm"
                     className="h-7 w-7 p-0"
                     title="Редактировать"
-                    onClick={() => {
-                      const route = item.kind === "notification" ? "notification-templates" : item.kind === "statement" ? "statement-templates" : "templates"
-                      window.open(`/${route}/${item.id}/edit`, "_blank", "noopener,noreferrer")
-                    }}
+                    onClick={() => window.open(`/templates/${item.kind}/${item.id}/edit`, "_blank", "noopener,noreferrer")}
                   >
                     <Pencil className="h-4 w-4" />
                   </Button>

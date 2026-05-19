@@ -14,6 +14,7 @@ export function useNextStatementNumber() {
 export function useStatements(params: {
   page?: number
   per_page?: number
+  number?: string
   date_from?: string
   date_to?: string
   employee_id?: number
