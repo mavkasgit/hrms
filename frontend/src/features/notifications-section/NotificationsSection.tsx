@@ -47,6 +47,161 @@ import {
 import { openNotificationView, openNotificationEdit, openNotificationPrint, downloadNotificationDocx } from "@/entities/notification/api"
 import type { NotificationCreate } from "@/entities/notification/types"
 
+// ─── Contract Extension Fields Layout ──────────────────────────────────────────
+
+type ContractExtensionFieldsProps = {
+  extraFields: Record<string, string | number>
+  extraFieldErrors: Record<string, string | undefined>
+  onFieldChange: (key: string, value: string | number) => void
+}
+
+function ContractExtensionFields({ extraFields, extraFieldErrors, onFieldChange }: ContractExtensionFieldsProps) {
+  const calculateEndDate = (startDate: string, years: number): string => {
+    const d = new Date(startDate + "T00:00:00")
+    d.setFullYear(d.getFullYear() + years)
+    d.setDate(d.getDate() - 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+  }
+
+  const handleYearsChange = (val: string) => {
+    const startDate = extraFields["new_contract_start"] as string | undefined
+    if (val && Number(val) > 0 && startDate) {
+      const endDate = calculateEndDate(startDate, Number(val))
+      onFieldChange("new_contract_years", Number(val))
+      onFieldChange("new_contract_end", endDate)
+    } else {
+      onFieldChange("new_contract_years", val === "" ? "" : Number(val))
+    }
+  }
+
+  const handleOldContractEndChange = (val: string) => {
+    onFieldChange("old_contract_end", val)
+    // Auto-set new contract start to day after old contract end
+    if (val) {
+      const d = new Date(val + "T00:00:00")
+      d.setDate(d.getDate() + 1)
+      const newStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+      onFieldChange("new_contract_start", newStart)
+      // Also recalculate new end if years is set
+      const years = extraFields["new_contract_years"] as number | undefined
+      if (years && years > 0) {
+        const endDate = calculateEndDate(newStart, years)
+        onFieldChange("new_contract_end", endDate)
+      }
+    }
+  }
+
+  const handleStartDateChange = (val: string) => {
+    const years = extraFields["new_contract_years"] as number | undefined
+    onFieldChange("new_contract_start", val)
+    // Recalculate new end if years is set
+    if (years && years > 0 && val) {
+      const endDate = calculateEndDate(val, years)
+      onFieldChange("new_contract_end", endDate)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Old contract dates */}
+      <div className="text-sm font-medium text-muted-foreground">Предыдущий контракт</div>
+      <div className="flex gap-4 flex-wrap items-end">
+        <div>
+          <DatePicker
+            label="Дата начала"
+            value={(extraFields["old_contract_start"] as string) || ""}
+            onChange={(v) => onFieldChange("old_contract_start", v)}
+            required
+          />
+          {extraFieldErrors[`extra_old_contract_start`] && (
+            <p className="text-xs text-red-500 mt-1">{extraFieldErrors[`extra_old_contract_start`]}</p>
+          )}
+        </div>
+        <div>
+          <DatePicker
+            label="Дата окончания"
+            value={(extraFields["old_contract_end"] as string) || ""}
+            onChange={handleOldContractEndChange}
+            required
+          />
+          {extraFieldErrors[`extra_old_contract_end`] && (
+            <p className="text-xs text-red-500 mt-1">{extraFieldErrors[`extra_old_contract_end`]}</p>
+          )}
+        </div>
+        <div>
+          <label className="text-sm font-medium">Номер контракта</label>
+          <Input
+            placeholder="Номер контракта"
+            value={(extraFields["old_contract_number"] as string) || ""}
+            onChange={(e) => onFieldChange("old_contract_number", e.target.value)}
+            className="w-[130px] mt-1"
+          />
+          {extraFieldErrors[`extra_old_contract_number`] && (
+            <p className="text-xs text-red-500 mt-1">{extraFieldErrors[`extra_old_contract_number`]}</p>
+          )}
+        </div>
+      </div>
+
+      {/* New contract dates */}
+      <div className="text-sm font-medium text-muted-foreground pt-2">Новый контракт</div>
+      <div className="flex gap-4 flex-wrap items-end">
+        <div>
+          <DatePicker
+            label="Дата начала"
+            value={(extraFields["new_contract_start"] as string) || ""}
+            onChange={handleStartDateChange}
+            required
+          />
+          {extraFieldErrors[`extra_new_contract_start`] && (
+            <p className="text-xs text-red-500 mt-1">{extraFieldErrors[`extra_new_contract_start`]}</p>
+          )}
+        </div>
+        <div>
+          <DatePicker
+            label="Дата окончания"
+            value={(extraFields["new_contract_end"] as string) || ""}
+            onChange={(v) => onFieldChange("new_contract_end", v)}
+            required
+          />
+          {extraFieldErrors[`extra_new_contract_end`] && (
+            <p className="text-xs text-red-500 mt-1">{extraFieldErrors[`extra_new_contract_end`]}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Quick options for years */}
+      <div className="flex gap-2 items-center">
+        {[1, 2, 3].map((years) => (
+          <button
+            key={years}
+            type="button"
+            className="text-xs px-2 py-0.5 rounded border border-input bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            onClick={() => {
+              const startDate = extraFields["new_contract_start"] as string | undefined
+              if (startDate) {
+                const endDate = calculateEndDate(startDate, years)
+                onFieldChange("new_contract_years", years)
+                onFieldChange("new_contract_end", endDate)
+              }
+            }}
+          >
+            {years === 1 ? "1 год" : years === 2 ? "2 года" : "3 года"}
+          </button>
+        ))}
+        <label className="text-xs text-muted-foreground whitespace-nowrap">лет:</label>
+        <input
+          type="number"
+          min="1"
+          max="99"
+          value={extraFields["new_contract_years"] !== undefined && extraFields["new_contract_years"] !== "" ? String(extraFields["new_contract_years"]) : ""}
+          onChange={(e) => handleYearsChange(e.target.value)}
+          className="w-12 h-7 text-xs rounded border border-input bg-background px-1 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+      </div>
+    </div>
+  )
+}
+
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -138,6 +293,44 @@ export function NotificationsSection() {
     setExtraFields({})
     setExtraFieldErrors({})
   }, [selectedNotificationTypeId])
+
+  // Auto-fill contract fields when employee is selected for contract_extension
+  useEffect(() => {
+    if (selectedEmployee && selectedNotificationType?.code === "contract_extension") {
+      const autoFilled: Record<string, string | number> = {}
+      
+      // Fill old contract dates from employee data
+      if (selectedEmployee.contract_start) {
+        const startDate = typeof selectedEmployee.contract_start === "string" 
+          ? selectedEmployee.contract_start 
+          : new Date(selectedEmployee.contract_start).toISOString().split("T")[0]
+        autoFilled.old_contract_start = startDate
+      }
+      if (selectedEmployee.contract_end) {
+        const endDate = typeof selectedEmployee.contract_end === "string"
+          ? selectedEmployee.contract_end
+          : new Date(selectedEmployee.contract_end).toISOString().split("T")[0]
+        autoFilled.old_contract_end = endDate
+        
+        // Auto-set new contract start to day after old contract end
+        const d = new Date(endDate + "T00:00:00")
+        d.setDate(d.getDate() + 1)
+        const newStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+        autoFilled.new_contract_start = newStart
+      }
+
+      // Only auto-fill if fields are empty
+      setExtraFields((prev) => {
+        const merged = { ...prev }
+        for (const [key, value] of Object.entries(autoFilled)) {
+          if (!merged[key]) {
+            merged[key] = value
+          }
+        }
+        return merged
+      })
+    }
+  }, [selectedEmployee, selectedNotificationType?.code])
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -331,7 +524,7 @@ export function NotificationsSection() {
               </div>
 
               {/* Right column — Детали */}
-              <div className="space-y-4 flex-1 min-w-0 max-w-[400px] lg:pl-6">
+              <div className="space-y-4 flex-1 min-w-0 lg:max-w-[600px] lg:pl-6">
                 {/* Type selector */}
                 <div ref={notificationTypeRef} className="w-60">
                   <label className="text-sm font-medium">Тип уведомления</label>
@@ -381,15 +574,23 @@ export function NotificationsSection() {
                 {/* Dynamic extra fields from field_schema */}
                 {selectedNotificationType && Array.isArray(selectedNotificationType.field_schema) && selectedNotificationType.field_schema.length > 0 && (
                   <div className="space-y-4">
-                    {selectedNotificationType.field_schema.map((field) => (
-                      <DynamicField
-                        key={field.key}
-                        field={field as FieldSchema}
-                        value={extraFields[field.key]}
-                        error={extraFieldErrors[`extra_${field.key}`]}
-                        onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                    {selectedNotificationType.code === "contract_extension" ? (
+                      <ContractExtensionFields
+                        extraFields={extraFields}
+                        extraFieldErrors={extraFieldErrors}
+                        onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
                       />
-                    ))}
+                    ) : (
+                      selectedNotificationType.field_schema.map((field) => (
+                        <DynamicField
+                          key={field.key}
+                          field={field as FieldSchema}
+                          value={extraFields[field.key]}
+                          error={extraFieldErrors[`extra_${field.key}`]}
+                          onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                        />
+                      ))
+                    )}
                   </div>
                 )}
               </div>

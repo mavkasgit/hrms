@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
 import { TemplateActionsBar } from "@/features/template-actions-bar"
+import axios from "@/shared/api/axios"
 
 interface FieldSchema {
   key: string
@@ -72,12 +73,6 @@ const emptyField = (): FieldSchema => ({
   required: false,
 })
 
-const STANDARD_ORDER_CODES = ["hire", "dismissal", "transfer", "contract_extension", "vacation_paid", "vacation_unpaid", "vacation_recall", "vacation_postpone", "vacation_extension", "weekend_call", "substitution", "vacation_unpaid_group", "weekend_call_group"]
-
-const STANDARD_NOTIFICATION_CODES = ["standard", "contract_extension"]
-
-const STANDARD_STATEMENT_CODES = ["simple", "personal", "transfer", "dismissal", "vacation", "other"]
-
 export function TemplateTypeForm({
   open,
   onOpenChange,
@@ -102,16 +97,20 @@ export function TemplateTypeForm({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
+  const [standardCodes, setStandardCodes] = useState<string[]>([])
 
   const isOrder = scope === "orders"
   const isNotification = scope === "notifications"
   const isStatement = scope === "statements"
   const isEdit = editingType !== null
-  const isStandard = isEdit && (
-    (isOrder && STANDARD_ORDER_CODES.includes(editingType.code)) ||
-    (isNotification && STANDARD_NOTIFICATION_CODES.includes(editingType.code)) ||
-    (isStatement && STANDARD_STATEMENT_CODES.includes(editingType.code))
-  )
+  const isStandard = isEdit && standardCodes.includes(editingType.code)
+
+  useEffect(() => {
+    const endpoint = isOrder ? "order-types" : isNotification ? "notification-types" : "statement-types"
+    axios.get(`/${endpoint}/standard-codes`).then((res) => {
+      setStandardCodes(res.data.codes || [])
+    }).catch(() => {})
+  }, [isOrder, isNotification, isStatement])
 
   useEffect(() => {
     if (editingType) {

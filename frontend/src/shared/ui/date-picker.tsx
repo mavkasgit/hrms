@@ -146,7 +146,7 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
   }
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative w-[130px]", className)}>
       {label && (
         <label htmlFor={id} className="text-sm font-medium whitespace-nowrap">
           {label}
