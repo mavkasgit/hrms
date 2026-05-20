@@ -15,6 +15,7 @@ from app.schemas.order_type import (
 )
 from app.services.order_document_service import get_template_path
 from app.services.order_service import order_service
+from app.services.order_type_service import STANDARD_ORDER_CODES
 from app.services.template_variables_service import get_template_variables as get_all_template_variables
 
 router = APIRouter(prefix="/order-types", tags=["order-types"])
@@ -22,6 +23,13 @@ router = APIRouter(prefix="/order-types", tags=["order-types"])
 
 def _get_current_user_stub() -> str:
     return "admin"
+
+
+@router.get("/standard-codes")
+async def get_standard_order_codes(
+    current_user: str = Depends(_get_current_user_stub),
+):
+    return {"codes": list(STANDARD_ORDER_CODES)}
 
 
 @router.get("", response_model=OrderTypeListResponse)

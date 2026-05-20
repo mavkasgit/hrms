@@ -5,6 +5,7 @@ ALL_TEMPLATE_VARIABLES = [
     {"name": "{doc_number}", "description": "Номер документа", "category": "Документ"},
     {"name": "{doc_date}", "description": "Дата документа (ДД.ММ.ГГГГ)", "category": "Документ"},
     {"name": "{doc_title}", "description": "Заголовок документа", "category": "Документ"},
+    {"name": "{old_contract_number}", "description": "Номер старого контракта (уведомление о продлении)", "category": "Документ"},
 
     # Employee name
     {"name": "{full_name}", "description": "ФИО полностью", "category": "ФИО"},
@@ -26,27 +27,50 @@ ALL_TEMPLATE_VARIABLES = [
     {"name": "{department}", "description": "Подразделение", "category": "Работа"},
     {"name": "{tab_number}", "description": "Табельный номер", "category": "Работа"},
 
-    # Dates
+    # Dates — Hire
     {"name": "{hire_date}", "description": "Дата приема на работу", "category": "Даты"},
+    {"name": "{hire_order_date}", "description": "Дата приема (для приказа «Прием на работу»)", "category": "Даты"},
+
+    # Dates — Contract
     {"name": "{contract_start}", "description": "Дата начала контракта", "category": "Даты"},
     {"name": "{contract_end}", "description": "Дата окончания контракта", "category": "Даты"},
     {"name": "{contract_end_years}", "description": "Срок контракта в годах", "category": "Даты"},
+    {"name": "{contract_new_end}", "description": "Новая дата конца контракта", "category": "Даты"},
+
+    # Dates — Contract extension (уведомление о продлении)
+    {"name": "{old_contract_start}", "description": "Дата начала старого контракта", "category": "Даты"},
+    {"name": "{old_contract_end}", "description": "Дата окончания старого контракта", "category": "Даты"},
+    {"name": "{new_contract_start}", "description": "Дата начала нового контракта", "category": "Даты"},
+    {"name": "{new_contract_end}", "description": "Дата окончания нового контракта", "category": "Даты"},
+    {"name": "{new_contract_years}", "description": "Срок продления контракта в годах", "category": "Даты"},
+
+    # Dates — Trial
     {"name": "{trial_end}", "description": "Дата окончания испытательного срока", "category": "Даты"},
     {"name": "{trial_end_months}", "description": "Кол-во месяцев испытательного срока", "category": "Даты"},
-    {"name": "{hire_order_date}", "description": "Дата приема (для приказа «Прием на работу»)", "category": "Даты"},
+
+    # Dates — Dismissal
     {"name": "{dismissal_date}", "description": "Дата увольнения", "category": "Даты"},
+
+    # Dates — Vacation
     {"name": "{vacation_start}", "description": "Начало отпуска", "category": "Даты"},
     {"name": "{vacation_end}", "description": "Конец отпуска", "category": "Даты"},
     {"name": "{vacation_days}", "description": "Кол-во дней отпуска", "category": "Даты"},
+    {"name": "{recall_date}", "description": "Дата отзыва из отпуска", "category": "Даты"},
+
+    # Dates — Sick leave
     {"name": "{sick_leave_start}", "description": "Начало больничного", "category": "Даты"},
     {"name": "{sick_leave_end}", "description": "Конец больничного", "category": "Даты"},
     {"name": "{sick_leave_days}", "description": "Кол-во дней больничного", "category": "Даты"},
+
+    # Dates — Transfer
     {"name": "{transfer_date}", "description": "Дата перевода", "category": "Даты"},
-    {"name": "{contract_new_end}", "description": "Новая дата конца контракта", "category": "Даты"},
+
+    # Dates — Call
     {"name": "{call_date}", "description": "Дата вызова", "category": "Даты"},
     {"name": "{call_date_start}", "description": "Дата начала вызова", "category": "Даты"},
     {"name": "{call_date_end}", "description": "Дата окончания вызова", "category": "Даты"},
-    {"name": "{recall_date}", "description": "Дата отзыва из отпуска", "category": "Даты"},
+
+    # Dates — Application
     {"name": "{application_date}", "description": "Дата заявления", "category": "Даты"},
 
     # Order-specific

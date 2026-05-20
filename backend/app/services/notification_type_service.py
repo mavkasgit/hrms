@@ -24,7 +24,12 @@ DEFAULT_NOTIFICATION_TYPES: list[dict[str, Any]] = [
         "name": "О продлении контракта",
         "template_filename": None,
         "field_schema": [
-            {"key": "contract_new_end", "label": "Новая дата конца контракта", "type": "date", "required": True},
+            {"key": "old_contract_start", "label": "Дата начала старого контракта", "type": "date", "required": True},
+            {"key": "old_contract_end", "label": "Дата окончания старого контракта", "type": "date", "required": True},
+            {"key": "old_contract_number", "label": "Номер старого контракта", "type": "text", "required": False},
+            {"key": "new_contract_start", "label": "Дата начала нового контракта", "type": "date", "required": True},
+            {"key": "new_contract_end", "label": "Дата окончания нового контракта", "type": "date", "required": True},
+            {"key": "new_contract_years", "label": "Срок продления (лет)", "type": "number", "required": False},
         ],
         "filename_pattern": "Уведомление_№{doc_number}_{doc_date}.docx",
     },

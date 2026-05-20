@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.services.statement_type_service import statement_type_service, get_template_path
+from app.services.statement_type_service import statement_type_service, get_template_path, STANDARD_STATEMENT_CODES
 from app.services.template_variables_service import get_template_variables as get_all_template_variables
 
 router = APIRouter(prefix="/statement-types", tags=["statement-types"])
@@ -14,6 +14,13 @@ router = APIRouter(prefix="/statement-types", tags=["statement-types"])
 
 def _get_current_user_stub() -> str:
     return "admin"
+
+
+@router.get("/standard-codes")
+async def get_standard_statement_codes(
+    current_user: str = Depends(_get_current_user_stub),
+):
+    return {"codes": list(STANDARD_STATEMENT_CODES)}
 
 
 @router.get("", response_model=list[dict[str, Any]])

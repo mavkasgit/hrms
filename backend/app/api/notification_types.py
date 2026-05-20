@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.services.notification_type_service import notification_type_service, get_template_path
+from app.services.notification_type_service import notification_type_service, get_template_path, STANDARD_NOTIFICATION_CODES
 from app.services.template_variables_service import get_template_variables as get_all_template_variables
 
 router = APIRouter(prefix="/notification-types", tags=["notification-types"])
@@ -14,6 +14,13 @@ router = APIRouter(prefix="/notification-types", tags=["notification-types"])
 
 def _get_current_user_stub() -> str:
     return "admin"
+
+
+@router.get("/standard-codes")
+async def get_standard_notification_codes(
+    current_user: str = Depends(_get_current_user_stub),
+):
+    return {"codes": list(STANDARD_NOTIFICATION_CODES)}
 
 
 @router.get("", response_model=list[dict[str, Any]])

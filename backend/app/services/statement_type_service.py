@@ -57,6 +57,16 @@ DEFAULT_STATEMENT_TYPES: list[dict[str, Any]] = [
         "filename_pattern": "Заявление_№{doc_number}_{doc_date}.docx",
     },
     {
+        "code": "contract_expiry",
+        "name": "Заявление в связи с истечением срока действия контракта",
+        "template_filename": None,
+        "field_schema": [
+            {"key": "old_contract_start", "label": "Дата начала контракта", "type": "date", "required": True},
+            {"key": "old_contract_number", "label": "Номер контракта", "type": "text", "required": False},
+        ],
+        "filename_pattern": "Заявление_№{doc_number}_{doc_date}.docx",
+    },
+    {
         "code": "other",
         "name": "Другое",
         "template_filename": None,
@@ -122,6 +132,9 @@ class StatementTypeService:
             for key in ("name", "filename_pattern"):
                 if getattr(current, key) != item.get(key):
                     updates[key] = item.get(key)
+            # Always sync field_schema for standard types
+            if current.code in STANDARD_STATEMENT_CODES:
+                updates["field_schema"] = item.get("field_schema", [])
             if not current.display_name or current.display_name.startswith("Шаблон - "):
                 updates["display_name"] = display_name
             if updates:

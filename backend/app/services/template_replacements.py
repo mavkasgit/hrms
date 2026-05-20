@@ -216,6 +216,29 @@ def build_notification_replacements(
         replacements["{notification_type_name}"] = notification_type_name
         replacements["{notification_type_code}"] = notification_type_code
 
+    # For contract_extension, auto-fill old contract dates from employee if not in extra_fields
+    if notification_type_code == "contract_extension" and employee:
+        extra_raw = extra_fields or {}
+        if not extra_raw.get("old_contract_start"):
+            cs = getattr(employee, "contract_start", None)
+            if cs:
+                replacements["{old_contract_start}"] = _format_date_ddmmyyyy(cs)
+        if not extra_raw.get("old_contract_end"):
+            ce = getattr(employee, "contract_end", None)
+            if ce:
+                replacements["{old_contract_end}"] = _format_date_ddmmyyyy(ce)
+
+    # Calculate contract duration in years for contract_extension notifications
+    if notification_type_code == "contract_extension" and extra_fields:
+        new_start = _parse_date_like(extra_fields.get("new_contract_start"))
+        new_end = _parse_date_like(extra_fields.get("new_contract_end"))
+        if new_start and new_end:
+            years = new_end.year - new_start.year
+            if (new_end.month, new_end.day) < (new_start.month, new_start.day):
+                years -= 1
+            if years > 0:
+                replacements["{new_contract_years}"] = str(years)
+
     return replacements
 
 
@@ -236,6 +259,13 @@ def build_statement_replacements(
     if statement_type_name:
         replacements["{statement_type_name}"] = statement_type_name
         replacements["{statement_type_code}"] = statement_type_code
+
+    # For contract_expiry, auto-fill contract start from employee
+    if statement_type_code == "contract_expiry" and employee:
+        extra_raw = extra_fields or {}
+        cs = getattr(employee, "contract_start", None)
+        if cs:
+            replacements["{old_contract_start}"] = _format_date_ddmmyyyy(cs)
 
     return replacements
 
