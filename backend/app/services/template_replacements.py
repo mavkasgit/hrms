@@ -170,6 +170,28 @@ def build_order_replacements(
     # Backward-compatible alias used in hire templates.
     replacements["{hire_order_date}"] = replacements.get("{hire_date}", "")
 
+    # For contract_extension, auto-fill old contract dates from employee if not in extra_fields
+    if order_type_code == "contract_extension" and employee:
+        if not extra_raw.get("old_contract_start"):
+            cs = getattr(employee, "contract_start", None)
+            if cs:
+                replacements["{old_contract_start}"] = _format_date_ddmmyyyy(cs)
+        if not extra_raw.get("old_contract_end"):
+            ce = getattr(employee, "contract_end", None)
+            if ce:
+                replacements["{old_contract_end}"] = _format_date_ddmmyyyy(ce)
+
+    # Calculate contract duration in years for contract_extension
+    if order_type_code == "contract_extension" and extra_raw:
+        new_start = _parse_date_like(extra_raw.get("new_contract_start"))
+        new_end = _parse_date_like(extra_raw.get("new_contract_end"))
+        if new_start and new_end:
+            years = new_end.year - new_start.year
+            if (new_end.month, new_end.day) < (new_start.month, new_start.day):
+                years -= 1
+            if years > 0:
+                replacements["{new_contract_years}"] = str(years)
+
     # Calculate trial period months
     trial_end_months = ""
     if use_extra_hire_dates:

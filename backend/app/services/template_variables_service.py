@@ -6,6 +6,7 @@ ALL_TEMPLATE_VARIABLES = [
     {"name": "{doc_date}", "description": "Дата документа (ДД.ММ.ГГГГ)", "category": "Документ"},
     {"name": "{doc_title}", "description": "Заголовок документа", "category": "Документ"},
     {"name": "{old_contract_number}", "description": "Номер старого контракта (уведомление о продлении)", "category": "Документ"},
+    {"name": "{new_contract_number}", "description": "Номер нового контракта", "category": "Документ"},
 
     # Employee name
     {"name": "{full_name}", "description": "ФИО полностью", "category": "ФИО"},
@@ -35,9 +36,8 @@ ALL_TEMPLATE_VARIABLES = [
     {"name": "{contract_start}", "description": "Дата начала контракта", "category": "Даты"},
     {"name": "{contract_end}", "description": "Дата окончания контракта", "category": "Даты"},
     {"name": "{contract_end_years}", "description": "Срок контракта в годах", "category": "Даты"},
-    {"name": "{contract_new_end}", "description": "Новая дата конца контракта", "category": "Даты"},
 
-    # Dates — Contract extension (уведомление о продлении)
+    # Dates — Contract extension
     {"name": "{old_contract_start}", "description": "Дата начала старого контракта", "category": "Даты"},
     {"name": "{old_contract_end}", "description": "Дата окончания старого контракта", "category": "Даты"},
     {"name": "{new_contract_start}", "description": "Дата начала нового контракта", "category": "Даты"},

@@ -183,7 +183,7 @@ class OrderService:
         # Подготавливаем extra_fields для продления контракта
         extra_fields = data.extra_fields
         if order_type.code == "contract_extension" and data.extra_fields:
-            new_end = data.extra_fields.get("contract_new_end")
+            new_end = data.extra_fields.get("new_contract_end")
             if new_end:
                 extra_fields = dict(data.extra_fields)
                 extra_fields["old_contract_end"] = (
