@@ -83,3 +83,60 @@ export function formatForInput(date: Date | null): string {
 export function getCurrentYear(): number {
   return new Date().getFullYear()
 }
+
+/**
+ * Добавить N лет к дате и вычесть 1 день (для контрактов)
+ */
+export function addYearsToDate(dateStr: string, years: number): string {
+  const date = parseDate(dateStr)
+  if (!date) return ""
+  date.setFullYear(date.getFullYear() + years)
+  date.setDate(date.getDate() - 1)
+  return formatForInput(date)
+}
+
+/**
+ * Добавить N месяцев к дате и вычесть 1 день (для испытательного срока)
+ */
+export function addMonthsToDate(dateStr: string, months: number): string {
+  const date = parseDate(dateStr)
+  if (!date) return ""
+  date.setMonth(date.getMonth() + months)
+  date.setDate(date.getDate() - 1)
+  return formatForInput(date)
+}
+
+/**
+ * Получить следующий день (дата + 1 день)
+ */
+export function nextDay(dateStr: string): string {
+  const date = parseDate(dateStr)
+  if (!date) return ""
+  date.setDate(date.getDate() + 1)
+  return formatForInput(date)
+}
+
+/**
+ * Рассчитать разницу в годах между двумя датами
+ */
+export function calcDurationYears(startStr: string, endStr: string): number {
+  const start = parseDate(startStr)
+  const end = parseDate(endStr)
+  if (!start || !end) return 0
+  let years = end.getFullYear() - start.getFullYear()
+  if ((end.getMonth(), end.getDate()) < (start.getMonth(), start.getDate())) {
+    years -= 1
+  }
+  return years > 0 ? years : 0
+}
+
+/**
+ * Рассчитать разницу в месяцах между двумя датами
+ */
+export function calcDurationMonths(startStr: string, endStr: string): number {
+  const start = parseDate(startStr)
+  const end = parseDate(endStr)
+  if (!start || !end) return 0
+  const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth())
+  return months > 0 ? months : 0
+}

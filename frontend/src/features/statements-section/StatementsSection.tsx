@@ -35,6 +35,7 @@ import {
 import { EmployeeSearch } from "@/features/employee-search"
 import { DocumentNumberField } from "@/features/DocumentNumberField"
 import { DynamicField, type FieldSchema } from "@/shared/ui/dynamic-field"
+import { StatementContractExpiryFields, useAutoFillFields } from "@/features/dynamic-form"
 import type { Employee } from "@/entities/employee/types"
 import type { StatementType } from "@/entities/statement/types"
 import {
@@ -46,44 +47,6 @@ import {
 } from "@/entities/statement/hooks"
 import { openStatementView, openStatementEdit, openStatementPrint, downloadStatementDocx } from "@/entities/statement/api"
 import type { StatementCreate } from "@/entities/statement/types"
-
-// ─── Contract Expiry Fields Layout ──────────────────────────────────────────
-
-type ContractExpiryFieldsProps = {
-  extraFields: Record<string, string | number>
-  extraFieldErrors: Record<string, string | undefined>
-  onFieldChange: (key: string, value: string | number) => void
-}
-
-function ContractExpiryFields({ extraFields, extraFieldErrors, onFieldChange }: ContractExpiryFieldsProps) {
-  return (
-    <div className="flex gap-4 flex-wrap items-end">
-      <div>
-        <label className="text-sm font-medium">Номер контракта</label>
-        <Input
-          placeholder="Номер контракта"
-          value={(extraFields["old_contract_number"] as string) || ""}
-          onChange={(e) => onFieldChange("old_contract_number", e.target.value)}
-          className="w-[130px] mt-1"
-        />
-        {extraFieldErrors[`extra_old_contract_number`] && (
-          <p className="text-xs text-red-500 mt-1">{extraFieldErrors[`extra_old_contract_number`]}</p>
-        )}
-      </div>
-      <div>
-        <DatePicker
-          label="Дата начала контракта"
-          value={(extraFields["old_contract_start"] as string) || ""}
-          onChange={(v) => onFieldChange("old_contract_start", v)}
-          required
-        />
-        {extraFieldErrors[`extra_old_contract_start`] && (
-          <p className="text-xs text-red-500 mt-1">{extraFieldErrors[`extra_old_contract_start`]}</p>
-        )}
-      </div>
-    </div>
-  )
-}
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -178,28 +141,12 @@ export function StatementsSection() {
   }, [selectedStatementTypeId])
 
   // Auto-fill contract fields when employee is selected for contract_expiry
-  useEffect(() => {
-    if (selectedEmployee && selectedStatementType?.code === "contract_expiry") {
-      const autoFilled: Record<string, string | number> = {}
-      
-      if (selectedEmployee.contract_start) {
-        const startDate = typeof selectedEmployee.contract_start === "string"
-          ? selectedEmployee.contract_start
-          : new Date(selectedEmployee.contract_start).toISOString().split("T")[0]
-        autoFilled.old_contract_start = startDate
-      }
-
-      setExtraFields((prev) => {
-        const merged = { ...prev }
-        for (const [key, value] of Object.entries(autoFilled)) {
-          if (!merged[key]) {
-            merged[key] = value
-          }
-        }
-        return merged
-      })
-    }
-  }, [selectedEmployee, selectedStatementType?.code])
+  useAutoFillFields(
+    selectedEmployee,
+    selectedStatementType?.code,
+    extraFields,
+    setExtraFields,
+  )
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -443,7 +390,7 @@ export function StatementsSection() {
                 {selectedStatementType && (selectedStatementType.code === "contract_expiry" || (Array.isArray(selectedStatementType.field_schema) && selectedStatementType.field_schema.length > 0)) && (
                   <div className="space-y-4">
                     {selectedStatementType.code === "contract_expiry" ? (
-                      <ContractExpiryFields
+                      <StatementContractExpiryFields
                         extraFields={extraFields}
                         extraFieldErrors={extraFieldErrors}
                         onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
