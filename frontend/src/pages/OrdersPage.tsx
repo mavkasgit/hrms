@@ -4,6 +4,7 @@ import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, S
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
+import { YearFilter } from "@/shared/ui/year-filter"
 import { Badge } from "@/shared/ui/badge"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
@@ -112,7 +113,7 @@ function OrderDeletePreview({ orderId }: { orderId: number | null }) {
 export function OrdersPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [year, setYear] = useState<number | undefined>(undefined)
+  const [year, setYear] = useState<number | undefined>(new Date().getFullYear())
   const [collapsed, setCollapsed] = useState(false)
   const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [filterCollapsed, setFilterCollapsed] = useState(true)
@@ -488,7 +489,7 @@ export function OrdersPage() {
     setFilterOrderNumber("")
     setFilterDateFrom("")
     setFilterDateTo("")
-    setYear(undefined)
+    setYear(new Date().getFullYear())
     setFilterLetter(undefined)
     setFilterLS(false)
     setFilterShowGeneral(false)
@@ -920,12 +921,7 @@ export function OrdersPage() {
 
             {/* Row 3: Year buttons, Letter buttons + Clear */}
             <div className="flex flex-wrap gap-3 items-center">
-              <div className="flex gap-1">
-                <Button variant={!year ? "default" : "outline"} size="sm" onClick={() => setYear(undefined)}>Все года</Button>
-                {years?.map((y) => (
-                  <Button key={y} variant={year === y ? "default" : "outline"} size="sm" onClick={() => setYear(y)}>{y}</Button>
-                ))}
-              </div>
+              <YearFilter value={year} onChange={setYear} years={years} />
 
               <div className="flex gap-1">
                 <Button variant={!filterLetter ? "default" : "outline"} size="sm" onClick={() => setFilterLetter(undefined)}>Все литеры</Button>
@@ -996,12 +992,7 @@ export function OrdersPage() {
             </div>
 
             <div className="flex flex-wrap gap-3 items-center">
-              <div className="flex gap-1">
-                <Button variant={!year ? "default" : "outline"} size="sm" onClick={() => setYear(undefined)}>Все года</Button>
-                {years?.map((y) => (
-                  <Button key={y} variant={year === y ? "default" : "outline"} size="sm" onClick={() => setYear(y)}>{y}</Button>
-                ))}
-              </div>
+              <YearFilter value={year} onChange={setYear} years={years} />
             </div>
           </div>
         )}

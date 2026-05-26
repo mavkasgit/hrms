@@ -12,8 +12,9 @@ type HireOrderFieldsProps = {
 export function HireOrderFields({ fieldSchema, extraFields, extraFieldErrors, onFieldChange }: HireOrderFieldsProps) {
   const hireDate = fieldSchema.find(f => f.key === "hire_date")
   const contractEnd = fieldSchema.find(f => f.key === "contract_end")
+  const newContractNumber = fieldSchema.find(f => f.key === "new_contract_number")
   const trialEnd = fieldSchema.find(f => f.key === "trial_end")
-  const otherFields = fieldSchema.filter(f => !["hire_date", "contract_end", "trial_end"].includes(f.key))
+  const otherFields = fieldSchema.filter(f => !["hire_date", "contract_end", "new_contract_number", "trial_end"].includes(f.key))
 
   const contractEndWithQuick = contractEnd
     ? { ...contractEnd, quickOptions: [
@@ -47,6 +48,15 @@ export function HireOrderFields({ fieldSchema, extraFields, extraFieldErrors, on
             field={{ ...contractEndWithQuick, quickOptions: undefined }}
             value={extraFields[contractEndWithQuick.key]}
             error={extraFieldErrors[`extra_${contractEndWithQuick.key}`]}
+            onChange={onFieldChange}
+            extraFields={extraFields}
+          />
+        )}
+        {newContractNumber && (
+          <FieldRenderer
+            field={newContractNumber}
+            value={extraFields[newContractNumber.key]}
+            error={extraFieldErrors[`extra_${newContractNumber.key}`]}
             onChange={onFieldChange}
             extraFields={extraFields}
           />

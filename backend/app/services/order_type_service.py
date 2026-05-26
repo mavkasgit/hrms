@@ -26,6 +26,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
         "field_schema": [
             {"key": "hire_date", "label": "Дата приема", "type": "date", "required": False},
             {"key": "contract_end", "label": "Конец контракта", "type": "date", "required": False},
+            {"key": "new_contract_number", "label": "Номер контракта", "type": "text", "required": False},
             {"key": "trial_end", "label": "Конец испытательного срока", "type": "date", "required": False},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
@@ -256,6 +257,10 @@ class OrderTypeService:
                     updates[key] = item.get(key)
             if not current.display_name or current.display_name.startswith("Шаблон - "):
                 updates["display_name"] = display_name
+            # Sync field_schema for known default types
+            current_schema = current.field_schema or []
+            if current_schema != item.get("field_schema", []):
+                updates["field_schema"] = item.get("field_schema", [])
             if updates:
                 old_name = current.name
                 updated = await self.order_type_repo.update(db, current, updates)
