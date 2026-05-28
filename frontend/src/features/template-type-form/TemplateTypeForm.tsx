@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2, Wand2 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Checkbox } from "@/shared/ui/checkbox"
@@ -27,6 +27,8 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
 import { TemplateActionsBar } from "@/features/template-actions-bar"
+import { PlaceholderAutocomplete } from "./PlaceholderAutocomplete"
+import type { TemplateVariable } from "@/entities/order/types"
 import axios from "@/shared/api/axios"
 
 interface FieldSchema {
@@ -98,6 +100,8 @@ export function TemplateTypeForm({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const [standardCodes, setStandardCodes] = useState<string[]>([])
+  const [templateVariables, setTemplateVariables] = useState<TemplateVariable[]>([])
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
 
   const isOrder = scope === "orders"
   const isNotification = scope === "notifications"
@@ -109,6 +113,11 @@ export function TemplateTypeForm({
     const endpoint = isOrder ? "order-types" : isNotification ? "notification-types" : "statement-types"
     axios.get(`/${endpoint}/standard-codes`).then((res) => {
       setStandardCodes(res.data.codes || [])
+    }).catch(() => {})
+
+    // Load template variables for autocomplete
+    axios.get(`/${endpoint}/variables`).then((res) => {
+      setTemplateVariables(res.data.variables || [])
     }).catch(() => {})
   }, [isOrder, isNotification, isStatement])
 
@@ -195,6 +204,24 @@ export function TemplateTypeForm({
     })
   }
 
+  const handleAnalyzeTemplate = async () => {
+    if (!editingType?.id) return
+    setIsAnalyzing(true)
+    try {
+      const endpoint = isOrder ? "order-types" : isNotification ? "notification-types" : "statement-types"
+      const res = await axios.post(`/${endpoint}/${editingType.id}/template/analyze`)
+      if (res.data.field_schema && res.data.field_schema.length > 0) {
+        setFields(res.data.field_schema)
+        setUploadSuccess(true)
+        setTimeout(() => setUploadSuccess(false), 3000)
+      }
+    } catch (err: any) {
+      console.error("Failed to analyze template:", err)
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
   const isPending = createMutation.isPending || updateMutation.isPending || deleteMutation?.isPending
 
   return (
@@ -247,15 +274,32 @@ export function TemplateTypeForm({
             )}
 
             <div className="space-y-3">
-              <h3 className="font-medium text-sm">Дополнительные поля</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-medium text-sm">Дополнительные поля</h3>
+                {isEdit && editingType.template_exists && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAnalyzeTemplate}
+                    disabled={isStandard || isAnalyzing}
+                    className="h-7 text-xs"
+                  >
+                    <Wand2 className="mr-1 h-3 w-3" />
+                    {isAnalyzing ? "Анализ..." : "Авто-заполнить из шаблона"}
+                  </Button>
+                )}
+              </div>
               {fields.map((field, index) => (
                 <div key={index} className="grid gap-2 md:grid-cols-[1fr_1fr_120px_100px_40px] items-start">
-                  <Input
+                  <PlaceholderAutocomplete
                     value={field.key}
-                    onChange={(e) => setFields((prev) => prev.map((item, idx) => (idx === index ? { ...item, key: e.target.value } : item)))}
+                    onChange={(value) => setFields((prev) => prev.map((item, idx) => (idx === index ? { ...item, key: value } : item)))}
+                    options={templateVariables.map((v) => ({
+                      name: v.name,
+                      description: v.description,
+                      category: v.category,
+                    }))}
                     placeholder="key"
-                    className="h-9"
-                    disabled={isStandard}
                   />
                   <Input
                     value={field.label}
