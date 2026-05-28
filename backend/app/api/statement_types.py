@@ -80,6 +80,36 @@ async def upload_template(
     return await statement_type_service.upload_template(db, statement_type_id, file.filename, content)
 
 
+@router.post("/{statement_type_id}/template/analyze", response_model=dict[str, Any])
+async def analyze_template(
+    statement_type_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Analyze uploaded template and suggest field schema from placeholders."""
+    from app.services.template_placeholder_extractor import (
+        extract_placeholders_from_docx,
+        suggest_field_schema,
+    )
+    from app.schemas.order_type import OrderTypeUpdate
+
+    stmt_type = await statement_type_service.get_statement_type(db, statement_type_id)
+    template_path = get_template_path(stmt_type)
+
+    if not template_path.exists():
+        raise HTTPException(404, "Шаблон не загружен")
+
+    placeholders = extract_placeholders_from_docx(template_path)
+    suggested_schema = suggest_field_schema(placeholders)
+
+    update_data = OrderTypeUpdate(field_schema=suggested_schema)
+    await statement_type_service.update_statement_type(db, statement_type_id, update_data.model_dump(exclude_unset=True))
+
+    # Re-fetch and serialize
+    updated = await statement_type_service.get_statement_type(db, statement_type_id)
+    return statement_type_service._serialize_statement_type(updated)
+
+
 @router.delete("/{statement_type_id}/template")
 async def delete_template(
     statement_type_id: int,

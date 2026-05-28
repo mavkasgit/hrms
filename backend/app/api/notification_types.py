@@ -80,6 +80,36 @@ async def upload_template(
     return await notification_type_service.upload_template(db, notification_type_id, file.filename, content)
 
 
+@router.post("/{notification_type_id}/template/analyze", response_model=dict[str, Any])
+async def analyze_template(
+    notification_type_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Analyze uploaded template and suggest field schema from placeholders."""
+    from app.services.template_placeholder_extractor import (
+        extract_placeholders_from_docx,
+        suggest_field_schema,
+    )
+    from app.schemas.order_type import OrderTypeUpdate
+
+    n_type = await notification_type_service.get_notification_type(db, notification_type_id)
+    template_path = get_template_path(n_type)
+
+    if not template_path.exists():
+        raise HTTPException(404, "Шаблон не загружен")
+
+    placeholders = extract_placeholders_from_docx(template_path)
+    suggested_schema = suggest_field_schema(placeholders)
+
+    update_data = OrderTypeUpdate(field_schema=suggested_schema)
+    await notification_type_service.update_notification_type(db, notification_type_id, update_data.model_dump(exclude_unset=True))
+
+    # Re-fetch and serialize
+    updated = await notification_type_service.get_notification_type(db, notification_type_id)
+    return notification_type_service._serialize_notification_type(updated)
+
+
 @router.delete("/{notification_type_id}/template")
 async def delete_template(
     notification_type_id: int,

@@ -89,6 +89,36 @@ async def upload_template(
     return await order_service.upload_template(db, order_type_id, file.filename, content)
 
 
+@router.post("/{order_type_id}/template/analyze", response_model=OrderTypeResponse)
+async def analyze_template(
+    order_type_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Analyze uploaded template and suggest field schema from placeholders."""
+    from app.services.order_document_service import get_template_path
+    from app.services.template_placeholder_extractor import (
+        extract_placeholders_from_docx,
+        suggest_field_schema,
+    )
+    from app.schemas.order_type import OrderTypeUpdate
+
+    order_type = await order_service.get_order_type(db, order_type_id)
+    template_path = get_template_path(order_type)
+
+    if not template_path.exists():
+        raise HTTPException(404, "Шаблон не загружен")
+
+    placeholders = extract_placeholders_from_docx(template_path)
+    suggested_schema = suggest_field_schema(placeholders)
+
+    # Update field_schema
+    update_data = OrderTypeUpdate(field_schema=suggested_schema)
+    await order_service.update_order_type(db, order_type_id, update_data)
+
+    return await order_service.get_order_type(db, order_type_id)
+
+
 @router.post("/templates/bulk-upload")
 async def bulk_upload_templates(
     files: list[UploadFile] = File(...),

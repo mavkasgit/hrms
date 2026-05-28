@@ -211,6 +211,18 @@ class NotificationTypeService:
 
         n_type.template_filename = storage_name
         n_type.display_name = display_name
+
+        # Auto-extract placeholders and suggest field schema if empty
+        if not n_type.field_schema or len(n_type.field_schema) == 0:
+            from app.services.template_placeholder_extractor import (
+                extract_placeholders_from_docx,
+                suggest_field_schema,
+            )
+            placeholders = extract_placeholders_from_docx(template_path)
+            suggested_schema = suggest_field_schema(placeholders)
+            if suggested_schema:
+                n_type.field_schema = suggested_schema
+
         await db.commit()
         await db.refresh(n_type)
         return self._serialize_notification_type(n_type)

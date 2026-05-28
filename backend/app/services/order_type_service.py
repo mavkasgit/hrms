@@ -386,6 +386,20 @@ class OrderTypeService:
             "template_filename": storage_name,
             "display_name": display_name,
         })
+
+        # Auto-extract placeholders and suggest field schema if empty
+        if not order_type.field_schema or len(order_type.field_schema) == 0:
+            from app.services.template_placeholder_extractor import (
+                extract_placeholders_from_docx,
+                suggest_field_schema,
+            )
+            placeholders = extract_placeholders_from_docx(template_path)
+            suggested_schema = suggest_field_schema(placeholders)
+            if suggested_schema:
+                await self.order_type_repo.update(db, order_type, {
+                    "field_schema": suggested_schema,
+                })
+
         await db.commit()
         return self._serialize_order_type(order_type)
 

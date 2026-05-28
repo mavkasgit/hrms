@@ -173,9 +173,11 @@ class StatementTypeService:
 
     async def create_statement_type(self, db: AsyncSession, data: dict[str, Any]) -> dict[str, Any]:
         from sqlalchemy import select
-        if await db.execute(select(StatementType).where(StatementType.code == data["code"])):
+        existing_code = (await db.execute(select(StatementType).where(StatementType.code == data["code"]))).scalars().first()
+        if existing_code:
             raise DuplicateError(f"Тип заявления с кодом {data['code']} уже существует", "duplicate_statement_type_code")
-        if await db.execute(select(StatementType).where(StatementType.name == data["name"])):
+        existing_name = (await db.execute(select(StatementType).where(StatementType.name == data["name"]))).scalars().first()
+        if existing_name:
             raise DuplicateError(f"Тип заявления с названием {data['name']} уже существует", "duplicate_statement_type_name")
 
         created = StatementType(**data)
@@ -261,6 +263,18 @@ class StatementTypeService:
 
         stmt_type.template_filename = storage_name
         stmt_type.display_name = display_name
+
+        # Auto-extract placeholders and suggest field schema if empty
+        if not stmt_type.field_schema or len(stmt_type.field_schema) == 0:
+            from app.services.template_placeholder_extractor import (
+                extract_placeholders_from_docx,
+                suggest_field_schema,
+            )
+            placeholders = extract_placeholders_from_docx(template_path)
+            suggested_schema = suggest_field_schema(placeholders)
+            if suggested_schema:
+                stmt_type.field_schema = suggested_schema
+
         await db.commit()
         await db.refresh(stmt_type)
         return self._serialize_statement_type(stmt_type)
