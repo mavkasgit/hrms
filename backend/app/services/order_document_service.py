@@ -14,6 +14,7 @@ from app.models.employee import Employee
 from app.models.order_type import OrderType
 from app.schemas.order import OrderCreate
 from app.services.template_replacements import (
+    build_document_replacements,
     build_order_replacements,
     build_group_order_general_replacements,
     build_group_order_employee_replacements,

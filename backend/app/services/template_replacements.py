@@ -27,6 +27,7 @@ def build_template_replacements_for_employee(employee: Any) -> dict[str, str]:
             "{hire_date}": "",
             "{contract_start}": "",
             "{oznak}": "",
+            "{oznak_gender}": "",
             "{initials_before}": "",
             "{full_name_upper}": "",
             "{full_name_title}": "",
@@ -71,6 +72,7 @@ def build_template_replacements_for_employee(employee: Any) -> dict[str, str]:
         "{hire_date}": hire_date,
         "{contract_start}": contract_start,
         "{oznak}": oznak,
+        "{oznak_gender}": oznak,
         "{initials_before}": f"{initials_nospace}{last_name}".strip(),
         "{full_name_upper}": name.upper(),
         "{full_name_title}": name.title(),
@@ -113,19 +115,170 @@ def build_doc_base_replacements(
     doc_date: Any = None,
 ) -> dict[str, str]:
     """Build base document placeholders common to all doc types."""
+    date_str = _format_date_ddmmyyyy(doc_date) if doc_date else ""
     return {
         "{doc_title}": title,
         "{doc_number}": number,
-        "{doc_date}": _format_date_ddmmyyyy(doc_date) if doc_date else "",
+        "{doc_date}": date_str,
+        # Aliases: order_* works in all doc types
+        "{order_number}": number,
+        "{order_date}": date_str,
     }
 
 
 def build_extra_field_replacements(extra_fields: dict | None) -> dict[str, str]:
-    """Build replacements from extra_fields dict."""
+    """Build replacements from extra_fields dict.
+
+    Skips empty values so auto-filled placeholders are preserved.
+    """
     replacements = {}
     for key, value in (extra_fields or {}).items():
+        # Skip empty values - they should not override auto-filled placeholders
+        if value == "" or value is None:
+            continue
         replacements[f"{{{key}}}"] = _format_date_ddmmyyyy(value)
     return replacements
+
+
+def build_document_replacements(
+    doc_type: str,  # "order", "notification", "statement"
+    doc_number: str,
+    doc_date: Any,
+    doc_type_name: str = "",
+    doc_type_code: str = "",
+    employee: Any = None,
+    extra_fields: dict | None = None,
+    notes: str = "",
+) -> dict[str, str]:
+    """Universal replacements builder for all document types.
+
+    Args:
+        doc_type: One of "order", "notification", "statement"
+        doc_number: Document number
+        doc_date: Document date
+        doc_type_name: Human-readable type name (e.g. "Прием на работу")
+        doc_type_code: Type code (e.g. "hire", "contract_extension")
+        employee: Employee object
+        extra_fields: Additional fields from form
+        notes: Order notes/comments
+    """
+    # Base document info
+    replacements = build_doc_base_replacements(
+        title=doc_type_name,
+        number=doc_number,
+        doc_date=doc_date,
+    )
+
+    # Document type specific placeholders
+    if doc_type == "order":
+        order_date_str = _format_date_ddmmyyyy(doc_date) if doc_date else ""
+        replacements.update({
+            "{order_number}": doc_number,
+            "{order_date}": order_date_str,
+            "{order_type_name}": doc_type_name,
+            "{order_type_code}": doc_type_code,
+            "{order_type_lower}": doc_type_name.lower(),
+            "{notes}": notes,
+            # Aliases: doc_* = order_* for cross-compatibility
+            "{doc_number}": doc_number,
+            "{doc_date}": order_date_str,
+        })
+    elif doc_type == "notification":
+        notif_date_str = _format_date_ddmmyyyy(doc_date) if doc_date else ""
+        replacements.update({
+            "{notification_type_name}": doc_type_name,
+            "{notification_type_code}": doc_type_code,
+            # Aliases: doc_* = notification_*
+            "{doc_number}": doc_number,
+            "{doc_date}": notif_date_str,
+        })
+    elif doc_type == "statement":
+        stmt_date_str = _format_date_ddmmyyyy(doc_date) if doc_date else ""
+        replacements.update({
+            "{statement_type_name}": doc_type_name,
+            "{statement_type_code}": doc_type_code,
+            # Aliases: doc_* = statement_*
+            "{doc_number}": doc_number,
+            "{doc_date}": stmt_date_str,
+        })
+
+    # Employee data
+    replacements.update(build_template_replacements_for_employee(employee))
+
+    # Extra fields (dates, text, etc.)
+    extra_raw = extra_fields or {}
+    replacements.update(build_extra_field_replacements(extra_raw))
+
+    # ─── Auto-fill logic for specific document types ─────────────────────────
+
+    # Contract extension: auto-fill old contract dates from employee
+    if doc_type_code in ("contract_extension",) and employee:
+        if not extra_raw.get("old_contract_start"):
+            cs = getattr(employee, "contract_start", None)
+            if cs:
+                replacements["{old_contract_start}"] = _format_date_ddmmyyyy(cs)
+        if not extra_raw.get("old_contract_end"):
+            ce = getattr(employee, "contract_end", None)
+            if ce:
+                replacements["{old_contract_end}"] = _format_date_ddmmyyyy(ce)
+
+    # Statement contract_expiry: auto-fill contract start
+    if doc_type_code == "contract_expiry" and employee:
+        cs = getattr(employee, "contract_start", None)
+        if cs:
+            replacements["{old_contract_start}"] = _format_date_ddmmyyyy(cs)
+
+    # Calculate contract duration in years
+    if doc_type_code in ("contract_extension",) and extra_raw:
+        new_start = _parse_date_like(extra_raw.get("new_contract_start"))
+        new_end = _parse_date_like(extra_raw.get("new_contract_end"))
+        if new_start and new_end:
+            years = new_end.year - new_start.year
+            if (new_end.month, new_end.day) < (new_start.month, new_start.day):
+                years -= 1
+            if years > 0:
+                replacements["{new_contract_years}"] = str(years)
+
+    # Order-specific: hire dates logic
+    if doc_type == "order" and doc_type_code == "hire":
+        # For hire orders WITHOUT extra_fields, keep hire_date/contract_start blank
+        # (legacy behavior: user must enter dates manually in the form)
+        if not extra_raw:
+            replacements["{hire_date}"] = ""
+            replacements["{contract_start}"] = ""
+        # else: extra_fields already updated these via build_extra_field_replacements
+
+        # Backward-compatible alias
+        replacements["{hire_order_date}"] = replacements.get("{hire_date}", "")
+
+        # Calculate trial period months
+        hd = _parse_date_like(extra_raw.get("hire_date")) if extra_raw else None
+        td = _parse_date_like(extra_raw.get("trial_end")) if extra_raw else None
+        if hd and td:
+            months = (td.year - hd.year) * 12 + (td.month - hd.month)
+            if months > 0:
+                replacements["{trial_end_months}"] = str(months)
+
+        # Calculate contract duration in years
+        cd = _parse_date_like(extra_raw.get("contract_end")) if extra_raw else None
+        if hd and cd:
+            years = cd.year - hd.year
+            if (cd.month, cd.day) < (hd.month, hd.day):
+                years -= 1
+            if years > 0:
+                replacements["{contract_end_years}"] = str(years)
+    else:
+        # For non-hire orders, always add hire_order_date alias from employee hire_date
+        replacements["{hire_order_date}"] = replacements.get("{hire_date}", "")
+
+    # Ensure calculated fields have fallbacks
+    replacements.setdefault("{trial_end_months}", "")
+    replacements.setdefault("{contract_end_years}", "")
+
+    return replacements
+
+
+# ─── Backward-compatible wrappers ──────────────────────────────────────────────
 
 
 def build_order_replacements(
@@ -137,87 +290,17 @@ def build_order_replacements(
     extra_fields: dict | None = None,
     notes: str = "",
 ) -> dict[str, str]:
-    """Build complete replacements for order documents."""
-    order_date_str = _format_date_ddmmyyyy(order_date) if order_date else ""
-    replacements = {
-        **build_doc_base_replacements(
-            title=order_type_name,
-            number=order_number,
-            doc_date=order_date,
-        ),
-        "{order_number}": order_number,
-        "{order_date}": order_date_str,
-        "{order_type_name}": order_type_name,
-        "{order_type_code}": order_type_code,
-        "{order_type_lower}": order_type_name.lower(),
-        "{notes}": notes,
-    }
-
-    replacements.update(build_template_replacements_for_employee(employee))
-    replacements["{oznak_gender}"] = replacements.get("{oznak}", "")
-
-    # For hire orders, prefer extra_fields dates
-    use_extra_hire_dates = order_type_code == "hire"
-    extra_raw = extra_fields or {}
-    extra = build_extra_field_replacements(extra_raw)
-    replacements.update(extra)
-
-    if use_extra_hire_dates:
-        # Keep legacy behavior for hire orders: use user-entered dates only.
-        replacements["{hire_date}"] = extra.get("{hire_date}", "")
-        replacements["{contract_start}"] = extra.get("{contract_start}", "")
-
-    # Backward-compatible alias used in hire templates.
-    replacements["{hire_order_date}"] = replacements.get("{hire_date}", "")
-
-    # For contract_extension, auto-fill old contract dates from employee if not in extra_fields
-    if order_type_code == "contract_extension" and employee:
-        if not extra_raw.get("old_contract_start"):
-            cs = getattr(employee, "contract_start", None)
-            if cs:
-                replacements["{old_contract_start}"] = _format_date_ddmmyyyy(cs)
-        if not extra_raw.get("old_contract_end"):
-            ce = getattr(employee, "contract_end", None)
-            if ce:
-                replacements["{old_contract_end}"] = _format_date_ddmmyyyy(ce)
-
-    # Calculate contract duration in years for contract_extension
-    if order_type_code == "contract_extension" and extra_raw:
-        new_start = _parse_date_like(extra_raw.get("new_contract_start"))
-        new_end = _parse_date_like(extra_raw.get("new_contract_end"))
-        if new_start and new_end:
-            years = new_end.year - new_start.year
-            if (new_end.month, new_end.day) < (new_start.month, new_start.day):
-                years -= 1
-            if years > 0:
-                replacements["{new_contract_years}"] = str(years)
-
-    # Calculate trial period months
-    trial_end_months = ""
-    if use_extra_hire_dates:
-        hd = _parse_date_like(extra_raw.get("hire_date"))
-        td = _parse_date_like(extra_raw.get("trial_end"))
-        if hd and td:
-            months = (td.year - hd.year) * 12 + (td.month - hd.month)
-            if months > 0:
-                trial_end_months = str(months)
-
-    # Calculate contract duration in years
-    contract_end_years = ""
-    if use_extra_hire_dates:
-        hd = _parse_date_like(extra_raw.get("hire_date"))
-        cd = _parse_date_like(extra_raw.get("contract_end"))
-        if hd and cd:
-            years = cd.year - hd.year
-            if (cd.month, cd.day) < (hd.month, hd.day):
-                years -= 1
-            if years > 0:
-                contract_end_years = str(years)
-
-    replacements["{trial_end_months}"] = trial_end_months
-    replacements["{contract_end_years}"] = contract_end_years
-
-    return replacements
+    """Backward-compatible wrapper for build_document_replacements."""
+    return build_document_replacements(
+        doc_type="order",
+        doc_number=order_number,
+        doc_date=order_date,
+        doc_type_name=order_type_name,
+        doc_type_code=order_type_code,
+        employee=employee,
+        extra_fields=extra_fields,
+        notes=notes,
+    )
 
 
 def build_notification_replacements(
@@ -229,39 +312,16 @@ def build_notification_replacements(
     notification_type_code: str = "",
     extra_fields: dict | None = None,
 ) -> dict[str, str]:
-    """Build complete replacements for notification documents."""
-    replacements = build_doc_base_replacements(title=title, number=number, doc_date=doc_date)
-    replacements.update(build_template_replacements_for_employee(employee))
-    replacements.update(build_extra_field_replacements(extra_fields))
-
-    if notification_type_name:
-        replacements["{notification_type_name}"] = notification_type_name
-        replacements["{notification_type_code}"] = notification_type_code
-
-    # For contract_extension, auto-fill old contract dates from employee if not in extra_fields
-    if notification_type_code == "contract_extension" and employee:
-        extra_raw = extra_fields or {}
-        if not extra_raw.get("old_contract_start"):
-            cs = getattr(employee, "contract_start", None)
-            if cs:
-                replacements["{old_contract_start}"] = _format_date_ddmmyyyy(cs)
-        if not extra_raw.get("old_contract_end"):
-            ce = getattr(employee, "contract_end", None)
-            if ce:
-                replacements["{old_contract_end}"] = _format_date_ddmmyyyy(ce)
-
-    # Calculate contract duration in years for contract_extension notifications
-    if notification_type_code == "contract_extension" and extra_fields:
-        new_start = _parse_date_like(extra_fields.get("new_contract_start"))
-        new_end = _parse_date_like(extra_fields.get("new_contract_end"))
-        if new_start and new_end:
-            years = new_end.year - new_start.year
-            if (new_end.month, new_end.day) < (new_start.month, new_start.day):
-                years -= 1
-            if years > 0:
-                replacements["{new_contract_years}"] = str(years)
-
-    return replacements
+    """Backward-compatible wrapper for build_document_replacements."""
+    return build_document_replacements(
+        doc_type="notification",
+        doc_number=number,
+        doc_date=doc_date,
+        doc_type_name=notification_type_name,
+        doc_type_code=notification_type_code,
+        employee=employee,
+        extra_fields=extra_fields,
+    )
 
 
 def build_statement_replacements(
@@ -273,23 +333,16 @@ def build_statement_replacements(
     statement_type_code: str = "",
     extra_fields: dict | None = None,
 ) -> dict[str, str]:
-    """Build complete replacements for statement documents."""
-    replacements = build_doc_base_replacements(title=title, number=number, doc_date=doc_date)
-    replacements.update(build_template_replacements_for_employee(employee))
-    replacements.update(build_extra_field_replacements(extra_fields))
-
-    if statement_type_name:
-        replacements["{statement_type_name}"] = statement_type_name
-        replacements["{statement_type_code}"] = statement_type_code
-
-    # For contract_expiry, auto-fill contract start from employee
-    if statement_type_code == "contract_expiry" and employee:
-        extra_raw = extra_fields or {}
-        cs = getattr(employee, "contract_start", None)
-        if cs:
-            replacements["{old_contract_start}"] = _format_date_ddmmyyyy(cs)
-
-    return replacements
+    """Backward-compatible wrapper for build_document_replacements."""
+    return build_document_replacements(
+        doc_type="statement",
+        doc_number=number,
+        doc_date=doc_date,
+        doc_type_name=statement_type_name,
+        doc_type_code=statement_type_code,
+        employee=employee,
+        extra_fields=extra_fields,
+    )
 
 
 # ─── Group order helpers ────────────────────────────────────────────────────────
@@ -307,8 +360,7 @@ def build_group_order_general_replacements(
     replacements = {
         "{order_number}": order_number,
         "{order_date}": _format_date_ddmmyyyy(order_date) if order_date else "",
-        "{oznak_gender}": emp_replacements.get("{oznak}", ""),
-        "{initials_before}": emp_replacements.get("{initials_before}", ""),
+        **emp_replacements,
     }
     if extra:
         replacements.update(extra)
