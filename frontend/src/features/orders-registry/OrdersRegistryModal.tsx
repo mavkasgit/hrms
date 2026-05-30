@@ -22,6 +22,7 @@ interface RegistryEntry {
   order_type_name: string
   order_number: string
   order_date: string
+  order_period?: string
   work_period: string
 }
 
@@ -120,12 +121,13 @@ export function OrdersRegistryModal({ open, onOpenChange, year: defaultYear }: O
       const TABLE_FONT_PT = 9 * 0.75
 
       const colWidths = [
-        0.07 * USABLE_W_PT,  // №
-        0.25 * USABLE_W_PT,  // ФИО
-        0.18 * USABLE_W_PT,  // Тип приказа
-        0.12 * USABLE_W_PT,  // Номер
-        0.12 * USABLE_W_PT,  // Дата
-        0.18 * USABLE_W_PT,  // Трудовой период
+        0.03 * USABLE_W_PT,  // №
+        0.12 * USABLE_W_PT,  // ФИО
+        0.13 * USABLE_W_PT,  // Тип приказа
+        0.08 * USABLE_W_PT,  // Номер
+        0.09 * USABLE_W_PT,  // Дата
+        0.20 * USABLE_W_PT,  // Период
+        0.15 * USABLE_W_PT,  // Трудовой период
       ]
 
       const title = `Реестр по личному составу — ${selectedYear}`
@@ -154,6 +156,7 @@ export function OrdersRegistryModal({ open, onOpenChange, year: defaultYear }: O
           { text: "Тип приказа", bold: true, fontSize: 8, fillColor: "#e5e5e5" },
           { text: "Номер приказа", bold: true, fontSize: 8, fillColor: "#e5e5e5" },
           { text: "Дата приказа", bold: true, fontSize: 8, fillColor: "#e5e5e5", alignment: "center" },
+          { text: "Период", bold: true, fontSize: 8, fillColor: "#e5e5e5" },
           { text: "Трудовой период", bold: true, fontSize: 8, fillColor: "#e5e5e5" },
         ]
       )
@@ -165,6 +168,7 @@ export function OrdersRegistryModal({ open, onOpenChange, year: defaultYear }: O
           { text: item.order_type_name, fontSize: TABLE_FONT_PT },
           { text: item.order_number, fontSize: TABLE_FONT_PT },
           { text: formatDate(item.order_date), fontSize: TABLE_FONT_PT, alignment: "center" },
+          { text: item.order_period || "—", fontSize: TABLE_FONT_PT },
           { text: item.work_period || "—", fontSize: TABLE_FONT_PT },
         ])
       })
@@ -269,29 +273,31 @@ export function OrdersRegistryModal({ open, onOpenChange, year: defaultYear }: O
             <table className="w-full text-sm border-collapse">
               <thead className="sticky top-0 bg-background z-10">
                 <tr className="border-b">
-                  <th className="text-center font-medium py-2 px-2 w-10">№</th>
+                  <th className="text-center font-medium py-2 px-1 w-8">№</th>
                   <th className="text-left font-medium py-2 px-3">ФИО сотрудника</th>
                   <th className="text-left font-medium py-2 px-3">Тип приказа</th>
-                  <th className="text-left font-medium py-2 px-3">Номер приказа</th>
+                  <th className="text-left font-medium py-2 px-2 w-20">Номер приказа</th>
                   <th className="text-center font-medium py-2 px-3 w-28">Дата</th>
+                  <th className="text-left font-medium py-2 px-3">Период</th>
                   <th className="text-left font-medium py-2 px-3">Трудовой период</th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <td colSpan={7} className="text-center py-8 text-muted-foreground">
                       Нет приказов с литерой л за {selectedYear} год
                     </td>
                   </tr>
                 ) : (
                   items.map((item, i) => (
                     <tr key={`${item.order_id}-${item.employee_name}-${i}`} className="border-b hover:bg-muted/50">
-                      <td className="text-center py-1.5 px-2 text-muted-foreground">{i + 1}</td>
+                      <td className="text-center py-1.5 px-1 text-muted-foreground">{i + 1}</td>
                       <td className="py-1.5 px-3 font-medium">{item.employee_name}</td>
                       <td className="py-1.5 px-3">{item.order_type_name}</td>
-                      <td className="py-1.5 px-3">{item.order_number}</td>
+                      <td className="py-1.5 px-2">{item.order_number}</td>
                       <td className="text-center py-1.5 px-3">{formatDate(item.order_date)}</td>
+                      <td className="py-1.5 px-3">{item.order_period || "—"}</td>
                       <td className="py-1.5 px-3">{item.work_period || "—"}</td>
                     </tr>
                   ))

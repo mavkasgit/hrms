@@ -214,6 +214,64 @@ async def get_registry_years(
     return {"years": years}
 
 
+def _format_date(date_str: str) -> str:
+    """Format date string from YYYY-MM-DD to DD.MM.YYYY."""
+    if not date_str:
+        return ""
+    try:
+        parts = date_str.split("-")
+        if len(parts) == 3:
+            return f"{parts[2]}.{parts[1]}.{parts[0]}"
+    except Exception:
+        pass
+    return date_str
+
+
+def _format_order_period(order_type_code: str, extra_fields: dict) -> str:
+    """Format order period string based on order type and extra_fields."""
+    if not extra_fields:
+        return ""
+
+    if order_type_code == "vacation_paid":
+        start = extra_fields.get("vacation_start")
+        end = extra_fields.get("vacation_end")
+        days = extra_fields.get("vacation_days")
+        if start and end:
+            period = f"{_format_date(start)} — {_format_date(end)}"
+            if days:
+                period += f" ({days} дн.)"
+            return period
+
+    elif order_type_code == "vacation_recall":
+        recall_date = extra_fields.get("recall_date")
+        old_start = extra_fields.get("old_vacation_start")
+        old_end = extra_fields.get("old_vacation_end")
+        if recall_date and old_start and old_end:
+            return f"Отзыв: {_format_date(recall_date)} (отпуск: {_format_date(old_start)} — {_format_date(old_end)})"
+
+    elif order_type_code == "vacation_postpone":
+        old_start = extra_fields.get("old_vacation_start")
+        old_end = extra_fields.get("old_vacation_end")
+        new_start = extra_fields.get("new_vacation_start")
+        new_end = extra_fields.get("new_vacation_end")
+        if old_start and old_end and new_start and new_end:
+            return f"{_format_date(old_start)} — {_format_date(old_end)} → {_format_date(new_start)} — {_format_date(new_end)}"
+
+    elif order_type_code == "vacation_extension":
+        vac_start = extra_fields.get("vacation_start")
+        vac_end = extra_fields.get("vacation_end")
+        sick_start = extra_fields.get("sick_start_date")
+        sick_end = extra_fields.get("sick_end_date")
+        parts = []
+        if vac_start and vac_end:
+            parts.append(f"Отпуск: {_format_date(vac_start)} — {_format_date(vac_end)}")
+        if sick_start and sick_end:
+            parts.append(f"Больничный: {_format_date(sick_start)} — {_format_date(sick_end)}")
+        return ", ".join(parts)
+
+    return ""
+
+
 @router.get("/registry")
 async def get_orders_registry(
     letter: str = Query(..., max_length=1),
@@ -252,11 +310,21 @@ async def get_orders_registry(
     total = result["total"]
     registry_items = []
     for o in items:
+        order_type_code = o.get("order_type_code", "")
+        extra_fields = o.get("extra_fields", {})
+        order_period = _format_order_period(order_type_code, extra_fields)
+
         # For group orders, each employee is a separate row
         if o.get("is_group") and o.get("group_employees"):
             for emp in o["group_employees"]:
                 employee_id = emp.get("employee_id")
                 work_period = _get_work_period_from_vacation(employee_id, employee_period_map)
+                # For group orders, use employee-specific vacation dates
+                emp_period = ""
+                emp_vac_start = emp.get("vacation_start")
+                emp_vac_end = emp.get("vacation_end")
+                if emp_vac_start and emp_vac_end:
+                    emp_period = f"{_format_date(emp_vac_start)} — {_format_date(emp_vac_end)}"
                 registry_items.append({
                     "order_id": o["id"],
                     "employee_name": emp["employee_full_name"],
@@ -264,6 +332,7 @@ async def get_orders_registry(
                     "order_number": o["order_number"],
                     "order_date": str(o["order_date"]),
                     "work_period": work_period,
+                    "order_period": emp_period or order_period,
                 })
         else:
             employee_name = o["employee_name"] or ""
@@ -276,6 +345,7 @@ async def get_orders_registry(
                 "order_number": o["order_number"],
                 "order_date": str(o["order_date"]),
                 "work_period": work_period,
+                "order_period": order_period,
             })
 
     return {
