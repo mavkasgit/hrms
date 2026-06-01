@@ -58,8 +58,8 @@ export const AUTO_FILL_RULES: Array<{
           .join(" "),
         full_name_last_caps: `${lastName.toUpperCase()} ${firstName} ${middleName}`.trim(),
         last_name_upper: lastName.toUpperCase(),
-        initials_before: `${initials}${lastName}`.trim(),
-        last_name_then_initials: `${lastName} ${initials}`.trim(),
+        initials_before: `${initials}.${lastName}`.trim(),
+        last_name_then_initials: `${lastName} ${firstName[0] ? firstName[0] + '.' : ''}${middleName[0] ? middleName[0] + '.' : ''}`.trim(),
         initials: initialsUnderscore,
       }
     },
@@ -118,6 +118,40 @@ export const AUTO_FILL_RULES: Array<{
     build: (empData) => {
       const tab = empData.tab_number
       return tab ? { tab_number: String(tab) } : {}
+    },
+  },
+  {
+    keys: [
+      "old_contract_start",
+      "old_contract_end",
+      "new_contract_start",
+      "new_contract_end",
+      "old_contract_number",
+      "new_contract_number",
+      "new_contract_years",
+    ],
+    build: (empData) => {
+      const result: Record<string, string> = {}
+
+      if (empData.contract_start) {
+        result.old_contract_start = isoDate(empData.contract_start)
+      }
+      if (empData.contract_end) {
+        result.old_contract_end = isoDate(empData.contract_end)
+
+        // Auto-set new contract start to day after old contract end
+        const endDate = result.old_contract_end
+        if (endDate) {
+          const d = new Date(endDate + "T00:00:00")
+          d.setDate(d.getDate() + 1)
+          result.new_contract_start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+        }
+      }
+      if (empData.contract_number) {
+        result.old_contract_number = String(empData.contract_number)
+      }
+
+      return result
     },
   },
 ]

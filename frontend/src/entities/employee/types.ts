@@ -44,6 +44,7 @@ export interface Employee {
   employment_type: string | null
   contract_start: string | null
   contract_end: string | null
+  contract_number: string | null
   personal_number: string | null
   insurance_number: string | null
   passport_number: string | null

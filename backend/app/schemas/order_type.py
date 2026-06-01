@@ -4,11 +4,24 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 
+class QuickOption(BaseModel):
+    label: str
+    years: int | None = None
+    months: int | None = None
+    unit: str | None = None
+
+
 class OrderTypeFieldSchema(BaseModel):
     key: str = Field(..., min_length=1, max_length=100)
     label: str = Field(..., min_length=1, max_length=200)
+    displayName: str | None = Field(None, max_length=100)
     type: str = Field(..., pattern="^(text|date|number|textarea)$")
     required: bool = False
+    enabled: bool = True
+    col: int = 0
+    row: int = 0
+    width: int | None = None  # cell width in px (None = auto)
+    quickOptions: list[QuickOption] | None = None
 
     @field_validator("key")
     @classmethod
@@ -91,6 +104,7 @@ class OrderTypeListResponse(BaseModel):
 
 class TemplateVariableResponse(BaseModel):
     name: str
+    displayName: str
     description: str
     category: str
 

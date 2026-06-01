@@ -1,9 +1,20 @@
+export interface QuickOption {
+  label: string
+  years?: number
+  months?: number
+  unit?: "months" | "years"
+}
+
 export interface OrderTypeFieldSchema {
   key: string
   label: string
+  displayName?: string
   type: "text" | "date" | "number" | "textarea"
   required: boolean
-  quickOptions?: { label: string; months?: number; years?: number; unit?: "months" | "years" }[]
+  enabled?: boolean
+  col?: number
+  row?: number
+  quickOptions?: QuickOption[]
 }
 
 export interface OrderType {
@@ -150,7 +161,9 @@ export interface OrderTypeUpdate {
 }
 
 export interface TemplateVariable {
+  key: string
   name: string
+  displayName: string
   description: string
   category: string
 }

@@ -28,6 +28,7 @@ def build_template_replacements_for_employee(employee: Any) -> dict[str, str]:
             "{contract_start}": "",
             "{oznak}": "",
             "{oznak_gender}": "",
+            "{agreement}": "",
             "{initials_before}": "",
             "{full_name_upper}": "",
             "{full_name_title}": "",
@@ -58,6 +59,7 @@ def build_template_replacements_for_employee(employee: Any) -> dict[str, str]:
         contract_start = cs.strftime("%d.%m.%Y") if hasattr(cs, "strftime") else str(cs)
     gender = getattr(employee, "gender", "male")
     oznak = "ознакомлена" if gender == "female" else "ознакомлен"
+    agreement = "согласна" if gender == "female" else "согласен"
 
     return {
         "{full_name}": name,
@@ -73,6 +75,7 @@ def build_template_replacements_for_employee(employee: Any) -> dict[str, str]:
         "{contract_start}": contract_start,
         "{oznak}": oznak,
         "{oznak_gender}": oznak,
+        "{agreement}": agreement,
         "{initials_before}": f"{initials_nospace}{last_name}".strip(),
         "{full_name_upper}": name.upper(),
         "{full_name_title}": name.title(),
@@ -229,7 +232,7 @@ def build_document_replacements(
             replacements["{old_contract_start}"] = _format_date_ddmmyyyy(cs)
 
     # Calculate contract duration in years
-    if doc_type_code in ("contract_extension",) and extra_raw:
+    if doc_type_code in ("contract_extension", "new_contract") and extra_raw:
         new_start = _parse_date_like(extra_raw.get("new_contract_start"))
         new_end = _parse_date_like(extra_raw.get("new_contract_end"))
         if new_start and new_end:
@@ -238,6 +241,7 @@ def build_document_replacements(
                 years -= 1
             if years > 0:
                 replacements["{new_contract_years}"] = str(years)
+                replacements["{contract_end_years}"] = str(years)
 
     # Order-specific: hire dates logic
     if doc_type == "order" and doc_type_code == "hire":
@@ -274,6 +278,7 @@ def build_document_replacements(
     # Ensure calculated fields have fallbacks
     replacements.setdefault("{trial_end_months}", "")
     replacements.setdefault("{contract_end_years}", "")
+    replacements.setdefault("{new_contract_years}", "")
 
     return replacements
 

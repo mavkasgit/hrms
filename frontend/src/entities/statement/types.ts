@@ -14,11 +14,23 @@ export interface StatementType {
   updated_at: string | null
 }
 
+export interface QuickOption {
+  label: string
+  years?: number
+  months?: number
+  unit?: "months" | "years"
+}
+
 export interface OrderTypeFieldSchema {
   key: string
   label: string
+  displayName?: string
   type: "text" | "date" | "number" | "textarea"
   required: boolean
+  enabled?: boolean
+  col?: number
+  row?: number
+  quickOptions?: QuickOption[]
 }
 
 export interface Statement {

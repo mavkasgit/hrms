@@ -1,21 +1,8 @@
 import { useState, useEffect } from "react"
-import { Plus, Trash2, Wand2 } from "lucide-react"
+import { Trash2, Wand2 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Checkbox } from "@/shared/ui/checkbox"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/ui/select"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/dialog"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,17 +13,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/ui/select"
 import { TemplateActionsBar } from "@/features/template-actions-bar"
-import { PlaceholderAutocomplete } from "./PlaceholderAutocomplete"
+import { FieldGridEditor, type FieldSchemaItem } from "./FieldGridEditor"
 import type { TemplateVariable } from "@/entities/order/types"
 import axios from "@/shared/api/axios"
-
-interface FieldSchema {
-  key: string
-  label: string
-  type: "text" | "date" | "number" | "textarea"
-  required: boolean
-}
 
 interface DocType {
   id: number
@@ -45,7 +38,7 @@ interface DocType {
   is_active: boolean
   template_filename: string | null
   display_name: string | null
-  field_schema: FieldSchema[]
+  field_schema: FieldSchemaItem[]
   filename_pattern: string | null
   letter?: string | null
   show_in_orders_page?: boolean
@@ -68,13 +61,6 @@ interface TemplateTypeFormProps {
   onSuccess?: () => void
 }
 
-const emptyField = (): FieldSchema => ({
-  key: "",
-  label: "",
-  type: "text",
-  required: false,
-})
-
 export function TemplateTypeForm({
   open,
   onOpenChange,
@@ -95,7 +81,7 @@ export function TemplateTypeForm({
   const [letter, setLetter] = useState<string | null>(null)
   const [pattern, setPattern] = useState("")
   const [showInOrders, setShowInOrders] = useState(true)
-  const [fields, setFields] = useState<FieldSchema[]>([])
+  const [fields, setFields] = useState<FieldSchemaItem[]>([])
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
@@ -128,7 +114,7 @@ export function TemplateTypeForm({
       setLetter(editingType.letter || null)
       setPattern(editingType.filename_pattern || "")
       setShowInOrders(editingType.show_in_orders_page ?? true)
-      setFields(editingType.field_schema.length ? editingType.field_schema : [emptyField()])
+      setFields(editingType.field_schema.length ? editingType.field_schema : [])
     } else {
       setName("")
       setCode("")
@@ -141,7 +127,18 @@ export function TemplateTypeForm({
     setUploadSuccess(false)
   }, [editingType, open])
 
-  const cleanFields = fields.filter((f) => f.key.trim() && f.label.trim())
+  const cleanFields = fields
+    .filter((f) => f.key.trim() && f.label.trim())
+    .map(f => ({
+      key: f.key,
+      label: f.label,
+      type: f.type,
+      required: f.required,
+      enabled: f.enabled ?? true,
+      col: f.col ?? 0,
+      row: f.row ?? 0,
+      quickOptions: f.quickOptions,
+    }))
 
   const handleSave = () => {
     if (!name.trim()) return
@@ -227,7 +224,7 @@ export function TemplateTypeForm({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {isEdit ? "Редактирование типа" : "Создать тип"}
@@ -289,61 +286,18 @@ export function TemplateTypeForm({
                   </Button>
                 )}
               </div>
-              {fields.map((field, index) => (
-                <div key={index} className="grid gap-2 md:grid-cols-[1fr_1fr_120px_100px_40px] items-start">
-                  <PlaceholderAutocomplete
-                    value={field.key}
-                    onChange={(value) => setFields((prev) => prev.map((item, idx) => (idx === index ? { ...item, key: value } : item)))}
-                    options={templateVariables.map((v) => ({
-                      name: v.name,
-                      description: v.description,
-                      category: v.category,
-                    }))}
-                    placeholder="key"
-                  />
-                  <Input
-                    value={field.label}
-                    onChange={(e) => setFields((prev) => prev.map((item, idx) => (idx === index ? { ...item, label: e.target.value } : item)))}
-                    placeholder="label"
-                    className="h-9"
-                    disabled={isStandard}
-                  />
-                  <Select value={field.type} onValueChange={(v) =>
-                    setFields((prev) => prev.map((item, idx) => (idx === index ? { ...item, type: v as FieldSchema["type"] } : item)))
-                  } disabled={isStandard}>
-                    <SelectTrigger className="h-9">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="text">text</SelectItem>
-                      <SelectItem value="date">date</SelectItem>
-                      <SelectItem value="number">number</SelectItem>
-                      <SelectItem value="textarea">textarea</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <label className="flex items-center gap-2 text-sm h-9">
-                    <Checkbox
-                      checked={field.required}
-                      onCheckedChange={(v) => setFields((prev) => prev.map((item, idx) => (idx === index ? { ...item, required: !!v } : item)))}
-                      disabled={isStandard}
-                    />
-                    required
-                  </label>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9"
-                    onClick={() => setFields((prev) => prev.filter((_, idx) => idx !== index))}
-                    disabled={isStandard}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-              <Button variant="outline" size="sm" onClick={() => setFields((prev) => [...prev, emptyField()])} disabled={isStandard}>
-                <Plus className="mr-1 h-3 w-3" />
-                Добавить поле
-              </Button>
+              <FieldGridEditor
+                fields={fields as FieldSchemaItem[]}
+                onChange={(newFields) => setFields(newFields)}
+                templateVariables={templateVariables.map((v) => ({
+                  key: v.key,
+                  name: v.name,
+                  description: v.description,
+                  displayName: v.displayName,
+                  category: v.category,
+                }))}
+                readOnly={isStandard}
+              />
             </div>
           </div>
 

@@ -11,6 +11,7 @@ import { Input } from "@/shared/ui/input"
 
 export interface PlaceholderOption {
   name: string
+  displayName: string
   description: string
   category: string
 }
@@ -40,9 +41,10 @@ export function PlaceholderAutocomplete({
   const filtered = options.filter((opt) => {
     const query = search.toLowerCase()
     return (
-      opt.name.toLowerCase().includes(query) ||
-      opt.description.toLowerCase().includes(query) ||
-      opt.category.toLowerCase().includes(query)
+      (opt.name || "").toLowerCase().includes(query) ||
+      (opt.displayName || "").toLowerCase().includes(query) ||
+      (opt.description || "").toLowerCase().includes(query) ||
+      (opt.category || "").toLowerCase().includes(query)
     )
   })
 
@@ -67,6 +69,9 @@ export function PlaceholderAutocomplete({
     setOpen(false)
   }
 
+  // Find selected option for display
+  const selected = options.find(opt => (opt.key || opt.name.replace(/^\{|\}$/g, "")) === value)
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -74,13 +79,17 @@ export function PlaceholderAutocomplete({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-full justify-between h-9 font-normal"
+          className="w-full justify-between h-9 font-normal text-xs"
         >
-          {value || placeholder}
+          {selected ? selected.displayName : placeholder}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0" align="start">
+      <PopoverContent
+        className="w-[650px] p-0 overflow-hidden"
+        align="start"
+        onWheel={(e) => e.stopPropagation()}
+      >
         <div className="p-2 border-b">
           <Input
             ref={inputRef}
@@ -93,7 +102,11 @@ export function PlaceholderAutocomplete({
             }}
           />
         </div>
-        <div className="max-h-[300px] overflow-y-auto">
+        <div
+          className="max-h-[300px] overflow-y-auto overflow-x-hidden"
+          style={{ overscrollBehavior: 'contain' }}
+          onWheel={(e) => e.stopPropagation()}
+        >
           {Object.keys(grouped).length === 0 && (
             <div className="py-6 text-center text-sm text-muted-foreground">
               Ничего не найдено
@@ -104,29 +117,31 @@ export function PlaceholderAutocomplete({
               <div className="text-xs font-semibold text-muted-foreground px-2 py-1">
                 {category}
               </div>
-              {items.map((opt) => (
-                <button
-                  key={opt.name}
-                  className={cn(
-                    "w-full text-left px-2 py-1.5 text-sm rounded hover:bg-accent flex items-center gap-2",
-                    value === opt.name && "bg-accent"
-                  )}
-                  onClick={() => handleSelect(opt.name)}
-                >
+              {items.map((opt) => {
+                const optKey = opt.key || opt.name.replace(/^\{|\}$/g, "")
+                return (
+                  <button
+                    key={optKey}
+                    className={cn(
+                      "w-full text-left px-2 py-1.5 text-sm rounded hover:bg-accent flex items-center gap-2",
+                      value === optKey && "bg-accent"
+                    )}
+                    onClick={() => handleSelect(optKey)}
+                  >
                   <Check
                     className={cn(
                       "h-4 w-4 shrink-0",
-                      value === opt.name ? "opacity-100" : "opacity-0"
+                      value === optKey ? "opacity-100" : "opacity-0"
                     )}
                   />
-                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                    {opt.name}
+                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded shrink-0 font-medium">
+                    {opt.displayName || ("{" + optKey + "}")}
                   </code>
                   <span className="text-muted-foreground text-xs truncate">
                     {opt.description}
                   </span>
                 </button>
-              ))}
+              )})}
             </div>
           ))}
         </div>

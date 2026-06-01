@@ -50,11 +50,9 @@ import { DocumentModal } from "@/features/document-modal/DocumentModal"
 import type { Employee } from "@/entities/employee/types"
 import type { OrderType } from "@/entities/order/types"
 import {
-  HireOrderFields,
-  ContractExtensionFields,
-  TransferFields,
   useAutoFillFields,
   FieldRenderer,
+  ContractExtensionFields,
   type FieldSchema,
 } from "@/features/dynamic-form"
 
@@ -675,37 +673,37 @@ export function OrdersPage() {
                   {errors.orderType && <p className="text-xs text-red-500 mt-1">{errors.orderType}</p>}
                 </div>
 
-                {/* Dynamic extra fields from field_schema */}
+                {/* Dynamic extra fields from field_schema — grid-driven rendering */}
                 {selectedOrderType && Array.isArray(selectedOrderType.field_schema) && selectedOrderType.field_schema.length > 0 && (
-                  selectedOrderType.code === "hire" ? (
-                    <HireOrderFields
-                      fieldSchema={selectedOrderType.field_schema as FieldSchema[]}
-                      extraFields={extraFields}
-                      extraFieldErrors={extraFieldErrors}
-                      onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
-                    />
-                  ) : selectedOrderType.code === "contract_extension" ? (
-                    <ContractExtensionFields
-                      extraFields={extraFields}
-                      extraFieldErrors={extraFieldErrors}
-                      onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
-                    />
-                  ) : selectedOrderType.code === "transfer" ? (
-                    <TransferFields
-                      extraFields={extraFields}
-                      extraFieldErrors={extraFieldErrors}
-                      onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
-                    />
-                  ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {(() => {
-                      const fields = selectedOrderType.field_schema.map((f) => {
-                        if (f.key === "trial_end") {
-                          return { ...f, quickOptions: [
-                            { label: "2 мес", months: 2, unit: "months" as const },
-                            { label: "3 мес", months: 3, unit: "months" as const },
-                          ]}
-                        }
+                      // For new_contract and contract_extension, use the custom layout; otherwise use grid
+                      if (selectedOrderType.code === "new_contract" || selectedOrderType.code === "contract_extension") {
+                        return (
+                          <ContractExtensionFields
+                            extraFields={extraFields}
+                            extraFieldErrors={extraFieldErrors}
+                            onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                          />
+                        )
+                      }
+
+                      // Filter enabled fields, group by row, sort by col
+                      const enabledFields = selectedOrderType.field_schema.filter(f => f.enabled !== false)
+                      const rowMap = new Map<number, typeof enabledFields>()
+                      for (const field of enabledFields) {
+                        const r = field.row ?? 0
+                        if (!rowMap.has(r)) rowMap.set(r, [])
+                        rowMap.get(r)!.push(field)
+                      }
+                      // Sort each row by col
+                      for (const [, rowFields] of rowMap) {
+                        rowFields.sort((a, b) => (a.col ?? 0) - (b.col ?? 0))
+                      }
+
+                      // Enrich fields with quickOptions if not already set
+                      const enrichField = (f: typeof enabledFields[number]) => {
+                        if (f.quickOptions) return f
                         if (f.key === "contract_end") {
                           return { ...f, quickOptions: [
                             { label: "1 год", years: 1, unit: "years" as const },
@@ -713,43 +711,43 @@ export function OrdersPage() {
                             { label: "3 года", years: 3, unit: "years" as const },
                           ]}
                         }
+                        if (f.key === "trial_end") {
+                          return { ...f, quickOptions: [
+                            { label: "2 мес", months: 2, unit: "months" as const },
+                            { label: "3 мес", months: 3, unit: "months" as const },
+                          ]}
+                        }
                         return f
+                      }
+
+                      // Sort fields by row then col for display order
+                      const sortedFields = [...enabledFields].sort((a, b) => {
+                        const rowDiff = (a.row ?? 0) - (b.row ?? 0)
+                        if (rowDiff !== 0) return rowDiff
+                        return (a.col ?? 0) - (b.col ?? 0)
                       })
 
-                      // Default grouping for other order types
-                      const rows: typeof fields[] = []
-                      let currentRow: typeof fields = []
-
-                      for (const field of fields) {
-                        if (field.type === "date") {
-                          currentRow.push(field)
-                        } else {
-                          if (currentRow.length > 0) {
-                            rows.push(currentRow)
-                            currentRow = []
-                          }
-                          rows.push([field])
-                        }
-                      }
-                      if (currentRow.length > 0) rows.push(currentRow)
-
-                      return rows.map((row, ri) => (
-                        <div key={ri} className="flex gap-4 flex-wrap">
-                          {row.map((field) => (
-                            <FieldRenderer
-                              key={field.key}
-                              field={field as FieldSchema}
-                              value={extraFields[field.key]}
-                              error={extraFieldErrors[`extra_${field.key}`]}
-                              onChange={(key: string, value: string | number) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
-                              extraFields={extraFields}
-                            />
-                          ))}
+                      return (
+                        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4 items-end">
+                          {sortedFields.map((field) => {
+                            const enriched = enrichField(field)
+                            return (
+                              <div key={field.key} className="flex flex-col min-w-0">
+                                <FieldRenderer
+                                  field={enriched as FieldSchema}
+                                  value={extraFields[field.key]}
+                                  error={extraFieldErrors[`extra_${field.key}`]}
+                                  onChange={(key: string, value: string | number) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                                  extraFields={extraFields}
+                                />
+                              </div>
+                            )
+                          })}
                         </div>
-                      ))
+                      )
                     })()}
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>

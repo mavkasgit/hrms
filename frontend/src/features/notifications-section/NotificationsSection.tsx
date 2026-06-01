@@ -48,6 +48,8 @@ import { openNotificationView, openNotificationEdit, openNotificationPrint, down
 import type { NotificationCreate } from "@/entities/notification/types"
 import { NotificationContractExtensionFields } from "@/features/dynamic-form"
 
+import { buildEmployeePlaceholders } from "@/features/dynamic-form/autoFillConfig"
+
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -140,32 +142,10 @@ export function NotificationsSection() {
     setExtraFieldErrors({})
   }, [selectedNotificationTypeId])
 
-  // Auto-fill contract fields when employee is selected for contract_extension
+  // Auto-fill fields when employee is selected
   useEffect(() => {
-    if (selectedEmployee && selectedNotificationType?.code === "contract_extension") {
-      const autoFilled: Record<string, string | number> = {}
-      
-      // Fill old contract dates from employee data
-      if (selectedEmployee.contract_start) {
-        const startDate = typeof selectedEmployee.contract_start === "string" 
-          ? selectedEmployee.contract_start 
-          : new Date(selectedEmployee.contract_start).toISOString().split("T")[0]
-        autoFilled.old_contract_start = startDate
-      }
-      if (selectedEmployee.contract_end) {
-        const endDate = typeof selectedEmployee.contract_end === "string"
-          ? selectedEmployee.contract_end
-          : new Date(selectedEmployee.contract_end).toISOString().split("T")[0]
-        autoFilled.old_contract_end = endDate
-        
-        // Auto-set new contract start to day after old contract end
-        const d = new Date(endDate + "T00:00:00")
-        d.setDate(d.getDate() + 1)
-        const newStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-        autoFilled.new_contract_start = newStart
-      }
-
-      // Only auto-fill if fields are empty
+    if (selectedEmployee) {
+      const autoFilled = buildEmployeePlaceholders(selectedEmployee)
       setExtraFields((prev) => {
         const merged = { ...prev }
         for (const [key, value] of Object.entries(autoFilled)) {
@@ -176,7 +156,7 @@ export function NotificationsSection() {
         return merged
       })
     }
-  }, [selectedEmployee, selectedNotificationType?.code])
+  }, [selectedEmployee])
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -417,26 +397,47 @@ export function NotificationsSection() {
                   </div>
                 </div>
 
-                {/* Dynamic extra fields from field_schema */}
+                {/* Dynamic extra fields from field_schema — grid-driven rendering */}
                 {selectedNotificationType && Array.isArray(selectedNotificationType.field_schema) && selectedNotificationType.field_schema.length > 0 && (
-                  <div className="space-y-4">
-                    {selectedNotificationType.code === "contract_extension" ? (
-                      <NotificationContractExtensionFields
-                        extraFields={extraFields}
-                        extraFieldErrors={extraFieldErrors}
-                        onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
-                      />
-                    ) : (
-                      selectedNotificationType.field_schema.map((field) => (
-                        <DynamicField
-                          key={field.key}
-                          field={field as FieldSchema}
-                          value={extraFields[field.key]}
-                          error={extraFieldErrors[`extra_${field.key}`]}
-                          onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
-                        />
+                  <div className="space-y-3">
+                    {(() => {
+                      // For contract_extension and new_contract, use the custom layout; otherwise use grid
+                      if (selectedNotificationType.code === "contract_extension" || selectedNotificationType.code === "new_contract") {
+                        return (
+                          <NotificationContractExtensionFields
+                            extraFields={extraFields}
+                            extraFieldErrors={extraFieldErrors}
+                            onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                          />
+                        )
+                      }
+
+                      // Grid-driven rendering: filter enabled, group by row, sort by col
+                      const enabledFields = selectedNotificationType.field_schema.filter(f => f.enabled !== false)
+                      const rowMap = new Map<number, typeof enabledFields>()
+                      for (const field of enabledFields) {
+                        const r = field.row ?? 0
+                        if (!rowMap.has(r)) rowMap.set(r, [])
+                        rowMap.get(r)!.push(field)
+                      }
+                      for (const [, rowFields] of rowMap) {
+                        rowFields.sort((a, b) => (a.col ?? 0) - (b.col ?? 0))
+                      }
+
+                      return Array.from(rowMap.entries()).map(([rowNum, rowFields]) => (
+                        <div key={rowNum} className="flex gap-4 flex-wrap items-end">
+                          {rowFields.map((field) => (
+                            <DynamicField
+                              key={field.key}
+                              field={field as FieldSchema}
+                              value={extraFields[field.key]}
+                              error={extraFieldErrors[`extra_${field.key}`]}
+                              onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                            />
+                          ))}
+                        </div>
                       ))
-                    )}
+                    })()}
                   </div>
                 )}
               </div>

@@ -101,6 +101,18 @@ export function NotificationContractExtensionFields({ extraFields, extraFieldErr
             <p className="text-xs text-red-500 mt-1">{extraFieldErrors[`extra_new_contract_end`]}</p>
           )}
         </div>
+        <div>
+          <label className="text-sm font-medium">Номер контракта</label>
+          <Input
+            placeholder="Номер контракта"
+            value={(extraFields["new_contract_number"] as string) || ""}
+            onChange={(e) => onFieldChange("new_contract_number", e.target.value)}
+            className="w-[130px] mt-1"
+          />
+          {extraFieldErrors[`extra_new_contract_number`] && (
+            <p className="text-xs text-red-500 mt-1">{extraFieldErrors[`extra_new_contract_number`]}</p>
+          )}
+        </div>
       </FieldGroup>
 
       {/* Quick options for years */}

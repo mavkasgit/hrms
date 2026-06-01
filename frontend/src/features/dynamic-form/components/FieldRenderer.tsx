@@ -50,16 +50,16 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
 
   if (field.type === "date") {
     return (
-      <div>
+      <div className="flex flex-col min-w-0">
         <DatePicker
           label={field.label}
           value={displayValue}
           onChange={(v) => onChange(field.key, v)}
           required={field.required}
-          className="w-[130px]"
+          className="w-full"
         />
         {field.quickOptions && field.quickOptions.length > 0 && (
-          <div className="flex gap-2 mt-1 items-end">
+          <div className="flex gap-2 mt-1 items-end flex-wrap">
             {field.quickOptions.map((opt) => (
               <button
                 key={opt.label}
@@ -137,8 +137,8 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
 
   // text / number
   return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">{field.label}</label>
+    <div className="flex flex-col min-w-0 space-y-1">
+      <label className="text-sm font-medium">{field.label}{field.required && <span className="text-red-500 ml-0.5">*</span>}</label>
       <Input
         type={field.type === "number" ? "number" : "text"}
         placeholder={field.label}
@@ -147,7 +147,7 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
           onChange(field.key, field.type === "number" ? Number(e.target.value) : e.target.value)
         }
         required={field.required}
-        className="w-[200px]"
+        className="w-full"
       />
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </div>
