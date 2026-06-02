@@ -33,6 +33,7 @@ from app.api.notifications import router as notifications_router
 from app.api.notification_types import router as notification_types_router
 from app.api.statements import router as statements_router
 from app.api.statement_types import router as statement_types_router
+from app.api.contract_history import router as contract_history_router
 
 
 @asynccontextmanager
@@ -96,6 +97,7 @@ app.include_router(notifications_router, prefix="/api")
 app.include_router(notification_types_router, prefix="/api")
 app.include_router(statements_router, prefix="/api")
 app.include_router(statement_types_router, prefix="/api")
+app.include_router(contract_history_router, prefix="/api")
 
 
 @app.get("/api/health")

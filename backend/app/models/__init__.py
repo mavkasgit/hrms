@@ -28,3 +28,5 @@ from app.models.vacation_period_manual_closure import VacationPeriodManualClosur
 from app.models.notification import Notification  # noqa: F401, E402
 from app.models.notification_type import NotificationType  # noqa: F401, E402
 from app.models.statement import Statement  # noqa: F401, E402
+from app.models.statement_type import StatementType  # noqa: F401, E402
+from app.models.contract_history import ContractHistory  # noqa: F401, E402
