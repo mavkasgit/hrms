@@ -28,6 +28,7 @@ from app.services.order_document_service import (
 )
 from app.services.order_draft_service import order_draft_service
 from app.services.order_type_service import OrderTypeService
+from app.services.contract_history_service import contract_history_service
 
 audit_logger = get_audit_logger()
 
@@ -189,8 +190,46 @@ class OrderService:
                 extra_fields["old_contract_end"] = (
                     employee.contract_end.isoformat() if employee.contract_end else None
                 )
+                if employee.contract_start:
+                    extra_fields["old_contract_start"] = employee.contract_start.isoformat()
+                if employee.contract_number:
+                    extra_fields["old_contract_number"] = str(employee.contract_number)
                 employee.contract_end = date.fromisoformat(new_end)
                 await db.flush()
+
+        # Подготавливаем extra_fields для перевода
+        if order_type.code == "transfer" and data.extra_fields and employee:
+            extra_fields = dict(data.extra_fields)
+            if employee.contract_end:
+                extra_fields["old_contract_end"] = employee.contract_end.isoformat()
+            if employee.contract_start:
+                extra_fields["old_contract_start"] = employee.contract_start.isoformat()
+            if employee.contract_number:
+                extra_fields["old_contract_number"] = str(employee.contract_number)
+            if employee.position_id:
+                extra_fields["old_position_id"] = employee.position_id
+            # Resolve new_position_name from new_position id
+            new_position_id = extra_fields.get("new_position")
+            if new_position_id:
+                if isinstance(new_position_id, str) and new_position_id.isdigit():
+                    new_position_id = int(new_position_id)
+                if isinstance(new_position_id, int):
+                    from app.models.position import Position
+                    from sqlalchemy import select
+                    pos_result = await db.execute(select(Position).where(Position.id == new_position_id))
+                    pos = pos_result.scalar_one_or_none()
+                    if pos:
+                        extra_fields["new_position_name"] = pos.name
+
+        # Подготавливаем extra_fields для приема на работу и нового контракта
+        if order_type.code in ("hire", "new_contract") and data.extra_fields and employee:
+            extra_fields = dict(data.extra_fields)
+            if employee.contract_end:
+                extra_fields["old_contract_end"] = employee.contract_end.isoformat()
+            if employee.contract_start:
+                extra_fields["old_contract_start"] = employee.contract_start.isoformat()
+            if employee.contract_number:
+                extra_fields["old_contract_number"] = str(employee.contract_number)
 
         order = await self.order_repo.create(
             db,
@@ -220,6 +259,47 @@ class OrderService:
             employee.dismissal_reason = f"Приказ №{order_number} от {data.order_date.strftime('%d.%m.%Y')}"
             employee.dismissed_by = "system"
             await db.flush()
+
+        # Record contract history for contract-related order types
+        if order_type.code in ("hire", "new_contract", "contract_extension", "transfer") and data.employee_id:
+            await contract_history_service.record_contract_from_order(
+                db, data.employee_id, order.id, order_type.code, extra_fields, employee
+            )
+
+            # Update employee contract dates for hire, new_contract, transfer, and contract_extension
+            if order_type.code in ("hire", "new_contract", "transfer", "contract_extension") and employee and extra_fields:
+                from app.services.contract_history_service import ContractHistoryService
+                new_start = ContractHistoryService._parse_date(
+                    extra_fields.get("new_contract_start") or extra_fields.get("hire_date")
+                )
+                new_end = ContractHistoryService._parse_date(
+                    extra_fields.get("new_contract_end") or extra_fields.get("contract_end")
+                )
+                new_number = extra_fields.get("new_contract_number")
+                if new_start:
+                    employee.contract_start = new_start
+                if new_end:
+                    employee.contract_end = new_end
+                if new_number:
+                    employee.contract_number = str(new_number)
+                await db.flush()
+
+            # Update employee position for transfer orders
+            if order_type.code == "transfer" and employee and extra_fields and extra_fields.get("new_position"):
+                new_position_id = extra_fields.get("new_position")
+                if isinstance(new_position_id, str) and new_position_id.isdigit():
+                    new_position_id = int(new_position_id)
+                if isinstance(new_position_id, int):
+                    from app.models.position import Position
+                    position_result = await db.execute(
+                        select(Position).where(Position.id == new_position_id)
+                    )
+                    new_position = position_result.scalar_one_or_none()
+                    if new_position:
+                        employee.position_id = new_position_id
+                        extra_fields["new_position_name"] = new_position.name
+                        extra_fields["new_position_name_lower"] = new_position.name.lower()
+                        await db.flush()
 
         employee_name = employee.name if employee else None
         audit_logger.info(

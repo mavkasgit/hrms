@@ -22,6 +22,8 @@ export interface EmployeeTransfer {
   old_position_id: number | null
   new_position_id: number | null
   reason?: string
+  _auto?: boolean
+  _orderId?: number
 }
 
 export interface Employee {
@@ -45,6 +47,7 @@ export interface Employee {
   contract_start: string | null
   contract_end: string | null
   contract_number: string | null
+  contract_number_locked: boolean
   personal_number: string | null
   insurance_number: string | null
   passport_number: string | null
@@ -85,6 +88,7 @@ export interface EmployeeCreate {
   employment_type?: string | null
   contract_start?: string | null
   contract_end?: string | null
+  contract_number?: string | null
   personal_number?: string | null
   insurance_number?: string | null
   passport_number?: string | null
@@ -107,6 +111,7 @@ export interface EmployeeUpdate {
   employment_type?: string | null
   contract_start?: string | null
   contract_end?: string | null
+  contract_number?: string | null
   personal_number?: string | null
   insurance_number?: string | null
   passport_number?: string | null

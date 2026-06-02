@@ -31,6 +31,22 @@ from datetime import date
 from typing import Optional
 
 
+async def _get_contract_number_locked(db: AsyncSession, employee_id: int) -> bool:
+    """Check if employee has any contract history with a contract_number from an order (locked)."""
+    from sqlalchemy import func
+    from app.models.contract_history import ContractHistory
+    result = await db.execute(
+        select(func.count())
+        .select_from(ContractHistory)
+        .where(
+            ContractHistory.employee_id == employee_id,
+            ContractHistory.order_id.isnot(None),
+            ContractHistory.contract_number.isnot(None),
+        )
+    )
+    return result.scalar_one() > 0
+
+
 class HireOrderResponse(BaseModel):
     id: int
     order_number: str
@@ -170,7 +186,11 @@ async def get_employee_by_tab(
     current_user: str = Depends(_get_current_user_stub),
 ):
     employee = await employee_service.get_by_tab_number(db, tab_number)
-    return employee
+    locked = await _get_contract_number_locked(db, employee.id)
+    response = EmployeeResponse.model_validate(employee)
+    result = response.model_dump()
+    result["contract_number_locked"] = locked
+    return result
 
 
 @router.get("/{employee_id}", response_model=EmployeeResponse)
@@ -180,7 +200,11 @@ async def get_employee(
     current_user: str = Depends(_get_current_user_stub),
 ):
     employee = await employee_service.get_by_id(db, employee_id)
-    return employee
+    locked = await _get_contract_number_locked(db, employee_id)
+    response = EmployeeResponse.model_validate(employee)
+    result = response.model_dump()
+    result["contract_number_locked"] = locked
+    return result
 
 
 @router.post("", response_model=EmployeeResponse, status_code=201)
@@ -199,7 +223,11 @@ async def create_employee(
         .options(joinedload(Employee.department), joinedload(Employee.position))
         .where(Employee.id == employee.id)
     )
-    return result.scalar_one()
+    emp = result.scalar_one()
+    response = EmployeeResponse.model_validate(emp)
+    data = response.model_dump()
+    data["contract_number_locked"] = await _get_contract_number_locked(db, employee.id)
+    return data
 
 
 @router.put("/{employee_id}", response_model=EmployeeResponse)
@@ -214,6 +242,7 @@ async def update_employee(
     result = response.model_dump()
     if periods_need_reset:
         result["periods_need_reset"] = True
+    result["contract_number_locked"] = await _get_contract_number_locked(db, employee_id)
     return result
 
 
@@ -234,7 +263,11 @@ async def reset_employee_periods(
         .options(joinedload(Employee.department), joinedload(Employee.position))
         .where(Employee.id == employee_id)
     )
-    return result.scalar_one()
+    emp = result.scalar_one()
+    response = EmployeeResponse.model_validate(emp)
+    data = response.model_dump()
+    data["contract_number_locked"] = await _get_contract_number_locked(db, employee_id)
+    return data
 
 
 @router.post("/{employee_id}/recalculate-periods", response_model=list[VacationPeriodBalance])
@@ -268,7 +301,11 @@ async def restore_employee(
     current_user: str = Depends(_get_current_user_stub),
 ):
     employee = await employee_service.restore_employee(db, employee_id, current_user)
-    return employee
+    locked = await _get_contract_number_locked(db, employee_id)
+    response = EmployeeResponse.model_validate(employee)
+    result = response.model_dump()
+    result["contract_number_locked"] = locked
+    return result
 
 
 @router.get("/{employee_id}/audit-log", response_model=list[EmployeeAuditLogResponse])

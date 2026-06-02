@@ -21,6 +21,7 @@ class EmployeeBase(BaseModel):
     employment_type: Optional[str] = Field(None, max_length=50)
     contract_start: Optional[date] = None
     contract_end: Optional[date] = None
+    contract_number: Optional[str] = Field(None, max_length=50)
     personal_number: Optional[str] = Field(None, max_length=50)
     insurance_number: Optional[str] = Field(None, max_length=50)
     passport_number: Optional[str] = Field(None, max_length=50)
@@ -68,6 +69,7 @@ class EmployeeUpdate(BaseModel):
     employment_type: Optional[str] = Field(None, max_length=50)
     contract_start: Optional[date] = None
     contract_end: Optional[date] = None
+    contract_number: Optional[str] = Field(None, max_length=50)
     personal_number: Optional[str] = Field(None, max_length=50)
     insurance_number: Optional[str] = Field(None, max_length=50)
     passport_number: Optional[str] = Field(None, max_length=50)
@@ -134,6 +136,8 @@ class EmployeeResponse(BaseModel):
     employment_type: Optional[str] = None
     contract_start: Optional[date] = None
     contract_end: Optional[date] = None
+    contract_number: Optional[str] = None
+    contract_number_locked: bool = False
     personal_number: Optional[str] = None
     insurance_number: Optional[str] = None
     passport_number: Optional[str] = None

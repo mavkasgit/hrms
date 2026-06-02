@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import { Plus, Trash2, RefreshCw } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import {
@@ -24,39 +24,80 @@ import { ComboboxCreate } from "@/shared/ui/combobox-create"
 import { Briefcase } from "lucide-react"
 import type { EmployeeTransfer } from "@/entities/employee/types"
 import { usePositions, useCreatePosition } from "@/entities/position"
+import { useOrders } from "@/entities/order/useOrders"
 
 interface TransferHistoryModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   transfers: EmployeeTransfer[]
   onSave: (transfers: EmployeeTransfer[]) => void
+  employeeId?: number | null
 }
 
-export function TransferHistoryModal({ open, onOpenChange, transfers, onSave }: TransferHistoryModalProps) {
+export function TransferHistoryModal({ open, onOpenChange, transfers, onSave, employeeId }: TransferHistoryModalProps) {
   const [localTransfers, setLocalTransfers] = useState<EmployeeTransfer[]>([])
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [deleteIndex, setDeleteIndex] = useState<number | null>(null)
+  const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
 
   const { data: positions = [] } = usePositions()
   const createPos = useCreatePosition()
 
   const posItems = positions.map((p) => ({ id: p.id, name: p.name }))
 
+  // Load transfer orders from API
+  const { data: transferOrders, refetch: refetchTransferOrders } = useOrders(
+    employeeId ? { employee_id: employeeId, order_type_code: "transfer", per_page: 100 } : null
+  )
+
+  // Convert transfer orders to EmployeeTransfer format
+  const autoTransfers: EmployeeTransfer[] = (transferOrders?.items || []).map(order => ({
+    date: order.order_date,
+    order_number: order.order_number,
+    old_position_id: order.extra_fields?.old_position_id || null,
+    new_position_id: order.extra_fields?.new_position || null,
+    reason: order.extra_fields?.reason || "",
+    _orderId: order.id,
+    _auto: true,
+  }))
+
+  const hasInitializedRef = useRef(false)
+  const hasUserChangesRef = useRef(false)
+
+  // Merge manual and auto transfers when modal opens
+  useEffect(() => {
+    if (open && !hasInitializedRef.current) {
+      hasInitializedRef.current = true
+      hasUserChangesRef.current = false
+      const manualTransfers = transfers.filter(t => !t._auto)
+      const merged = [...autoTransfers, ...manualTransfers]
+      setLocalTransfers(merged.map(t => ({ ...t })))
+      setEditingIndex(null)
+    }
+    // Reset on close
+    if (!open) {
+      hasInitializedRef.current = false
+      hasUserChangesRef.current = false
+    }
+  }, [open, transfers, autoTransfers])
+
+  // Auto-refresh when modal is open
+  useEffect(() => {
+    if (open && employeeId) {
+      refetchTransferOrders()
+    }
+  }, [open, employeeId, refetchTransferOrders])
+
   const handleCreatePosition = async (name: string): Promise<number> => {
     const newPos = await createPos.mutateAsync({ name })
     return newPos.id
   }
 
-  useEffect(() => {
-    if (open) {
-      setLocalTransfers(transfers.map(t => ({ ...t })))
-      setEditingIndex(null)
-    }
-  }, [open, transfers])
-
   const addTransfer = () => {
-    setLocalTransfers(prev => [...prev, { date: "", order_number: "", old_position_id: null, new_position_id: null, reason: "" }])
-    setEditingIndex(localTransfers.length)
+    hasUserChangesRef.current = true
+    const newIndex = localTransfers.length
+    setLocalTransfers(prev => [...prev, { date: "", order_number: "", old_position_id: null, new_position_id: null, reason: "", _auto: false }])
+    setEditingIndex(newIndex)
   }
 
   const updateTransfer = (index: number, field: keyof EmployeeTransfer, value: string | number | null) => {
@@ -68,6 +109,9 @@ export function TransferHistoryModal({ open, onOpenChange, transfers, onSave }: 
   }
 
   const removeTransfer = (index: number) => {
+    const item = localTransfers[index]
+    // Can't delete auto transfers from modal, they're linked to orders
+    if (item._auto) return
     setLocalTransfers(prev => prev.filter((_, i) => i !== index))
     if (editingIndex === index) {
       setEditingIndex(null)
@@ -82,8 +126,16 @@ export function TransferHistoryModal({ open, onOpenChange, transfers, onSave }: 
   }
 
   const handleSave = () => {
-    onSave(localTransfers)
+    // Only save manual transfers, auto transfers come from orders
+    const manualOnly = localTransfers.filter(t => !t._auto)
+    onSave(manualOnly)
     onOpenChange(false)
+  }
+
+  const handleRefresh = async () => {
+    setIsAutoRefreshing(true)
+    await refetchTransferOrders()
+    setIsAutoRefreshing(false)
   }
 
   const getPositionName = (id: number | null) => {
@@ -97,7 +149,18 @@ export function TransferHistoryModal({ open, onOpenChange, transfers, onSave }: 
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="w-[min(96vw,1200px)] max-w-5xl max-h-[80vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>История переводов</DialogTitle>
+          <DialogTitle className="flex items-center justify-between">
+            <span>История переводов</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isAutoRefreshing}
+            >
+              <RefreshCw className={`h-4 w-4 mr-1 ${isAutoRefreshing ? "animate-spin" : ""}`} />
+              Обновить
+            </Button>
+          </DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto">
@@ -115,8 +178,10 @@ export function TransferHistoryModal({ open, onOpenChange, transfers, onSave }: 
                 <div></div>
               </div>
 
-              {localTransfers.map((t, i) => (
-                <div key={i} className="grid grid-cols-[130px_100px_minmax(180px,1fr)_minmax(180px,1fr)_160px_40px] gap-3 items-center px-2 h-10 rounded hover:bg-muted/50">
+              {localTransfers.map((t, i) => {
+                const itemKey = t._orderId ? `auto-${t._orderId}` : `manual-${i}-${t.date || 'new'}`
+                return (
+                <div key={itemKey} className={`grid grid-cols-[130px_100px_minmax(180px,1fr)_minmax(180px,1fr)_160px_40px] gap-3 items-center px-2 h-10 rounded ${t._auto ? "bg-blue-50 dark:bg-blue-950/30" : "hover:bg-muted/50"}`}>
                   {editingIndex === i ? (
                     <>
                       <DatePicker
@@ -168,18 +233,25 @@ export function TransferHistoryModal({ open, onOpenChange, transfers, onSave }: 
                       <div className="text-sm h-10 flex items-center">{getPositionName(t.old_position_id)}</div>
                       <div className="text-sm h-10 flex items-center">{getPositionName(t.new_position_id)}</div>
                       <div className="text-sm h-10 flex items-center">{t.reason || "—"}</div>
-                      <button
-                        type="button"
-                        onClick={() => setEditingIndex(i)}
-                        className="h-10 w-10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                        title="Редактировать"
-                      >
-                        <span className="text-sm">✎</span>
-                      </button>
+                      {t._auto ? (
+                        <div className="h-10 w-10 flex items-center justify-center text-blue-400" title="Из приказа (нельзя изменить)">
+                          <span className="text-sm">🔒</span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setEditingIndex(i)}
+                          className="h-10 w-10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                          title="Редактировать"
+                        >
+                          <span className="text-sm">✎</span>
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

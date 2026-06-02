@@ -280,6 +280,16 @@ def build_document_replacements(
     replacements.setdefault("{contract_end_years}", "")
     replacements.setdefault("{new_contract_years}", "")
 
+    # Resolve new_position from extra_fields for transfer orders
+    if doc_type_code == "transfer":
+        pos_name = extra_raw.get("new_position_name")
+        if pos_name:
+            replacements["{new_position}"] = str(pos_name).lower()
+            replacements["{new_position_cap}"] = str(pos_name).capitalize()
+        else:
+            replacements.setdefault("{new_position}", "")
+            replacements.setdefault("{new_position_cap}", "")
+
     return replacements
 
 

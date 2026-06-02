@@ -3,6 +3,7 @@ from typing import List, Optional
 import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.logging import get_audit_logger
 from app.core.exceptions import (
@@ -143,6 +144,23 @@ class EmployeeService:
 
         old_values = {}
         update_data = data.model_dump(exclude_unset=True)
+
+        # Запретить изменение contract_number если есть записи в ContractHistory с order_id и contract_number
+        if "contract_number" in update_data:
+            from app.models.contract_history import ContractHistory
+            from sqlalchemy import func
+            result = await db.execute(
+                select(func.count())
+                .select_from(ContractHistory)
+                .where(
+                    ContractHistory.employee_id == employee_id,
+                    ContractHistory.order_id.isnot(None),
+                    ContractHistory.contract_number.isnot(None),
+                )
+            )
+            if result.scalar_one() > 0:
+                raise ValueError("Номер контракта заблокирован и может быть изменён только через приказ")
+
         for key in update_data:
             old_values[key] = getattr(employee, key)
 

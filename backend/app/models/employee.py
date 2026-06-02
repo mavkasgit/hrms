@@ -26,6 +26,7 @@ class Employee(Base):
     employment_type = Column(String(50))
     contract_start = Column(Date)
     contract_end = Column(Date)
+    contract_number = Column(String(50), nullable=True)
     personal_number = Column(String(50))
     insurance_number = Column(String(50))
     passport_number = Column(String(50))
@@ -55,6 +56,7 @@ class Employee(Base):
     tags = relationship("EmployeeTag", back_populates="employee")
     notifications = relationship("Notification", back_populates="employee")
     statements = relationship("Statement", back_populates="employee")
+    contract_histories = relationship("ContractHistory", back_populates="employee", order_by="ContractHistory.contract_start.desc()")
 
 
 class EmployeeAuditLog(Base):
