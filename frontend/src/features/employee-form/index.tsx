@@ -59,6 +59,7 @@ const emptyForm: EmployeeCreate = {
   employment_type: null,
   contract_start: null,
   contract_end: null,
+  contract_number: null,
   personal_number: null,
   insurance_number: null,
   passport_number: null,
@@ -174,6 +175,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         employment_type: form.employment_type,
         contract_start: form.contract_start,
         contract_end: form.contract_end,
+        contract_number: form.contract_number,
         personal_number: form.personal_number,
         insurance_number: form.insurance_number,
         passport_number: form.passport_number,
@@ -616,7 +618,20 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
           )}
 
-          <div className="grid items-end" style={{ gridTemplateColumns: "130px 16px 130px 40px 80px 16px 1fr" }}>
+          <div className="grid items-end" style={{ gridTemplateColumns: "130px 16px 130px 16px 130px 1fr" }}>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium">Номер контракта</label>
+              <Input
+                value={form.contract_number || ""}
+                onChange={(e) => updateField("contract_number", e.target.value || null)}
+                className="w-full h-10 py-2"
+                disabled={isEdit && employee?.contract_number_locked}
+                placeholder={isEdit && employee?.contract_number_locked ? "Изменяется через приказ" : "—"}
+              />
+            </div>
+
+            <div />
+
             <div className="flex flex-col gap-1">
               <DatePicker
                 label="Начало контракта"
@@ -636,7 +651,9 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             </div>
 
             <div />
+          </div>
 
+          <div className="grid items-end" style={{ gridTemplateColumns: "80px 16px 250px" }}>
             <div className="flex flex-col gap-1">
               <div className="text-sm font-medium whitespace-nowrap">Ставка</div>
               <Input
@@ -851,6 +868,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
       onOpenChange={setShowTransferModal}
       transfers={transfers}
       onSave={(newTransfers) => setTransfers(newTransfers)}
+      employeeId={employee?.id}
     />
   </>
   )

@@ -1,14 +1,19 @@
 import { DatePicker } from "@/shared/ui/date-picker"
 import { Input } from "@/shared/ui/input"
+import { ComboboxCreate } from "@/shared/ui/combobox-create"
 import { addYearsToDate, addMonthsToDate } from "@/shared/utils/date"
+import { Briefcase } from "lucide-react"
+import { usePositions, useCreatePosition } from "@/entities/position"
 
 /** Универсальная схема поля для любого типа документа */
 export type FieldSchema = {
   key: string
   label: string
-  type: "date" | "text" | "number" | "textarea"
+  type: "date" | "text" | "number" | "textarea" | "select"
   required?: boolean
   quickOptions?: { label: string; years?: number; months?: number; unit?: "years" | "months" }[]
+  entity?: string // e.g., "position" for position selector
+  allow_create?: boolean // whether to allow creating new items (default: false)
 }
 
 type FieldRendererProps = {
@@ -19,6 +24,46 @@ type FieldRendererProps = {
   extraFields: Record<string, string | number>
   /** Для date-полей с quick options: от какой даты рассчитывать (по умолчанию — hire_date или первое date-поле в extraFields) */
   baseDateKey?: string
+}
+
+function PositionSelectField({ field, value, error, onChange }: {
+  field: FieldSchema
+  value: string | number | undefined
+  error?: string
+  onChange: (key: string, value: string | number) => void
+}) {
+  const { data: positions = [] } = usePositions()
+  const createPos = useCreatePosition()
+
+  const posItems = positions.map((p) => ({ id: p.id, name: p.name }))
+
+  const handleCreatePosition = async (name: string): Promise<number> => {
+    const newPos = await createPos.mutateAsync({ name })
+    return newPos.id
+  }
+
+  const allowCreate = field.allow_create === true // default to false
+
+  return (
+    <div className="flex flex-col min-w-0 space-y-1 w-[350px]">
+      <label className="text-sm font-medium">
+        {field.label}
+        {field.required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
+      <div className="overflow-hidden">
+        <ComboboxCreate
+          value={value ? Number(value) : null}
+          onChange={(id) => onChange(field.key, id ?? "")}
+          items={posItems}
+          {...(allowCreate ? { onCreate: handleCreatePosition } : {})}
+          allowCreate={allowCreate}
+          placeholder={field.label}
+          icon={<Briefcase className="h-4 w-4" />}
+        />
+      </div>
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    </div>
+  )
 }
 
 function getBaseDate(extraFields: Record<string, string | number>, baseDateKey?: string): string | undefined {
@@ -48,9 +93,16 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
   const displayValue = value !== undefined && value !== null ? String(value) : ""
   const baseDate = getBaseDate(extraFields, baseDateKey)
 
+  console.log("[FieldRenderer] Rendering field:", field.key, "type:", field.type, "entity:", field.entity)
+
+  if (field.type === "select" && field.entity === "position") {
+    console.log("[FieldRenderer] Rendering PositionSelectField for", field.key)
+    return <PositionSelectField field={field} value={value} error={error} onChange={onChange} />
+  }
+
   if (field.type === "date") {
     return (
-      <div className="flex flex-col min-w-0">
+      <div className="flex flex-col min-w-0 w-[130px]">
         <DatePicker
           label={field.label}
           value={displayValue}
@@ -117,6 +169,10 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
     )
   }
 
+  if (field.type === "select" && field.entity === "position") {
+    return <PositionSelectField field={field} value={value} error={error} onChange={onChange} />
+  }
+
   if (field.type === "textarea") {
     return (
       <div>
@@ -135,6 +191,64 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
     )
   }
 
+  // number field with quickOptions (e.g., new_contract_years)
+  if (field.type === "number" && field.quickOptions && field.quickOptions.length > 0) {
+    const unit = field.quickOptions[0]?.unit
+    const unitLabel = unit === "years" ? "лет:" : "мес:"
+
+    // Determine which date field to read as base and which to write as result
+    // For new_contract_years: read new_contract_start, write new_contract_end
+    const baseDateKey = field.key === "new_contract_years" ? "new_contract_start" : (baseDateKey || "hire_date")
+    const endDateKey = field.key === "new_contract_years" ? "new_contract_end" : (unit === "years" ? "contract_end" : "trial_end")
+
+    const handleSetYears = (years: number) => {
+      onChange(field.key, years)
+      const base = getBaseDate(extraFields, baseDateKey)
+      if (base && years > 0) {
+        const endDate = unit === "years" ? addYearsToDate(base, years) : addMonthsToDate(base, years)
+        if (endDate) onChange(endDateKey, endDate)
+      }
+    }
+
+    return (
+      <div className="flex flex-col min-w-0 inline">
+        <div className="flex gap-2 items-center flex-wrap">
+          {field.quickOptions.map((opt) => (
+            <button
+              key={opt.label}
+              type="button"
+              className="text-xs px-2 py-0.5 rounded border border-input bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              onClick={() => handleSetYears(opt.years ?? opt.months ?? 0)}
+            >
+              {opt.label}
+            </button>
+          ))}
+          <label className="text-xs text-muted-foreground whitespace-nowrap">{unitLabel}</label>
+          <input
+            type="number"
+            min="1"
+            max="99"
+            value={displayValue}
+            onChange={(e) => {
+              const val = e.target.value
+              onChange(field.key, val === "" ? "" : Number(val))
+              const num = Number(val)
+              if (num > 0) {
+                const base = getBaseDate(extraFields, baseDateKey)
+                if (base) {
+                  const endDate = unit === "years" ? addYearsToDate(base, num) : addMonthsToDate(base, num)
+                  if (endDate) onChange(endDateKey, endDate)
+                }
+              }
+            }}
+            className="w-12 h-7 text-xs rounded border border-input bg-background px-1 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+        </div>
+        {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      </div>
+    )
+  }
+
   // text / number
   return (
     <div className="flex flex-col min-w-0 space-y-1">
@@ -147,7 +261,7 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
           onChange(field.key, field.type === "number" ? Number(e.target.value) : e.target.value)
         }
         required={field.required}
-        className="w-full"
+        className="w-full h-10"
       />
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </div>

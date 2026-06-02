@@ -34,7 +34,6 @@ import {
 } from "@/shared/ui/select"
 import { EmployeeSearch } from "@/features/employee-search"
 import { DocumentNumberField } from "@/features/DocumentNumberField"
-import { DynamicField, type FieldSchema } from "@/shared/ui/dynamic-field"
 import type { Employee } from "@/entities/employee/types"
 import type { NotificationType } from "@/entities/notification/types"
 import {
@@ -46,8 +45,9 @@ import {
 } from "@/entities/notification/hooks"
 import { openNotificationView, openNotificationEdit, openNotificationPrint, downloadNotificationDocx } from "@/entities/notification/api"
 import type { NotificationCreate } from "@/entities/notification/types"
-import { NotificationContractExtensionFields } from "@/features/dynamic-form"
-
+import { FieldGroup } from "@/features/dynamic-form"
+import { getNotificationTypeLayout } from "@/entities/notification/notificationTypeLayouts"
+import { DynamicField, type FieldSchema } from "@/shared/ui/dynamic-field"
 import { buildEmployeePlaceholders } from "@/features/dynamic-form/autoFillConfig"
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -397,49 +397,32 @@ export function NotificationsSection() {
                   </div>
                 </div>
 
-                {/* Dynamic extra fields from field_schema — grid-driven rendering */}
-                {selectedNotificationType && Array.isArray(selectedNotificationType.field_schema) && selectedNotificationType.field_schema.length > 0 && (
-                  <div className="space-y-3">
-                    {(() => {
-                      // For contract_extension and new_contract, use the custom layout; otherwise use grid
-                      if (selectedNotificationType.code === "contract_extension" || selectedNotificationType.code === "new_contract") {
-                        return (
-                          <NotificationContractExtensionFields
-                            extraFields={extraFields}
-                            extraFieldErrors={extraFieldErrors}
-                            onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
-                          />
-                        )
-                      }
+                {/* Dynamic extra fields from layout config */}
+                {selectedNotificationType && (() => {
+                  const layout = getNotificationTypeLayout(selectedNotificationType.code)
+                  if (!layout || layout.groups.length === 0) return null
 
-                      // Grid-driven rendering: filter enabled, group by row, sort by col
-                      const enabledFields = selectedNotificationType.field_schema.filter(f => f.enabled !== false)
-                      const rowMap = new Map<number, typeof enabledFields>()
-                      for (const field of enabledFields) {
-                        const r = field.row ?? 0
-                        if (!rowMap.has(r)) rowMap.set(r, [])
-                        rowMap.get(r)!.push(field)
-                      }
-                      for (const [, rowFields] of rowMap) {
-                        rowFields.sort((a, b) => (a.col ?? 0) - (b.col ?? 0))
-                      }
-
-                      return Array.from(rowMap.entries()).map(([rowNum, rowFields]) => (
-                        <div key={rowNum} className="flex gap-4 flex-wrap items-end">
-                          {rowFields.map((field) => (
-                            <DynamicField
-                              key={field.key}
-                              field={field as FieldSchema}
-                              value={extraFields[field.key]}
-                              error={extraFieldErrors[`extra_${field.key}`]}
-                              onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
-                            />
-                          ))}
-                        </div>
-                      ))
-                    })()}
-                  </div>
-                )}
+                  return (
+                    <div className="space-y-4">
+                      {layout.groups.map((group, idx) => (
+                        <FieldGroup key={`${selectedNotificationType.code}-group-${idx}`} title={group.title}>
+                          <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4 items-end">
+                            {group.fields.map((field) => (
+                              <div key={field.key} className="flex flex-col min-w-0">
+                                <DynamicField
+                                  field={field}
+                                  value={extraFields[field.key]}
+                                  error={extraFieldErrors[`extra_${field.key}`]}
+                                  onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </FieldGroup>
+                      ))}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           </div>

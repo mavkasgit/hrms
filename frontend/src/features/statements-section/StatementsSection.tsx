@@ -34,8 +34,9 @@ import {
 } from "@/shared/ui/select"
 import { EmployeeSearch } from "@/features/employee-search"
 import { DocumentNumberField } from "@/features/DocumentNumberField"
-import { DynamicField, type FieldSchema } from "@/shared/ui/dynamic-field"
-import { StatementContractExpiryFields, useAutoFillFields } from "@/features/dynamic-form"
+import { DynamicField } from "@/shared/ui/dynamic-field"
+import { FieldGroup, useAutoFillFields } from "@/features/dynamic-form"
+import { getStatementTypeLayout } from "@/entities/statement/statementTypeLayouts"
 import type { Employee } from "@/entities/employee/types"
 import type { StatementType } from "@/entities/statement/types"
 import {
@@ -385,57 +386,32 @@ export function StatementsSection() {
                   </div>
                 </div>
 
-                {/* Dynamic extra fields from field_schema — grid-driven rendering */}
-                {selectedStatementType && (selectedStatementType.code === "contract_expiry" || (Array.isArray(selectedStatementType.field_schema) && selectedStatementType.field_schema.length > 0)) && (
-                  <div className="space-y-3">
-                    {(() => {
-                      // For contract_expiry, use the custom layout; otherwise use grid
-                      if (selectedStatementType.code === "contract_expiry") {
-                        return (
-                          <StatementContractExpiryFields
-                            extraFields={extraFields}
-                            extraFieldErrors={extraFieldErrors}
-                            onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
-                          />
-                        )
-                      }
+                {/* Dynamic extra fields from layout config */}
+                {selectedStatementType && (() => {
+                  const layout = getStatementTypeLayout(selectedStatementType.code)
+                  if (!layout || layout.groups.length === 0) return null
 
-                      // Grid-driven rendering: filter enabled, group by row, sort by col
-                      const enabledFields = selectedStatementType.field_schema.filter(f => f.enabled !== false)
-                      const rowMap = new Map<number, typeof enabledFields>()
-                      for (const field of enabledFields) {
-                        const r = field.row ?? 0
-                        if (!rowMap.has(r)) rowMap.set(r, [])
-                        rowMap.get(r)!.push(field)
-                      }
-                      for (const [, rowFields] of rowMap) {
-                        rowFields.sort((a, b) => (a.col ?? 0) - (b.col ?? 0))
-                      }
-
-                      // Sort fields by row then col for display order
-                      const sortedFields = [...enabledFields].sort((a, b) => {
-                        const rowDiff = (a.row ?? 0) - (b.row ?? 0)
-                        if (rowDiff !== 0) return rowDiff
-                        return (a.col ?? 0) - (b.col ?? 0)
-                      })
-
-                      return (
-                        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4 items-end">
-                          {sortedFields.map((field) => (
-                            <div key={field.key} className="flex flex-col min-w-0">
-                              <DynamicField
-                                field={field as FieldSchema}
-                                value={extraFields[field.key]}
-                                error={extraFieldErrors[`extra_${field.key}`]}
-                                onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )
-                    })()}
-                  </div>
-                )}
+                  return (
+                    <div className="space-y-4">
+                      {layout.groups.map((group, idx) => (
+                        <FieldGroup key={`${selectedStatementType.code}-group-${idx}`} title={group.title}>
+                          <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4 items-end">
+                            {group.fields.map((field) => (
+                              <div key={field.key} className="flex flex-col min-w-0">
+                                <DynamicField
+                                  field={field}
+                                  value={extraFields[field.key]}
+                                  error={extraFieldErrors[`extra_${field.key}`]}
+                                  onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </FieldGroup>
+                      ))}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           </div>
