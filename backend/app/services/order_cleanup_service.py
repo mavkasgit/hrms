@@ -53,6 +53,42 @@ class OrderCleanupService:
             employee.contract_end = date.fromisoformat(order.extra_fields["old_contract_end"])
             await db.flush()
 
+        # Restore contract_end on transfer order deletion
+        if order_type_code == "transfer" and employee and order.extra_fields:
+            if order.extra_fields.get("old_contract_end"):
+                employee.contract_end = date.fromisoformat(order.extra_fields["old_contract_end"])
+            else:
+                # If no old contract existed, clear the new one
+                employee.contract_end = None
+            await db.flush()
+
+        # Restore contract_start on transfer order deletion
+        if order_type_code == "transfer" and employee and order.extra_fields:
+            if order.extra_fields.get("old_contract_start"):
+                employee.contract_start = date.fromisoformat(order.extra_fields["old_contract_start"])
+            else:
+                # If no old contract existed, clear the new one
+                employee.contract_start = None
+            await db.flush()
+
+        # Restore position on transfer order deletion
+        if order_type_code == "transfer" and employee and order.extra_fields and order.extra_fields.get("old_position_id"):
+            employee.position_id = order.extra_fields["old_position_id"]
+            await db.flush()
+
+        # Restore contract_number on contract-related order deletion
+        if order_type_code in ("hire", "contract_extension", "new_contract", "transfer") and employee and order.extra_fields:
+            if order.extra_fields.get("old_contract_number"):
+                employee.contract_number = order.extra_fields["old_contract_number"]
+            elif order_type_code == "transfer":
+                # If no old contract existed, clear the new one
+                employee.contract_number = None
+            await db.flush()
+
+        # Delete contract history records linked to this order
+        from app.services.contract_history_service import contract_history_service
+        await contract_history_service.delete_by_order(db, order_id)
+
         # Get affected period IDs before deletion
         from app.services.vacation_period_service import vacation_period_service
 
