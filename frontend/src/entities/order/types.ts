@@ -52,7 +52,7 @@ export interface Order {
   file_path: string | null
   display_name: string | null
   notes: string | null
-  extra_fields: Record<string, string | number>
+  extra_fields: Record<string, string | number | null>
   is_group: boolean
   group_employee_count?: number | null
   group_employees?: GroupEmployeeInfo[]
@@ -136,7 +136,7 @@ export interface OrderCreate {
   order_date: string
   order_number?: string | null
   notes?: string | null
-  extra_fields?: Record<string, string | number> | null
+  extra_fields?: Record<string, string | number | null> | null
   draft_id?: string | null
 }
 
@@ -187,7 +187,7 @@ export interface OrderUpdate {
   order_number?: string | null
   order_date?: string | null
   notes?: string | null
-  extra_fields?: Record<string, string | number> | null
+  extra_fields?: Record<string, string | number | null> | null
 }
 
 export interface OrderDeletionPreview {

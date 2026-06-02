@@ -25,6 +25,8 @@ ALL_TEMPLATE_VARIABLES = [
     # Work
     {"key": "position", "name": "{position}", "displayName": "Должность", "description": "Должность сотрудника строчными буквами", "category": "Работа"},
     {"key": "position_cap", "name": "{position_cap}", "displayName": "Должность (загл.)", "description": "Должность с заглавной буквы", "category": "Работа"},
+    {"key": "new_position", "name": "{new_position}", "displayName": "Новая должность", "description": "Новая должность при переводе строчными буквами", "category": "Работа"},
+    {"key": "new_position_cap", "name": "{new_position_cap}", "displayName": "Новая должность (загл.)", "description": "Новая должность при переводе с заглавной буквы", "category": "Работа"},
     {"key": "department", "name": "{department}", "displayName": "Подразделение", "description": "Название подразделения/отдела", "category": "Работа"},
     {"key": "tab_number", "name": "{tab_number}", "displayName": "Таб. номер", "description": "Табельный номер сотрудника", "category": "Работа"},
 
