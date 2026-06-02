@@ -13,20 +13,6 @@ from app.models.statement_type import StatementType
 
 DEFAULT_STATEMENT_TYPES: list[dict[str, Any]] = [
     {
-        "code": "simple",
-        "name": "Заявление",
-        "template_filename": None,
-        "field_schema": [],
-        "filename_pattern": "Заявление_№{doc_number}_{doc_date}.docx",
-    },
-    {
-        "code": "personal",
-        "name": "Личное заявление",
-        "template_filename": None,
-        "field_schema": [],
-        "filename_pattern": "Заявление_№{doc_number}_{doc_date}.docx",
-    },
-    {
         "code": "transfer",
         "name": "Заявление о переводе",
         "template_filename": None,
@@ -64,13 +50,6 @@ DEFAULT_STATEMENT_TYPES: list[dict[str, Any]] = [
             {"key": "old_contract_start", "label": "Дата начала контракта", "type": "date", "required": True},
             {"key": "old_contract_number", "label": "Номер контракта", "type": "text", "required": False},
         ],
-        "filename_pattern": "Заявление_№{doc_number}_{doc_date}.docx",
-    },
-    {
-        "code": "other",
-        "name": "Другое",
-        "template_filename": None,
-        "field_schema": [],
         "filename_pattern": "Заявление_№{doc_number}_{doc_date}.docx",
     },
 ]

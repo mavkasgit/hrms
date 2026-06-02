@@ -135,8 +135,6 @@ export function TemplateTypeForm({
       type: f.type,
       required: f.required,
       enabled: f.enabled ?? true,
-      col: f.col ?? 0,
-      row: f.row ?? 0,
       quickOptions: f.quickOptions,
     }))
 

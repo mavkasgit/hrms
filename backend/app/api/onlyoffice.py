@@ -294,6 +294,7 @@ async def create_order_draft(
         data = data.model_copy(update={"order_number": order_number})
 
     data = await _normalize_vacation_draft_fields(db, data, order_type.code)
+    data = await _normalize_transfer_draft_fields(db, data, order_type.code)
 
     return await order_draft_service.create_draft(data, employee, order_type)
 
@@ -308,7 +309,7 @@ async def _normalize_vacation_draft_fields(db: AsyncSession, data: OrderCreate, 
     try:
         start = date.fromisoformat(start_raw)
         end = date.fromisoformat(end_raw)
-    except ValueError:
+    except (ValueError, TypeError):
         return data
 
     holidays = await references_repository.get_holidays_for_year(db, start.year)
@@ -316,6 +317,27 @@ async def _normalize_vacation_draft_fields(db: AsyncSession, data: OrderCreate, 
         holidays += await references_repository.get_holidays_for_year(db, end.year)
     days_count = calculate_vacation_days(start, end, count_holidays_in_range(holidays, start, end))
     extra_fields = {**data.extra_fields, "vacation_days": days_count}
+    return data.model_copy(update={"extra_fields": extra_fields})
+
+
+async def _normalize_transfer_draft_fields(db: AsyncSession, data: OrderCreate, order_type_code: str) -> OrderCreate:
+    """Resolve new_position_name from new_position id for transfer orders."""
+    if order_type_code != "transfer" or not data.extra_fields:
+        return data
+    new_position_id = data.extra_fields.get("new_position")
+    if not new_position_id:
+        return data
+    if isinstance(new_position_id, str) and new_position_id.isdigit():
+        new_position_id = int(new_position_id)
+    if not isinstance(new_position_id, int):
+        return data
+    from app.models.position import Position
+    from sqlalchemy import select
+    result = await db.execute(select(Position).where(Position.id == new_position_id))
+    position = result.scalar_one_or_none()
+    if not position:
+        return data
+    extra_fields = {**data.extra_fields, "new_position_name": position.name}
     return data.model_copy(update={"extra_fields": extra_fields})
 
 

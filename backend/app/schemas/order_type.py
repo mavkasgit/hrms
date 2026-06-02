@@ -15,13 +15,12 @@ class OrderTypeFieldSchema(BaseModel):
     key: str = Field(..., min_length=1, max_length=100)
     label: str = Field(..., min_length=1, max_length=200)
     displayName: str | None = Field(None, max_length=100)
-    type: str = Field(..., pattern="^(text|date|number|textarea)$")
+    type: str = Field(..., pattern="^(text|date|number|textarea|select)$")
     required: bool = False
     enabled: bool = True
-    col: int = 0
-    row: int = 0
-    width: int | None = None  # cell width in px (None = auto)
     quickOptions: list[QuickOption] | None = None
+    entity: str | None = None  # e.g., "position" for position selector
+    allow_create: bool | None = None  # whether to allow creating new items
 
     @field_validator("key")
     @classmethod

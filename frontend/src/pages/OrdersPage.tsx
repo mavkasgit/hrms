@@ -47,14 +47,17 @@ import { downloadOrderDocx, openOrderEdit, openOrderPrint, openOrderView } from 
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { EmployeeSearch } from "@/features/employee-search"
 import { DocumentModal } from "@/features/document-modal/DocumentModal"
+import { ContractRegistryModal } from "@/pages/ContractRegistryPage"
 import type { Employee } from "@/entities/employee/types"
 import type { OrderType } from "@/entities/order/types"
 import {
   useAutoFillFields,
   FieldRenderer,
   ContractExtensionFields,
+  FieldGroup,
   type FieldSchema,
 } from "@/features/dynamic-form"
+import { getOrderTypeLayout } from "@/entities/order/orderTypeLayouts"
 
 const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
   "Прием на работу": "bg-green-100 text-green-800 border-green-200",
@@ -117,6 +120,7 @@ export function OrdersPage() {
   const [filterCollapsed, setFilterCollapsed] = useState(true)
   const [activeTab, setActiveTab] = useState<"all" | "general">("all")
   const [contractsOpen, setContractsOpen] = useState(false)
+  const [contractRegistryOpen, setContractRegistryOpen] = useState(false)
 
   // Filter state
   const [filterEmployee, setFilterEmployee] = useState<Employee | null>(null)
@@ -528,6 +532,10 @@ export function OrdersPage() {
             <FileText className="mr-2 h-4 w-4" />
             Контракты
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setContractRegistryOpen(true)}>
+            <FileText className="mr-2 h-4 w-4" />
+            Реестр контрактов
+          </Button>
           <Button variant="outline" size="sm" onClick={() => navigate("/templates")}>
             <Settings className="mr-2 h-4 w-4" />
             Типы и шаблоны
@@ -673,81 +681,45 @@ export function OrdersPage() {
                   {errors.orderType && <p className="text-xs text-red-500 mt-1">{errors.orderType}</p>}
                 </div>
 
-                {/* Dynamic extra fields from field_schema — grid-driven rendering */}
-                {selectedOrderType && Array.isArray(selectedOrderType.field_schema) && selectedOrderType.field_schema.length > 0 && (
-                  <div className="space-y-3">
-                    {(() => {
-                      // For new_contract and contract_extension, use the custom layout; otherwise use grid
-                      if (selectedOrderType.code === "new_contract" || selectedOrderType.code === "contract_extension") {
-                        return (
-                          <ContractExtensionFields
-                            extraFields={extraFields}
-                            extraFieldErrors={extraFieldErrors}
-                            onFieldChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
-                          />
-                        )
-                      }
+                {/* Dynamic extra fields from layout config */}
+                {selectedOrderType && (() => {
+                  const layout = getOrderTypeLayout(selectedOrderType.code)
+                  if (!layout) return null
 
-                      // Filter enabled fields, group by row, sort by col
-                      const enabledFields = selectedOrderType.field_schema.filter(f => f.enabled !== false)
-                      const rowMap = new Map<number, typeof enabledFields>()
-                      for (const field of enabledFields) {
-                        const r = field.row ?? 0
-                        if (!rowMap.has(r)) rowMap.set(r, [])
-                        rowMap.get(r)!.push(field)
-                      }
-                      // Sort each row by col
-                      for (const [, rowFields] of rowMap) {
-                        rowFields.sort((a, b) => (a.col ?? 0) - (b.col ?? 0))
-                      }
-
-                      // Enrich fields with quickOptions if not already set
-                      const enrichField = (f: typeof enabledFields[number]) => {
-                        if (f.quickOptions) return f
-                        if (f.key === "contract_end") {
-                          return { ...f, quickOptions: [
-                            { label: "1 год", years: 1, unit: "years" as const },
-                            { label: "2 года", years: 2, unit: "years" as const },
-                            { label: "3 года", years: 3, unit: "years" as const },
-                          ]}
-                        }
-                        if (f.key === "trial_end") {
-                          return { ...f, quickOptions: [
-                            { label: "2 мес", months: 2, unit: "months" as const },
-                            { label: "3 мес", months: 3, unit: "months" as const },
-                          ]}
-                        }
-                        return f
-                      }
-
-                      // Sort fields by row then col for display order
-                      const sortedFields = [...enabledFields].sort((a, b) => {
-                        const rowDiff = (a.row ?? 0) - (b.row ?? 0)
-                        if (rowDiff !== 0) return rowDiff
-                        return (a.col ?? 0) - (b.col ?? 0)
-                      })
-
-                      return (
-                        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4 items-end">
-                          {sortedFields.map((field) => {
-                            const enriched = enrichField(field)
-                            return (
+                  return (
+                    <div className="space-y-4">
+                      {layout.groups.map((group, idx) => (
+                        <FieldGroup key={`${selectedOrderType.code}-group-${idx}`} title={group.title}>
+                          <div className="flex gap-2 items-end flex-wrap">
+                            {group.fields.filter(f => f.enabled !== false).map((field) => (
                               <div key={field.key} className="flex flex-col min-w-0">
                                 <FieldRenderer
-                                  field={enriched as FieldSchema}
+                                  field={field as FieldSchema}
                                   value={extraFields[field.key]}
                                   error={extraFieldErrors[`extra_${field.key}`]}
                                   onChange={(key: string, value: string | number) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
                                   extraFields={extraFields}
                                 />
                               </div>
-                            )
-                          })}
+                            ))}
+                          </div>
+                        </FieldGroup>
+                      ))}
+
+                      {layout.standaloneFields?.filter(f => f.enabled !== false).map((field) => (
+                        <div key={field.key} className="pl-2 -mt-2">
+                          <FieldRenderer
+                            field={field as FieldSchema}
+                            value={extraFields[field.key]}
+                            error={extraFieldErrors[`extra_${field.key}`]}
+                            onChange={(key: string, value: string | number) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                            extraFields={extraFields}
+                          />
                         </div>
-                      )
-                    })()}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           </div>
@@ -1155,6 +1127,8 @@ export function OrdersPage() {
       <GlobalAuditLog open={auditLogOpen} onOpenChange={setAuditLogOpen} initialActionFilter="order" />
 
       <DocumentModal docCode="contracts" title="Контракты" open={contractsOpen} onOpenChange={setContractsOpen} />
+
+      <ContractRegistryModal open={contractRegistryOpen} onOpenChange={setContractRegistryOpen} />
     </div>
   )
 }

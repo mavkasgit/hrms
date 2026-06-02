@@ -17,10 +17,11 @@ interface ComboboxProps {
   value: number | null
   onChange: (id: number) => void
   items: ComboboxCreateItem[]
-  onCreate: (name: string) => Promise<number>
+  onCreate?: (name: string) => Promise<number>
   placeholder: string
   icon?: ReactNode
   error?: string
+  allowCreate?: boolean
 }
 
 export function ComboboxCreate({
@@ -31,6 +32,7 @@ export function ComboboxCreate({
   placeholder,
   icon,
   error,
+  allowCreate = true,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
@@ -52,7 +54,7 @@ export function ComboboxCreate({
   const filtered = search
     ? items.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()))
     : items
-  const showCreate = search.trim().length > 0 && !items.some(
+  const showCreate = allowCreate && search.trim().length > 0 && !items.some(
     (i) => i.name.toLowerCase() === search.trim().toLowerCase()
   )
 
@@ -102,7 +104,14 @@ export function ComboboxCreate({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && showCreate) handleCreate()
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    if (filtered.length > 0) {
+                      handleSelect(filtered[0])
+                    } else if (showCreate) {
+                      handleCreate()
+                    }
+                  }
                 }}
                 placeholder="Найти или создать..."
                 className="border-0 h-8 text-sm focus-visible:ring-0 focus-visible:ring-offset-0 px-2"

@@ -22,7 +22,6 @@ export function YearFilter({ value, onChange, years }: YearFilterProps) {
     y.toString().includes(search)
   )
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -33,13 +32,12 @@ export function YearFilter({ value, onChange, years }: YearFilterProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  // Reset search when dropdown closes
   useEffect(() => {
     if (!dropdownOpen) setSearch("")
   }, [dropdownOpen])
 
   return (
-    <div className="flex gap-1 items-center">
+    <div className="flex gap-1 items-center flex-wrap">
       <Button
         variant={value === undefined ? "default" : "outline"}
         size="sm"

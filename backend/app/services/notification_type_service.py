@@ -13,13 +13,6 @@ from app.models.notification_type import NotificationType
 
 DEFAULT_NOTIFICATION_TYPES: list[dict[str, Any]] = [
     {
-        "code": "standard",
-        "name": "Стандартное уведомление",
-        "template_filename": None,
-        "field_schema": [],
-        "filename_pattern": "Уведомление_№{doc_number}_{doc_date}.docx",
-    },
-    {
         "code": "contract_extension",
         "name": "О продлении контракта",
         "template_filename": None,
