@@ -1,10 +1,8 @@
 import type { FieldSchema } from "@/features/dynamic-form"
 import {
   oldContractFields,
-  newContractFields,
   vacationPeriodFields,
   oldVacationFields,
-  contractEndQuickOptions,
   trialEndQuickOptions,
   newContractYearsQuickOptions,
   type QuickOption,
@@ -32,12 +30,19 @@ export const ORDER_TYPE_LAYOUTS: OrderTypeLayout[] = [
       {
         fields: [
           { key: "hire_date", label: "Дата приема", type: "date", required: false, enabled: true },
-          { key: "contract_end", label: "Конец", type: "date", required: false, enabled: true, quickOptions: contractEndQuickOptions },
+        ],
+      },
+      {
+        title: "Новый контракт",
+        fields: [
+          { key: "contract_start", label: "Начало", type: "date", required: false, enabled: true },
+          { key: "contract_end", label: "Конец", type: "date", required: false, enabled: true },
           { key: "contract_number", label: "Номер", type: "text", required: false, enabled: true },
         ],
       },
     ],
     standaloneFields: [
+      { key: "contract_years", label: "Срок (лет)", type: "number", required: false, enabled: true, quickOptions: newContractYearsQuickOptions },
       { key: "trial_end", label: "Конец испытательного срока", type: "date", required: false, enabled: true, quickOptions: trialEndQuickOptions },
     ],
   },
@@ -85,13 +90,11 @@ export const ORDER_TYPE_LAYOUTS: OrderTypeLayout[] = [
           { key: "new_contract_start", label: "Начало", type: "date", required: false, enabled: true },
           { key: "new_contract_end", label: "Конец", type: "date", required: false, enabled: true },
           { key: "new_contract_number", label: "Номер", type: "text", required: false, enabled: true },
+          { key: "new_contract_years", label: "Срок (лет)", type: "number", required: false, enabled: true, quickOptions: newContractYearsQuickOptions },
         ],
       },
     ],
-    standaloneFields: [
-      { key: "new_contract_years", label: "Срок (лет)", type: "number", required: false, enabled: true, quickOptions: newContractYearsQuickOptions },
-      { key: "trial_end", label: "Конец испытательного срока", type: "date", required: false, enabled: true, quickOptions: trialEndQuickOptions },
-    ],
+    standaloneFields: [],
   },
   {
     orderTypeCode: "new_contract",
@@ -106,12 +109,11 @@ export const ORDER_TYPE_LAYOUTS: OrderTypeLayout[] = [
           { key: "new_contract_start", label: "Начало", type: "date", required: false, enabled: true },
           { key: "new_contract_end", label: "Конец", type: "date", required: false, enabled: true },
           { key: "new_contract_number", label: "Номер", type: "text", required: false, enabled: true },
+          { key: "new_contract_years", label: "Срок (лет)", type: "number", required: false, enabled: true, quickOptions: newContractYearsQuickOptions },
         ],
       },
     ],
-    standaloneFields: [
-      { key: "new_contract_years", label: "Срок (лет)", type: "number", required: false, enabled: true, quickOptions: newContractYearsQuickOptions },
-    ],
+    standaloneFields: [],
   },
   {
     orderTypeCode: "vacation_paid",
@@ -197,6 +199,26 @@ export const ORDER_TYPE_LAYOUTS: OrderTypeLayout[] = [
           { key: "sick_start_date", label: "Дата начала больничного", type: "date", required: true, enabled: true },
           { key: "sick_end_date", label: "Дата окончания больничного", type: "date", required: true, enabled: true },
           { key: "comment", label: "Комментарий", type: "text", required: false, enabled: true },
+        ],
+      },
+    ],
+  },
+  {
+    orderTypeCode: "work_release",
+    groups: [
+      {
+        fields: [
+          { key: "event_date", label: "Дата освобождения", type: "date", required: true, enabled: true },
+        ],
+      },
+    ],
+  },
+  {
+    orderTypeCode: "cancel_full_workday",
+    groups: [
+      {
+        fields: [
+          { key: "event_date", label: "Дата события", type: "date", required: true, enabled: true },
         ],
       },
     ],

@@ -18,7 +18,6 @@ DEFAULT_STATEMENT_TYPES: list[dict[str, Any]] = [
         "template_filename": None,
         "field_schema": [
             {"key": "transfer_date", "label": "Дата перевода", "type": "date", "required": False},
-            {"key": "transfer_reason", "label": "Основание", "type": "textarea", "required": False},
         ],
         "filename_pattern": "Заявление_№{doc_number}_{doc_date}.docx",
     },
@@ -48,6 +47,7 @@ DEFAULT_STATEMENT_TYPES: list[dict[str, Any]] = [
         "template_filename": None,
         "field_schema": [
             {"key": "old_contract_start", "label": "Дата начала контракта", "type": "date", "required": True},
+            {"key": "old_contract_end", "label": "Дата окончания контракта", "type": "date", "required": True},
             {"key": "old_contract_number", "label": "Номер контракта", "type": "text", "required": False},
         ],
         "filename_pattern": "Заявление_№{doc_number}_{doc_date}.docx",

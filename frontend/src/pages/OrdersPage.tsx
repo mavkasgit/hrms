@@ -635,7 +635,7 @@ export function OrdersPage() {
 
               {/* Right column — Детали приказа */}
               <div className="space-y-4 flex-1 min-w-0 max-w-[700px] lg:pl-6">
-                <div ref={orderTypeRef} className="w-60">
+                <div ref={orderTypeRef} className="w-[350px]">
                   <label className="text-sm font-medium">Тип приказа <span className="text-red-500">*</span></label>
                   <div className="mt-1 relative">
                     {selectedOrderType ? (
@@ -686,6 +686,17 @@ export function OrdersPage() {
                   const layout = getOrderTypeLayout(selectedOrderType.code)
                   if (!layout) return null
 
+                  const handleLayoutFieldChange = (key: string, value: string | number) => {
+                    setExtraFields((prev) => {
+                      const next = { ...prev, [key]: value }
+                      // Для приёма: contract_start дублирует hire_date (это одна и та же дата)
+                      if (selectedOrderType.code === "hire" && key === "hire_date" && value) {
+                        next["contract_start"] = value
+                      }
+                      return next
+                    })
+                  }
+
                   return (
                     <div className="space-y-4">
                       {layout.groups.map((group, idx) => (
@@ -697,7 +708,7 @@ export function OrdersPage() {
                                   field={field as FieldSchema}
                                   value={extraFields[field.key]}
                                   error={extraFieldErrors[`extra_${field.key}`]}
-                                  onChange={(key: string, value: string | number) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                                  onChange={handleLayoutFieldChange}
                                   extraFields={extraFields}
                                 />
                               </div>
@@ -712,7 +723,7 @@ export function OrdersPage() {
                             field={field as FieldSchema}
                             value={extraFields[field.key]}
                             error={extraFieldErrors[`extra_${field.key}`]}
-                            onChange={(key: string, value: string | number) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                            onChange={handleLayoutFieldChange}
                             extraFields={extraFields}
                           />
                         </div>

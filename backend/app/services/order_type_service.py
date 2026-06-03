@@ -29,6 +29,7 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "contract_start", "label": "Начало", "type": "date", "required": False, "enabled": True},
             {"key": "contract_end", "label": "Конец", "type": "date", "required": False, "enabled": True},
             {"key": "contract_number", "label": "Номер", "type": "text", "required": False, "enabled": True},
+            {"key": "contract_years", "label": "Срок (лет)", "type": "number", "required": False, "enabled": True},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
         "letter": "к",
@@ -72,7 +73,6 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
             {"key": "new_contract_end", "label": "Конец", "type": "date", "required": False, "enabled": True},
             {"key": "new_contract_number", "label": "Номер", "type": "text", "required": False, "enabled": True},
             {"key": "new_contract_years", "label": "Срок (лет)", "type": "number", "required": False, "enabled": True},
-            {"key": "trial_end", "label": "Конец испытательного срока", "type": "date", "required": False, "enabled": True},
         ],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
         "letter": "к",
@@ -210,6 +210,28 @@ DEFAULT_ORDER_TYPES: list[dict[str, Any]] = [
         "field_schema": [],
         "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{order_date}.docx",
         "letter": None,
+    },
+    {
+        "code": "cancel_full_workday",
+        "name": "Отмена полного рабочего дня",
+        "show_in_orders_page": True,
+        "template_filename": "template__order__cancel_full_workday.docx",
+        "field_schema": [
+            {"key": "event_date", "label": "Дата события", "type": "date", "required": True, "enabled": True},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "к",
+    },
+    {
+        "code": "work_release",
+        "name": "Освобождение от работы",
+        "show_in_orders_page": True,
+        "template_filename": "template__order__work_release.docx",
+        "field_schema": [
+            {"key": "event_date", "label": "Дата освобождения", "type": "date", "required": True, "enabled": True},
+        ],
+        "filename_pattern": "Приказ_№{order_number}_{order_type_code}_{last_name}_{initials}.docx",
+        "letter": "к",
     },
 ]
 
