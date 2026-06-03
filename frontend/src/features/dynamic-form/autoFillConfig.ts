@@ -74,18 +74,19 @@ export const AUTO_FILL_RULES: Array<{
     },
   },
   {
-    keys: ["hire_date", "hire_order_date"],
+    keys: ["hire_date", "hire_order_date", "contract_start"],
     build: (empData) => {
-      const d = isoDate(empData.hire_date)
-      if (!d) return {}
-      return { hire_date: d, hire_order_date: d }
-    },
-  },
-  {
-    keys: ["contract_start"],
-    build: (empData) => {
-      const d = isoDate(empData.contract_start)
-      return d ? { contract_start: d } : {}
+      // hire_date — главное поле. contract_start — зеркало:
+      // если в БД есть hire_date → берём его; иначе если есть contract_start → берём его.
+      const hireD = isoDate(empData.hire_date)
+      const contractStartD = isoDate(empData.contract_start)
+      const date = hireD || contractStartD
+      if (!date) return {}
+      return {
+        hire_date: date,
+        hire_order_date: date,
+        contract_start: date,
+      }
     },
   },
   {

@@ -25,4 +25,6 @@ export {
   dateRangeFields,
   contractEndQuickOptions,
   trialEndQuickOptions,
+  newContractYearsQuickOptions,
+  type QuickOption,
 } from "./sharedFieldGroups"

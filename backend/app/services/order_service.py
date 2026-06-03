@@ -276,13 +276,33 @@ class OrderService:
                     extra_fields.get("new_contract_end") or extra_fields.get("contract_end")
                 )
                 new_number = extra_fields.get("new_contract_number")
-                if new_start:
-                    employee.contract_start = new_start
-                if new_end:
-                    employee.contract_end = new_end
-                if new_number:
-                    employee.contract_number = str(new_number)
-                await db.flush()
+
+                # Защита от перезаписи актуального контракта старыми/прошлыми данными
+                # (например, оформление старого приказа приёма для сотрудника, у которого уже
+                # стоит будущий контракт). Обновляем только если новая дата окончания
+                # не указана как устаревшая: либо её нет, либо она >= текущей в БД.
+                should_update = False
+                if new_end is not None:
+                    if employee.contract_end is None or new_end >= employee.contract_end:
+                        should_update = True
+                    else:
+                        get_audit_logger().info(
+                            "Skipping employee contract update: new_end=%s < current contract_end=%s "
+                            "for employee_id=%s, order_id=%s, order_type=%s",
+                            new_end, employee.contract_end, employee.id, order.id, order_type.code,
+                        )
+                elif employee.contract_end is None and (new_start or new_number):
+                    # Дата окончания не указана, но текущего контракта нет — обновляем start/number
+                    should_update = True
+
+                if should_update:
+                    if new_start:
+                        employee.contract_start = new_start
+                    if new_end:
+                        employee.contract_end = new_end
+                    if new_number:
+                        employee.contract_number = str(new_number)
+                    await db.flush()
 
             # Update employee position for transfer orders
             if order_type.code == "transfer" and employee and extra_fields and extra_fields.get("new_position"):

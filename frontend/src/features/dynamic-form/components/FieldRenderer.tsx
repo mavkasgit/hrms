@@ -11,6 +11,7 @@ export type FieldSchema = {
   label: string
   type: "date" | "text" | "number" | "textarea" | "select"
   required?: boolean
+  enabled?: boolean
   quickOptions?: { label: string; years?: number; months?: number; unit?: "years" | "months" }[]
   entity?: string // e.g., "position" for position selector
   allow_create?: boolean // whether to allow creating new items (default: false)
@@ -102,16 +103,16 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
 
   if (field.type === "date") {
     return (
-      <div className="flex flex-col min-w-0 w-[130px]">
+      <div className="inline-flex flex-col min-w-0">
         <DatePicker
           label={field.label}
           value={displayValue}
           onChange={(v) => onChange(field.key, v)}
           required={field.required}
-          className="w-full"
+          className="w-[130px]"
         />
         {field.quickOptions && field.quickOptions.length > 0 && (
-          <div className="flex gap-2 mt-1 items-end flex-wrap">
+          <div className="flex gap-2 mt-1 items-end flex-nowrap">
             {field.quickOptions.map((opt) => (
               <button
                 key={opt.label}
@@ -191,15 +192,19 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
     )
   }
 
-  // number field with quickOptions (e.g., new_contract_years)
+  // number field with quickOptions (e.g., new_contract_years, contract_years)
   if (field.type === "number" && field.quickOptions && field.quickOptions.length > 0) {
     const unit = field.quickOptions[0]?.unit
     const unitLabel = unit === "years" ? "лет:" : "мес:"
 
     // Determine which date field to read as base and which to write as result
-    // For new_contract_years: read new_contract_start, write new_contract_end
-    const baseDateKey = field.key === "new_contract_years" ? "new_contract_start" : (baseDateKey || "hire_date")
-    const endDateKey = field.key === "new_contract_years" ? "new_contract_end" : (unit === "years" ? "contract_end" : "trial_end")
+    const quickOptionMapping: Record<string, { base: string; end: string }> = {
+      new_contract_years: { base: "new_contract_start", end: "new_contract_end" },
+      contract_years: { base: "hire_date", end: "contract_end" },
+    }
+    const mapping = quickOptionMapping[field.key]
+    const baseDateKey: string = mapping ? mapping.base : "hire_date"
+    const endDateKey: string = mapping ? mapping.end : (unit === "years" ? "contract_end" : "trial_end")
 
     const handleSetYears = (years: number) => {
       onChange(field.key, years)
