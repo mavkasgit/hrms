@@ -1,19 +1,24 @@
-import type { FieldSchema } from "@/shared/ui/dynamic-field"
+import type { FieldSchema } from "@/features/dynamic-form/components/FieldRenderer"
 import {
-  oldContractFieldsFull,
-  newContractFieldsFull,
+  oldContractFields,
+  newContractFields,
+  type QuickOption,
 } from "@/features/dynamic-form"
+
+export type { QuickOption } from "@/features/dynamic-form"
 
 /** Группа полей в layout */
 export type FieldGroupLayout = {
   title?: string
-  fields: FieldSchema[]
+  fields: (FieldSchema & { quickOptions?: QuickOption[] })[]
+  standaloneFields?: (FieldSchema & { quickOptions?: QuickOption[] })[]
 }
 
 /** Layout для конкретного типа уведомления */
 export type NotificationTypeLayout = {
   notificationTypeCode: string
   groups: FieldGroupLayout[]
+  standaloneFields?: (FieldSchema & { quickOptions?: QuickOption[] })[]
 }
 
 export const NOTIFICATION_TYPE_LAYOUTS: NotificationTypeLayout[] = [
@@ -22,26 +27,28 @@ export const NOTIFICATION_TYPE_LAYOUTS: NotificationTypeLayout[] = [
     groups: [
       {
         title: "Предыдущий контракт",
-        fields: oldContractFieldsFull({ required: true }),
+        fields: oldContractFields({ required: true }) as (FieldSchema & { quickOptions?: QuickOption[] })[],
       },
       {
         title: "Новый контракт",
-        fields: newContractFieldsFull({ required: true }),
+        fields: newContractFields({ required: true }) as (FieldSchema & { quickOptions?: QuickOption[] })[],
       },
     ],
+    standaloneFields: [],
   },
   {
     notificationTypeCode: "new_contract",
     groups: [
       {
         title: "Предыдущий контракт",
-        fields: oldContractFieldsFull({ required: true }),
+        fields: oldContractFields({ required: true }) as (FieldSchema & { quickOptions?: QuickOption[] })[],
       },
       {
         title: "Новый контракт",
-        fields: newContractFieldsFull({ required: true }),
+        fields: newContractFields({ required: true }) as (FieldSchema & { quickOptions?: QuickOption[] })[],
       },
     ],
+    standaloneFields: [],
   },
 ]
 

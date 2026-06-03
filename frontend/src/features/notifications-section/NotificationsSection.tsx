@@ -45,9 +45,8 @@ import {
 } from "@/entities/notification/hooks"
 import { openNotificationView, openNotificationEdit, openNotificationPrint, downloadNotificationDocx } from "@/entities/notification/api"
 import type { NotificationCreate } from "@/entities/notification/types"
-import { FieldGroup } from "@/features/dynamic-form"
+import { FieldGroup, FieldRenderer } from "@/features/dynamic-form"
 import { getNotificationTypeLayout } from "@/entities/notification/notificationTypeLayouts"
-import { DynamicField, type FieldSchema } from "@/shared/ui/dynamic-field"
 import { buildEmployeePlaceholders } from "@/features/dynamic-form/autoFillConfig"
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -352,7 +351,7 @@ export function NotificationsSection() {
               {/* Right column — Детали */}
               <div className="space-y-4 flex-1 min-w-0 lg:max-w-[600px] lg:pl-6">
                 {/* Type selector */}
-                <div ref={notificationTypeRef} className="w-60">
+                <div ref={notificationTypeRef} className="w-[350px]">
                   <label className="text-sm font-medium">Тип уведомления</label>
                   <div className="mt-1 relative">
                     {selectedNotificationType ? (
@@ -406,19 +405,32 @@ export function NotificationsSection() {
                     <div className="space-y-4">
                       {layout.groups.map((group, idx) => (
                         <FieldGroup key={`${selectedNotificationType.code}-group-${idx}`} title={group.title}>
-                          <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4 items-end">
+                          <div className="flex gap-2 items-end flex-wrap">
                             {group.fields.map((field) => (
                               <div key={field.key} className="flex flex-col min-w-0">
-                                <DynamicField
-                                  field={field}
+                                <FieldRenderer
+                                  field={field as any}
                                   value={extraFields[field.key]}
                                   error={extraFieldErrors[`extra_${field.key}`]}
                                   onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                                  extraFields={extraFields}
                                 />
                               </div>
                             ))}
                           </div>
                         </FieldGroup>
+                      ))}
+
+                      {layout.standaloneFields?.map((field) => (
+                        <div key={field.key} className="pl-2 -mt-2">
+                          <FieldRenderer
+                            field={field as any}
+                            value={extraFields[field.key]}
+                            error={extraFieldErrors[`extra_${field.key}`]}
+                            onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                            extraFields={extraFields}
+                          />
+                        </div>
                       ))}
                     </div>
                   )

@@ -34,8 +34,7 @@ import {
 } from "@/shared/ui/select"
 import { EmployeeSearch } from "@/features/employee-search"
 import { DocumentNumberField } from "@/features/DocumentNumberField"
-import { DynamicField } from "@/shared/ui/dynamic-field"
-import { FieldGroup, useAutoFillFields } from "@/features/dynamic-form"
+import { FieldGroup, FieldRenderer, useAutoFillFields } from "@/features/dynamic-form"
 import { getStatementTypeLayout } from "@/entities/statement/statementTypeLayouts"
 import type { Employee } from "@/entities/employee/types"
 import type { StatementType } from "@/entities/statement/types"
@@ -341,7 +340,7 @@ export function StatementsSection() {
               {/* Right column — Детали */}
               <div className="space-y-4 flex-1 min-w-0 max-w-[600px] lg:pl-6">
                 {/* Type selector */}
-                <div ref={statementTypeRef} className="w-60">
+                <div ref={statementTypeRef} className="w-[350px]">
                   <label className="text-sm font-medium">Тип заявления</label>
                   <div className="mt-1 relative">
                     {selectedStatementType ? (
@@ -395,19 +394,32 @@ export function StatementsSection() {
                     <div className="space-y-4">
                       {layout.groups.map((group, idx) => (
                         <FieldGroup key={`${selectedStatementType.code}-group-${idx}`} title={group.title}>
-                          <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4 items-end">
+                          <div className="flex gap-2 items-end flex-wrap">
                             {group.fields.map((field) => (
                               <div key={field.key} className="flex flex-col min-w-0">
-                                <DynamicField
-                                  field={field}
+                                <FieldRenderer
+                                  field={field as any}
                                   value={extraFields[field.key]}
                                   error={extraFieldErrors[`extra_${field.key}`]}
                                   onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                                  extraFields={extraFields}
                                 />
                               </div>
                             ))}
                           </div>
                         </FieldGroup>
+                      ))}
+
+                      {layout.standaloneFields?.map((field) => (
+                        <div key={field.key} className="pl-2 -mt-2">
+                          <FieldRenderer
+                            field={field as any}
+                            value={extraFields[field.key]}
+                            error={extraFieldErrors[`extra_${field.key}`]}
+                            onChange={(key, value) => setExtraFields((prev) => ({ ...prev, [key]: value }))}
+                            extraFields={extraFields}
+                          />
+                        </div>
                       ))}
                     </div>
                   )

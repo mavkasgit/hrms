@@ -1,18 +1,24 @@
-import type { FieldSchema } from "@/shared/ui/dynamic-field"
+import type { FieldSchema } from "@/features/dynamic-form/components/FieldRenderer"
 import {
   vacationPeriodFields,
+  oldContractFields,
+  type QuickOption,
 } from "@/features/dynamic-form"
+
+export type { QuickOption } from "@/features/dynamic-form"
 
 /** Группа полей в layout */
 export type FieldGroupLayout = {
   title?: string
-  fields: FieldSchema[]
+  fields: (FieldSchema & { quickOptions?: QuickOption[] })[]
+  standaloneFields?: (FieldSchema & { quickOptions?: QuickOption[] })[]
 }
 
 /** Layout для конкретного типа заявления */
 export type StatementTypeLayout = {
   statementTypeCode: string
   groups: FieldGroupLayout[]
+  standaloneFields?: (FieldSchema & { quickOptions?: QuickOption[] })[]
 }
 
 export const STATEMENT_TYPE_LAYOUTS: StatementTypeLayout[] = [
@@ -21,8 +27,7 @@ export const STATEMENT_TYPE_LAYOUTS: StatementTypeLayout[] = [
     groups: [
       {
         fields: [
-          { key: "transfer_date", label: "Дата перевода", type: "date", required: false },
-          { key: "transfer_reason", label: "Основание", type: "textarea", required: false },
+          { key: "transfer_date", label: "Дата перевода", type: "date", required: false, enabled: true },
         ],
       },
     ],
@@ -32,7 +37,7 @@ export const STATEMENT_TYPE_LAYOUTS: StatementTypeLayout[] = [
     groups: [
       {
         fields: [
-          { key: "dismissal_date", label: "Дата увольнения", type: "date", required: true },
+          { key: "dismissal_date", label: "Дата увольнения", type: "date", required: true, enabled: true },
         ],
       },
     ],
@@ -41,7 +46,8 @@ export const STATEMENT_TYPE_LAYOUTS: StatementTypeLayout[] = [
     statementTypeCode: "vacation",
     groups: [
       {
-        fields: vacationPeriodFields(),
+        title: "Период отпуска",
+        fields: vacationPeriodFields({ required: true }) as (FieldSchema & { quickOptions?: QuickOption[] })[],
       },
     ],
   },
@@ -49,10 +55,8 @@ export const STATEMENT_TYPE_LAYOUTS: StatementTypeLayout[] = [
     statementTypeCode: "contract_expiry",
     groups: [
       {
-        fields: [
-          { key: "old_contract_start", label: "Дата начала контракта", type: "date", required: true },
-          { key: "old_contract_number", label: "Номер контракта", type: "text", required: false },
-        ],
+        title: "Предыдущий контракт",
+        fields: oldContractFields({ required: true }) as (FieldSchema & { quickOptions?: QuickOption[] })[],
       },
     ],
   },
