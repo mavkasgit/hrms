@@ -1,5 +1,9 @@
-import { useState, useRef, useCallback, useEffect } from "react"
+import { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { ChevronDown, ChevronRight, Trash2, X } from "lucide-react"
+import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
+import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -31,6 +35,8 @@ function formatDate(dateStr: string | null): string {
   if (parts.length !== 3) return dateStr
   return `${parts[2]}.${parts[1]}.${parts[0]}`
 }
+
+type SortField = "employee_name" | "start_date" | "end_date" | "days_count" | "comment"
 
 export function SickLeavesPage() {
   const [collapsed, setCollapsed] = useState(false)
@@ -143,7 +149,75 @@ export function SickLeavesPage() {
     setDeleteId(null)
   }
 
-  const sickLeaves = allSickLeaves
+  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
+  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
+    employee_name: new Set(),
+    start_date: new Set(),
+    end_date: new Set(),
+    days_count: new Set(),
+    comment: new Set(),
+  })
+
+  const handleSort = (field: SortField) => {
+    const defaultOrder = (field === "start_date" || field === "end_date" || field === "days_count") ? "desc" : "asc"
+    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
+  }
+
+  const sortDefs: ColumnSortDef<SickLeave, SortField>[] = useMemo(() => [
+    { field: "employee_name", getSortValue: (sl) => sl.employee_name },
+    { field: "start_date", getSortValue: (sl) => sl.start_date },
+    { field: "end_date", getSortValue: (sl) => sl.end_date },
+    { field: "days_count", getSortValue: (sl) => sl.days_count },
+    { field: "comment", getSortValue: (sl) => sl.comment ?? "" },
+  ], [])
+
+  const localFilterPredicate = useMemo(() => {
+    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
+    if (!hasFilters) return null
+    return (sl: SickLeave) => {
+      for (const [field, selected] of Object.entries(columnFilters)) {
+        if (selected && selected.size > 0) {
+          if (field === "employee_name") {
+            if (!selected.has(sl.employee_name)) return false
+          } else if (field === "start_date") {
+            const val = formatDate(sl.start_date)
+            if (!selected.has(val)) return false
+          } else if (field === "end_date") {
+            const val = formatDate(sl.end_date)
+            if (!selected.has(val)) return false
+          } else if (field === "days_count") {
+            const val = `${sl.days_count} дн.`
+            if (!selected.has(val)) return false
+          } else if (field === "comment") {
+            const val = sl.comment ?? "—"
+            if (!selected.has(val)) return false
+          }
+        }
+      }
+      return true
+    }
+  }, [columnFilters])
+
+  const uniqueValues = useMemo(() => {
+    const items = allSickLeaves ?? []
+    return {
+      employee_name: [...new Set(items.map(sl => sl.employee_name))].sort(),
+      start_date: [...new Set(items.map(sl => formatDate(sl.start_date)))].sort(),
+      end_date: [...new Set(items.map(sl => formatDate(sl.end_date)))].sort(),
+      days_count: [...new Set(items.map(sl => `${sl.days_count} дн.`))].sort((a, b) => parseFloat(a) - parseFloat(b)),
+      comment: [...new Set(items.map(sl => sl.comment ?? "—"))].sort(),
+    }
+  }, [allSickLeaves])
+
+  const engineResult = useTableQueryEngine({
+    rows: allSickLeaves ?? [],
+    getId: (sl) => sl.id,
+    searchQuery: "",
+    filterPredicate: localFilterPredicate,
+    sortConfigs,
+    sortDefs,
+  })
+  const displaySickLeaves = engineResult.rows
   
   return (
     <div className="space-y-4">
@@ -273,33 +347,83 @@ export function SickLeavesPage() {
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : sickLeaves.length === 0 ? (
+      ) : displaySickLeaves.length === 0 ? (
         <EmptyState message="Нет больничных" description="Создайте первый больничный лист" />
       ) : (
         <>
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50">
-                <tr>
-                  <th className="text-left px-4 py-2 font-medium">Сотрудник</th>
-                  <th className="text-left px-4 py-2 font-medium">Период</th>
-                  <th className="text-left px-4 py-2 font-medium">Дней</th>
-                  <th className="text-left px-4 py-2 font-medium">Описание</th>
-                  <th className="w-[80px]"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {sickLeaves.map((sl: SickLeave) => (
-                  <tr key={sl.id} className="border-t hover:bg-muted/30">
-                    <td className="px-4 py-2">{sl.employee_name}</td>
-                    <td className="px-4 py-2">
-                      {formatDate(sl.start_date)} — {formatDate(sl.end_date)}
-                    </td>
-                    <td className="px-4 py-2">{sl.days_count}</td>
-                    <td className="px-4 py-2 text-muted-foreground max-w-[200px] truncate">
+          <div className="border rounded-lg overflow-hidden bg-card">
+            <Table>
+              <TableHeader className="bg-muted/50">
+                <TableRow>
+                  <TableHead className="p-0">
+                    <SortableFilterHeader
+                      field="employee_name"
+                      label="Сотрудник"
+                      currentSorts={sortConfigs}
+                      onSortChange={handleSort}
+                      values={uniqueValues.employee_name}
+                      selectedValues={columnFilters.employee_name}
+                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    />
+                  </TableHead>
+                  <TableHead className="p-0">
+                    <SortableFilterHeader
+                      field="start_date"
+                      label="Дата начала"
+                      currentSorts={sortConfigs}
+                      onSortChange={handleSort}
+                      values={uniqueValues.start_date}
+                      selectedValues={columnFilters.start_date}
+                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    />
+                  </TableHead>
+                  <TableHead className="p-0">
+                    <SortableFilterHeader
+                      field="end_date"
+                      label="Дата окончания"
+                      currentSorts={sortConfigs}
+                      onSortChange={handleSort}
+                      values={uniqueValues.end_date}
+                      selectedValues={columnFilters.end_date}
+                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    />
+                  </TableHead>
+                  <TableHead className="p-0">
+                    <SortableFilterHeader
+                      field="days_count"
+                      label="Дней"
+                      currentSorts={sortConfigs}
+                      onSortChange={handleSort}
+                      values={uniqueValues.days_count}
+                      selectedValues={columnFilters.days_count}
+                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    />
+                  </TableHead>
+                  <TableHead className="p-0">
+                    <SortableFilterHeader
+                      field="comment"
+                      label="Описание"
+                      currentSorts={sortConfigs}
+                      onSortChange={handleSort}
+                      values={uniqueValues.comment}
+                      selectedValues={columnFilters.comment}
+                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    />
+                  </TableHead>
+                  <TableHead className="w-[80px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {displaySickLeaves.map((sl: SickLeave) => (
+                  <TableRow key={sl.id} className="border-t hover:bg-muted/30">
+                    <TableCell className="px-4 py-2 font-medium">{sl.employee_name}</TableCell>
+                    <TableCell className="px-4 py-2">{formatDate(sl.start_date)}</TableCell>
+                    <TableCell className="px-4 py-2">{formatDate(sl.end_date)}</TableCell>
+                    <TableCell className="px-4 py-2">{sl.days_count}</TableCell>
+                    <TableCell className="px-4 py-2 text-muted-foreground max-w-[200px] truncate">
                       {sl.comment || "—"}
-                    </td>
-                    <td className="px-2 py-2">
+                    </TableCell>
+                    <TableCell className="px-2 py-2">
                       <div className="flex gap-1">
                         <Button
                           variant="ghost"
@@ -311,11 +435,11 @@ export function SickLeavesPage() {
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
           <div ref={loaderRef} className="flex justify-center py-4">
             {isFetching && (

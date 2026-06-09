@@ -1,11 +1,14 @@
 import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { Filter, ArrowUp, ArrowDown, ArrowUpDown, Eye } from "lucide-react"
+import { Filter, Eye } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { YearFilter } from "@/shared/ui/year-filter"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
+import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
+import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import {
   Dialog,
   DialogContent,
@@ -24,24 +27,27 @@ import {
   useContractRegistry,
   useContractYears,
 } from "@/entities/contract/useContractHistory"
-import { ORDER_TYPE_CODE_LABELS } from "@/entities/contract/types"
+import { ORDER_TYPE_CODE_LABELS, type ContractHistory } from "@/entities/contract/types"
 import { EmployeeSearch } from "@/features/employee-search"
 import type { Employee } from "@/entities/employee/types"
 
 type SortField = "contract_number" | "employee_name" | "contract_start" | "contract_end" | "order_type_code" | "order_number" | "order_date"
-type SortOrder = "asc" | "desc"
-
-interface SortConfig {
-  field: SortField
-  order: SortOrder
-}
 
 export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate()
   const [year, setYear] = useState<number | undefined>(undefined)
   const [filterEmployee, setFilterEmployee] = useState<Employee | null>(null)
   const [filterOrderType, setFilterOrderType] = useState<string | undefined>(undefined)
-  const [sortConfigs, setSortConfigs] = useState<SortConfig[]>([])
+  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
+  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
+    contract_number: new Set(),
+    employee_name: new Set(),
+    contract_start: new Set(),
+    contract_end: new Set(),
+    order_type_code: new Set(),
+    order_number: new Set(),
+    order_date: new Set(),
+  })
 
   const { data: years } = useContractYears()
 
@@ -67,6 +73,15 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
     setFilterOrderType(undefined)
     setYear(undefined)
     setSortConfigs([])
+    setColumnFilters({
+      contract_number: new Set(),
+      employee_name: new Set(),
+      contract_start: new Set(),
+      contract_end: new Set(),
+      order_type_code: new Set(),
+      order_number: new Set(),
+      order_date: new Set(),
+    })
   }
 
   const formatOrderType = (code: string) => ORDER_TYPE_CODE_LABELS[code] || code
@@ -78,62 +93,63 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
   }
 
   const handleSort = (field: SortField) => {
-    setSortConfigs((prev) => {
-      const existing = prev.find((c) => c.field === field)
-      if (!existing) return [...prev, { field, order: "asc" }]
-      if (existing.order === "asc") return prev.map((c) => c.field === field ? { ...c, order: "desc" } : c)
-      return prev.filter((c) => c.field !== field)
-    })
+    const defaultOrder = (field === "employee_name" || field === "order_type_code") ? "asc" : "desc"
+    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
   }
 
-  const SortIcon = ({ field }: { field: SortField }) => {
-    const config = sortConfigs.find((c) => c.field === field)
-    const sortIndex = sortConfigs.findIndex((c) => c.field === field) + 1
+  const sortDefs: ColumnSortDef<ContractHistory, SortField>[] = useMemo(() => [
+    { field: "contract_number", getSortValue: (c) => c.contract_number ?? "" },
+    { field: "employee_name", getSortValue: (c) => c.employee_name ?? "" },
+    { field: "contract_start", getSortValue: (c) => c.contract_start },
+    { field: "contract_end", getSortValue: (c) => c.contract_end ?? "" },
+    { field: "order_type_code", getSortValue: (c) => formatOrderType(c.order_type_code) },
+    { field: "order_number", getSortValue: (c) => c.order_number ?? "" },
+    { field: "order_date", getSortValue: (c) => c.order_date ?? "" },
+  ], [])
 
-    if (!config) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />
+  const localFilterPredicate = useMemo(() => {
+    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
+    if (!hasFilters) return null
+    return (c: ContractHistory) => {
+      for (const [field, selected] of Object.entries(columnFilters)) {
+        if (selected && selected.size > 0) {
+          let val = ""
+          if (field === "contract_number") val = c.contract_number ?? "—"
+          else if (field === "employee_name") val = c.employee_name ?? "—"
+          else if (field === "contract_start") val = formatDate(c.contract_start)
+          else if (field === "contract_end") val = formatDate(c.contract_end)
+          else if (field === "order_type_code") val = formatOrderType(c.order_type_code)
+          else if (field === "order_number") val = c.order_number ?? "—"
+          else if (field === "order_date") val = formatDate(c.order_date)
 
-    return (
-      <span className="flex items-center ml-1">
-        <span className="text-xs text-muted-foreground mt-0.5">{sortIndex}</span>
-        {config.order === "asc" ? <ArrowUp className="h-3 w-3 ml-0.5" /> : <ArrowDown className="h-3 w-3 ml-0.5" />}
-      </span>
-    )
-  }
-
-  const sortedItems = useMemo(() => {
-    if (sortConfigs.length === 0) return items
-    return [...items].sort((a, b) => {
-      for (const { field, order } of sortConfigs) {
-        let aVal: string | number | null
-        let bVal: string | number | null
-        if (field === "employee_name") {
-          aVal = a.employee_name ?? ""
-          bVal = b.employee_name ?? ""
-        } else if (field === "order_type_code") {
-          aVal = formatOrderType(a.order_type_code)
-          bVal = formatOrderType(b.order_type_code)
-        } else {
-          aVal = (a[field as keyof typeof a] as string | number | null) ?? ""
-          bVal = (b[field as keyof typeof b] as string | number | null) ?? ""
+          if (!selected.has(val)) return false
         }
-        if (aVal < bVal) return order === "asc" ? -1 : 1
-        if (aVal > bVal) return order === "asc" ? 1 : -1
       }
-      return 0
-    })
-  }, [items, sortConfigs])
+      return true
+    }
+  }, [columnFilters])
 
-  const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
-    <TableHead
-      className="cursor-pointer select-none hover:bg-muted/50 transition-colors"
-      onClick={() => handleSort(field)}
-    >
-      <div className="flex items-center">
-        {children}
-        <SortIcon field={field} />
-      </div>
-    </TableHead>
-  )
+  const engineResult = useTableQueryEngine({
+    rows: items,
+    getId: (c) => c.id,
+    searchQuery: "",
+    filterPredicate: localFilterPredicate,
+    sortConfigs,
+    sortDefs,
+  })
+  const displayContracts = engineResult.rows
+
+  const uniqueValues = useMemo(() => {
+    return {
+      contract_number: [...new Set(items.map(c => c.contract_number ?? "—"))].sort(),
+      employee_name: [...new Set(items.map(c => c.employee_name ?? "—"))].sort(),
+      contract_start: [...new Set(items.map(c => formatDate(c.contract_start)))].sort(),
+      contract_end: [...new Set(items.map(c => formatDate(c.contract_end)))].sort(),
+      order_type_code: [...new Set(items.map(c => formatOrderType(c.order_type_code)))].sort(),
+      order_number: [...new Set(items.map(c => c.order_number ?? "—"))].sort(),
+      order_date: [...new Set(items.map(c => formatDate(c.order_date)))].sort(),
+    }
+  }, [items])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -208,7 +224,7 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
                 <Skeleton key={i} className="h-8 w-full" />
               ))}
             </div>
-          ) : !sortedItems.length ? (
+          ) : !displayContracts.length ? (
             <EmptyState
               message="Контракты не найдены"
               description="Создайте приказ, связанный с контрактом"
@@ -218,19 +234,89 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <SortHeader field="contract_number">№ контракта</SortHeader>
-                    <SortHeader field="employee_name">Сотрудник</SortHeader>
+                    <TableHead>
+                      <SortableFilterHeader
+                        field="contract_number"
+                        label="№ контракта"
+                        currentSorts={sortConfigs}
+                        onSortChange={handleSort}
+                        values={uniqueValues.contract_number}
+                        selectedValues={columnFilters.contract_number}
+                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      />
+                    </TableHead>
+                    <TableHead>
+                      <SortableFilterHeader
+                        field="employee_name"
+                        label="Сотрудник"
+                        currentSorts={sortConfigs}
+                        onSortChange={handleSort}
+                        values={uniqueValues.employee_name}
+                        selectedValues={columnFilters.employee_name}
+                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      />
+                    </TableHead>
                     <TableHead>Подразделение</TableHead>
-                    <SortHeader field="contract_start">Начало</SortHeader>
-                    <SortHeader field="contract_end">Конец</SortHeader>
-                    <SortHeader field="order_type_code">Тип приказа</SortHeader>
-                    <SortHeader field="order_number">№ приказа</SortHeader>
-                    <SortHeader field="order_date">Дата приказа</SortHeader>
+                    <TableHead>
+                      <SortableFilterHeader
+                        field="contract_start"
+                        label="Начало"
+                        currentSorts={sortConfigs}
+                        onSortChange={handleSort}
+                        values={uniqueValues.contract_start}
+                        selectedValues={columnFilters.contract_start}
+                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      />
+                    </TableHead>
+                    <TableHead>
+                      <SortableFilterHeader
+                        field="contract_end"
+                        label="Конец"
+                        currentSorts={sortConfigs}
+                        onSortChange={handleSort}
+                        values={uniqueValues.contract_end}
+                        selectedValues={columnFilters.contract_end}
+                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      />
+                    </TableHead>
+                    <TableHead>
+                      <SortableFilterHeader
+                        field="order_type_code"
+                        label="Тип приказа"
+                        currentSorts={sortConfigs}
+                        onSortChange={handleSort}
+                        values={uniqueValues.order_type_code}
+                        selectedValues={columnFilters.order_type_code}
+                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      />
+                    </TableHead>
+                    <TableHead>
+                      <SortableFilterHeader
+                        field="order_number"
+                        label="№ приказа"
+                        currentSorts={sortConfigs}
+                        onSortChange={handleSort}
+                        values={uniqueValues.order_number}
+                        selectedValues={columnFilters.order_number}
+                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      />
+                    </TableHead>
+                    <TableHead>
+                      <SortableFilterHeader
+                        field="order_date"
+                        label="Дата приказа"
+                        currentSorts={sortConfigs}
+                        onSortChange={handleSort}
+                        values={uniqueValues.order_date}
+                        selectedValues={columnFilters.order_date}
+                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      />
+                    </TableHead>
                     <TableHead className="text-right">Действия</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedItems.map((contract) => (
+                  {displayContracts.map((contract) => (
                     <TableRow key={contract.id}>
                       <TableCell className="font-mono text-sm">
                         {contract.contract_number || "—"}
@@ -264,7 +350,7 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
               </Table>
 
               <div className="text-sm text-muted-foreground px-2">
-                Всего: {total}
+                Всего: {displayContracts.length} из {total}
               </div>
             </>
           )}

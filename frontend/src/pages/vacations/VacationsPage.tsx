@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { useNavigate } from "react-router-dom"
-import { ChevronDown, ChevronRight, X, ScrollText, RefreshCw, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Printer, FilePen, Cake, FileText } from "lucide-react"
+import { ChevronDown, ChevronRight, X, ScrollText, RefreshCw, Pencil, Printer, FilePen, Cake, FileText } from "lucide-react"
 import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
 import {
   Tooltip,
@@ -14,6 +14,17 @@ import { DatePicker } from "@/shared/ui/date-picker"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
+import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
+import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/shared/ui/table"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -615,6 +626,16 @@ function EmployeeHistoryRow({
   )
 }
 
+type SortField =
+  | "tab_number"
+  | "name"
+  | "department"
+  | "tags"
+  | "position"
+  | "remaining_days"
+  | "additional_vacation_days"
+  | "hire_date"
+
 export function VacationsPage() {
   const navigate = useNavigate()
   // --- Form state ---
@@ -827,31 +848,21 @@ export function VacationsPage() {
   const [editingAddDaysValue, setEditingAddDaysValue] = useState("")
   const updateAddDaysMutation = useUpdateEmployee()
 
-  // Сортировка
-  type SortField = "name" | "tab_number" | "department" | "tags" | "position" | "remaining_days" | "additional_vacation_days" | "hire_date"
-  type SortOrder = "asc" | "desc"
-  interface SortConfig { field: SortField; order: SortOrder }
-  const [sortConfigs, setSortConfigs] = useState<SortConfig[]>([])
+  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
+  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
+    tab_number: new Set(),
+    name: new Set(),
+    department: new Set(),
+    tags: new Set(),
+    position: new Set(),
+    remaining_days: new Set(),
+    additional_vacation_days: new Set(),
+    hire_date: new Set(),
+  })
 
   const handleSort = (field: SortField) => {
-    setSortConfigs((prev) => {
-      const existing = prev.find((c) => c.field === field)
-      if (!existing) return [...prev, { field, order: "asc" }]
-      if (existing.order === "asc") return prev.map((c) => c.field === field ? { ...c, order: "desc" } : c)
-      return prev.filter((c) => c.field !== field)
-    })
-  }
-
-  const renderSortIcon = (field: SortField) => {
-    const config = sortConfigs.find((c) => c.field === field)
-    const sortIndex = sortConfigs.findIndex((c) => c.field === field) + 1
-    if (!config) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40 inline" />
-    return (
-      <span className="inline-flex items-center ml-1">
-        <span className="text-xs text-muted-foreground">{sortIndex}</span>
-        {config.order === "asc" ? <ArrowUp className="h-3 w-3 ml-0.5" /> : <ArrowDown className="h-3 w-3 ml-0.5" />}
-      </span>
-    )
+    const defaultOrder = (field === "remaining_days" || field === "additional_vacation_days" || field === "hire_date") ? "desc" : "asc"
+    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
   }
 
   const { data: employees, isLoading: employeesLoading } = useVacationEmployeesSummary(
@@ -884,43 +895,86 @@ export function VacationsPage() {
     )
   })
 
-  const sortedEmployees = useMemo(() => {
-    if (!filteredEmployees || sortConfigs.length === 0) return filteredEmployees ?? []
-    return [...filteredEmployees].sort((a, b) => {
-      for (const { field, order } of sortConfigs) {
-        let aVal: string | number
-        let bVal: string | number
-        if (field === "department") {
-          aVal = a.department ?? ""
-          bVal = b.department ?? ""
-        } else if (field === "tags") {
-          aVal = a.tags?.[0]?.name ?? ""
-          bVal = b.tags?.[0]?.name ?? ""
-        } else if (field === "remaining_days") {
-          aVal = a.remaining_days ?? -999999
-          bVal = b.remaining_days ?? -999999
-        } else if (field === "tab_number") {
-          aVal = a.tab_number ?? 0
-          bVal = b.tab_number ?? 0
-        } else if (field === "position") {
-          aVal = a.position ?? ""
-          bVal = b.position ?? ""
-        } else if (field === "additional_vacation_days") {
-          aVal = a.additional_vacation_days ?? 0
-          bVal = b.additional_vacation_days ?? 0
-        } else if (field === "hire_date") {
-          aVal = a.hire_date ?? ""
-          bVal = b.hire_date ?? ""
-        } else {
-          aVal = (a[field] ?? "") as string | number
-          bVal = (b[field] ?? "") as string | number
+  const sortDefs: ColumnSortDef<EmployeeVacationSummary, SortField>[] = useMemo(() => [
+    { field: "tab_number", getSortValue: (emp) => emp.tab_number ?? 0 },
+    { field: "name", getSortValue: (emp) => emp.name },
+    { field: "department", getSortValue: (emp) => emp.department ?? "" },
+    { field: "tags", getSortValue: (emp) => emp.tags?.[0]?.name ?? "" },
+    { field: "position", getSortValue: (emp) => emp.position ?? "" },
+    { field: "remaining_days", getSortValue: (emp) => emp.remaining_days ?? -999999 },
+    { field: "additional_vacation_days", getSortValue: (emp) => emp.additional_vacation_days ?? 0 },
+    { field: "hire_date", getSortValue: (emp) => emp.hire_date ?? "" },
+  ], [])
+
+  const localFilterPredicate = useMemo(() => {
+    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
+    if (!hasFilters) return null
+    return (emp: EmployeeVacationSummary) => {
+      for (const [field, selected] of Object.entries(columnFilters)) {
+        if (selected && selected.size > 0) {
+          if (field === "tab_number") {
+            const val = emp.tab_number !== null ? String(emp.tab_number) : "—"
+            if (!selected.has(val)) return false
+          } else if (field === "name") {
+            if (!selected.has(emp.name)) return false
+          } else if (field === "department") {
+            const val = emp.department ?? "Без подразделения"
+            if (!selected.has(val)) return false
+          } else if (field === "tags") {
+            const empTags = (emp.tags || []).map(t => t.name)
+            const hasMatch = empTags.some(name => selected.has(name))
+            const hasNoTags = selected.has("Без тегов") && empTags.length === 0
+            if (!hasMatch && !hasNoTags) return false
+          } else if (field === "position") {
+            const val = emp.position ?? "—"
+            if (!selected.has(val)) return false
+          } else if (field === "remaining_days") {
+            const val = emp.remaining_days !== null ? `${emp.remaining_days} дн.` : "—"
+            if (!selected.has(val)) return false
+          } else if (field === "additional_vacation_days") {
+            const val = `${emp.additional_vacation_days} дн.`
+            if (!selected.has(val)) return false
+          } else if (field === "hire_date") {
+            const val = emp.hire_date ? formatDate(emp.hire_date) : "—"
+            if (!selected.has(val)) return false
+          }
         }
-        if (aVal < bVal) return order === "asc" ? -1 : 1
-        if (aVal > bVal) return order === "asc" ? 1 : -1
       }
-      return 0
-    })
-  }, [filteredEmployees, sortConfigs])
+      return true
+    }
+  }, [columnFilters])
+
+  const uniqueValues = useMemo(() => {
+    const items = filteredEmployees ?? []
+    return {
+      tab_number: [...new Set(items.map(emp => emp.tab_number !== null ? String(emp.tab_number) : "—"))].sort((a, b) => {
+        if (a === "—") return 1
+        if (b === "—") return -1
+        return Number(a) - Number(b)
+      }),
+      name: [...new Set(items.map(emp => emp.name))].sort(),
+      department: [...new Set(items.map(emp => emp.department ?? "Без подразделения"))].sort(),
+      tags: ["Без тегов", ...new Set(items.flatMap(emp => (emp.tags || []).map(t => t.name)))].sort(),
+      position: [...new Set(items.map(emp => emp.position ?? "—"))].sort(),
+      remaining_days: [...new Set(items.map(emp => emp.remaining_days !== null ? `${emp.remaining_days} дн.` : "—"))].sort((a, b) => {
+        if (a === "—") return 1
+        if (b === "—") return -1
+        return parseFloat(a) - parseFloat(b)
+      }),
+      additional_vacation_days: [...new Set(items.map(emp => `${emp.additional_vacation_days} дн.`))].sort((a, b) => parseFloat(a) - parseFloat(b)),
+      hire_date: [...new Set(items.map(emp => emp.hire_date ? formatDate(emp.hire_date) : "—"))].sort(),
+    }
+  }, [filteredEmployees])
+
+  const engineResult = useTableQueryEngine({
+    rows: filteredEmployees ?? [],
+    getId: (emp) => emp.id,
+    searchQuery: "",
+    filterPredicate: localFilterPredicate,
+    sortConfigs,
+    sortDefs,
+  })
+  const displayEmployees = engineResult.rows
 
   return (
     <div className="space-y-4">
@@ -1168,84 +1222,124 @@ export function VacationsPage() {
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : !sortedEmployees.length ? (
+      ) : !displayEmployees.length ? (
         <EmptyState message="Нет сотрудников" description="Нет сотрудников, соответствующих фильтру" />
       ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="w-[30px] px-2 py-2"></th>
-                <th
-                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
-                  onClick={() => handleSort("tab_number")}
-                >
-                  Таб.№ {renderSortIcon("tab_number")}
-                </th>
-                <th
-                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
-                  onClick={() => handleSort("name")}
-                >
-                  ФИО {renderSortIcon("name")}
-                </th>
-                <th
-                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
-                  onClick={() => handleSort("department")}
-                >
-                  Подразделение {renderSortIcon("department")}
-                </th>
-                <th
-                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
-                  onClick={() => handleSort("tags")}
-                >
-                  Теги {renderSortIcon("tags")}
-                </th>
-                <th
-                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
-                  onClick={() => handleSort("position")}
-                >
-                  Должность {renderSortIcon("position")}
-                </th>
-                <th
-                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
-                  onClick={() => handleSort("remaining_days")}
-                >
-                  Остаток (период) {renderSortIcon("remaining_days")}
-                </th>
-                <th
-                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
-                  onClick={() => handleSort("additional_vacation_days")}
-                >
-                  Доп. дни {renderSortIcon("additional_vacation_days")}
-                </th>
-                <th
-                  className="text-left px-4 py-2 font-medium cursor-pointer select-none hover:bg-muted/50 transition-colors"
-                  onClick={() => handleSort("hire_date")}
-                >
-                  Дата приема {renderSortIcon("hire_date")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedEmployees.map((emp) => {
+        <div className="border rounded-lg overflow-hidden bg-card">
+          <Table>
+            <TableHeader className="bg-muted/50">
+              <TableRow>
+                <TableHead className="w-[30px] px-2 py-2"></TableHead>
+                <TableHead className="p-0">
+                  <SortableFilterHeader
+                    field="tab_number"
+                    label="Таб.№"
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSort}
+                    values={uniqueValues.tab_number}
+                    selectedValues={columnFilters.tab_number}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  />
+                </TableHead>
+                <TableHead className="p-0">
+                  <SortableFilterHeader
+                    field="name"
+                    label="ФИО"
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSort}
+                    values={uniqueValues.name}
+                    selectedValues={columnFilters.name}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  />
+                </TableHead>
+                <TableHead className="p-0">
+                  <SortableFilterHeader
+                    field="department"
+                    label="Подразделение"
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSort}
+                    values={uniqueValues.department}
+                    selectedValues={columnFilters.department}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  />
+                </TableHead>
+                <TableHead className="p-0">
+                  <SortableFilterHeader
+                    field="tags"
+                    label="Теги"
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSort}
+                    values={uniqueValues.tags}
+                    selectedValues={columnFilters.tags}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  />
+                </TableHead>
+                <TableHead className="p-0">
+                  <SortableFilterHeader
+                    field="position"
+                    label="Должность"
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSort}
+                    values={uniqueValues.position}
+                    selectedValues={columnFilters.position}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  />
+                </TableHead>
+                <TableHead className="p-0">
+                  <SortableFilterHeader
+                    field="remaining_days"
+                    label="Остаток (период)"
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSort}
+                    values={uniqueValues.remaining_days}
+                    selectedValues={columnFilters.remaining_days}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  />
+                </TableHead>
+                <TableHead className="p-0">
+                  <SortableFilterHeader
+                    field="additional_vacation_days"
+                    label="Доп. дни"
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSort}
+                    values={uniqueValues.additional_vacation_days}
+                    selectedValues={columnFilters.additional_vacation_days}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  />
+                </TableHead>
+                <TableHead className="p-0">
+                  <SortableFilterHeader
+                    field="hire_date"
+                    label="Дата приема"
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSort}
+                    values={uniqueValues.hire_date}
+                    selectedValues={columnFilters.hire_date}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  />
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {displayEmployees.map((emp) => {
                 const isExpanded = expandedRows.has(emp.id)
 
                 return (
                   <Fragment key={emp.id}>
-                    <tr
+                    <TableRow
                       className="border-t hover:bg-muted/30 cursor-pointer transition-colors"
                       onClick={() => toggleRow(emp.id)}
                     >
-                      <td className="px-2 py-2 text-center">
+                      <TableCell className="px-2 py-2 text-center">
                         {isExpanded ? (
                           <ChevronDown className="h-4 w-4 mx-auto" />
                         ) : (
                           <ChevronRight className="h-4 w-4 mx-auto" />
                         )}
-                      </td>
-                      <td className="px-4 py-2 text-muted-foreground">{emp.tab_number ?? "—"}</td>
-                      <td className="px-4 py-2 font-medium">{emp.name}</td>
-                      <td className="px-4 py-2">
+                      </TableCell>
+                      <TableCell className="px-4 py-2 text-muted-foreground">{emp.tab_number ?? "—"}</TableCell>
+                      <TableCell className="px-4 py-2 font-medium">{emp.name}</TableCell>
+                      <TableCell className="px-4 py-2">
                         <div className="flex items-center gap-1.5">
                           {emp.department_icon
                             ? renderIcon(emp.department_icon, "h-4 w-4 flex-shrink-0", { color: emp.department_color || undefined })
@@ -1254,8 +1348,8 @@ export function VacationsPage() {
                             )}
                           <span className="truncate">{emp.department}</span>
                         </div>
-                      </td>
-                      <td className="px-4 py-2">
+                      </TableCell>
+                      <TableCell className="px-4 py-2">
                         <div className="flex flex-wrap gap-1">
                           {(emp.tags || []).map((t) => (
                             <TooltipProvider key={t.id} delayDuration={100}>
@@ -1273,9 +1367,9 @@ export function VacationsPage() {
                             </TooltipProvider>
                           ))}
                         </div>
-                      </td>
-                      <td className="px-4 py-2">{emp.position}</td>
-                      <td className="px-4 py-2">
+                      </TableCell>
+                      <TableCell className="px-4 py-2">{emp.position}</TableCell>
+                      <TableCell className="px-4 py-2">
                         {emp.remaining_days !== null ? (
                           <span>
                             <span
@@ -1298,8 +1392,8 @@ export function VacationsPage() {
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
-                      </td>
-                      <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                      </TableCell>
+                      <TableCell className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                         {editingAddDays === emp.id ? (
                           <div className="w-16 h-8 rounded-md border border-input overflow-hidden">
                             <Input
@@ -1343,14 +1437,14 @@ export function VacationsPage() {
                             <Pencil className="h-3 w-3 text-gray-400" />
                           </button>
                         )}
-                      </td>
-                      <td className="px-4 py-2 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="px-4 py-2 text-muted-foreground">
                         {formatDate(emp.hire_date)}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                     {isExpanded && (
-                      <tr key={`${emp.id}-history`}>
-                        <td colSpan={9} className="p-0">
+                      <TableRow key={`${emp.id}-history`}>
+                        <TableCell colSpan={9} className="p-0">
                           <EmployeeHistoryRow 
                             employeeId={emp.id}
                             partialClosePeriodId={partialClosePeriodId}
@@ -1372,14 +1466,14 @@ export function VacationsPage() {
                             closeError={closeError}
                             setCloseError={setCloseError}
                           />
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )}
                   </Fragment>
                 )
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 
@@ -1390,7 +1484,7 @@ export function VacationsPage() {
         open={printOpen}
         onOpenChange={setPrintOpen}
         title="Отпуска"
-        data={sortedEmployees}
+        data={displayEmployees}
         columns={[
           { title: "ФИО", width: "25%", render: (emp) => emp.name },
           {

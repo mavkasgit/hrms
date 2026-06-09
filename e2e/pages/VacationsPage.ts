@@ -28,7 +28,7 @@ export class VacationsPage {
 
   constructor(page: Page) {
     this.page = page
-    this.pageTitle = page.getByRole('heading', { name: 'Отпуска' })
+    this.pageTitle = page.getByRole('heading', { name: 'Трудовой отпуск' })
     this.table = page.locator('table')
     this.rows = page.locator('tbody tr')
     this.searchInput = page.getByPlaceholder(/поиск по имени|поиск/i)

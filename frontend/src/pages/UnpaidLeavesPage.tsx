@@ -1,5 +1,9 @@
-import { Fragment, useEffect, useState } from "react"
-import { ChevronDown, ChevronRight, Download, Eye, FilePen, Printer, Trash2, X } from "lucide-react"
+import { Fragment, useEffect, useState, useMemo } from "react"
+import { Download, Eye, FilePen, Printer, Trash2, X } from "lucide-react"
+import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
+import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
+import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import { Button } from "@/shared/ui/button"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { EmptyState } from "@/shared/ui/empty-state"
@@ -12,7 +16,7 @@ import { useCommitGroupDraft, useCommitOrderDraft, useCreateGroupDraft, useCreat
 import { downloadOrderDocx, openOrderPrint, openOrderView } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
-import type { GroupEmployeeInfo, Order, VacationUnpaidGroupEmployeeCreate } from "@/entities/order/types"
+import type { Order, VacationUnpaidGroupEmployeeCreate } from "@/entities/order/types"
 import {
   Tabs,
   TabsList,
@@ -138,6 +142,8 @@ function toUnpaidLeaveEntries(order: Order): UnpaidLeaveEntry[] {
   }]
 }
 
+type SortField = "order_number" | "employee_name" | "order_date" | "vacation_period" | "vacation_days"
+
 export function UnpaidLeavesPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
@@ -150,7 +156,6 @@ export function UnpaidLeavesPage() {
   const [periodStart, setPeriodStart] = useState(defaultPeriodStartIso())
   const [periodEnd, setPeriodEnd] = useState(defaultPeriodEndIso())
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<number>>(new Set())
 
   const { data: orderTypes = [] } = useAllOrderTypes()
   const createDraftMutation = useCreateOrderDraft()
@@ -301,18 +306,6 @@ export function UnpaidLeavesPage() {
     setDeleteOrderId(null)
   }
 
-  const toggleGroupExpand = (orderId: number) => {
-    setExpandedGroupIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(orderId)) {
-        next.delete(orderId)
-      } else {
-        next.add(orderId)
-      }
-      return next
-    })
-  }
-
   const calculateVacationEnd = (start: string, days: number): string => {
     if (!start || days <= 0) return ""
     const [y, m, d] = start.split("-")
@@ -456,6 +449,218 @@ export function UnpaidLeavesPage() {
   const filteredOrderIds = new Set(filteredEntries.map((entry) => entry.orderId))
   const filteredOrders = orders.filter((order) => filteredOrderIds.has(order.id))
 
+  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
+  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
+    order_number: new Set(),
+    employee_name: new Set(),
+    vacation_period: new Set(),
+    vacation_days: new Set(),
+    order_date: new Set(),
+  })
+
+  const handleSort = (field: SortField) => {
+    const defaultOrder = field === "employee_name" ? "asc" : "desc"
+    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
+  }
+
+  const sortDefs: ColumnSortDef<Order, SortField>[] = useMemo(() => [
+    { field: "order_number", getSortValue: (order) => order.order_number ?? "" },
+    {
+      field: "employee_name",
+      getSortValue: (order) => {
+        if (order.is_group && order.group_employees && order.group_employees.length > 0) {
+          const names = order.group_employees.map(e => e.employee_full_name).filter(Boolean)
+          if (names.length > 0) {
+            names.sort((a, b) => a.localeCompare(b, "ru"))
+            return names[0]
+          }
+        }
+        return order.employee_name ?? ""
+      }
+    },
+    {
+      field: "vacation_period",
+      getSortValue: (order) => {
+        if (order.is_group && order.group_employees && order.group_employees.length > 0) {
+          const starts = order.group_employees.map(e => e.vacation_start).filter(Boolean)
+          if (starts.length > 0) {
+            starts.sort()
+            return starts[0]
+          }
+        }
+        const extra = order.extra_fields || {}
+        return String(extra.vacation_start || "")
+      }
+    },
+    {
+      field: "vacation_days",
+      getSortValue: (order) => {
+        if (order.is_group && order.group_employees && order.group_employees.length > 0) {
+          const days = order.group_employees.map(e => e.vacation_days).filter(Boolean)
+          if (days.length > 0) {
+            return Math.max(...days)
+          }
+        }
+        const extra = order.extra_fields || {}
+        return Number(extra.vacation_days || 0)
+      }
+    },
+    { field: "order_date", getSortValue: (order) => order.order_date ?? "" },
+  ], [])
+
+  const localFilterPredicate = useMemo(() => {
+    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
+    if (!hasFilters) return null
+    return (order: Order) => {
+      for (const [field, selected] of Object.entries(columnFilters)) {
+        if (selected && selected.size > 0) {
+          if (field === "order_number") {
+            const val = order.order_number ?? "—"
+            if (!selected.has(val)) return false
+          } else if (field === "employee_name") {
+            if (order.is_group && order.group_employees) {
+              const hasMatchingEmployee = order.group_employees.some(e => selected.has(e.employee_full_name))
+              if (!hasMatchingEmployee) return false
+            } else {
+              const val = order.employee_name ?? "—"
+              if (!selected.has(val)) return false
+            }
+          } else if (field === "vacation_period") {
+            if (order.is_group && order.group_employees) {
+              const hasMatchingEmployee = order.group_employees.some(e => {
+                const label = `${formatDate(e.vacation_start)} — ${formatDate(e.vacation_end)}`
+                return selected.has(label)
+              })
+              if (!hasMatchingEmployee) return false
+            } else {
+              const extra = order.extra_fields || {}
+              const val = extra.vacation_start ? `${formatDate(String(extra.vacation_start))} — ${formatDate(String(extra.vacation_end || extra.vacation_start))}` : "—"
+              if (!selected.has(val)) return false
+            }
+          } else if (field === "vacation_days") {
+            if (order.is_group && order.group_employees) {
+              const hasMatchingEmployee = order.group_employees.some(e => selected.has(String(e.vacation_days)))
+              if (!hasMatchingEmployee) return false
+            } else {
+              const extra = order.extra_fields || {}
+              const val = extra.vacation_days ? String(extra.vacation_days) : "—"
+              if (!selected.has(val)) return false
+            }
+          } else if (field === "order_date") {
+            const val = formatDate(order.order_date)
+            if (!selected.has(val)) return false
+          }
+        }
+      }
+      return true
+    }
+  }, [columnFilters])
+
+  const uniqueValues = useMemo(() => {
+    const items = filteredOrders ?? []
+    const employeeNames = new Set<string>()
+    const periods = new Set<string>()
+    const days = new Set<string>()
+    items.forEach(o => {
+      if (o.is_group && o.group_employees) {
+        o.group_employees.forEach(e => {
+          if (e.employee_full_name) employeeNames.add(e.employee_full_name)
+          periods.add(`${formatDate(e.vacation_start)} — ${formatDate(e.vacation_end)}`)
+          days.add(String(e.vacation_days))
+        })
+      } else {
+        if (o.employee_name) employeeNames.add(o.employee_name)
+        const extra = o.extra_fields || {}
+        if (extra.vacation_start) {
+          periods.add(`${formatDate(String(extra.vacation_start))} — ${formatDate(String(extra.vacation_end || extra.vacation_start))}`)
+        }
+        if (extra.vacation_days) days.add(String(extra.vacation_days))
+      }
+    })
+    return {
+      order_number: [...new Set(items.map(o => o.order_number ?? "—"))].sort(),
+      employee_name: [...employeeNames].sort((a, b) => a.localeCompare(b, "ru")),
+      vacation_period: [...periods].sort(),
+      vacation_days: [...days].sort((a, b) => Number(a) - Number(b)),
+      order_date: [...new Set(items.map(o => formatDate(o.order_date)))].sort(),
+    }
+  }, [filteredOrders])
+
+  const engineResult = useTableQueryEngine({
+    rows: filteredOrders ?? [],
+    getId: (order) => order.id,
+    searchQuery: "",
+    filterPredicate: localFilterPredicate,
+    sortConfigs,
+    sortDefs,
+  })
+  const displayOrders = engineResult.rows
+
+  const getDisplayGroupEmployees = (order: Order) => {
+    if (!order.group_employees) return []
+    
+    let filtered = order.group_employees
+
+    // 1. Filter by employee_name if active
+    const selectedNames = columnFilters.employee_name
+    if (selectedNames && selectedNames.size > 0) {
+      filtered = filtered.filter(e => selectedNames.has(e.employee_full_name))
+    }
+
+    // 2. Filter by vacation_period if active
+    const selectedPeriods = columnFilters.vacation_period
+    if (selectedPeriods && selectedPeriods.size > 0) {
+      filtered = filtered.filter(e => {
+        const label = `${formatDate(e.vacation_start)} — ${formatDate(e.vacation_end)}`
+        return selectedPeriods.has(label)
+      })
+    }
+
+    // 3. Filter by vacation_days if active
+    const selectedDays = columnFilters.vacation_days
+    if (selectedDays && selectedDays.size > 0) {
+      filtered = filtered.filter(e => selectedDays.has(String(e.vacation_days)))
+    }
+    
+    // Sort by employee_name, vacation_period, or vacation_days
+    const nameSort = sortConfigs.find(s => s.field === "employee_name")
+    if (nameSort) {
+      const sorted = [...filtered].sort((a, b) => {
+        const nameA = a.employee_full_name ?? ""
+        const nameB = b.employee_full_name ?? ""
+        return nameA.localeCompare(nameB, "ru")
+      })
+      if (nameSort.order === "desc") {
+        sorted.reverse()
+      }
+      return sorted
+    }
+
+    const periodSort = sortConfigs.find(s => s.field === "vacation_period")
+    if (periodSort) {
+      const sorted = [...filtered].sort((a, b) => {
+        const pA = a.vacation_start ?? ""
+        const pB = b.vacation_start ?? ""
+        return pA.localeCompare(pB, "ru")
+      })
+      if (periodSort.order === "desc") {
+        sorted.reverse()
+      }
+      return sorted
+    }
+
+    const daysSort = sortConfigs.find(s => s.field === "vacation_days")
+    if (daysSort) {
+      const sorted = [...filtered].sort((a, b) => a.vacation_days - b.vacation_days)
+      if (daysSort.order === "desc") {
+        sorted.reverse()
+      }
+      return sorted
+    }
+    
+    return filtered
+  }
+
   const totalOrders = filteredEntries.length
   const totalUnpaidDays = filteredEntries.reduce((sum, entry) => {
     if (entry.explicitDays && !periodStart && !periodEnd) return sum + entry.explicitDays
@@ -472,6 +677,50 @@ export function UnpaidLeavesPage() {
     employeesMap.set(entry.employeeName, current)
   }
   const employeesSummary = Array.from(employeesMap.values()).sort((a, b) => b.days - a.days)
+
+  type SummarySortField = "name" | "days" | "orders"
+  const [summarySortConfigs, setSummarySortConfigs] = useState<SortConfig<SummarySortField>[]>([])
+  const [summaryColumnFilters, setSummaryColumnFilters] = useState<Record<SummarySortField, Set<string>>>({
+    name: new Set(),
+    days: new Set(),
+    orders: new Set(),
+  })
+
+  const handleSummarySort = (field: SummarySortField) => {
+    const defaultOrder = field === "name" ? "asc" : "desc"
+    setSummarySortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
+  }
+  const handleSummaryFilter = (field: SummarySortField, selected: Set<string>) => {
+    setSummaryColumnFilters((prev) => ({ ...prev, [field]: selected }))
+  }
+
+  const summaryUniqueValues = {
+    name: [...new Set(employeesSummary.map((e) => e.name))].sort(),
+    days: [...new Set(employeesSummary.map((e) => String(e.days)))].sort((a, b) => Number(b) - Number(a)),
+    orders: [...new Set(employeesSummary.map((e) => String(e.orders)))].sort((a, b) => Number(b) - Number(a)),
+  }
+
+  const displayedEmployeesSummary = useMemo(() => {
+    let rows = employeesSummary
+    if (summaryColumnFilters.name.size > 0) rows = rows.filter((e) => summaryColumnFilters.name.has(e.name))
+    if (summaryColumnFilters.days.size > 0) rows = rows.filter((e) => summaryColumnFilters.days.has(String(e.days)))
+    if (summaryColumnFilters.orders.size > 0) rows = rows.filter((e) => summaryColumnFilters.orders.has(String(e.orders)))
+    if (summarySortConfigs.length > 0) {
+      rows = [...rows].sort((a, b) => {
+        for (const sc of summarySortConfigs) {
+          let cmp = 0
+          if (sc.field === "name") cmp = a.name.localeCompare(b.name, "ru")
+          else if (sc.field === "days") cmp = a.days - b.days
+          else if (sc.field === "orders") cmp = a.orders - b.orders
+          if (sc.order === "desc") cmp = -cmp
+          if (cmp !== 0) return cmp
+        }
+        return 0
+      })
+    }
+    return rows
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employeesSummary, summarySortConfigs, summaryColumnFilters])
 
   const setCalendarYearPeriod = () => {
     setPeriodMode("calendarYear")
@@ -754,28 +1003,59 @@ export function UnpaidLeavesPage() {
 
           {periodError && <p className="text-xs text-red-500">{periodError}</p>}
 
+          <div className="w-fit">
           <Table>
             <TableHeader>
-              <TableRow
-                className="cursor-pointer select-none"
-                onClick={() => employeesSummary.length > 0 && setShowEmployeesTable(!showEmployeesTable)}
-              >
-                <TableHead className="w-10">
+              <TableRow>
+                <TableHead
+                  className="w-28 cursor-pointer select-none whitespace-nowrap"
+                  onClick={() => employeesSummary.length > 0 && setShowEmployeesTable(!showEmployeesTable)}
+                >
                   {employeesSummary.length > 0 && (
-                    <span className="text-muted-foreground text-xs">
-                      {showEmployeesTable ? "▾" : "▸"}
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                      {showEmployeesTable ? "▾ Скрыть" : "▸ Показать"}
                     </span>
                   )}
                 </TableHead>
-                <TableHead>Сотрудник</TableHead>
-                <TableHead>Дней отпуска</TableHead>
-                <TableHead>Отпусков</TableHead>
+                <TableHead className="p-0">
+                  <SortableFilterHeader
+                    field="name"
+                    label="Сотрудник"
+                    currentSorts={summarySortConfigs}
+                    onSortChange={handleSummarySort}
+                    values={summaryUniqueValues.name}
+                    selectedValues={summaryColumnFilters.name}
+                    onFilterChange={handleSummaryFilter}
+                  />
+                </TableHead>
+                <TableHead className="p-0">
+                  <SortableFilterHeader
+                    field="days"
+                    label="Дней отпуска"
+                    currentSorts={summarySortConfigs}
+                    onSortChange={handleSummarySort}
+                    values={summaryUniqueValues.days}
+                    selectedValues={summaryColumnFilters.days}
+                    onFilterChange={handleSummaryFilter}
+                  />
+                </TableHead>
+                <TableHead className="p-0">
+                  <SortableFilterHeader
+                    field="orders"
+                    label="Отпусков"
+                    currentSorts={summarySortConfigs}
+                    onSortChange={handleSummarySort}
+                    values={summaryUniqueValues.orders}
+                    selectedValues={summaryColumnFilters.orders}
+                    onFilterChange={handleSummaryFilter}
+                  />
+                </TableHead>
               </TableRow>
             </TableHeader>
             {showEmployeesTable && (
               <TableBody>
-                {employeesSummary.length > 0 ? (
-                  employeesSummary.map((employee) => (
+                {displayedEmployeesSummary.length > 0 ? (
+                  displayedEmployeesSummary.map((employee) => (
                     <TableRow key={employee.name}>
                       <TableCell className="w-10" />
                       <TableCell className="font-medium">{employee.name}</TableCell>
@@ -793,26 +1073,76 @@ export function UnpaidLeavesPage() {
               </TableBody>
             )}
           </Table>
+          </div>
 
-          {filteredOrders.length === 0 ? (
+          {displayOrders.length === 0 ? (
             <EmptyState message="Нет отпусков за выбранный период" description="Измените фильтры периода или сотрудника" />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>№</TableHead>
-                  <TableHead>Сотрудник</TableHead>
-                  <TableHead>Период</TableHead>
-                  <TableHead>Дней</TableHead>
-                  <TableHead>Дата приказа</TableHead>
+                  <TableHead className="p-0">
+                    <SortableFilterHeader
+                      field="order_number"
+                      label="№"
+                      currentSorts={sortConfigs}
+                      onSortChange={handleSort}
+                      values={uniqueValues.order_number}
+                      selectedValues={columnFilters.order_number}
+                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    />
+                  </TableHead>
+                  <TableHead className="p-0">
+                    <SortableFilterHeader
+                      field="employee_name"
+                      label="Сотрудник"
+                      currentSorts={sortConfigs}
+                      onSortChange={handleSort}
+                      values={uniqueValues.employee_name}
+                      selectedValues={columnFilters.employee_name}
+                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    />
+                  </TableHead>
+                  <TableHead className="p-0">
+                    <SortableFilterHeader
+                      field="vacation_period"
+                      label="Период"
+                      currentSorts={sortConfigs}
+                      onSortChange={handleSort}
+                      values={uniqueValues.vacation_period}
+                      selectedValues={columnFilters.vacation_period}
+                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    />
+                  </TableHead>
+                  <TableHead className="p-0">
+                    <SortableFilterHeader
+                      field="vacation_days"
+                      label="Дней"
+                      currentSorts={sortConfigs}
+                      onSortChange={handleSort}
+                      values={uniqueValues.vacation_days}
+                      selectedValues={columnFilters.vacation_days}
+                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    />
+                  </TableHead>
+                  <TableHead className="p-0">
+                    <SortableFilterHeader
+                      field="order_date"
+                      label="Дата приказа"
+                      currentSorts={sortConfigs}
+                      onSortChange={handleSort}
+                      values={uniqueValues.order_date}
+                      selectedValues={columnFilters.order_date}
+                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    />
+                  </TableHead>
                   <TableHead className="text-right">Действия</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredOrders.map((order) => {
+                {displayOrders.map((order) => {
                   const extra = order.extra_fields || {}
                   const isGroup = order.is_group
-                  const isExpanded = expandedGroupIds.has(order.id)
 
                   return (
                     <Fragment key={order.id}>
@@ -820,17 +1150,7 @@ export function UnpaidLeavesPage() {
                         <TableCell className="font-mono">{order.order_number}</TableCell>
                         <TableCell>
                           {isGroup ? (
-                            <button
-                              className="flex items-center gap-1 hover:underline"
-                              onClick={() => toggleGroupExpand(order.id)}
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className="h-3 w-3" />
-                              ) : (
-                                <ChevronRight className="h-3 w-3" />
-                              )}
-                              <span>Групповой приказ — {order.group_employee_count || 0} сотрудников</span>
-                            </button>
+                            <span className="font-medium">Групповой приказ — {order.group_employee_count || 0} сотрудников</span>
                           ) : (
                             order.employee_name || "—"
                           )}
@@ -875,35 +1195,12 @@ export function UnpaidLeavesPage() {
                           </div>
                         </TableCell>
                       </TableRow>
-                      {isGroup && isExpanded && order.group_employees && (
-                        <TableRow>
-                          <TableCell colSpan={6} className="bg-muted/30 p-4">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Сотрудник</TableHead>
-                                  <TableHead>Должность</TableHead>
-                                  <TableHead>Подразделение</TableHead>
-                                  <TableHead>Дата начала</TableHead>
-                                  <TableHead>Дата окончания</TableHead>
-                                  <TableHead>Дней</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {order.group_employees.map((emp: GroupEmployeeInfo) => (
-                                  <TableRow key={emp.employee_id}>
-                                    <TableCell className="font-medium">{emp.employee_full_name}</TableCell>
-                                    <TableCell>{emp.position || "—"}</TableCell>
-                                    <TableCell>{emp.department || "—"}</TableCell>
-                                    <TableCell>{formatDate(emp.vacation_start)}</TableCell>
-                                    <TableCell>{formatDate(emp.vacation_end)}</TableCell>
-                                    <TableCell>{emp.vacation_days}</TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </TableCell>
-                        </TableRow>
+                      {isGroup && order.group_employees && (
+                        <GroupOrderEmployeesRows
+                          employees={getDisplayGroupEmployees(order)}
+                          type="unpaid"
+                          orderNumber={order.order_number}
+                        />
                       )}
                     </Fragment>
                   )

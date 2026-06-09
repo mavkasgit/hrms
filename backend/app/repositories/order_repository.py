@@ -35,22 +35,21 @@ class OrderRepository:
 
         if order_type_code:
             joins.append(OrderType)
-            if order_type_code == "vacation_unpaid":
-                conditions.append(
-                    or_(
-                        OrderType.code == "vacation_unpaid",
-                        OrderType.code == "vacation_unpaid_group",
+            codes = [c.strip() for c in order_type_code.split(",") if c.strip()]
+            sub_conds = []
+            for code in codes:
+                if code == "vacation_unpaid":
+                    sub_conds.append(
+                        OrderType.code.in_(["vacation_unpaid", "vacation_unpaid_group"])
                     )
-                )
-            elif order_type_code == "weekend_call":
-                conditions.append(
-                    or_(
-                        OrderType.code == "weekend_call",
-                        OrderType.code == "weekend_call_group",
+                elif code == "weekend_call":
+                    sub_conds.append(
+                        OrderType.code.in_(["weekend_call", "weekend_call_group"])
                     )
-                )
-            else:
-                conditions.append(OrderType.code == order_type_code)
+                else:
+                    sub_conds.append(OrderType.code == code)
+            if sub_conds:
+                conditions.append(or_(*sub_conds))
 
         if order_letter:
             if OrderType not in joins:

@@ -2,11 +2,7 @@ import { useState, useMemo, Fragment } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   ArrowLeft,
-  ArrowUpDown,
-  ChevronDown,
-  ChevronUp,
   Search,
-  Tag,
   X,
   FileSpreadsheet,
 } from "lucide-react"
@@ -14,6 +10,8 @@ import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { Badge } from "@/shared/ui/badge"
+import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import type { SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import {
   Select,
   SelectContent,
@@ -27,7 +25,7 @@ import {
 } from "@/entities/vacation-plan"
 import type { VacationPlanSummary } from "@/entities/vacation-plan/types"
 import { useEmployees } from "@/entities/employee/useEmployees"
-import { useTags } from "@/entities/tag/useTags"
+
 import type { EmployeeTag } from "@/entities/employee/types"
 import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
 import { VacationCalendarModal } from "@/features/vacation-calendar-modal/VacationCalendarModal"
@@ -44,7 +42,7 @@ interface CalendarRow {
   total_plan_count: string
 }
 
-type SortDir = "none" | "asc" | "desc"
+type SortField = "department" | "tags" | "employee"
 
 const MONTHS = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -71,13 +69,7 @@ function getCellClasses(days: string | null | undefined): string {
   return base
 }
 
-function toggleSort(prev: SortDir): SortDir {
-  if (prev === "none") return "asc"
-  if (prev === "asc") return "desc"
-  return "none"
-}
-
-function compareStr(a: string, b: string, dir: SortDir): number {
+function compareStr(a: string, b: string, dir: "asc" | "desc"): number {
   const cmp = a.localeCompare(b, "ru")
   return dir === "asc" ? cmp : -cmp
 }
@@ -86,17 +78,19 @@ export function VacationCalendarPage() {
   const navigate = useNavigate()
   const [year, setYear] = useState(2026)
   const [search, setSearch] = useState("")
-  const [departmentSort, setDepartmentSort] = useState<SortDir>("none")
-  const [tagSort, setTagSort] = useState<SortDir>("none")
-  const [employeeSort, setEmployeeSort] = useState<SortDir>("none")
-  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
+  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
+  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
+    department: new Set(),
+    tags: new Set(),
+    employee: new Set(),
+  })
   const [activeMonthFilters, setActiveMonthFilters] = useState<number[]>([])
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [importSuccess, setImportSuccess] = useState(false)
 
   const { data: summaries, isLoading: plansLoading } = useVacationPlanSummary(year)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000, status: "active" })
-  const { data: allTags } = useTags()
+
   const createMutation = useCreateOrUpdateVacationPlan()
 
   const [editingCell, setEditingCell] = useState<{
@@ -145,14 +139,35 @@ export function VacationCalendarPage() {
     })
   }, [summaries, allEmployees])
 
+  const uniqueDepartments = useMemo(
+    () => [...new Set(combinedData.map((r) => r.department_name))].sort((a, b) => a.localeCompare(b, "ru")),
+    [combinedData]
+  )
+  const uniqueTagNames = useMemo(
+    () => [...new Set(combinedData.flatMap((r) => r.tags.map((t) => t.name)))].sort((a, b) => a.localeCompare(b, "ru")),
+    [combinedData]
+  )
+  const uniqueEmployees = useMemo(
+    () => [...new Set(combinedData.map((r) => r.employee_name))].sort((a, b) => a.localeCompare(b, "ru")),
+    [combinedData]
+  )
+
   const filtered = useMemo(() => {
     let rows = combinedData
 
-    // Фильтр по тегам (OR — объединение)
-    if (selectedTagIds.length > 0) {
-      rows = rows.filter((r) =>
-        selectedTagIds.some((id) => r.tags.some((t) => t.id === id))
-      )
+    // Фильтр по колонке «Подразделение»
+    if (columnFilters.department.size > 0) {
+      rows = rows.filter((r) => columnFilters.department.has(r.department_name))
+    }
+
+    // Фильтр по колонке «Теги»
+    if (columnFilters.tags.size > 0) {
+      rows = rows.filter((r) => r.tags.some((t) => columnFilters.tags.has(t.name)))
+    }
+
+    // Фильтр по колонке «Сотрудник»
+    if (columnFilters.employee.size > 0) {
+      rows = rows.filter((r) => columnFilters.employee.has(r.employee_name))
     }
 
     // Фильтр по месяцам (OR — объединение)
@@ -176,26 +191,21 @@ export function VacationCalendarPage() {
       )
     }
 
-    // Сортировка
+    // Сортировка по sortConfigs
     const sortedRows = [...rows].sort((a, b) => {
-      // 1. Подразделение
-      if (departmentSort !== "none") {
-        const cmp = compareStr(a.department_name, b.department_name, departmentSort)
+      for (const sc of sortConfigs) {
+        let cmp = 0
+        if (sc.field === "department") {
+          cmp = compareStr(a.department_name, b.department_name, sc.order)
+        } else if (sc.field === "tags") {
+          const aTag = a.tags[0]?.name || ""
+          const bTag = b.tags[0]?.name || ""
+          cmp = compareStr(aTag, bTag, sc.order)
+        } else if (sc.field === "employee") {
+          cmp = compareStr(a.employee_name, b.employee_name, sc.order)
+        }
         if (cmp !== 0) return cmp
       }
-      // 2. Теги (по первому тегу, без тегов в конце)
-      if (tagSort !== "none") {
-        const aTag = a.tags[0]?.name || ""
-        const bTag = b.tags[0]?.name || ""
-        const cmp = compareStr(aTag, bTag, tagSort)
-        if (cmp !== 0) return cmp
-      }
-      // 3. ФИО
-      if (employeeSort !== "none") {
-        const cmp = compareStr(a.employee_name, b.employee_name, employeeSort)
-        if (cmp !== 0) return cmp
-      }
-      // fallback — по ФИО
       return a.employee_name.localeCompare(b.employee_name, "ru")
     })
 
@@ -203,10 +213,8 @@ export function VacationCalendarPage() {
   }, [
     combinedData,
     search,
-    departmentSort,
-    tagSort,
-    employeeSort,
-    selectedTagIds,
+    sortConfigs,
+    columnFilters,
     activeMonthFilters,
   ])
 
@@ -244,11 +252,7 @@ export function VacationCalendarPage() {
     }
   }
 
-  const toggleTag = (tagId: number) => {
-    setSelectedTagIds((prev) =>
-      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
-    )
-  }
+
 
   const toggleMonthFilter = (monthNum: number) => {
     setActiveMonthFilters((prev) =>
@@ -260,33 +264,24 @@ export function VacationCalendarPage() {
 
   const handleClearAll = () => {
     setSearch("")
-    setSelectedTagIds([])
+    setSortConfigs([])
+    setColumnFilters({ department: new Set(), tags: new Set(), employee: new Set() })
     setActiveMonthFilters([])
   }
 
-  const SortButton = ({
-    label,
-    sort,
-    onToggle,
-    title,
-  }: {
-    label: string
-    sort: SortDir
-    onToggle: () => void
-    title?: string
-  }) => (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="inline-flex items-center gap-1 hover:text-foreground text-muted-foreground"
-      title={title || `Сортировать по ${label}`}
-    >
-      <span>{label}</span>
-      {sort === "asc" && <ChevronUp className="h-3.5 w-3.5" />}
-      {sort === "desc" && <ChevronDown className="h-3.5 w-3.5" />}
-      {sort === "none" && <ArrowUpDown className="h-3.5 w-3.5" />}
-    </button>
-  )
+  const handleSortChange = (field: SortField) => {
+    setSortConfigs((prev) => {
+      const existing = prev.find((s) => s.field === field)
+      if (!existing) return [...prev, { field, order: "asc" as const }]
+      if (existing.order === "asc")
+        return prev.map((s) => (s.field === field ? { ...s, order: "desc" as const } : s))
+      return prev.filter((s) => s.field !== field)
+    })
+  }
+
+  const handleFilterChange = (field: SortField, selected: Set<string>) => {
+    setColumnFilters((prev) => ({ ...prev, [field]: selected }))
+  }
 
   return (
     <div className="space-y-4">
@@ -339,46 +334,20 @@ export function VacationCalendarPage() {
         </Button>
       </div>
 
-      {/* Фильтр по тегам и месяцам */}
-      {(allTags && allTags.length > 0) || activeMonthFilters.length > 0 ? (
+      {/* Фильтр по месяцам */}
+      {activeMonthFilters.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          {activeMonthFilters.length > 0 && (
-            <>
-              {activeMonthFilters.map((monthNum) => (
-                <Badge key={monthNum} variant="secondary" className="gap-1">
-                  {MONTHS[monthNum - 1]}
-                  <X
-                    className="h-3 w-3 cursor-pointer"
-                    onClick={() => toggleMonthFilter(monthNum)}
-                  />
-                </Badge>
-              ))}
-            </>
-          )}
-          {allTags && allTags.length > 0 && (
-            <>
-              <Tag className="h-4 w-4 text-muted-foreground" />
-              {allTags.map((t) => {
-                const isSelected = selectedTagIds.includes(t.id)
-                return (
-                  <Badge
-                    key={t.id}
-                    variant={isSelected ? "default" : "outline"}
-                    className="cursor-pointer text-[11px] h-6 gap-1"
-                    style={
-                      isSelected ? {} : { borderColor: t.color, color: t.color }
-                    }
-                    onClick={() => toggleTag(t.id)}
-                  >
-                    {t.name}
-                    {isSelected && <X className="h-3 w-3" />}
-                  </Badge>
-                )
-              })}
-            </>
-          )}
+          {activeMonthFilters.map((monthNum) => (
+            <Badge key={monthNum} variant="secondary" className="gap-1">
+              {MONTHS[monthNum - 1]}
+              <X
+                className="h-3 w-3 cursor-pointer"
+                onClick={() => toggleMonthFilter(monthNum)}
+              />
+            </Badge>
+          ))}
         </div>
-      ) : null}
+      )}
 
       {/* Таблица */}
       {plansLoading || !allEmployees ? (
@@ -394,24 +363,36 @@ export function VacationCalendarPage() {
             <thead>
               <tr>
                 <th className="sticky left-0 text-left font-medium py-2 px-2 w-[110px] z-10 border border-zinc-300 bg-background">
-                  <SortButton
+                  <SortableFilterHeader
+                    field="department"
                     label="Подразделение"
-                    sort={departmentSort}
-                    onToggle={() => setDepartmentSort((s) => toggleSort(s))}
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSortChange}
+                    values={uniqueDepartments}
+                    selectedValues={columnFilters.department}
+                    onFilterChange={handleFilterChange}
                   />
                 </th>
                 <th className="text-left font-medium py-2 px-2 w-[60px] border border-zinc-300 bg-background">
-                  <SortButton
+                  <SortableFilterHeader
+                    field="tags"
                     label="Теги"
-                    sort={tagSort}
-                    onToggle={() => setTagSort((s) => toggleSort(s))}
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSortChange}
+                    values={uniqueTagNames}
+                    selectedValues={columnFilters.tags}
+                    onFilterChange={handleFilterChange}
                   />
                 </th>
                 <th className="text-left font-medium py-2 px-3 w-[240px] border border-zinc-300 bg-background">
-                  <SortButton
+                  <SortableFilterHeader
+                    field="employee"
                     label="Сотрудник"
-                    sort={employeeSort}
-                    onToggle={() => setEmployeeSort((s) => toggleSort(s))}
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSortChange}
+                    values={uniqueEmployees}
+                    selectedValues={columnFilters.employee}
+                    onFilterChange={handleFilterChange}
                   />
                 </th>
                 {MONTHS.map((m, i) => {

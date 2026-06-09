@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { Plus, Filter, Pencil, ArrowUp, ArrowDown, ArrowUpDown, Upload, ScrollText, Tag, Building2, Printer, Users } from "lucide-react"
+import { Plus, Filter, Pencil, Upload, ScrollText, Tag, Building2, Printer, Users } from "lucide-react"
 import { Button } from "@/shared/ui/button"
+import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
+import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 
 import { Alert, AlertDescription } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
@@ -35,12 +38,6 @@ function calculateAge(birthDate: string | null): number | null {
 }
 
 type SortField = "name" | "age" | "department" | "tags" | "position" | "hire_date"
-type SortOrder = "asc" | "desc"
-
-interface SortConfig {
-  field: SortField
-  order: SortOrder
-}
 
 const GENDERS = [
   { value: "М", label: "Мужчины", activeBg: "bg-sky-100", activeText: "text-sky-700", activeBorder: "border-sky-300" },
@@ -62,7 +59,15 @@ export function EmployeesPage() {
   const [selectedGenders, setSelectedGenders] = useState<Set<string>>(new Set())
   const [selectedRateTypes, setSelectedRateTypes] = useState<Set<"full" | "partial">>(new Set())
   const [selectedEmploymentTypes, setSelectedEmploymentTypes] = useState<Set<"internal" | "external">>(new Set())
-  const [sortConfigs, setSortConfigs] = useState<SortConfig[]>([])
+  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
+  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
+    name: new Set(),
+    age: new Set(),
+    department: new Set(),
+    tags: new Set(),
+    position: new Set(),
+    hire_date: new Set(),
+  })
   const filtersRef = useRef<HTMLDivElement>(null)
 
   const [formOpen, setFormOpen] = useState(false)
@@ -151,75 +156,84 @@ export function EmployeesPage() {
     setSelectedEmploymentTypes(new Set())
     setSelectedStatuses(new Set(["active"]))
     setSortConfigs([])
+    setColumnFilters({
+      name: new Set(),
+      age: new Set(),
+      department: new Set(),
+      tags: new Set(),
+      position: new Set(),
+      hire_date: new Set(),
+    })
   }
 
   const handleSort = (field: SortField) => {
-    setSortConfigs((prev) => {
-      const existing = prev.find((c) => c.field === field)
-      if (!existing) return [...prev, { field, order: "asc" }]
-      if (existing.order === "asc") return prev.map((c) => c.field === field ? { ...c, order: "desc" } : c)
-      return prev.filter((c) => c.field !== field)
-    })
+    const defaultOrder = (field === "age" || field === "hire_date") ? "desc" : "asc"
+    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
   }
 
-  const SortIcon = ({ field }: { field: SortField }) => {
-    const config = sortConfigs.find((c) => c.field === field)
-    const sortIndex = sortConfigs.findIndex((c) => c.field === field) + 1
+  const sortDefs: ColumnSortDef<Employee, SortField>[] = useMemo(() => [
+    { field: "name", getSortValue: (emp) => emp.name },
+    { field: "age", getSortValue: (emp) => calculateAge(emp.birth_date) ?? 0 },
+    { field: "department", getSortValue: (emp) => emp.department?.name ?? "" },
+    { field: "tags", getSortValue: (emp) => emp.tags?.[0]?.name ?? "" },
+    { field: "position", getSortValue: (emp) => emp.position?.name ?? "" },
+    { field: "hire_date", getSortValue: (emp) => emp.contract_end ?? "" },
+  ], [])
 
-    if (!config) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />
-
-    return (
-      <span className="flex items-center ml-1">
-        <span className="text-xs text-muted-foreground mt-0.5">{sortIndex}</span>
-        {config.order === "asc" ? <ArrowUp className="h-3 w-3 ml-0.5" /> : <ArrowDown className="h-3 w-3 ml-0.5" />}
-      </span>
-    )
-  }
-
-  // Клиентская сортировка
-  const sortedItems = useMemo(() => {
-    if (!data?.items || sortConfigs.length === 0) return data?.items ?? []
-    return [...data.items].sort((a, b) => {
-      for (const { field, order } of sortConfigs) {
-        let aVal: string | number | null
-        let bVal: string | number | null
-        if (field === "age") {
-          aVal = calculateAge(a.birth_date) ?? 0
-          bVal = calculateAge(b.birth_date) ?? 0
-        } else if (field === "hire_date") {
-          aVal = a.contract_end ?? ""
-          bVal = b.contract_end ?? ""
-        } else if (field === "department") {
-          aVal = a.department?.name ?? ""
-          bVal = b.department?.name ?? ""
-        } else if (field === "tags") {
-          aVal = a.tags?.[0]?.name ?? ""
-          bVal = b.tags?.[0]?.name ?? ""
-        } else if (field === "position") {
-          aVal = a.position?.name ?? ""
-          bVal = b.position?.name ?? ""
-        } else {
-          aVal = (a[field as keyof typeof a] ?? "") as string | number
-          bVal = (b[field as keyof typeof b] ?? "") as string | number
+  const localFilterPredicate = useMemo(() => {
+    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
+    if (!hasFilters) return null
+    return (emp: Employee) => {
+      for (const [field, selected] of Object.entries(columnFilters)) {
+        if (selected && selected.size > 0) {
+          if (field === "name") {
+            if (!selected.has(emp.name)) return false
+          } else if (field === "department") {
+            const val = emp.department?.name ?? "Без подразделения"
+            if (!selected.has(val)) return false
+          } else if (field === "tags") {
+            const empTags = (emp.tags || []).map(t => t.name)
+            const hasMatch = empTags.some(name => selected.has(name))
+            const hasNoTags = selected.has("Без тегов") && empTags.length === 0
+            if (!hasMatch && !hasNoTags) return false
+          } else if (field === "position") {
+            const val = emp.position?.name ?? "—"
+            if (!selected.has(val)) return false
+          } else if (field === "age") {
+            const age = calculateAge(emp.birth_date)
+            const val = age !== null ? `${age} лет` : "—"
+            if (!selected.has(val)) return false
+          } else if (field === "hire_date") {
+            const val = emp.contract_end ? new Date(emp.contract_end).toLocaleDateString("ru-RU") : "—"
+            if (!selected.has(val)) return false
+          }
         }
-        if (aVal < bVal) return order === "asc" ? -1 : 1
-        if (aVal > bVal) return order === "asc" ? 1 : -1
       }
-      return 0
-    })
-  }, [data?.items, sortConfigs])
+      return true
+    }
+  }, [columnFilters])
 
-  const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
-    <TableHead
-      className="cursor-pointer select-none hover:bg-muted/50 transition-colors"
-      onClick={() => handleSort(field)}
-    >
-      <div className="flex items-center">
-        {children}
-        <SortIcon field={field} />
-      </div>
-    </TableHead>
-  )
+  const engineResult = useTableQueryEngine({
+    rows: data?.items ?? [],
+    getId: (emp) => emp.id,
+    searchQuery: "",
+    filterPredicate: localFilterPredicate,
+    sortConfigs,
+    sortDefs,
+  })
+  const displayEmployees = engineResult.rows
+
+  const uniqueValues = useMemo(() => {
+    const items = data?.items ?? []
+    return {
+      name: [...new Set(items.map(emp => emp.name))].sort(),
+      department: [...new Set(items.map(emp => emp.department?.name ?? "Без подразделения"))].sort(),
+      tags: ["Без тегов", ...new Set(items.flatMap(emp => (emp.tags || []).map(t => t.name)))].sort(),
+      position: [...new Set(items.map(emp => emp.position?.name ?? "—"))].sort(),
+      age: [...new Set(items.map(emp => { const age = calculateAge(emp.birth_date); return age !== null ? `${age} лет` : "—" }))].sort(),
+      hire_date: [...new Set(items.map(emp => emp.contract_end ? new Date(emp.contract_end).toLocaleDateString("ru-RU") : "—"))].sort(),
+    }
+  }, [data])
 
   const handleEdit = (employee: Employee) => {
     setEditingEmployee(employee)
@@ -392,7 +406,7 @@ export function EmployeesPage() {
             <Skeleton key={i} className="h-8 w-full" />
           ))}
         </div>
-      ) : !sortedItems?.length ? (
+      ) : !displayEmployees?.length ? (
         <EmptyState
           message="Сотрудники не найдены"
           description="Добавьте первого сотрудника или измените фильтры"
@@ -402,17 +416,77 @@ export function EmployeesPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="px-2 py-1">Таб. №</TableHead>
-              <SortHeader field="name">ФИО</SortHeader>
-              <SortHeader field="department">Подразделение</SortHeader>
-              <SortHeader field="tags">
-                <div className="flex items-center gap-1">
-                  <Tag className="h-3 w-3" />
-                  Теги
-                </div>
-              </SortHeader>
-              <SortHeader field="position">Должность</SortHeader>
-              <SortHeader field="age">Возраст</SortHeader>
-              <SortHeader field="hire_date">Конец контракта</SortHeader>
+              <TableHead>
+                <SortableFilterHeader
+                  field="name"
+                  label="ФИО"
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.name}
+                  selectedValues={columnFilters.name}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                />
+              </TableHead>
+              <TableHead>
+                <SortableFilterHeader
+                  field="department"
+                  label="Подразделение"
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.department}
+                  selectedValues={columnFilters.department}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                />
+              </TableHead>
+              <TableHead>
+                <SortableFilterHeader
+                  field="tags"
+                  label={
+                    <div className="flex items-center gap-1">
+                      <Tag className="h-3 w-3" />
+                      Теги
+                    </div>
+                  }
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.tags}
+                  selectedValues={columnFilters.tags}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                />
+              </TableHead>
+              <TableHead>
+                <SortableFilterHeader
+                  field="position"
+                  label="Должность"
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.position}
+                  selectedValues={columnFilters.position}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                />
+              </TableHead>
+              <TableHead>
+                <SortableFilterHeader
+                  field="age"
+                  label="Возраст"
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.age}
+                  selectedValues={columnFilters.age}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                />
+              </TableHead>
+              <TableHead>
+                <SortableFilterHeader
+                  field="hire_date"
+                  label="Конец контракта"
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.hire_date}
+                  selectedValues={columnFilters.hire_date}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                />
+              </TableHead>
               {showTerminationDate && (
                 <TableHead className="px-2 py-1">Дата увольнения</TableHead>
               )}
@@ -423,7 +497,7 @@ export function EmployeesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedItems.map((emp) => {
+            {displayEmployees.map((emp) => {
               const age = calculateAge(emp.birth_date)
               return (
                 <TableRow
@@ -521,7 +595,7 @@ export function EmployeesPage() {
         open={printOpen}
         onOpenChange={setPrintOpen}
         title="Сотрудники"
-        data={sortedItems}
+        data={displayEmployees}
         columns={[
           { title: "ФИО", width: "25%", render: (emp) => emp.name },
           { title: "Теги", width: "30%", render: (emp) => (emp.tags || []).map((t) => t.name).join(", ") || "—" },

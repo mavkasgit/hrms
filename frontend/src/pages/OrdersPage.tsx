@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, Fragment } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen, Search, Filter, Printer, FileText } from "lucide-react"
+import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -37,6 +38,7 @@ import {
   useOrders,
   useOrderYears,
   useOrderTypes,
+  useAllOrderTypes,
   useCreateOrder,
   useDeleteOrder,
   useOrderDeletionPreview,
@@ -49,11 +51,13 @@ import { EmployeeSearch } from "@/features/employee-search"
 import { DocumentModal } from "@/features/document-modal/DocumentModal"
 import { ContractRegistryModal } from "@/pages/ContractRegistryPage"
 import type { Employee } from "@/entities/employee/types"
-import type { OrderType } from "@/entities/order/types"
+import type { Order, OrderType } from "@/entities/order/types"
+import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
+import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import {
   useAutoFillFields,
   FieldRenderer,
-  ContractExtensionFields,
   FieldGroup,
   type FieldSchema,
 } from "@/features/dynamic-form"
@@ -114,7 +118,22 @@ function OrderDeletePreview({ orderId }: { orderId: number | null }) {
 export function OrdersPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [year, setYear] = useState<number | undefined>(new Date().getFullYear())
+
+  // Load active filters from localStorage helper
+  const getSavedFilter = <T,>(key: string, defaultValue: T): T => {
+    const saved = localStorage.getItem("hrms_active_filters")
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        if (parsed[key] !== undefined) return parsed[key]
+      } catch (e) {
+        console.error(`Failed to parse filter key ${key}`, e)
+      }
+    }
+    return defaultValue
+  }
+
+  const [year, setYear] = useState<number | undefined>(() => getSavedFilter("year", new Date().getFullYear()))
   const [collapsed, setCollapsed] = useState(false)
   const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [filterCollapsed, setFilterCollapsed] = useState(true)
@@ -123,17 +142,201 @@ export function OrdersPage() {
   const [contractRegistryOpen, setContractRegistryOpen] = useState(false)
 
   // Filter state
-  const [filterEmployee, setFilterEmployee] = useState<Employee | null>(null)
-  const [filterOrderType, setFilterOrderType] = useState<OrderType | null>(null)
+  const [filterEmployee, setFilterEmployee] = useState<Employee | null>(() => getSavedFilter("employee", null))
+  const [filterOrderTypes, setFilterOrderTypes] = useState<OrderType[]>(() => getSavedFilter("orderTypes", []))
   const [filterOrderTypeSearch, setFilterOrderTypeSearch] = useState("")
   const [filterOrderTypeOpen, setFilterOrderTypeOpen] = useState(false)
-  const [filterOrderNumber, setFilterOrderNumber] = useState("")
-  const [filterDateFrom, setFilterDateFrom] = useState("")
-  const [filterDateTo, setFilterDateTo] = useState("")
-  const [filterLetter, setFilterLetter] = useState<string | undefined>(undefined)
-  const [filterLS, setFilterLS] = useState<boolean>(false)
-  const [filterShowGeneral, setFilterShowGeneral] = useState<boolean>(false)
+  const [filterOrderNumber, setFilterOrderNumber] = useState(() => getSavedFilter("orderNumber", ""))
+  const [filterDateFrom, setFilterDateFrom] = useState(() => getSavedFilter("dateFrom", ""))
+  const [filterDateTo, setFilterDateTo] = useState(() => getSavedFilter("dateTo", ""))
+  const [filterLetter, setFilterLetter] = useState<string | undefined>(() => getSavedFilter("letter", undefined))
+  const [filterLS, setFilterLS] = useState<boolean>(() => getSavedFilter("ls", false))
+  const [filterShowGeneral, setFilterShowGeneral] = useState<boolean>(() => getSavedFilter("showGeneral", false))
   const filterOrderTypeRef = useRef<HTMLDivElement>(null)
+
+  const [sortConfigs, setSortConfigs] = useState<SortConfig<string>[]>([])
+  const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({})
+
+  interface FilterPreset {
+    id: string
+    name: string
+    filters: {
+      year?: number
+      employee: Employee | null
+      orderTypes: OrderType[]
+      orderNumber: string
+      dateFrom: string
+      dateTo: string
+      letter?: string
+      ls: boolean
+      showGeneral: boolean
+    }
+  }
+
+  const [presets, setPresets] = useState<FilterPreset[]>([])
+  const [isSavingPreset, setIsSavingPreset] = useState(false)
+  const [newPresetName, setNewPresetName] = useState("")
+  const [appliedPresetId, setAppliedPresetId] = useState<string | null>(() => {
+    return localStorage.getItem("hrms_active_preset_id")
+  })
+  const [deletePresetId, setDeletePresetId] = useState<string | null>(null)
+
+  // Load presets from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("hrms_order_filter_presets")
+    if (saved) {
+      try {
+        setPresets(JSON.parse(saved))
+      } catch (e) {
+        console.error("Failed to parse filter presets", e)
+      }
+    }
+  }, [])
+
+  // Save presets to localStorage
+  const savePresetsToStorage = (newPresets: FilterPreset[]) => {
+    setPresets(newPresets)
+    localStorage.setItem("hrms_order_filter_presets", JSON.stringify(newPresets))
+  }
+
+  // Save active filters to localStorage on change
+  useEffect(() => {
+    const activeFilters = {
+      year,
+      employee: filterEmployee,
+      orderTypes: filterOrderTypes,
+      orderNumber: filterOrderNumber,
+      dateFrom: filterDateFrom,
+      dateTo: filterDateTo,
+      letter: filterLetter,
+      ls: filterLS,
+      showGeneral: filterShowGeneral,
+    }
+    localStorage.setItem("hrms_active_filters", JSON.stringify(activeFilters))
+  }, [
+    year,
+    filterEmployee,
+    filterOrderTypes,
+    filterOrderNumber,
+    filterDateFrom,
+    filterDateTo,
+    filterLetter,
+    filterLS,
+    filterShowGeneral,
+  ])
+
+  const handleSavePresetConfirm = () => {
+    if (!newPresetName.trim()) return
+
+    const newPresetId = Date.now().toString()
+    const newPreset: FilterPreset = {
+      id: newPresetId,
+      name: newPresetName.trim(),
+      filters: {
+        year,
+        employee: filterEmployee,
+        orderTypes: filterOrderTypes,
+        orderNumber: filterOrderNumber,
+        dateFrom: filterDateFrom,
+        dateTo: filterDateTo,
+        letter: filterLetter,
+        ls: filterLS,
+        showGeneral: filterShowGeneral,
+      },
+    }
+
+    savePresetsToStorage([...presets, newPreset])
+    setNewPresetName("")
+    setIsSavingPreset(false)
+    setAppliedPresetId(newPresetId)
+    localStorage.setItem("hrms_active_preset_id", newPresetId)
+  }
+
+  const handleSavePresetCancel = () => {
+    setNewPresetName("")
+    setIsSavingPreset(false)
+  }
+
+  const handleApplyPreset = (preset: FilterPreset) => {
+    setYear(preset.filters.year)
+    setFilterEmployee(preset.filters.employee)
+    setFilterOrderTypes(preset.filters.orderTypes || [])
+    setFilterOrderNumber(preset.filters.orderNumber || "")
+    setFilterDateFrom(preset.filters.dateFrom || "")
+    setFilterDateTo(preset.filters.dateTo || "")
+    setFilterLetter(preset.filters.letter)
+    setFilterLS(preset.filters.ls || false)
+    setFilterShowGeneral(preset.filters.showGeneral || false)
+    setAppliedPresetId(preset.id)
+    localStorage.setItem("hrms_active_preset_id", preset.id)
+  }
+
+  const handleDeletePresetClick = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDeletePresetId(id)
+  }
+
+  const handleConfirmDeletePreset = () => {
+    if (!deletePresetId) return
+    const filtered = presets.filter((p) => p.id !== deletePresetId)
+    savePresetsToStorage(filtered)
+    if (appliedPresetId === deletePresetId) {
+      setAppliedPresetId(null)
+      localStorage.removeItem("hrms_active_preset_id")
+    }
+    setDeletePresetId(null)
+  }
+
+  const toggleFilterOrderType = (type: OrderType) => {
+    setFilterOrderTypes((prev) =>
+      prev.some((t) => t.id === type.id)
+        ? prev.filter((t) => t.id !== type.id)
+        : [...prev, type]
+    )
+  }
+
+  const presetFiltersMatch = (preset: FilterPreset) => {
+    return (
+      year === preset.filters.year &&
+      filterEmployee?.id === preset.filters.employee?.id &&
+      filterOrderNumber === preset.filters.orderNumber &&
+      filterDateFrom === preset.filters.dateFrom &&
+      filterDateTo === preset.filters.dateTo &&
+      filterLetter === preset.filters.letter &&
+      filterLS === preset.filters.ls &&
+      filterShowGeneral === preset.filters.showGeneral &&
+      filterOrderTypes.length === (preset.filters.orderTypes || []).length &&
+      filterOrderTypes.every((t) =>
+        (preset.filters.orderTypes || []).some((pt) => pt.id === t.id)
+      )
+    )
+  }
+
+  const isPresetActive = (preset: FilterPreset) => {
+    return appliedPresetId === preset.id && presetFiltersMatch(preset)
+  }
+
+  // Auto reset appliedPresetId if filters change manually
+  useEffect(() => {
+    if (!appliedPresetId) return
+    const activePreset = presets.find((p) => p.id === appliedPresetId)
+    if (!activePreset || !presetFiltersMatch(activePreset)) {
+      setAppliedPresetId(null)
+      localStorage.removeItem("hrms_active_preset_id")
+    }
+  }, [
+    year,
+    filterEmployee,
+    filterOrderTypes,
+    filterOrderNumber,
+    filterDateFrom,
+    filterDateTo,
+    filterLetter,
+    filterLS,
+    filterShowGeneral,
+    presets,
+    appliedPresetId,
+  ])
 
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [selectedOrderTypeId, setSelectedOrderTypeId] = useState<number | null>(null)
@@ -155,7 +358,7 @@ export function OrdersPage() {
     page: 1,
     per_page: 1000,
     year,
-    order_type_code: filterOrderType?.code,
+    order_type_code: filterOrderTypes.length > 0 ? filterOrderTypes.map((t) => t.code).join(",") : undefined,
     order_letter: filterLetter,
     employee_id: debouncedFilterEmployeeId ?? undefined,
     date_from: filterDateFrom || undefined,
@@ -199,9 +402,136 @@ export function OrdersPage() {
     }
   }, [data, filterLS, filterShowGeneral])
 
+  const sortDefs: ColumnSortDef<Order, string>[] = useMemo(() => [
+    { field: "order_number", getSortValue: (o) => o.order_number },
+    { field: "order_type_name", getSortValue: (o) => o.order_type_name },
+    {
+      field: "employee_name",
+      getSortValue: (order) => {
+        if (order.is_group && order.group_employees && order.group_employees.length > 0) {
+          const names = order.group_employees.map(e => e.employee_full_name).filter(Boolean)
+          if (names.length > 0) {
+            names.sort((a, b) => a.localeCompare(b, "ru"))
+            return names[0]
+          }
+        }
+        return order.employee_name ?? ""
+      }
+    },
+    { field: "order_date", getSortValue: (o) => o.order_date },
+    { field: "created_date", getSortValue: (o) => o.created_date ?? "" },
+  ], [])
+
+  const localFilterPredicate = useMemo(() => {
+    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
+    if (!hasFilters) return null
+    return (row: Order) => {
+      for (const [field, selected] of Object.entries(columnFilters)) {
+        if (selected && selected.size > 0) {
+          let val = ""
+          if (field === "order_number") val = row.order_number
+          else if (field === "order_type_name") val = row.order_type_name
+          else if (field === "employee_name") {
+            if (row.is_group && row.group_employees) {
+              const hasMatchingEmployee = row.group_employees.some(e => selected.has(e.employee_full_name))
+              if (!hasMatchingEmployee) return false
+              continue
+            } else {
+              val = row.employee_name ?? "—"
+            }
+          }
+          else if (field === "order_date") val = row.order_date ? new Date(row.order_date).toISOString().split("T")[0] : ""
+          else if (field === "created_date") val = row.created_date ? new Date(row.created_date).toISOString().split("T")[0] : ""
+          
+          if (!selected.has(val)) return false
+        }
+      }
+      return true
+    }
+  }, [columnFilters])
+
+  const engineResult = useTableQueryEngine({
+    rows: filteredData?.items ?? [],
+    getId: (o) => o.id,
+    searchQuery: "",
+    filterPredicate: localFilterPredicate,
+    sortConfigs,
+    sortDefs,
+  })
+  const displayOrders = engineResult.rows
+
+  const getDisplayGroupEmployees = (order: Order) => {
+    if (!order.group_employees) return []
+    
+    // 1. Filter by employee_name if active
+    const selectedNames = columnFilters.employee_name
+    let filtered = order.group_employees
+    if (selectedNames && selectedNames.size > 0) {
+      filtered = filtered.filter(e => selectedNames.has(e.employee_full_name))
+    }
+    
+    // 2. Sort by employee_name if active
+    const empSort = sortConfigs.find(s => s.field === "employee_name")
+    if (empSort) {
+      const sorted = [...filtered].sort((a, b) => {
+        const nameA = a.employee_full_name ?? ""
+        const nameB = b.employee_full_name ?? ""
+        return nameA.localeCompare(nameB, "ru")
+      })
+      if (empSort.order === "desc") {
+        sorted.reverse()
+      }
+      return sorted
+    }
+    
+    return filtered
+  }
+
+  const uniqueValues = useMemo(() => {
+    const items = filteredData?.items ?? []
+    const employeeNames = new Set<string>()
+    items.forEach(o => {
+      if (o.is_group && o.group_employees) {
+        o.group_employees.forEach(e => {
+          if (e.employee_full_name) employeeNames.add(e.employee_full_name)
+        })
+      } else if (o.employee_name) {
+        employeeNames.add(o.employee_name)
+      }
+    })
+    return {
+      order_number: [...new Set(items.map(o => o.order_number))],
+      order_type_name: [...new Set(items.map(o => o.order_type_name))],
+      employee_name: [...employeeNames].sort((a, b) => a.localeCompare(b, "ru")),
+      order_date: [...new Set(items.map(o => o.order_date ? new Date(o.order_date).toISOString().split("T")[0] : ""))].filter(Boolean),
+      created_date: [...new Set(items.map(o => o.created_date ? new Date(o.created_date).toISOString().split("T")[0] : ""))].filter(Boolean),
+    }
+  }, [filteredData])
+
   const { data: years } = useOrderYears()
   const { data: orderTypes = [] } = useOrderTypes(true)
+  const { data: allOrderTypes = [] } = useAllOrderTypes()
   const generalOrderType = orderTypes.find(t => t.code === "general_order") ?? null
+
+  const availableTypes = useMemo(() => {
+    return allOrderTypes.filter((t) => t.code !== "general_order" && t.show_in_orders_page)
+  }, [allOrderTypes])
+
+  const otherTypes = useMemo(() => {
+    return allOrderTypes.filter((t) => t.code !== "general_order" && !t.show_in_orders_page)
+  }, [allOrderTypes])
+
+  const filteredAvailable = useMemo(() => {
+    return availableTypes.filter((t) =>
+      t.name.toLowerCase().includes(filterOrderTypeSearch.toLowerCase())
+    )
+  }, [availableTypes, filterOrderTypeSearch])
+
+  const filteredOther = useMemo(() => {
+    return otherTypes.filter((t) =>
+      t.name.toLowerCase().includes(filterOrderTypeSearch.toLowerCase())
+    )
+  }, [otherTypes, filterOrderTypeSearch])
   const createMutation = useCreateOrder()
   const createDraftMutation = useCreateOrderDraft()
   const commitDraftMutation = useCommitOrderDraft()
@@ -474,7 +804,7 @@ export function OrdersPage() {
   const activeFilterCount = useMemo(() => {
     let count = 0
     if (filterEmployee) count++
-    if (filterOrderType) count++
+    if (filterOrderTypes.length > 0) count++
     if (filterOrderNumber) count++
     if (filterDateFrom) count++
     if (filterDateTo) count++
@@ -482,11 +812,11 @@ export function OrdersPage() {
     if (filterLetter) count++
     if (filterLS) count++
     return count
-  }, [filterEmployee, filterOrderType, filterOrderNumber, filterDateFrom, filterDateTo, year, filterLetter, filterLS])
+  }, [filterEmployee, filterOrderTypes, filterOrderNumber, filterDateFrom, filterDateTo, year, filterLetter, filterLS])
 
   const clearFilters = () => {
     setFilterEmployee(null)
-    setFilterOrderType(null)
+    setFilterOrderTypes([])
     setFilterOrderTypeSearch("")
     setFilterOrderNumber("")
     setFilterDateFrom("")
@@ -495,6 +825,8 @@ export function OrdersPage() {
     setFilterLetter(undefined)
     setFilterLS(false)
     setFilterShowGeneral(false)
+    setAppliedPresetId(null)
+    localStorage.removeItem("hrms_active_preset_id")
   }
 
   // Close filter type dropdown on outside click
@@ -803,21 +1135,94 @@ export function OrdersPage() {
       {activeTab === "all" && (
       <div className="border rounded-lg bg-card">
         <div
-          className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
+          className="flex items-center justify-between px-4 py-3 cursor-pointer select-none flex-wrap gap-4"
           onClick={() => setFilterCollapsed(!filterCollapsed)}
         >
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-medium">Фильтры</h2>
-            {activeFilterCount > 0 && (
-              <Badge variant="secondary" className="text-xs">{activeFilterCount}</Badge>
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-medium">Фильтры</h2>
+              {activeFilterCount > 0 && (
+                <Badge variant="secondary" className="text-xs">{activeFilterCount}</Badge>
+              )}
+            </div>
+
+            {/* Filter Presets in header */}
+            <div className="flex items-center gap-2 text-xs flex-wrap" onClick={(e) => e.stopPropagation()}>
+              <span className="text-muted-foreground font-medium hidden sm:inline">Шаблоны:</span>
+              {presets.map((preset) => (
+                <Badge
+                  key={preset.id}
+                  variant={isPresetActive(preset) ? "default" : "outline"}
+                  className="cursor-pointer hover:opacity-90 py-0.5 px-2 flex items-center gap-1 border-dashed"
+                  onClick={() => {
+                    if (isPresetActive(preset)) {
+                      clearFilters()
+                    } else {
+                      handleApplyPreset(preset)
+                    }
+                  }}
+                >
+                  <span>{preset.name}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeletePresetClick(preset.id, e)}
+                    className="text-muted-foreground hover:text-destructive rounded-full p-0.5"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </Badge>
+              ))}
+              {isSavingPreset ? (
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <Input
+                    placeholder="Название..."
+                    value={newPresetName}
+                    onChange={(e) => setNewPresetName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSavePresetConfirm()
+                      if (e.key === "Escape") handleSavePresetCancel()
+                    }}
+                    className="h-6 w-28 text-[10px] px-1.5 focus-visible:ring-1 focus-visible:ring-offset-0"
+                    autoFocus
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-green-600 hover:text-green-700 hover:bg-green-50 p-0"
+                    onClick={handleSavePresetConfirm}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-red-500 hover:text-red-700 hover:bg-red-50 p-0"
+                    onClick={handleSavePresetCancel}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 border-dashed text-[10px] px-2 flex items-center gap-0.5"
+                  onClick={() => setIsSavingPreset(true)}
+                >
+                  Сохранить
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center">
+            {filterCollapsed ? (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
             )}
           </div>
-          {filterCollapsed ? (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
         </div>
 
         {!filterCollapsed && (
@@ -850,43 +1255,90 @@ export function OrdersPage() {
                 </div>
               </div>
 
-              <div className="w-[220px]" ref={filterOrderTypeRef}>
-                <label className="text-sm font-medium">Тип приказа</label>
-                <div className="mt-1 relative">
-                  {filterOrderType ? (
-                    <div className="flex items-center gap-2 border rounded-md px-3 py-2 bg-muted/50 h-10 text-sm">
-                      <Check className="h-4 w-4 text-green-600 shrink-0" />
-                      <span className="flex-1 truncate">{filterOrderType.name}</span>
-                      <button type="button" onClick={() => { setFilterOrderType(null); setFilterOrderTypeSearch(""); }} className="shrink-0 text-muted-foreground hover:text-foreground">
+              <div className="flex items-end gap-3 flex-wrap" ref={filterOrderTypeRef}>
+                <div className="w-[220px]">
+                  <label className="text-sm font-medium">Тип приказа</label>
+                  <div className="mt-1 relative">
+                    <Input
+                      placeholder={filterOrderTypes.length > 0 ? `Выбрано: ${filterOrderTypes.length}` : "Выберите тип..."}
+                      value={filterOrderTypeSearch}
+                      onChange={(e) => { setFilterOrderTypeSearch(e.target.value); setFilterOrderTypeOpen(true); }}
+                      onFocus={() => setFilterOrderTypeOpen(true)}
+                      className="h-10 text-sm pr-8"
+                    />
+                    {filterOrderTypes.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => { setFilterOrderTypes([]); setFilterOrderTypeSearch(""); }}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
                         <X className="h-4 w-4" />
                       </button>
-                    </div>
-                  ) : (
-                    <>
-                      <Input
-                        placeholder="Выберите тип..."
-                        value={filterOrderTypeSearch}
-                        onChange={(e) => { setFilterOrderTypeSearch(e.target.value); setFilterOrderTypeOpen(true); }}
-                        onFocus={() => setFilterOrderTypeOpen(true)}
-                        className="h-10 text-sm"
-                      />
-                      {filterOrderTypeOpen && (
-                        <div className="absolute z-50 mt-1 w-full border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
-                          {orderTypes.filter((t) => t.code !== "general_order" && t.name.toLowerCase().includes(filterOrderTypeSearch.toLowerCase())).map((t) => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0"
-                              onClick={() => { setFilterOrderType(t); setFilterOrderTypeSearch(t.name); setFilterOrderTypeOpen(false); }}
-                            >
-                              {t.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
+                    )}
+                    {filterOrderTypeOpen && (filteredAvailable.length > 0 || filteredOther.length > 0) && (
+                      <div className="absolute z-50 mt-1 w-[220px] border rounded-md bg-popover shadow-md max-h-60 overflow-y-auto">
+                        {filteredAvailable.length > 0 && (
+                          <>
+                            <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/30">
+                              Основные (доступные на странице)
+                            </div>
+                            {filteredAvailable.map((t) => {
+                              const isSelected = filterOrderTypes.some((item) => item.id === t.id)
+                              return (
+                                <button
+                                  key={t.id}
+                                  type="button"
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0 flex items-center justify-between"
+                                  onClick={() => toggleFilterOrderType(t)}
+                                >
+                                  <span>{t.name}</span>
+                                  {isSelected && <Check className="h-4 w-4 text-green-600 shrink-0 ml-2" />}
+                                </button>
+                              )
+                            })}
+                          </>
+                        )}
+                        {filteredOther.length > 0 && (
+                          <>
+                            <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/30 border-t">
+                              Другие типы (создаются в других разделах)
+                            </div>
+                            {filteredOther.map((t) => {
+                              const isSelected = filterOrderTypes.some((item) => item.id === t.id)
+                              return (
+                                <button
+                                  key={t.id}
+                                  type="button"
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b last:border-b-0 flex items-center justify-between"
+                                  onClick={() => toggleFilterOrderType(t)}
+                                >
+                                  <span>{t.name}</span>
+                                  {isSelected && <Check className="h-4 w-4 text-green-600 shrink-0 ml-2" />}
+                                </button>
+                              )
+                            })}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
+                {filterOrderTypes.length > 0 && (
+                  <div className="flex flex-wrap gap-1 items-center max-w-[400px] mb-1">
+                    {filterOrderTypes.map((type) => (
+                      <Badge key={type.id} variant="secondary" className="flex items-center gap-1 pr-1.5 py-0.5 text-xs whitespace-nowrap">
+                        {type.name}
+                        <button
+                          type="button"
+                          onClick={() => toggleFilterOrderType(type)}
+                          className="text-muted-foreground hover:text-foreground rounded-full p-0.5"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -926,6 +1378,7 @@ export function OrdersPage() {
 
               <Button variant="outline" size="sm" onClick={clearFilters} className="ml-auto">Сбросить фильтры</Button>
             </div>
+
           </div>
         )}
       </div>
@@ -996,7 +1449,7 @@ export function OrdersPage() {
               <Skeleton key={i} className="h-8 w-full" />
             ))}
           </div>
-        ) : !filteredData?.items?.length ? (
+        ) : !displayOrders?.length ? (
           <EmptyState
             message="Приказы не найдены"
             description="Создайте первый приказ или измените фильтры"
@@ -1005,44 +1458,126 @@ export function OrdersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>№</TableHead>
-                <TableHead>Тип</TableHead>
-                <TableHead>Сотрудник</TableHead>
-                <TableHead>Дата приказа</TableHead>
-                <TableHead>Дата создания</TableHead>
+                <TableHead>
+                  <SortableFilterHeader
+                    field="order_number"
+                    label="№"
+                    currentSorts={sortConfigs}
+                    onSortChange={(field) => setSortConfigs(prev => nextMultiSortConfigs(prev, field, "desc"))}
+                    values={uniqueValues.order_number}
+                    selectedValues={columnFilters.order_number ?? new Set()}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  />
+                </TableHead>
+                <TableHead>
+                  <SortableFilterHeader
+                    field="order_type_name"
+                    label="Тип"
+                    currentSorts={sortConfigs}
+                    onSortChange={(field) => setSortConfigs(prev => nextMultiSortConfigs(prev, field, "asc"))}
+                    values={uniqueValues.order_type_name}
+                    selectedValues={columnFilters.order_type_name ?? new Set()}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  />
+                </TableHead>
+                <TableHead>
+                  <SortableFilterHeader
+                    field="employee_name"
+                    label="Сотрудник"
+                    currentSorts={sortConfigs}
+                    onSortChange={(field) => setSortConfigs(prev => nextMultiSortConfigs(prev, field, "asc"))}
+                    values={uniqueValues.employee_name}
+                    selectedValues={columnFilters.employee_name ?? new Set()}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  />
+                </TableHead>
+                <TableHead>
+                  <SortableFilterHeader
+                    field="order_date"
+                    label="Дата приказа"
+                    currentSorts={sortConfigs}
+                    onSortChange={(field) => setSortConfigs(prev => nextMultiSortConfigs(prev, field, "desc"))}
+                    values={uniqueValues.order_date}
+                    selectedValues={columnFilters.order_date ?? new Set()}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    valueLabel={(val) => {
+                      if (!val) return "—"
+                      const parts = val.split("-")
+                      if (parts.length !== 3) return val
+                      const [y, m, d] = parts
+                      return `${d}.${m}.${y}`
+                    }}
+                  />
+                </TableHead>
+                <TableHead>
+                  <SortableFilterHeader
+                    field="created_date"
+                    label="Дата создания"
+                    currentSorts={sortConfigs}
+                    onSortChange={(field) => setSortConfigs(prev => nextMultiSortConfigs(prev, field, "desc"))}
+                    values={uniqueValues.created_date}
+                    selectedValues={columnFilters.created_date ?? new Set()}
+                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    valueLabel={(val) => {
+                      if (!val) return "—"
+                      const parts = val.split("-")
+                      if (parts.length !== 3) return val
+                      const [y, m, d] = parts
+                      return `${d}.${m}.${y}`
+                    }}
+                  />
+                </TableHead>
                 <TableHead className="text-right">Действия</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.items.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell className="font-mono text-sm">{order.order_number}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={ORDER_TYPE_BADGE_COLORS[order.order_type_name] || ""}
-                    >
-                      {order.order_type_name}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-medium">{order.employee_name || "—"}</TableCell>
-                  <TableCell>
-                    {order.order_date ? (() => { const d = new Date(order.order_date); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` })() : "—"}
-                  </TableCell>
-                  <TableCell>
-                    {order.created_date ? (() => { const d = new Date(order.created_date); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` })() : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" title="Просмотр DOCX" onClick={() => openOrderView(order.id)}><Eye className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" title="Редактировать DOCX" onClick={() => openOrderEdit(order.id)}><FilePen className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" title="Печать" onClick={() => openOrderPrint(order.id)}><Printer className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => downloadOrderDocx(order.id)}><Download className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" title="Удалить приказ" onClick={() => setDeleteOrderId(order.id)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {displayOrders.map((order) => {
+                const isGroup = order.is_group
+                return (
+                  <Fragment key={order.id}>
+                    <TableRow>
+                      <TableCell className="font-mono text-sm">{order.order_number}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={ORDER_TYPE_BADGE_COLORS[order.order_type_name] || ""}
+                        >
+                          {order.order_type_name}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {isGroup ? (
+                          <span className="font-medium">Групповой приказ — {order.group_employee_count || 0} сотрудников</span>
+                        ) : (
+                          order.employee_name || "—"
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {order.order_date ? (() => { const d = new Date(order.order_date); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` })() : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {order.created_date ? (() => { const d = new Date(order.created_date); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}` })() : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" title="Просмотр DOCX" onClick={() => openOrderView(order.id)}><Eye className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" title="Редактировать DOCX" onClick={() => openOrderEdit(order.id)}><FilePen className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" title="Печать" onClick={() => openOrderPrint(order.id)}><Printer className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => downloadOrderDocx(order.id)}><Download className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" title="Удалить приказ" onClick={() => setDeleteOrderId(order.id)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {isGroup && order.group_employees && (
+                      <GroupOrderEmployeesRows
+                        employees={getDisplayGroupEmployees(order)}
+                        type="orders"
+                        orderNumber={order.order_number}
+                      />
+                    )}
+                  </Fragment>
+                )
+              })}
             </TableBody>
           </Table>
         )
@@ -1130,6 +1665,23 @@ export function OrdersPage() {
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteOrderConfirm} className="bg-red-600 hover:bg-red-700">
               Удалить навсегда
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deletePresetId !== null} onOpenChange={(open) => !open && setDeletePresetId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить шаблон фильтров?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы действительно хотите удалить шаблон &quot;{presets.find(p => p.id === deletePresetId)?.name}&quot;? Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDeletePreset} className="bg-red-600 hover:bg-red-700">
+              Удалить
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
