@@ -19,6 +19,10 @@ class UTF8FileResponse(FileResponse):
         media_type: str | None = None,
         **kwargs,
     ):
+        if filename:
+            if not filename.lower().endswith(".docx"):
+                filename = f"{filename}.docx"
+            filename = filename.replace('"', "'")
         self.utf8_filename = filename
         super().__init__(path=path, filename=filename, media_type=media_type, **kwargs)
 
@@ -26,19 +30,19 @@ class UTF8FileResponse(FileResponse):
         super().init_headers(headers)
         if self.utf8_filename:
             encoded = urllib.parse.quote(self.utf8_filename)
-            # Override Content-Disposition with RFC 5987 UTF-8 encoding
-            # Set raw bytes to bypass Starlette's latin-1 encoding
-            self.headers.raw.append(
-                (
-                    b"content-disposition",
-                    f'attachment; filename="{self.utf8_filename}"; filename*=UTF-8\'\'{encoded}'.encode("utf-8"),
-                )
-            )
-            # Remove the latin-1 encoded version that super() added
-            keys_to_remove = [k for k in self.headers if k.lower() == "content-disposition"]
-            if len(keys_to_remove) > 1:
-                for k in keys_to_remove[:-1]:
-                    del self.headers[k]
+            
+            header_value = f'attachment; filename="{self.utf8_filename}"; filename*=UTF-8\'\'{encoded}'.encode("utf-8")
+            
+            # Find and replace the content-disposition header in raw list to bypass latin-1 encoding
+            found = False
+            for i, (k, v) in enumerate(self.headers.raw):
+                if k.lower() == b"content-disposition":
+                    self.headers.raw[i] = (b"content-disposition", header_value)
+                    found = True
+                    break
+            
+            if not found:
+                self.headers.raw.append((b"content-disposition", header_value))
 
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -596,7 +596,7 @@ class OrderService:
 
             storage_name = f"prikaz_{order_number}_vacation_unpaid_group_{common_start.strftime('%Y-%m-%d')}.docx"
             dest_path = year_dir / storage_name
-            display_name = f"Приказ №{order_number} от {order_date.strftime('%d.%m.%Y')} — отпуск за свой счет (групповой, {len(employee_rows)} сотр.)"
+            display_name = f"Приказ №{order_number} от {order_date.strftime('%d.%m.%Y')} — отпуск за свой счет (групповой, {len(employee_rows)} сотр.).docx"
 
         elif order_type_code == "weekend_call_group":
             mode = payload.get("mode", "single")
@@ -613,7 +613,7 @@ class OrderService:
 
             storage_name = f"prikaz_{order_number}_weekend_call_group_{call_start.strftime('%Y-%m-%d')}.docx"
             dest_path = year_dir / storage_name
-            display_name = f"Приказ №{order_number} от {order_date.strftime('%d.%m.%Y')} — вызов в выходной (групповой, {len(employee_rows)} сотр.)"
+            display_name = f"Приказ №{order_number} от {order_date.strftime('%d.%m.%Y')} — вызов в выходной (групповой, {len(employee_rows)} сотр.).docx"
 
         else:
             raise HRMSException(f"Неподдерживаемый тип группового приказа: {order_type_code}", "unsupported_group_type", status_code=400)

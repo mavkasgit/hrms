@@ -479,7 +479,7 @@ async def generate_group_document(
 ) -> tuple[str, str]:
     """Generate DOCX for a group order using the group template."""
     storage_name = f"prikaz_{order_number}_vacation_unpaid_group_{data.vacation_start.strftime('%Y-%m-%d')}.docx"
-    display_name = f"Приказ №{order_number} от {data.order_date.strftime('%d.%m.%Y')} — отпуск за свой счет (групповой, {len(employee_rows)} сотр.)"
+    display_name = f"Приказ №{order_number} от {data.order_date.strftime('%d.%m.%Y')} — отпуск за свой счет (групповой, {len(employee_rows)} сотр.).docx"
     file_path = year_dir / storage_name
 
     await render_vacation_unpaid_group_docx(
@@ -571,7 +571,7 @@ async def generate_weekend_call_group_document(
         storage_name = f"prikaz_{order_number}_weekend_call_group_{call_start.strftime('%Y-%m-%d')}.docx"
         file_path = year_dir / storage_name
 
-    display_name = f"Приказ №{order_number} от {data.order_date.strftime('%d.%m.%Y')} — вызов в выходной (групповой, {len(employee_rows)} сотр.)"
+    display_name = f"Приказ №{order_number} от {data.order_date.strftime('%d.%m.%Y')} — вызов в выходной (групповой, {len(employee_rows)} сотр.).docx"
 
     await asyncio.wait_for(
         asyncio.to_thread(doc.save, str(file_path)),
