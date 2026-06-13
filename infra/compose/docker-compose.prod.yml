@@ -37,7 +37,7 @@ services:
     restart: always
 
   backend:
-    build: ../../backend
+    image: ghcr.io/mavkasgit/hrms-backend:latest
     container_name: hrms-backend-prod
     expose:
       - "8000"
@@ -72,7 +72,7 @@ services:
     restart: always
 
   frontend:
-    build: ../../frontend
+    image: ghcr.io/mavkasgit/hrms-frontend:latest
     container_name: hrms-frontend-prod
     expose:
       - "80"
@@ -85,9 +85,12 @@ services:
     image: nginx:alpine
     container_name: hrms-nginx-prod
     ports:
-      - "80:80"
+      - "8081:80"
     volumes:
       - ../nginx/default.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - default
+      - shared_gateway
     depends_on:
       - frontend
       - backend
@@ -118,3 +121,7 @@ services:
     command: >
       tunnel --url http://127.0.0.1:80 --protocol http2 --no-autoupdate
     restart: unless-stopped
+
+networks:
+  shared_gateway:
+    external: true
