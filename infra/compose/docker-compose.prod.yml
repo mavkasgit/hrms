@@ -56,10 +56,16 @@ services:
       SECRET_KEY: ${SECRET_KEY:-hrms-prod-local-secret-change-before-real-production}
       ONLYOFFICE_ENABLED: "true"
       ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-prod-secret-change-before-real-production}
-      ONLYOFFICE_PUBLIC_URL: ${ONLYOFFICE_PUBLIC_URL:-${PUBLIC_URL}/onlyoffice}
+      # ONLYOFFICE_PUBLIC_URL: empty (will fall back to dynamic request host)
       ONLYOFFICE_INTERNAL_URL: ${ONLYOFFICE_INTERNAL_URL:-http://nginx/onlyoffice}
       BACKEND_INTERNAL_CALLBACK_URL: ${BACKEND_INTERNAL_CALLBACK_URL:-http://backend:8000}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://backend:8000}
+      HTTP_PROXY: ""
+      http_proxy: ""
+      HTTPS_PROXY: ""
+      https_proxy: ""
+      NO_PROXY: "*"
+      no_proxy: "*"
     depends_on:
       postgres:
         condition: service_healthy
