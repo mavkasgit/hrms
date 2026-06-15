@@ -74,10 +74,15 @@ export function SickLeavesPage() {
     }
   }, [sickLeavesData, page])
 
+  const prevNameFilterRef = useRef(nameFilter)
+
   // Reset on filter change
   useEffect(() => {
-    setPage(1)
-    setAllSickLeaves([])
+    if (prevNameFilterRef.current !== nameFilter) {
+      setPage(1)
+      setAllSickLeaves([])
+      prevNameFilterRef.current = nameFilter
+    }
   }, [nameFilter])
 
   // IntersectionObserver for infinite scroll
