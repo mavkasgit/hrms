@@ -42,8 +42,7 @@ class OnlyOfficeForceSaveRequest(BaseModel):
     document_key: str
 
 
-def _get_current_user_stub() -> str:
-    return "admin"
+from app.api.deps import get_current_user as _get_current_user_stub
 
 
 def _ensure_onlyoffice_enabled() -> None:

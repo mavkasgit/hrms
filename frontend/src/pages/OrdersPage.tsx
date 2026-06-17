@@ -53,6 +53,7 @@ import { ContractRegistryModal } from "@/pages/ContractRegistryPage"
 import type { Employee } from "@/entities/employee/types"
 import type { Order, OrderType } from "@/entities/order/types"
 import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { getUserAccessLevel } from "@/shared/api/axios"
 import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import {
@@ -116,6 +117,7 @@ function OrderDeletePreview({ orderId }: { orderId: number | null }) {
 }
 
 export function OrdersPage() {
+  const isViewer = getUserAccessLevel() === "viewer"
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
@@ -893,7 +895,7 @@ export function OrdersPage() {
         </div>
       </div>
 
-      {activeTab === "all" && (
+      {activeTab === "all" && !isViewer && (
       <div className="border rounded-lg bg-card">
         <div
           className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
@@ -1071,7 +1073,7 @@ export function OrdersPage() {
       )}
 
       {/* General order create form */}
-      {activeTab === "general" && (
+      {activeTab === "general" && !isViewer && (
       <div className="border rounded-lg bg-card">
         <div
           className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
@@ -1561,10 +1563,14 @@ export function OrdersPage() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" title="Просмотр DOCX" onClick={() => openOrderView(order.id)}><Eye className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" title="Редактировать DOCX" onClick={() => openOrderEdit(order.id)}><FilePen className="h-4 w-4" /></Button>
+                          {!isViewer && (
+                            <Button variant="ghost" size="icon" title="Редактировать DOCX" onClick={() => openOrderEdit(order.id)}><FilePen className="h-4 w-4" /></Button>
+                          )}
                           <Button variant="ghost" size="icon" title="Печать" onClick={() => openOrderPrint(order.id)}><Printer className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => downloadOrderDocx(order.id)}><Download className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="icon" title="Удалить приказ" onClick={() => setDeleteOrderId(order.id)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></Button>
+                          {!isViewer && (
+                            <Button variant="ghost" size="icon" title="Удалить приказ" onClick={() => setDeleteOrderId(order.id)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1625,10 +1631,14 @@ export function OrdersPage() {
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="icon" title="Просмотр DOCX" onClick={() => openOrderView(order.id)}><Eye className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" title="Редактировать DOCX" onClick={() => openOrderEdit(order.id)}><FilePen className="h-4 w-4" /></Button>
+                      {!isViewer && (
+                        <Button variant="ghost" size="icon" title="Редактировать DOCX" onClick={() => openOrderEdit(order.id)}><FilePen className="h-4 w-4" /></Button>
+                      )}
                       <Button variant="ghost" size="icon" title="Печать" onClick={() => openOrderPrint(order.id)}><Printer className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" title="Скачать приказ" onClick={() => downloadOrderDocx(order.id)}><Download className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" title="Удалить приказ" onClick={() => setDeleteOrderId(order.id)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></Button>
+                      {!isViewer && (
+                        <Button variant="ghost" size="icon" title="Удалить приказ" onClick={() => setDeleteOrderId(order.id)} className="text-red-500 hover:text-red-700"><Trash2 className="h-4 w-4" /></Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

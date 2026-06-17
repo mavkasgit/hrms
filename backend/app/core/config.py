@@ -11,7 +11,13 @@ class Settings(BaseSettings):
     DATABASE_URL_LOCAL: str = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_dev"
     ENV: str = "dev"
 
+    DEV_BYPASS_AUTH: bool = True
+
+    KTM2000_SYNC_URL: str = "http://localhost:8010/api/integration/sync-employee"
+    KTM2000_INTEGRATION_TOKEN: str = "ktm2000-integration-token-default"
+
     SECRET_KEY: str = "dev-secret-key-change-in-prod"
+    JWT_SECRET_KEY: str | None = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
     ORDERS_PATH: str = str(BASE_DIR / "data" / "orders")

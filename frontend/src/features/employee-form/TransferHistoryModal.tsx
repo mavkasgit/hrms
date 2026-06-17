@@ -32,9 +32,10 @@ interface TransferHistoryModalProps {
   transfers: EmployeeTransfer[]
   onSave: (transfers: EmployeeTransfer[]) => void
   employeeId?: number | null
+  isViewer?: boolean
 }
 
-export function TransferHistoryModal({ open, onOpenChange, transfers, onSave, employeeId }: TransferHistoryModalProps) {
+export function TransferHistoryModal({ open, onOpenChange, transfers, onSave, employeeId, isViewer = false }: TransferHistoryModalProps) {
   const [localTransfers, setLocalTransfers] = useState<EmployeeTransfer[]>([])
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [deleteIndex, setDeleteIndex] = useState<number | null>(null)
@@ -233,8 +234,8 @@ export function TransferHistoryModal({ open, onOpenChange, transfers, onSave, em
                       <div className="text-sm h-10 flex items-center">{getPositionName(t.old_position_id)}</div>
                       <div className="text-sm h-10 flex items-center">{getPositionName(t.new_position_id)}</div>
                       <div className="text-sm h-10 flex items-center">{t.reason || "—"}</div>
-                      {t._auto ? (
-                        <div className="h-10 w-10 flex items-center justify-center text-blue-400" title="Из приказа (нельзя изменить)">
+                      {t._auto || isViewer ? (
+                        <div className="h-10 w-10 flex items-center justify-center text-blue-400" title={isViewer ? "Только для чтения" : "Из приказа (нельзя изменить)"}>
                           <span className="text-sm">🔒</span>
                         </div>
                       ) : (
@@ -257,16 +258,20 @@ export function TransferHistoryModal({ open, onOpenChange, transfers, onSave, em
         </div>
 
         <DialogFooter className="gap-2">
-          <Button variant="outline" size="sm" onClick={addTransfer}>
-            <Plus className="mr-1 h-4 w-4" />
-            Добавить
-          </Button>
+          {!isViewer && (
+            <Button variant="outline" size="sm" onClick={addTransfer}>
+              <Plus className="mr-1 h-4 w-4" />
+              Добавить
+            </Button>
+          )}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
+            {isViewer ? "Закрыть" : "Отмена"}
           </Button>
-          <Button onClick={handleSave}>
-            Сохранить
-          </Button>
+          {!isViewer && (
+            <Button onClick={handleSave}>
+              Сохранить
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -26,8 +26,7 @@ XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 PDF_MEDIA_TYPE = "application/pdf"
 
 
-def _get_current_user_stub() -> str:
-    return "admin"
+from app.api.deps import get_current_user as _get_current_user_stub
 
 
 def _public_api_url(path: str) -> str:

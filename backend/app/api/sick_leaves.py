@@ -18,9 +18,7 @@ from app.models.sick_leave import SickLeaveStatus
 router = APIRouter(prefix="/sick-leaves", tags=["sick_leaves"])
 
 
-def _get_current_user_stub() -> str:
-    """Заглушка для получения текущего пользователя. TODO: заменить на реальную авторизацию."""
-    return "admin"
+from app.api.deps import get_current_user as _get_current_user_stub
 
 
 @router.get("/stats/employees", response_model=list[SickLeaveSummary])

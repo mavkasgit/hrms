@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { getUserAccessLevel } from "@/shared/api/axios"
 import { Button } from "@/shared/ui/button"
 
 import { Skeleton } from "@/shared/ui/skeleton"
@@ -49,17 +50,21 @@ function groupByCategory(tags: Tag[]): Record<string, Tag[]> {
 function TagChip({
   tag,
   onEdit,
+  isViewer = false,
 }: {
   tag: Tag
   onEdit: (tag: Tag) => void
+  isViewer?: boolean
 }) {
   const color = tag.color ?? "#94a3b8"
-
+ 
   return (
     <div
-      className="group/tag flex items-center gap-1.5 px-2.5 py-1.5 border rounded-md hover:bg-accent/50 transition-colors cursor-pointer"
+      className={`group/tag flex items-center gap-1.5 px-2.5 py-1.5 border rounded-md transition-colors ${
+        isViewer ? "cursor-default" : "cursor-pointer hover:bg-accent/50"
+      }`}
       style={{ borderColor: color + "60", backgroundColor: color + "08" }}
-      onClick={() => onEdit(tag)}
+      onClick={() => !isViewer && onEdit(tag)}
     >
       <div
         className="h-2 w-2 rounded-full flex-shrink-0"
@@ -109,6 +114,7 @@ function TagStats({ tags }: { tags: Tag[] }) {
 /* ───────── TagsPanel ───────── */
 
 export function TagsPanel() {
+  const isViewer = getUserAccessLevel() === "viewer"
   const { data: tags = [], isLoading } = useTags()
   const createTag = useCreateTag()
   const updateTag = useUpdateTag()
@@ -197,16 +203,18 @@ export function TagsPanel() {
           <TagIcon className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold tracking-tight">Теги</h3>
         </div>
-        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={openAdd}>
-          <Plus className="h-3 w-3 mr-1" />
-          Добавить
-        </Button>
+        {!isViewer && (
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={openAdd}>
+            <Plus className="h-3 w-3 mr-1" />
+            Добавить
+          </Button>
+        )}
       </div>
-
+ 
       <div className="flex-1 overflow-auto space-y-4 px-1 pb-4">
         {/* Статистика */}
         <TagStats tags={tags} />
-
+ 
         {/* Список тегов по категориям */}
         {tags.length === 0 ? (
           <div className="text-center py-6">
@@ -226,6 +234,7 @@ export function TagsPanel() {
                     key={tag.id}
                     tag={tag}
                     onEdit={openEdit}
+                    isViewer={isViewer}
                   />
                 ))}
               </div>

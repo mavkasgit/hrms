@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { FileText, Cake, ArrowRight, ScrollText, Database } from "lucide-react"
+import { FileText, Cake, ArrowRight, ScrollText, Database, Users } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { GlobalAuditLog } from "@/features/global-audit-log"
 
@@ -41,6 +41,26 @@ export function SettingsPage() {
 
         <div
           className="border rounded-lg p-4 hover:bg-accent/50 transition-colors cursor-pointer"
+          onClick={() => navigate("/templates")}
+        >
+          <div className="flex items-start gap-4">
+            <div className="p-2 rounded-md bg-primary/10">
+              <FileText className="h-5 w-5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold mb-1 flex items-center gap-2">
+                Шаблоны приказов
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </h3>
+              <p className="text-sm text-muted-foreground mb-3">
+                Управление шаблонами документов для создания приказов. Загрузка, редактирование и удаление шаблонов.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div
+          className="border rounded-lg p-4 hover:bg-accent/50 transition-colors cursor-pointer"
           onClick={() => navigate("/settings/backups")}
         >
           <div className="flex items-start gap-4">
@@ -61,19 +81,19 @@ export function SettingsPage() {
 
         <div
           className="border rounded-lg p-4 hover:bg-accent/50 transition-colors cursor-pointer"
-          onClick={() => navigate("/templates")}
+          onClick={() => navigate("/settings/users")}
         >
           <div className="flex items-start gap-4">
             <div className="p-2 rounded-md bg-primary/10">
-              <FileText className="h-5 w-5 text-primary" />
+              <Users className="h-5 w-5 text-primary" />
             </div>
             <div className="flex-1">
               <h3 className="font-semibold mb-1 flex items-center gap-2">
-                Шаблоны приказов
+                Пользователи
                 <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </h3>
               <p className="text-sm text-muted-foreground mb-3">
-                Управление шаблонами документов для создания приказов. Загрузка, редактирование и удаление шаблонов.
+                Управление пользователями кадровой системы для сквозной авторизации (SSO). Добавление, редактирование и привязка к сотрудникам.
               </p>
             </div>
           </div>
@@ -84,3 +104,4 @@ export function SettingsPage() {
     </div>
   )
 }
+

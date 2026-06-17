@@ -15,8 +15,7 @@ from app.repositories.references_repository import references_repository
 router = APIRouter(prefix="/references", tags=["references"])
 
 
-def _get_current_user_stub() -> str:
-    return "admin"
+from app.api.deps import get_current_user as _get_current_user_stub
 
 
 @router.get("/vacation-days-by-position", response_model=list[PositionVacationConfigResponse])

@@ -3,6 +3,7 @@ import { Button } from "@/shared/ui/button"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
+import { getUserAccessLevel } from "@/shared/api/axios"
 
 import {
   AlertDialog,
@@ -52,12 +53,14 @@ function EmployeeRowInline({
   onAssignTag,
   onUnassignTag,
   highlight,
+  disabled,
 }: {
   emp: { id: number; name: string; department?: string; tags: { id: number; name: string; color?: string }[] }
   allTags: { id: number; name: string; color?: string }[]
   onAssignTag: (employeeId: number, tagId: number) => void
   onUnassignTag: (employeeId: number, tagId: number) => void
   highlight?: boolean
+  disabled?: boolean
 }) {
   return (
     <div className={`flex items-center gap-2 py-1 px-2 text-sm rounded-md transition-colors ${
@@ -71,6 +74,7 @@ function EmployeeRowInline({
         onAssign={(tagId) => onAssignTag(emp.id, tagId)}
         onUnassign={(tagId) => onUnassignTag(emp.id, tagId)}
         align="end"
+        disabled={disabled}
       />
       {emp.department && (
         <Badge variant="secondary" className="text-[10px] flex-shrink-0">
@@ -93,6 +97,7 @@ function PositionTreeNode({
   expandedPositions,
   setExpandedPositions,
   searchQuery,
+  isViewer = false,
 }: {
   position: { id: number; name: string; color?: string; icon?: string; employee_count: number }
   employees: { id: number; name: string; department?: string; tags: { id: number; name: string; color?: string }[] }[]
@@ -103,6 +108,7 @@ function PositionTreeNode({
   expandedPositions: Set<number>
   setExpandedPositions: (fn: (prev: Set<number>) => Set<number>) => void
   searchQuery: string
+  isViewer?: boolean
 }) {
   const isExpanded = expandedPositions.has(position.id)
   const toggleExpand = () => {
@@ -113,23 +119,25 @@ function PositionTreeNode({
       return next
     })
   }
-
+ 
   const filteredEmployees = searchQuery
     ? employees.filter((e) => e.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : employees
   const hasEmployees = filteredEmployees.length > 0
   const showEmployees = searchQuery ? hasEmployees : isExpanded
-
+ 
   return (
     <div>
       {/* Строка должности */}
       <div
-        className="group/pos flex items-center gap-1.5 py-2 rounded-md hover:bg-accent/50 transition-colors cursor-pointer"
+        className={`group/pos flex items-center gap-1.5 py-2 rounded-md transition-colors ${
+          isViewer ? "cursor-default" : "cursor-pointer hover:bg-accent/50"
+        }`}
         style={{
           paddingLeft: "8px",
           backgroundColor: position.color ? position.color + "18" : undefined,
         }}
-        onClick={() => onEdit({ id: position.id, name: position.name, color: position.color, icon: position.icon })}
+        onClick={() => !isViewer && onEdit({ id: position.id, name: position.name, color: position.color, icon: position.icon })}
       >
         <button
           onClick={(e) => {
@@ -206,6 +214,7 @@ function PositionTreeNode({
                 onAssignTag={onAssignTag}
                 onUnassignTag={onUnassignTag}
                 highlight={isHighlighted}
+                disabled={isViewer}
               />
             )
           })}
@@ -218,6 +227,7 @@ function PositionTreeNode({
 /* ───────── PositionsTab ───────── */
 
 export function PositionsTab() {
+  const isViewer = getUserAccessLevel() === "viewer"
   const { data: positions = [], isLoading } = usePositions()
   const { data: departmentGraph } = useDepartmentGraph()
   const createPos = useCreatePosition()
@@ -396,12 +406,14 @@ export function PositionsTab() {
           <p className="text-sm text-muted-foreground">
             Должности — раскрывайте для просмотра сотрудников
           </p>
-          <Button size="sm" variant="outline" onClick={openAdd}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
-            Должность
-          </Button>
+          {!isViewer && (
+            <Button size="sm" variant="outline" onClick={openAdd}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Должность
+            </Button>
+          )}
         </div>
-
+ 
         {/* Поиск + раскрыть/скрыть */}
         <div className="flex gap-2 items-center">
           <div className="flex-1">
@@ -426,7 +438,7 @@ export function PositionsTab() {
           </Button>
         </div>
       </div>
-
+ 
       {/* Дерево должностей */}
       {positions.length === 0 ? (
         <EmptyState message="Нет должностей" description="Добавьте первую должность" />
@@ -444,6 +456,7 @@ export function PositionsTab() {
               expandedPositions={expandedPositions}
               setExpandedPositions={setExpandedPositions}
               searchQuery={searchQuery}
+              isViewer={isViewer}
             />
           ))}
         </div>

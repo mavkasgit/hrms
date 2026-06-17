@@ -19,8 +19,7 @@ router = APIRouter(prefix="/vacation-plans", tags=["vacation-plans"])
 VacationPlanResponseOrNone = Optional[VacationPlanResponse]
 
 
-def _get_current_user_stub() -> str:
-    return "admin"
+from app.api.deps import get_current_user as _get_current_user_stub
 
 
 @router.get("", response_model=list[VacationPlanResponse])

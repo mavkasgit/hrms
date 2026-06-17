@@ -96,8 +96,7 @@ class VacationDeletionPreview(BaseModel):
     warnings: list[str] = []
 
 
-def _get_current_user_stub() -> str:
-    return "admin"
+from app.api.deps import get_current_user as _get_current_user_stub
 
 
 @router.get("/employees-summary", response_model=list[EmployeeVacationSummary])

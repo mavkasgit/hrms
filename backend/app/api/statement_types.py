@@ -12,8 +12,7 @@ from app.services.template_variables_service import get_template_variables as ge
 router = APIRouter(prefix="/statement-types", tags=["statement-types"])
 
 
-def _get_current_user_stub() -> str:
-    return "admin"
+from app.api.deps import get_current_user as _get_current_user_stub
 
 
 @router.get("/standard-codes")

@@ -27,6 +27,7 @@ import { Archive, Trash2, RotateCcw, Building, Briefcase, CalendarClock, FileTex
 import { useDepartments, useCreateDepartment } from "@/entities/department"
 import { usePositions, useCreatePosition } from "@/entities/position"
 import { ComboboxCreate } from "@/shared/ui/combobox-create"
+import { getUserAccessLevel } from "@/shared/api/axios"
 import {
   Select,
   SelectContent,
@@ -66,6 +67,7 @@ const emptyForm: EmployeeCreate = {
 }
 
 export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps) {
+  const isViewer = getUserAccessLevel() === "viewer"
   const isEdit = !!employee
   const [form, setForm] = useState(isEdit ? employee : emptyForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -385,6 +387,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 value={form.name}
                 onChange={(e) => updateField("name", e.target.value)}
                 className={errors.name ? "border-red-500" : ""}
+                disabled={isViewer}
               />
               {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
             </div>
@@ -393,6 +396,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
               <Select
                 value={form.gender || ""}
                 onValueChange={(v: string) => updateField("gender", v || null)}
+                disabled={isViewer}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Не указан" />
@@ -408,6 +412,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 label="Дата рождения"
                 value={form.birth_date || ""}
                 onChange={(value) => updateField("birth_date", value || null)}
+                disabled={isViewer}
               />
             </div>
           </div>
@@ -419,6 +424,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 type="number"
                 value={form.tab_number ?? ""}
                 onChange={(e) => updateField("tab_number", e.target.value ? parseInt(e.target.value) : null)}
+                disabled={isViewer}
               />
             </div>
             <div>
@@ -432,6 +438,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                   placeholder="Выберите или создайте"
                   icon={<Briefcase className="h-4 w-4" />}
                   error={errors.position}
+                  disabled={isViewer}
                 />
               </div>
             </div>
@@ -446,6 +453,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                   placeholder="Выберите или создайте"
                   icon={<Building className="h-4 w-4" />}
                   error={errors.department}
+                  disabled={isViewer}
                 />
               </div>
             </div>
@@ -459,6 +467,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                   id="citizenship"
                   checked={form.citizenship}
                   onCheckedChange={(checked: boolean) => updateField("citizenship", checked === true)}
+                  disabled={isViewer}
                 />
                 <label htmlFor="citizenship" className="text-sm cursor-pointer">
                   Гражданство РБ
@@ -469,6 +478,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                   id="residency"
                   checked={form.residency}
                   onCheckedChange={(checked: boolean) => updateField("residency", checked === true)}
+                  disabled={isViewer}
                 />
                 <label htmlFor="residency" className="text-sm cursor-pointer">
                   Резидент РБ
@@ -479,6 +489,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                   id="pensioner"
                   checked={form.pensioner}
                   onCheckedChange={(checked: boolean) => updateField("pensioner", checked === true)}
+                  disabled={isViewer}
                 />
                 <label htmlFor="pensioner" className="text-sm cursor-pointer">
                   Пенсионер
@@ -495,6 +506,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                   value={form.hire_date || ""}
                   onChange={(value) => updateField("hire_date", value || null)}
                   className="w-[130px]"
+                  disabled={isViewer}
                 />
                 {employee && (
                   <Button
@@ -503,6 +515,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                     className="h-10 w-7 px-0 shrink-0 ml-0.5"
                     title="Корректировка рабочего года"
                     onClick={() => setShowAdjustmentDialog(true)}
+                    disabled={isViewer}
                   >
                     <CalendarClock className="h-4 w-4" />
                   </Button>
@@ -531,6 +544,10 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                   >
                     Приказ №{hireOrder.order_number} от {new Date(hireOrder.order_date).toLocaleDateString("ru-RU")}
                   </button>
+                ) : isViewer ? (
+                  <span className="text-xs text-muted-foreground leading-relaxed block w-full text-left">
+                    Приказ о приёме не добавлен
+                  </span>
                 ) : (
                   <button
                     type="button"
@@ -571,6 +588,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 <Select
                   value={form.payment_form || ""}
                   onValueChange={(v) => updateField("payment_form", v || null)}
+                  disabled={isViewer}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Не указана" />
@@ -590,6 +608,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                   value={form.hire_date || ""}
                   onChange={(value) => updateField("hire_date", value || null)}
                   className="w-[130px]"
+                  disabled={isViewer}
                 />
               </div>
               <div />
@@ -605,6 +624,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 <Select
                   value={form.payment_form || ""}
                   onValueChange={(v) => updateField("payment_form", v || null)}
+                  disabled={isViewer}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Не указана" />
@@ -625,7 +645,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 value={form.contract_number || ""}
                 onChange={(e) => updateField("contract_number", e.target.value || null)}
                 className="w-full h-10 py-2"
-                disabled={isEdit && employee?.contract_number_locked}
+                disabled={isViewer || (isEdit && employee?.contract_number_locked)}
                 placeholder={isEdit && employee?.contract_number_locked ? "Изменяется через приказ" : "—"}
               />
             </div>
@@ -637,6 +657,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 label="Начало контракта"
                 value={form.contract_start || ""}
                 onChange={(value) => updateField("contract_start", value || null)}
+                disabled={isViewer}
               />
             </div>
 
@@ -647,6 +668,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 label="Окончание контракта"
                 value={form.contract_end || ""}
                 onChange={(value) => updateField("contract_end", value || null)}
+                disabled={isViewer}
               />
             </div>
 
@@ -662,6 +684,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 value={form.rate ?? ""}
                 onChange={(e) => updateField("rate", e.target.value ? parseFloat(e.target.value) : null)}
                 className="w-full h-10 py-2"
+                disabled={isViewer}
               />
             </div>
 
@@ -672,6 +695,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
               <Select
                 value={form.employment_type || ""}
                 onValueChange={(v) => updateField("employment_type", v || null)}
+                disabled={isViewer}
               >
                 <SelectTrigger className="h-10">
                   <SelectValue placeholder="—" />
@@ -690,6 +714,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
               <Input
                 value={form.personal_number || ""}
                 onChange={(e) => updateField("personal_number", e.target.value || null)}
+                disabled={isViewer}
               />
             </div>
             <div>
@@ -697,6 +722,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
               <Input
                 value={form.insurance_number || ""}
                 onChange={(e) => updateField("insurance_number", e.target.value || null)}
+                disabled={isViewer}
               />
             </div>
             <div>
@@ -704,6 +730,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
               <Input
                 value={form.passport_number || ""}
                 onChange={(e) => updateField("passport_number", e.target.value || null)}
+                disabled={isViewer}
               />
             </div>
           </div>
@@ -711,7 +738,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
 
         <div className="border-t pt-2 flex items-center justify-between gap-4 shrink-0">
           <div className="flex gap-2">
-            {isEdit && employee && !employee.is_deleted && (
+            {!isViewer && isEdit && employee && !employee.is_deleted && (
               <>
                 {!employee.is_dismissed && (
                   <Button
@@ -756,9 +783,11 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
               Закрыть
             </Button>
-            <Button onClick={handleSubmit} disabled={isPending}>
-              {isPending ? "Сохранение..." : isEdit ? "Сохранить" : "Создать"}
-            </Button>
+            {!isViewer && (
+              <Button onClick={handleSubmit} disabled={isPending}>
+                {isPending ? "Сохранение..." : isEdit ? "Сохранить" : "Создать"}
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>
@@ -869,6 +898,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
       transfers={transfers}
       onSave={(newTransfers) => setTransfers(newTransfers)}
       employeeId={employee?.id}
+      isViewer={isViewer}
     />
   </>
   )

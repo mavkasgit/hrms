@@ -59,8 +59,7 @@ class HireOrderResponse(BaseModel):
 router = APIRouter(prefix="/employees", tags=["employees"])
 
 
-def _get_current_user_stub() -> str:
-    return "admin"
+from app.api.deps import get_current_user as _get_current_user_stub
 
 
 async def _load_employee_tags(db: AsyncSession, employee_ids: list[int]) -> dict[int, list[TagRef]]:

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { NavLink, useLocation } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
+import { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
 import {
   ChevronDown,
   ChevronRight,
@@ -12,8 +13,28 @@ import {
   Stethoscope,
   Settings,
   LogIn,
+  LogOut,
   Wrench,
 } from "lucide-react"
+
+function decodeToken(token: string) {
+  if (token === "admin") {
+    return { username: "admin", full_name: "Администратор" }
+  }
+  try {
+    const base64Url = token.split('.')[1]
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+    const jsonPayload = decodeURIComponent(
+      window.atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    )
+    return JSON.parse(jsonPayload)
+  } catch (e) {
+    return null
+  }
+}
 
 const topNavItems = [
   { to: "/", label: "Дашборд", icon: LayoutDashboard },
@@ -26,7 +47,7 @@ const topNavItems = [
 
 const bottomNavItems = [
   { to: "/settings", label: "Настройки", icon: Settings },
-  { to: "/dev", label: "Dev", icon: Wrench },
+  ...(import.meta.env.DEV ? [{ to: "/dev", label: "Dev", icon: Wrench }] : []),
 ]
 
 const absenceItems = [
@@ -42,6 +63,9 @@ export function Sidebar() {
     [location.pathname]
   )
   const [absenceOpen, setAbsenceOpen] = useState(false)
+
+  const token = getToken()
+  const user = token ? decodeToken(token) : null
 
   return (
     <aside className="w-64 h-screen sticky top-0 bg-card border-r flex flex-col shrink-0">
@@ -127,14 +151,38 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="p-3 border-t">
-        <NavLink
-          to="/login"
-          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-        >
-          <LogIn className="h-4 w-4" />
-          Вход
-        </NavLink>
+      <div className="p-3 border-t flex flex-col gap-2">
+        {user ? (
+          <>
+            <div className="px-3 py-1.5 text-xs text-muted-foreground break-all">
+              <div className="font-semibold text-foreground text-sm truncate">
+                {user.full_name || "Пользователь"}
+              </div>
+              {(user.username || user.sub) && (
+                <div className="text-[10px] text-muted-foreground mt-0.5">
+                  Логин: {user.username || user.sub}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={logout}
+              className="flex w-full items-center gap-3 px-3 py-2 rounded-md text-sm text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              <LogOut className="h-4 w-4" />
+              Выйти
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={redirectToKtmLogin}
+            className="flex w-full items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+          >
+            <LogIn className="h-4 w-4" />
+            Войти (SSO)
+          </button>
+        )}
       </div>
     </aside>
   )

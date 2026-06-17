@@ -4,6 +4,8 @@ import path from 'path'
 import fs from 'fs'
 
 export default defineConfig({
+  // Читаем .env-файлы из корня монорепозитория (где лежат .env.dev, .env.test, .env.prod)
+  envDir: '../',
   plugins: [
     react(),
     {

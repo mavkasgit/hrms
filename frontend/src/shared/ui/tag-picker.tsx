@@ -95,69 +95,73 @@ export function TagPicker({
         <Badge
           key={t.id}
           variant="outline"
-          className="text-[10px] h-5 px-1.5 cursor-pointer hover:bg-destructive/10 transition-colors gap-1 group/tag"
+          className={`text-[10px] h-5 px-1.5 gap-1 group/tag ${
+            disabled ? "" : "cursor-pointer hover:bg-destructive/10 transition-colors"
+          }`}
           style={{ borderColor: t.color, color: t.color }}
-          onClick={() => handleUnassign(t.id)}
-          title="Убрать тег"
+          onClick={() => !disabled && handleUnassign(t.id)}
+          title={disabled ? undefined : "Убрать тег"}
         >
           {t.name}
-          <X className="h-2.5 w-2.5 opacity-0 group-hover/tag:opacity-100 transition-opacity" />
+          {!disabled && <X className="h-2.5 w-2.5 opacity-0 group-hover/tag:opacity-100 transition-opacity" />}
         </Badge>
       ))}
 
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            disabled={disabled}
-            className="text-[11px] px-2.5 py-1 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            + Тег
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-64 p-2" align={align}>
-          <div className="relative mb-1">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Поиск тегов..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 pl-7 text-sm border-0 focus-visible:ring-0 focus-visible:ring-offset-0 bg-muted/50"
-              autoFocus
-            />
-            {search && (
-              <button
-                className="absolute right-2 top-1/2 -translate-y-1/2"
-                onClick={() => setSearch("")}
-              >
-                <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-              </button>
-            )}
-          </div>
-          <div className="max-h-[240px] overflow-y-auto">
-            {available.length === 0 ? (
-              <div className="px-2 py-3 text-xs text-muted-foreground text-center">
-                {search ? "Ничего не найдено" : "Все теги назначены"}
-              </div>
-            ) : (
-              available.map((t) => (
+      {!disabled && (
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <button
+              disabled={disabled}
+              className="text-[11px] px-2.5 py-1 rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-muted-foreground/60 hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              + Тег
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-2" align={align}>
+            <div className="relative mb-1">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Поиск тегов..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 pl-7 text-sm border-0 focus-visible:ring-0 focus-visible:ring-offset-0 bg-muted/50"
+                autoFocus
+              />
+              {search && (
                 <button
-                  key={t.id}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-accent/80 transition-colors group/item cursor-pointer"
-                  onClick={() => handleAssign(t.id)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2"
+                  onClick={() => setSearch("")}
                 >
-                  <TagDot color={t.color} />
-                  <span className="flex-1 text-left">{t.name}</span>
-                  <TagCounts
-                    emp={t.employee_count}
-                    dept={t.department_count}
-                  />
-                  <Plus className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/item:opacity-100 transition-opacity flex-shrink-0" />
+                  <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                 </button>
-              ))
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
+              )}
+            </div>
+            <div className="max-h-[240px] overflow-y-auto">
+              {available.length === 0 ? (
+                <div className="px-2 py-3 text-xs text-muted-foreground text-center">
+                  {search ? "Ничего не найдено" : "Все теги назначены"}
+                </div>
+              ) : (
+                available.map((t) => (
+                  <button
+                    key={t.id}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-accent/80 transition-colors group/item cursor-pointer"
+                    onClick={() => handleAssign(t.id)}
+                  >
+                    <TagDot color={t.color} />
+                    <span className="flex-1 text-left">{t.name}</span>
+                    <TagCounts
+                      emp={t.employee_count}
+                      dept={t.department_count}
+                    />
+                    <Plus className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/item:opacity-100 transition-opacity flex-shrink-0" />
+                  </button>
+                ))
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   )
 }

@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 import traceback
+import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from jose import jwt, JWTError
 
 from app.core.config import settings
 from app.core.database import async_session
@@ -34,6 +36,8 @@ from app.api.notification_types import router as notification_types_router
 from app.api.statements import router as statements_router
 from app.api.statement_types import router as statement_types_router
 from app.api.contract_history import router as contract_history_router
+from app.api.users import router as users_router
+from app.api.auth import router as auth_router
 
 
 @asynccontextmanager
@@ -58,6 +62,39 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def check_write_access_middleware(request: Request, call_next):
+    if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
+        path = request.url.path
+        if path.startswith("/api") and path != "/api/health":
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+                if token != "admin":
+                    try:
+                        secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
+                        payload = jwt.decode(token, secret_key, algorithms=[settings.ALGORITHM])
+                        exp = payload.get("exp")
+                        if exp and exp < time.time():
+                            return JSONResponse(
+                                status_code=401,
+                                content={"detail": "Token has expired"}
+                            )
+                        
+                        hrms_access_level = payload.get("hrms_access_level", "no_access")
+                        if hrms_access_level != "admin":
+                            return JSONResponse(
+                                status_code=403,
+                                content={"detail": "Доступ запрещен. У вас есть права только на просмотр данных."}
+                            )
+                    except JWTError:
+                        return JSONResponse(
+                            status_code=401,
+                            content={"detail": "Invalid or expired token"}
+                        )
+    response = await call_next(request)
+    return response
 
 app.add_exception_handler(HRMSException, hrms_exception_handler)
 
@@ -98,6 +135,9 @@ app.include_router(notification_types_router, prefix="/api")
 app.include_router(statements_router, prefix="/api")
 app.include_router(statement_types_router, prefix="/api")
 app.include_router(contract_history_router, prefix="/api")
+app.include_router(users_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
+
 
 
 @app.get("/api/health")

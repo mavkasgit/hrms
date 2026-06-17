@@ -4,6 +4,7 @@ import { Button } from "@/shared/ui/button"
 import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
 import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
+import { getUserAccessLevel } from "@/shared/api/axios"
 
 import { Alert, AlertDescription } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
@@ -53,6 +54,7 @@ function getGenderButtonClass(gender: string, active: boolean): string {
 }
 
 export function EmployeesPage() {
+  const isViewer = getUserAccessLevel() === "viewer"
   const [selectedStatuses, setSelectedStatuses] = useState<Set<"active" | "dismissed">>(new Set(["active"]))
   const [q, setQ] = useState("")
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -266,14 +268,18 @@ export function EmployeesPage() {
             <ScrollText className="mr-2 h-4 w-4" />
             Журнал
           </Button>
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
-            Импорт
-          </Button>
-          <Button onClick={() => { setEditingEmployee(null); setFormOpen(true) }}>
-            <Plus className="mr-2 h-4 w-4" />
-            Добавить
-          </Button>
+          {!isViewer && (
+            <>
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Импорт
+              </Button>
+              <Button onClick={() => { setEditingEmployee(null); setFormOpen(true) }}>
+                <Plus className="mr-2 h-4 w-4" />
+                Добавить
+              </Button>
+            </>
+          )}
         </div>
       </div>
 

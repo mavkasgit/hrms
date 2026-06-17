@@ -19,6 +19,7 @@ const SickLeavesPage = lazy(async () => ({ default: (await import("@/pages/SickL
 const VacationCalendarPage = lazy(async () => ({ default: (await import("@/pages/VacationCalendarPage")).VacationCalendarPage }))
 const TemplatesPage = lazy(async () => ({ default: (await import("@/pages/TemplatesPage")).TemplatesPage }))
 const SettingsPage = lazy(async () => ({ default: (await import("@/pages/SettingsPage")).SettingsPage }))
+const UsersPage = lazy(async () => ({ default: (await import("@/pages/UsersPage")).UsersPage }))
 const HolidaysPage = lazy(async () => ({ default: (await import("@/pages/HolidaysPage")).HolidaysPage }))
 const BackupsPage = lazy(async () => ({ default: (await import("@/pages/BackupsPage")).BackupsPage }))
 const LoginPage = lazy(async () => ({ default: (await import("@/pages/LoginPage")).LoginPage }))
@@ -58,9 +59,11 @@ export const router = createBrowserRouter([
       { path: "vacation-calendar", element: withSuspense(<VacationCalendarPage />) },
       { path: "templates", element: withSuspense(<TemplatesPage />) },
       { path: "settings", element: withSuspense(<SettingsPage />) },
+      { path: "settings/users", element: withSuspense(<UsersPage />) },
       { path: "settings/holidays", element: withSuspense(<HolidaysPage />) },
       { path: "settings/backups", element: withSuspense(<BackupsPage />) },
       { path: "dev", element: withSuspense(<DevPage />) },
+
     ],
   },
   {

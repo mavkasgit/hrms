@@ -23,7 +23,7 @@ from app.models.position import Position
 from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
 
-DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_test"
+DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5435/hrms_test"
 TEST_DATABASE_PREFIX = "hrms_test_"
 STALE_TEST_DATABASE_TTL_HOURS = int(os.getenv("HRMS_TEST_DB_STALE_TTL_HOURS", "24"))
 CLEANUP_LEGACY_TEST_DATABASES = os.getenv("HRMS_TEST_DB_CLEANUP_LEGACY", "0") == "1"

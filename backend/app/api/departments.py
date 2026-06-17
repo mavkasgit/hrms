@@ -1,3 +1,4 @@
+from app.api.deps import get_current_user as _get_current_user_stub
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -299,7 +300,7 @@ class DepartmentUpdate(BaseModel):
 async def create_department(
     data: DepartmentCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(lambda: "admin"),
+    current_user: str = Depends(_get_current_user_stub),
 ):
     """Создать подразделение."""
     from app.core.logging import get_audit_logger
@@ -355,7 +356,7 @@ async def update_department(
     dept_id: int,
     data: DepartmentUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(lambda: "admin"),
+    current_user: str = Depends(_get_current_user_stub),
 ):
     """Обновить подразделение."""
     from app.core.logging import get_audit_logger
@@ -412,7 +413,7 @@ async def update_department(
 async def delete_department(
     dept_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(lambda: "admin"),
+    current_user: str = Depends(_get_current_user_stub),
 ):
     """Удалить подразделение (если нет сотрудников и связей)."""
     from app.core.logging import get_audit_logger

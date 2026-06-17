@@ -22,6 +22,7 @@ interface ComboboxProps {
   icon?: ReactNode
   error?: string
   allowCreate?: boolean
+  disabled?: boolean
 }
 
 export function ComboboxCreate({
@@ -33,6 +34,7 @@ export function ComboboxCreate({
   icon,
   error,
   allowCreate = true,
+  disabled = false,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
@@ -86,6 +88,7 @@ export function ComboboxCreate({
             variant="outline"
             role="combobox"
             aria-expanded={open}
+            disabled={disabled}
             className={`w-full justify-between text-left font-normal ${
               error ? "border-red-500" : ""
             } ${!selected ? "text-muted-foreground" : ""}`}

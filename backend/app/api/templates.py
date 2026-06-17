@@ -10,8 +10,7 @@ from app.utils.file_helpers import ORDER_TYPES
 router = APIRouter(prefix="/templates", tags=["templates"])
 
 
-def _get_current_user_stub() -> str:
-    return "admin"
+from app.api.deps import get_current_user as _get_current_user_stub
 
 
 @router.get("", response_model=TemplateListResponse)

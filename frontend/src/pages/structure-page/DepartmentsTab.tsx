@@ -3,6 +3,7 @@ import { Button } from "@/shared/ui/button"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
+import { getUserAccessLevel } from "@/shared/api/axios"
 
 import {
   AlertDialog,
@@ -76,12 +77,14 @@ function EmployeeRow({
   onAssignTag,
   onUnassignTag,
   highlight,
+  disabled,
 }: {
   emp: { id: number; name: string; position_name?: string; tags: { id: number; name: string; color?: string }[] }
   allTags: { id: number; name: string; color?: string }[]
   onAssignTag: (employeeId: number, tagId: number) => void
   onUnassignTag: (employeeId: number, tagId: number) => void
   highlight?: boolean
+  disabled?: boolean
 }) {
   return (
     <div className={`flex items-center gap-2 py-1 px-2 text-sm rounded-md transition-colors ${
@@ -95,6 +98,7 @@ function EmployeeRow({
         onAssign={(tagId) => onAssignTag(emp.id, tagId)}
         onUnassign={(tagId) => onUnassignTag(emp.id, tagId)}
         align="end"
+        disabled={disabled}
       />
       {emp.position_name && (
         <Badge variant="secondary" className="text-[10px] flex-shrink-0">
@@ -122,6 +126,7 @@ function DepartmentTreeNode({
   expandedNodes,
   setExpandedNodes,
   searchQuery,
+  isViewer = false,
 }: {
   node: GraphNode
   depth?: number
@@ -137,6 +142,7 @@ function DepartmentTreeNode({
   expandedNodes: Set<number>
   setExpandedNodes: (fn: (prev: Set<number>) => Set<number>) => void
   searchQuery: string
+  isViewer?: boolean
 }) {
   const isExpanded = expandedNodes.has(node.id)
   const toggleExpand = () => {
@@ -162,12 +168,14 @@ function DepartmentTreeNode({
     <div>
       {/* Строка отдела */}
       <div
-        className="group/dept flex items-center gap-1.5 py-2 rounded-md hover:bg-accent/50 transition-colors cursor-pointer flex-wrap"
+        className={`group/dept flex items-center gap-1.5 py-2 rounded-md transition-colors flex-wrap ${
+          isViewer ? "cursor-default" : "cursor-pointer hover:bg-accent/50"
+        }`}
         style={{
           paddingLeft: `${depth * 20 + 8}px`,
           backgroundColor: node.color ? node.color + "18" : undefined,
         }}
-        onClick={() => onEdit(node)}
+        onClick={() => !isViewer && onEdit(node)}
       >
         <button
           onClick={(e) => {
@@ -189,7 +197,7 @@ function DepartmentTreeNode({
             <span className="h-1.5 w-1.5 bg-muted-foreground/30 rounded-full" />
           )}
         </button>
-
+ 
         <span
           className="h-4 w-4 flex-shrink-0 text-muted-foreground"
           style={{ color: node.color ?? undefined }}
@@ -198,7 +206,7 @@ function DepartmentTreeNode({
             ? renderIcon(node.icon) ?? <Building2 className="h-4 w-4" />
             : <Building2 className="h-4 w-4" />}
         </span>
-
+ 
         {node.employees.length > 0 && (
           <button
             onClick={(e) => {
@@ -215,9 +223,9 @@ function DepartmentTreeNode({
             {node.employee_count}
           </button>
         )}
-
+ 
         <span className="font-medium text-sm truncate flex-1 min-w-0">{node.name}</span>
-
+ 
         <span onClick={(e) => e.stopPropagation()}>
           <TagPicker
             tags={allTags}
@@ -225,36 +233,39 @@ function DepartmentTreeNode({
             onAssign={(tagId) => onAssignDepartmentTag(node.id, tagId)}
             onUnassign={(tagId) => onUnassignDepartmentTag(node.id, tagId)}
             align="start"
+            disabled={isViewer}
           />
         </span>
-
+ 
         {!hasEmployees && node.employees.length === 0 && (
           <span className="text-[10px] text-muted-foreground/50 w-10 text-right flex-shrink-0">
             пусто
           </span>
         )}
-
+ 
         {/* Подсказка при поиске */}
         {searchQuery && filteredEmployees.length === 0 && node.employees.length > 0 && (
           <span className="text-[10px] text-muted-foreground/40 w-10 text-right flex-shrink-0">
             0 совп.
           </span>
         )}
-
-        <div className="flex gap-0.5 flex-shrink-0 mr-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={(e) => {
-              e.stopPropagation()
-              onAddChild(node.id)
-            }}
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            Подразделение
-          </Button>
-        </div>
+ 
+        {!isViewer && (
+          <div className="flex gap-0.5 flex-shrink-0 mr-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAddChild(node.id)
+              }}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Подразделение
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Раскрытые дочерние отделы */}
@@ -279,6 +290,7 @@ function DepartmentTreeNode({
               expandedNodes={expandedNodes}
               setExpandedNodes={setExpandedNodes}
               searchQuery={searchQuery}
+              isViewer={isViewer}
             />
           )
         })}
@@ -299,6 +311,7 @@ function DepartmentTreeNode({
                 onAssignTag={onAssignEmployeeTag}
                 onUnassignTag={onUnassignEmployeeTag}
                 highlight={isHighlighted}
+                disabled={isViewer}
               />
             )
           })}
@@ -311,6 +324,7 @@ function DepartmentTreeNode({
 /* ───────── DepartmentsTab (дерево) ───────── */
 
 export function DepartmentsTab() {
+  const isViewer = getUserAccessLevel() === "viewer"
   const { data: graph, isLoading } = useDepartmentGraph()
   const createDept = useCreateDepartment()
   const updateDept = useUpdateDepartment()
@@ -488,12 +502,14 @@ export function DepartmentsTab() {
           <p className="text-sm text-muted-foreground">
             Структура подразделений
           </p>
-          <Button size="sm" variant="outline" onClick={() => openAdd()}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
-            Подразделение
-          </Button>
+          {!isViewer && (
+            <Button size="sm" variant="outline" onClick={() => openAdd()}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Подразделение
+            </Button>
+          )}
         </div>
-
+ 
         {/* Поиск + раскрыть/скрыть */}
         <div className="flex gap-2 items-center">
           <div className="flex-1">
@@ -518,7 +534,7 @@ export function DepartmentsTab() {
           </Button>
         </div>
       </div>
-
+ 
       {/* Дерево */}
       {!graph || graph.nodes.length === 0 ? (
         <EmptyState message="Нет подразделений" description="Добавьте первое подразделение" />
@@ -540,6 +556,7 @@ export function DepartmentsTab() {
               expandedNodes={expandedNodes}
               setExpandedNodes={setExpandedNodes}
               searchQuery={searchQuery}
+              isViewer={isViewer}
             />
           ))}
         </div>
