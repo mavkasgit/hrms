@@ -131,6 +131,19 @@ class EmployeeService:
         _ = employee_with_relations.department
         _ = employee_with_relations.position
         
+        # Синхронизация с KTM-2000
+        try:
+            from app.services.employee_sync import sync_employee_to_ktm
+            sync_employee_to_ktm(
+                tab_number=employee_with_relations.tab_number,
+                name=employee_with_relations.name,
+                position=employee_with_relations.position.name if employee_with_relations.position else None,
+                department=employee_with_relations.department.name if employee_with_relations.department else None,
+                is_deleted=employee_with_relations.is_deleted or employee_with_relations.is_dismissed,
+            )
+        except Exception:
+            pass
+
         return employee_with_relations
 
     async def update_employee(
@@ -219,6 +232,20 @@ class EmployeeService:
                 }
             )
 
+        # Синхронизация с KTM-2000
+        try:
+            employee_with_relations = await self.get_by_id(db, employee_id)
+            from app.services.employee_sync import sync_employee_to_ktm
+            sync_employee_to_ktm(
+                tab_number=employee_with_relations.tab_number,
+                name=employee_with_relations.name,
+                position=employee_with_relations.position.name if employee_with_relations.position else None,
+                department=employee_with_relations.department.name if employee_with_relations.department else None,
+                is_deleted=employee_with_relations.is_deleted or employee_with_relations.is_dismissed,
+            )
+        except Exception:
+            pass
+
         return employee, periods_need_reset
 
     async def reset_employee_periods(
@@ -296,6 +323,20 @@ class EmployeeService:
             }
         )
 
+        # Синхронизация с KTM-2000
+        try:
+            employee_with_relations = await self.get_by_id(db, employee_id)
+            from app.services.employee_sync import sync_employee_to_ktm
+            sync_employee_to_ktm(
+                tab_number=employee_with_relations.tab_number,
+                name=employee_with_relations.name,
+                position=employee_with_relations.position.name if employee_with_relations.position else None,
+                department=employee_with_relations.department.name if employee_with_relations.department else None,
+                is_deleted=employee_with_relations.is_deleted or employee_with_relations.is_dismissed,
+            )
+        except Exception:
+            pass
+
         return employee, warnings
 
     async def restore_employee(self, db: AsyncSession, employee_id: int, user_id: str) -> Employee:
@@ -327,6 +368,20 @@ class EmployeeService:
             }
         )
 
+        # Синхронизация с KTM-2000
+        try:
+            employee_with_relations = await self.get_by_id(db, employee_id)
+            from app.services.employee_sync import sync_employee_to_ktm
+            sync_employee_to_ktm(
+                tab_number=employee_with_relations.tab_number,
+                name=employee_with_relations.name,
+                position=employee_with_relations.position.name if employee_with_relations.position else None,
+                department=employee_with_relations.department.name if employee_with_relations.department else None,
+                is_deleted=employee_with_relations.is_deleted or employee_with_relations.is_dismissed,
+            )
+        except Exception:
+            pass
+
         return employee
 
     async def soft_delete_employee(self, db: AsyncSession, employee_id: int, user_id: str) -> bool:
@@ -352,12 +407,33 @@ class EmployeeService:
             }
         )
 
+        # Синхронизация с KTM-2000
+        try:
+            employee_with_relations = await repository.get_by_id(db, employee_id, include_deleted=True)
+            if employee_with_relations:
+                from app.services.employee_sync import sync_employee_to_ktm
+                sync_employee_to_ktm(
+                    tab_number=employee_with_relations.tab_number,
+                    name=employee_with_relations.name,
+                    position=employee_with_relations.position.name if employee_with_relations.position else None,
+                    department=employee_with_relations.department.name if employee_with_relations.department else None,
+                    is_deleted=True,
+                )
+        except Exception:
+            pass
+
         return True
 
     async def hard_delete_employee(self, db: AsyncSession, employee_id: int, user_id: str) -> bool:
         employee = await repository.get_by_id(db, employee_id, include_deleted=True)
         if not employee:
             raise EmployeeNotFoundError(employee_id)
+
+        # Сохраняем данные для синхронизации
+        tab_number = employee.tab_number
+        name = employee.name
+        position_name = employee.position.name if employee.position else None
+        department_name = employee.department.name if employee.department else None
 
         # Добавляем audit entry ДО удаления связанных записей
         await repository._add_audit_entry(db, employee_id, "hard_deleted", user_id, None, None)
@@ -373,6 +449,19 @@ class EmployeeService:
         )
 
         await repository.delete_related_records(db, employee_id)
+
+        # Синхронизация с KTM-2000
+        try:
+            from app.services.employee_sync import sync_employee_to_ktm
+            sync_employee_to_ktm(
+                tab_number=tab_number,
+                name=name,
+                position=position_name,
+                department=department_name,
+                is_deleted=True,
+            )
+        except Exception:
+            pass
 
         return await repository.hard_delete(db, employee_id)
 
