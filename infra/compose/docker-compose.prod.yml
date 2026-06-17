@@ -38,6 +38,9 @@ services:
 
   backend:
     image: ghcr.io/mavkasgit/hrms-backend:latest
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
     container_name: hrms-backend-prod
     expose:
       - "8000"
@@ -79,6 +82,9 @@ services:
 
   frontend:
     image: ghcr.io/mavkasgit/hrms-frontend:latest
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
     container_name: hrms-frontend-prod
     expose:
       - "80"
