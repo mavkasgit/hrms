@@ -15,7 +15,9 @@ import { uid } from '../helpers/test-utils'
 // CONSTANTS
 // =============================================================================
 
-export const API_BASE = 'http://127.0.0.1:8000'
+export const API_BASE = process.env.E2E_API_URL 
+  ? process.env.E2E_API_URL.replace(/\/api$/, '') 
+  : 'http://127.0.0.1:8000';
 
 // =============================================================================
 // RESOURCE TRACKERS
