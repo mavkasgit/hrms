@@ -174,7 +174,7 @@ export function UsersPage() {
       username: username.trim(),
       full_name: linkEmployee ? undefined : fullName.trim(),
       employee_id: linkEmployee && selectedEmployee ? selectedEmployee.id : null,
-      role: "admin", // Единственная главная роль
+      role: selectedUser ? selectedUser.role : "admin",
     }
     if (password.trim()) {
       payload.password = password.trim()
@@ -324,9 +324,13 @@ export function UsersPage() {
                     )}
                   </td>
                   <td className="px-6 py-4">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800/30">
-                      <Shield className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
-                      Администратор
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full ${
+                      u.role === "admin"
+                        ? "bg-violet-50 text-violet-700 border border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800/30"
+                        : "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800/30"
+                    }`}>
+                      <Shield className={`h-3.5 w-3.5 ${u.role === "admin" ? "text-violet-600 dark:text-violet-400" : "text-blue-600 dark:text-blue-400"}`} />
+                      {u.role === "admin" ? "Администратор" : u.role === "viewer" ? "Наблюдатель" : u.role}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-muted-foreground">
