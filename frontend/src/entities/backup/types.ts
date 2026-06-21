@@ -4,6 +4,7 @@ export interface BackupInfo {
   size: number
   created_at: string
   comment: string
+  backup_type?: string
   format?: string
 }
 

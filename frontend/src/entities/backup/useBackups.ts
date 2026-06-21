@@ -8,6 +8,17 @@ export function useBackupConfig() {
   })
 }
 
+export function useUpdateBackupConfig() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: { auto_enabled: boolean; time_of_day: string }) =>
+      api.updateBackupConfig(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["backup-config"] })
+    },
+  })
+}
+
 export function useBackups() {
   return useQuery({
     queryKey: ["backups"],

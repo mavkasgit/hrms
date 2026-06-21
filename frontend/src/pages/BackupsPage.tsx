@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react"
-import { Download, RotateCcw, Eye, Database, Upload, AlertTriangle, Loader2, CheckCircle2, Trash2, X, ArrowLeft } from "lucide-react"
+import { useEffect, useRef, useState, useMemo } from "react"
+import { Download, RotateCcw, Eye, Database, Upload, AlertTriangle, Loader2, CheckCircle2, Trash2, X, ArrowLeft, Clock, Save } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { cn } from "@/shared/utils/cn"
+import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,7 @@ import {
 import {
   useBackups,
   useBackupConfig,
+  useUpdateBackupConfig,
   useBackupJob,
   useCurrentPreview,
   usePreviewBackup,
@@ -46,9 +48,10 @@ function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
 }
 
+import { formatDateTime } from "@/shared/utils/date"
+
 function formatDate(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleString("ru-RU")
+  return formatDateTime(iso, true)
 }
 
 function storageLabel(name: string): string {
@@ -79,9 +82,184 @@ function backupStageLabel(stage: string): string {
 
 export function BackupsPage() {
   const { data: backups, isLoading, refetch: refetchBackups } = useBackups()
-  const { data: config } = useBackupConfig()
+  type SortField = "filename" | "db_name" | "backup_type" | "size" | "created_at" | "comment"
+
+  const [sortConfigs, setSortConfigs] = useState<Array<{ field: SortField; order: "asc" | "desc" }>>([
+    { field: "created_at", order: "desc" }
+  ])
+
+  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
+    filename: new Set(),
+    db_name: new Set(),
+    backup_type: new Set(),
+    size: new Set(),
+    created_at: new Set(),
+    comment: new Set(),
+  })
+
+  const handleSort = (field: SortField) => {
+    const defaultOrder = (field === "created_at" || field === "size") ? "desc" : "asc"
+    setSortConfigs((prev) => {
+      const active = prev[0]
+      if (!active || active.field !== field) {
+        return [{ field, order: defaultOrder }]
+      }
+      if (active.order === defaultOrder) {
+        return [{ field, order: defaultOrder === "asc" ? "desc" : "asc" }]
+      }
+      return []
+    })
+  }
+
+  const activeTypeFilter = useMemo(() => {
+    const selected = columnFilters.backup_type
+    if (!selected || selected.size === 0 || selected.size > 1) return "all"
+    return Array.from(selected)[0]
+  }, [columnFilters.backup_type])
+
+  const handleTypeFilterChange = (type: string) => {
+    setColumnFilters(prev => ({
+      ...prev,
+      backup_type: type === "all" ? new Set() : new Set([type])
+    }))
+  }
+
+  const hasActiveFilters = useMemo(() => {
+    const hasFilters = Object.values(columnFilters).some(selected => selected && selected.size > 0)
+    if (hasFilters) return true
+
+    if (sortConfigs.length > 0) {
+      const active = sortConfigs[0]
+      if (active.field !== "created_at" || active.order !== "desc") {
+        return true
+      }
+    }
+    return false
+  }, [columnFilters, sortConfigs])
+
+  const clearFilters = () => {
+    setColumnFilters({
+      filename: new Set(),
+      db_name: new Set(),
+      backup_type: new Set(),
+      size: new Set(),
+      created_at: new Set(),
+      comment: new Set(),
+    })
+    setSortConfigs([{ field: "created_at", order: "desc" }])
+  }
+
+
+
+
+  const uniqueValues = useMemo(() => {
+    const items = backups ?? []
+    return {
+      filename: [...new Set(items.map(b => b.filename))].sort(),
+      db_name: [...new Set(items.map(b => b.db_name))].sort(),
+      backup_type: [...new Set(items.map(b => b.backup_type || "manual"))].sort(),
+      size: [...new Set(items.map(b => String(b.size)))].sort((a, b) => Number(a) - Number(b)),
+      created_at: [...new Set(items.map(b => b.created_at))].sort((a, b) => new Date(a).getTime() - new Date(b).getTime()),
+      comment: [...new Set(items.map(b => b.comment || "—"))].sort(),
+    }
+  }, [backups])
+
+  const displayedBackups = useMemo(() => {
+    if (!backups) return []
+    
+    // 1. Filter
+    let result = [...backups]
+    for (const [field, selected] of Object.entries(columnFilters)) {
+      if (selected && selected.size > 0) {
+        result = result.filter(b => {
+          let val = ""
+          if (field === "backup_type") {
+            val = b.backup_type || "manual"
+          } else if (field === "comment") {
+            val = b.comment || "—"
+          } else if (field === "size" || field === "created_at" || field === "db_name" || field === "filename") {
+            val = String(b[field as keyof typeof b] || "")
+          }
+          return selected.has(val)
+        })
+      }
+    }
+    
+    // 2. Sort (default to created_at desc if no sorting active)
+    const activeSort = sortConfigs[0] || { field: "created_at", order: "desc" }
+    result.sort((a, b) => {
+      let valA = a[activeSort.field]
+      let valB = b[activeSort.field]
+      
+      if (activeSort.field === "created_at") {
+        const timeA = new Date(valA || 0).getTime()
+        const timeB = new Date(valB || 0).getTime()
+        return activeSort.order === "asc" ? timeA - timeB : timeB - timeA
+      }
+      
+      if (activeSort.field === "size") {
+        const numA = Number(valA || 0)
+        const numB = Number(valB || 0)
+        return activeSort.order === "asc" ? numA - numB : numB - numA
+      }
+      
+      const strA = String(valA || "")
+      const strB = String(valB || "")
+      if (strA < strB) return activeSort.order === "asc" ? -1 : 1
+      if (strA > strB) return activeSort.order === "asc" ? 1 : -1
+      return 0
+    })
+    return result
+  }, [backups, columnFilters, sortConfigs])
+
+  const { data: config, isLoading: isConfigLoading } = useBackupConfig()
   const dbName = config?.db_name || "unknown"
+  const updateConfig = useUpdateBackupConfig()
   const startBackupJob = useStartBackupJob()
+
+  const [autoEnabled, setAutoEnabled] = useState(false)
+  const [timeOfDay, setTimeOfDay] = useState("23:00")
+  const [isSavingConfig, setIsSavingConfig] = useState(false)
+  const [configSaveSuccess, setConfigSaveSuccess] = useState(false)
+
+  const [configModalOpen, setConfigModalOpen] = useState(false)
+
+  const isValidTime = useMemo(() => {
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(timeOfDay)
+  }, [timeOfDay])
+
+  const mskTime = useMemo(() => {
+    if (!isValidTime) return ""
+    const [h, m] = timeOfDay.split(":")
+    const mskHour = (parseInt(h, 10) + 3) % 24
+    return `${String(mskHour).padStart(2, "0")}:${m}`
+  }, [timeOfDay, isValidTime])
+
+  useEffect(() => {
+    if (config) {
+      setAutoEnabled(config.auto_enabled)
+      setTimeOfDay(config.time_of_day || "23:00")
+    }
+  }, [config, configModalOpen])
+
+  const handleSaveConfig = async () => {
+    if (!isValidTime) return
+    setIsSavingConfig(true)
+    setConfigSaveSuccess(false)
+    try {
+      await updateConfig.mutateAsync({
+        auto_enabled: autoEnabled,
+        time_of_day: timeOfDay,
+      })
+      setConfigSaveSuccess(true)
+      setTimeout(() => setConfigSaveSuccess(false), 3000)
+      setConfigModalOpen(false)
+    } catch (e: any) {
+      alert("Ошибка сохранения настроек: " + (e.response?.data?.detail || e.message))
+    } finally {
+      setIsSavingConfig(false)
+    }
+  }
   const [activeBackupJobId, setActiveBackupJobId] = useState<string | null>(null)
   const [handledBackupJobId, setHandledBackupJobId] = useState<string | null>(null)
   const { data: activeBackupJob } = useBackupJob(activeBackupJobId)
@@ -237,11 +415,11 @@ export function BackupsPage() {
   }
 
   const toggleAll = () => {
-    if (!backups) return
-    if (selectedFilenames.size === backups.length) {
+    if (!displayedBackups) return
+    if (selectedFilenames.size === displayedBackups.length) {
       setSelectedFilenames(new Set())
     } else {
-      setSelectedFilenames(new Set(backups.map((b) => b.filename)))
+      setSelectedFilenames(new Set(displayedBackups.map((b) => b.filename)))
     }
   }
 
@@ -319,7 +497,8 @@ export function BackupsPage() {
     }
   }
 
-  const allSelected = Boolean(backups && backups.length > 0 && selectedFilenames.size === backups.length)
+  const allSelected = Boolean(displayedBackups.length > 0 && selectedFilenames.size === displayedBackups.length)
+
 
   return (
     <div className="space-y-6">
@@ -335,7 +514,8 @@ export function BackupsPage() {
         </div>
       </div>
 
-      <div className="flex gap-2 items-center flex-wrap">
+      {/* Кнопки действий и компактная панель автобэкапа в стиле shadcn */}
+      <div className="flex gap-2 items-center flex-wrap max-w-[1240px]">
         <Button
           onClick={handleCreateBackup}
           disabled={startBackupJob.isPending || Boolean(activeBackupJobId)}
@@ -374,6 +554,20 @@ export function BackupsPage() {
             e.target.value = ""
           }}
         />
+
+        {/* Разделитель */}
+        <div className="h-5 w-px bg-border mx-1 hidden md:block" />
+
+        {/* Кнопка настройки автоматического резервного копирования */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setConfigModalOpen(true)}
+          className="gap-1.5 cursor-pointer"
+        >
+          <Clock className="h-4 w-4" />
+          Автоматическое резервное копирование: {config?.auto_enabled ? "Включено" : "Выключено"}
+        </Button>
       </div>
 
       {activeBackupJob && (
@@ -417,8 +611,75 @@ export function BackupsPage() {
         </div>
       )}
 
+      {/* Фильтр по типам бэкапов */}
+      <div className="flex flex-col gap-2">
+        <span className="text-xs font-medium text-muted-foreground">Тип резервной копии:</span>
+        <div className="flex bg-muted/40 p-1 rounded-lg border w-fit gap-1">
+          <button
+            type="button"
+            onClick={() => handleTypeFilterChange("all")}
+            className={cn(
+              "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
+              activeTypeFilter === "all"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Все
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTypeFilterChange("monthly")}
+            className={cn(
+              "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
+              activeTypeFilter === "monthly"
+                ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400 shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Ежемесячные
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTypeFilterChange("weekly")}
+            className={cn(
+              "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
+              activeTypeFilter === "weekly"
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Еженедельные
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTypeFilterChange("daily")}
+            className={cn(
+              "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
+              activeTypeFilter === "daily"
+                ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Ежедневные
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTypeFilterChange("manual")}
+            className={cn(
+              "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
+              activeTypeFilter === "manual"
+                ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Вручную
+          </button>
+        </div>
+      </div>
+
       {/* Bulk actions */}
-      <div className="flex gap-2 items-center flex-wrap">
+      <div className="flex gap-2 items-center flex-wrap w-full max-w-[1240px]">
         <Button
           variant="outline"
           size="sm"
@@ -436,10 +697,21 @@ export function BackupsPage() {
           <Trash2 className="h-4 w-4 mr-1" />
           Удалить старые
         </Button>
+        {hasActiveFilters && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={clearFilters}
+            className="ml-auto cursor-pointer"
+          >
+            <RotateCcw className="h-4 w-4 mr-1" />
+            Сбросить фильтры
+          </Button>
+        )}
       </div>
 
       {/* Table */}
-      <div className="border rounded-lg overflow-hidden max-w-[1100px]">
+      <div className="border rounded-lg overflow-hidden max-w-[1240px]">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs">
             <tr>
@@ -451,29 +723,107 @@ export function BackupsPage() {
                   className="h-4 w-4"
                 />
               </th>
-              <th className="text-left px-3 py-2 font-medium">Имя файла</th>
-              <th className="text-left px-3 py-2 font-medium">База данных</th>
-              <th className="text-left px-3 py-2 font-medium">Размер</th>
-              <th className="text-left px-3 py-2 font-medium">Дата создания</th>
-              <th className="text-left px-3 py-2 font-medium">Комментарий</th>
-              <th className="text-right px-2 py-2 w-40"></th>
+              <th className="text-left px-3 py-2 font-medium p-0">
+                <SortableFilterHeader
+                  field="filename"
+                  label="Имя файла"
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.filename}
+                  selectedValues={columnFilters.filename}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                />
+              </th>
+              <th className="text-left px-3 py-2 font-medium p-0">
+                <SortableFilterHeader
+                  field="db_name"
+                  label="База данных"
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.db_name}
+                  selectedValues={columnFilters.db_name}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                />
+              </th>
+              <th className="text-left px-3 py-2 font-medium p-0">
+                <SortableFilterHeader
+                  field="backup_type"
+                  label="Тип"
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.backup_type}
+                  selectedValues={columnFilters.backup_type}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  valueLabel={(val) => {
+                    const labels: Record<string, string> = {
+                      monthly: "Ежемесячный",
+                      weekly: "Еженедельный",
+                      daily: "Ежедневный",
+                      manual: "Вручную",
+                    }
+                    return labels[val] || val
+                  }}
+                />
+              </th>
+              <th className="text-left px-3 py-2 font-medium p-0">
+                <SortableFilterHeader
+                  field="size"
+                  label="Размер"
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.size}
+                  selectedValues={columnFilters.size}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  valueLabel={(val) => formatBytes(Number(val))}
+                />
+              </th>
+              <th className="text-left px-3 py-2 font-medium p-0">
+                <SortableFilterHeader
+                  field="created_at"
+                  label="Дата создания"
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.created_at}
+                  selectedValues={columnFilters.created_at}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  valueLabel={formatDate}
+                />
+              </th>
+              <th className="text-left px-3 py-2 font-medium p-0">
+                <SortableFilterHeader
+                  field="comment"
+                  label="Комментарий"
+                  currentSorts={sortConfigs}
+                  onSortChange={handleSort}
+                  values={uniqueValues.comment}
+                  selectedValues={columnFilters.comment}
+                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                />
+              </th>
+              <th className="text-right px-2 py-2 w-44"></th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={7} className="px-3 py-4 text-center text-muted-foreground text-xs">
+                <td colSpan={8} className="px-3 py-4 text-center text-muted-foreground text-xs">
                   Загрузка...
                 </td>
               </tr>
             ) : !backups || backups.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-4 text-center text-muted-foreground text-xs">
+                <td colSpan={8} className="px-3 py-4 text-center text-muted-foreground text-xs">
                   Нет бэкапов. Нажмите "Создать бэкап"
                 </td>
               </tr>
+            ) : displayedBackups.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-3 py-4 text-center text-muted-foreground text-xs">
+                  Нет бэкапов, соответствующих выбранным фильтрам.
+                </td>
+              </tr>
             ) : (
-              backups.map((b) => (
+              displayedBackups.map((b) => (
                 <tr key={b.filename} className="border-t hover:bg-muted/30">
                   <td className="px-2 py-2">
                     <input
@@ -485,6 +835,29 @@ export function BackupsPage() {
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{b.filename}</td>
                   <td className="px-3 py-2">{b.db_name}</td>
+                  <td className="px-3 py-2">
+                    {b.backup_type === "monthly" && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400">
+                        Ежемесячный
+                      </span>
+                    )}
+                    {b.backup_type === "weekly" && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
+                        Еженедельный
+                      </span>
+                    )}
+                    {b.backup_type === "daily" && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+                        Ежедневный
+                      </span>
+                    )}
+                    {b.backup_type === "manual" && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400">
+                        Вручную
+                      </span>
+                    )}
+                  </td>
+
                   <td className="px-3 py-2">{formatBytes(b.size)}</td>
                   <td className="px-3 py-2">{formatDate(b.created_at)}</td>
                   <td className="px-3 py-2">
@@ -512,7 +885,7 @@ export function BackupsPage() {
                       )}
                     </div>
                   </td>
-                  <td className="px-2 py-2 text-right">
+                  <td className="px-2 py-2 text-right w-44 min-w-[150px] whitespace-nowrap">
                     <div className="flex justify-end gap-1">
                       <Button
                         variant="ghost"
@@ -924,6 +1297,117 @@ export function BackupsPage() {
           </div>
         )}
       </div>
+
+      {/* Модальное окно настройки автоматического резервного копирования */}
+      <Dialog open={configModalOpen} onOpenChange={setConfigModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+              Настройка автоматического резервного копирования
+            </DialogTitle>
+            <DialogDescription>
+              Ежедневное расписание сохранения базы данных и файлов по GFS стратегии.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-5 py-3 text-sm">
+            {/* Настройки автозапуска и времени в одну строку */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-lg border p-4">
+              <div className="flex items-center gap-3">
+                <label htmlFor="modal-auto-enabled" className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    id="modal-auto-enabled"
+                    className="sr-only peer"
+                    checked={autoEnabled}
+                    onChange={(e) => setAutoEnabled(e.target.checked)}
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600"></div>
+                </label>
+                <div className="space-y-0.5">
+                  <label htmlFor="modal-auto-enabled" className="text-sm font-medium cursor-pointer">Автозапуск</label>
+                  <p className="text-xs text-muted-foreground">По расписанию</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="modal-time-of-day" className="text-xs font-medium text-muted-foreground whitespace-nowrap">
+                    Время (UTC):
+                  </label>
+                  <Input
+                    type="text"
+                    id="modal-time-of-day"
+                    placeholder="23:00"
+                    value={timeOfDay}
+                    disabled={!autoEnabled}
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/[^0-9:]/g, "")
+                      if (val.length === 2 && !val.includes(":") && val.length > timeOfDay.length) {
+                        val = val + ":"
+                      }
+                      if (val.length > 5) {
+                        val = val.slice(0, 5)
+                      }
+                      setTimeOfDay(val)
+                    }}
+                    className={cn("w-20 font-mono text-center h-9", !isValidTime && "border-red-500 focus-visible:ring-red-500")}
+                  />
+                </div>
+                {!isValidTime && (
+                  <span className="text-[10px] text-red-500 font-medium text-right max-w-[120px] leading-tight">
+                    Неверный формат
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Текст подсказки про запуск и GFS */}
+            <div className="text-xs text-muted-foreground bg-muted/40 p-3 rounded-lg border border-border/80 space-y-2">
+              <p>
+                {isValidTime ? (
+                  <>
+                    Резервное копирование будет автоматически выполняться ежедневно в <strong>{mskTime} МСК ({timeOfDay} UTC)</strong> по GFS-стратегии.
+                  </>
+                ) : (
+                  <span className="text-red-500 font-medium">
+                    Укажите корректное время в формате ЧЧ:ММ для автоматического резервного копирования.
+                  </span>
+                )}
+              </p>
+              <p>
+                Система автоматически ротирует резервные копии: сохраняются последние 7 ежедневных и 4 еженедельных бэкапа, ежемесячные копии хранятся бессрочно.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            {configSaveSuccess && (
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 self-center mr-auto">
+                <CheckCircle2 className="h-4 w-4" /> Сохранено
+              </span>
+            )}
+            <Button variant="outline" onClick={() => setConfigModalOpen(false)}>
+              Закрыть
+            </Button>
+            <Button
+              onClick={handleSaveConfig}
+              disabled={isSavingConfig || isConfigLoading || !isValidTime}
+              className="gap-1.5"
+            >
+              {isSavingConfig ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Сохранить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
     </div>
   )
 }

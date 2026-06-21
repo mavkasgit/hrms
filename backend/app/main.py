@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 import traceback
 import time
+import asyncio
+
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,12 +42,27 @@ from app.api.users import router as users_router
 from app.api.auth import router as auth_router
 
 
+# Ссылка на фоновую задачу планировщика (чтобы GC не удалил ее)
+backup_scheduler_task = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global backup_scheduler_task
     configure_logging()
     logger.info("Starting HRMS application", env=settings.ENV)
+    
+    from app.services.backup_scheduler import start_backup_scheduler
+    backup_scheduler_task = asyncio.create_task(start_backup_scheduler())
+    
     yield
+    
     logger.info("Shutting down HRMS application")
+    if backup_scheduler_task:
+        backup_scheduler_task.cancel()
+        try:
+            await backup_scheduler_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(

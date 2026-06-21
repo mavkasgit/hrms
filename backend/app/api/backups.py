@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse
 from openpyxl import Workbook
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.database import get_db, engine
@@ -85,6 +86,20 @@ def _run_postgres_cmd_docker(cmd: List[str], db_name: str | None = None) -> subp
         )
 
     connection_args, env = _get_db_connection(db_name)
+    
+    # Для выполнения внутри контейнера переопределяем хост на localhost и порт на 5432
+    docker_connection_args = list(connection_args)
+    try:
+        host_idx = docker_connection_args.index("-h")
+        docker_connection_args[host_idx + 1] = "localhost"
+    except ValueError:
+        pass
+    try:
+        port_idx = docker_connection_args.index("-p")
+        docker_connection_args[port_idx + 1] = "5432"
+    except ValueError:
+        pass
+
     password = env.get("PGPASSWORD", "")
 
     docker_base = ["docker", "exec", "-i"]
@@ -102,7 +117,7 @@ def _run_postgres_cmd_docker(cmd: List[str], db_name: str | None = None) -> subp
             filepath = args[idx + 1]
             args.pop(idx)      # remove -f
             args.pop(idx)      # remove filepath
-        docker_cmd = docker_base + ["pg_dump"] + args + connection_args
+        docker_cmd = docker_base + ["pg_dump"] + args + docker_connection_args
         result = subprocess.run(docker_cmd, capture_output=True, text=False, timeout=300)
         if result.returncode == 0 and filepath:
             Path(filepath).write_bytes(result.stdout)
@@ -119,7 +134,7 @@ def _run_postgres_cmd_docker(cmd: List[str], db_name: str | None = None) -> subp
         if args and not args[-1].startswith("-"):
             filepath = args[-1]
             args = args[:-1]
-        docker_cmd = docker_base + ["pg_restore"] + args + connection_args
+        docker_cmd = docker_base + ["pg_restore"] + args + docker_connection_args
         if filepath:
             file_bytes = Path(filepath).read_bytes()
             result = subprocess.run(docker_cmd, input=file_bytes, capture_output=True, text=False, timeout=300)
@@ -133,7 +148,7 @@ def _run_postgres_cmd_docker(cmd: List[str], db_name: str | None = None) -> subp
         )
 
     # psql и прочие
-    docker_cmd = docker_base + [tool] + cmd[1:] + connection_args
+    docker_cmd = docker_base + [tool] + cmd[1:] + docker_connection_args
     result = subprocess.run(docker_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
     return result
 
@@ -640,7 +655,7 @@ def _set_job_progress(job_id: str, progress: int, stage: str, message: str, **ex
         })
 
 
-def _create_backup_archive(job_id: str | None = None) -> Dict:
+def _create_backup_archive(job_id: str | None = None, backup_type: str = "manual") -> Dict:
     def report(progress: int, stage: str, message: str, **extra) -> None:
         if job_id:
             _set_job_progress(job_id, progress, stage, message, **extra)
@@ -666,6 +681,7 @@ def _create_backup_archive(job_id: str | None = None) -> Dict:
         meta["filename"] = filename
         meta["format"] = "archive-v2"
         meta["comment"] = ""
+        meta["backup_type"] = backup_type
         meta["storage"] = _storage_summary()
 
         with zipfile.ZipFile(filepath, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:
@@ -771,11 +787,60 @@ async def get_backup_job(job_id: str) -> Dict:
         return dict(job)
 
 
+def _read_config_json() -> Dict:
+    config_path = BACKUPS_DIR / "config.json"
+    default_config = {"auto_enabled": False, "time_of_day": "23:00"}
+    if not config_path.exists():
+        return default_config
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        return {
+            "auto_enabled": bool(data.get("auto_enabled", False)),
+            "time_of_day": str(data.get("time_of_day", "23:00"))
+        }
+    except Exception:
+        return default_config
+
+def _write_config_json(config: Dict) -> None:
+    config_path = BACKUPS_DIR / "config.json"
+    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 @router.get("/config")
 async def get_backup_config() -> Dict:
-    """Получить текущее имя базы данных для подтверждения восстановления."""
+    """Получить текущие настройки автоматического бэкапа и имя БД."""
     _validate_admin()
-    return {"db_name": _get_db_name()}
+    config = _read_config_json()
+    return {
+        "db_name": _get_db_name(),
+        "auto_enabled": config["auto_enabled"],
+        "time_of_day": config["time_of_day"]
+    }
+
+
+class BackupConfigUpdate(BaseModel):
+    auto_enabled: bool
+    time_of_day: str  # В формате "HH:MM"
+
+
+@router.patch("/config")
+async def update_backup_config(payload: BackupConfigUpdate) -> Dict:
+    """Обновить настройки автоматического бэкапа."""
+    _validate_admin()
+    parts = payload.time_of_day.split(":")
+    if len(parts) != 2 or not all(p.isdigit() for p in parts) or not (0 <= int(parts[0]) <= 23) or not (0 <= int(parts[1]) <= 59):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Время должно быть в формате HH:MM (от 00:00 до 23:59)",
+        )
+    
+    config = {
+        "auto_enabled": payload.auto_enabled,
+        "time_of_day": payload.time_of_day
+    }
+    _write_config_json(config)
+    return config
+
 
 
 @router.get("")
@@ -791,6 +856,7 @@ async def list_backups() -> List[Dict]:
             "size": f.stat().st_size,
             "created_at": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
             "comment": meta.get("comment", "") if meta else "",
+            "backup_type": (meta or {}).get("backup_type") or "manual",
             "format": (meta or {}).get("format") or ("archive-v2" if _is_archive_backup(f) else "database-dump"),
         })
     return backups
