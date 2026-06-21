@@ -38,6 +38,10 @@ async def get_current_user(
     
     # Bypass for testing and dev tools
     if token == "admin":
+        result = await db.execute(select(User).where(User.username == "admin", User.is_deleted == False))
+        user = result.scalars().first()
+        if user:
+            return CurrentUser("admin", role=user.role, full_name=user.full_name)
         return CurrentUser("admin", role="admin", full_name="Admin User")
         
     try:

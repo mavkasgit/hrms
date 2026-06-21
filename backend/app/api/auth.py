@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
+from app.api.deps import get_current_user, CurrentUser
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -94,3 +95,15 @@ async def login(
         role=user.role,
         full_name=user.full_name or user.username,
     )
+
+
+@router.get("/me")
+async def get_me(
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """Получить информацию о текущем авторизованном пользователе."""
+    return {
+        "username": current_user.username,
+        "role": current_user.role,
+        "full_name": current_user.full_name,
+    }

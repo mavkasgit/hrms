@@ -139,6 +139,12 @@ async def update_user(
         
     if payload.role:
         user.role = payload.role
+
+    # Обновить пароль для резервного локального входа, если передан
+    if payload.password:
+        user.password_hash = bcrypt.hashpw(
+            payload.password.encode("utf-8"), bcrypt.gensalt()
+        ).decode("utf-8")
         
     await db.commit()
     

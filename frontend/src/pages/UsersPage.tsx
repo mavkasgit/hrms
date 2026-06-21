@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom"
 import { Users, Plus, Shield, Search, Edit2, Trash2, Loader2, ArrowLeft, AlertCircle, Link } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -23,8 +22,9 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
 import api from "@/shared/api/axios"
-import { fetchEmployees } from "@/entities/employee/api"
+import { fetchEmployees, fetchEmployee } from "@/entities/employee/api"
 import type { Employee } from "@/entities/employee/types"
+import { EmployeeSearch } from "@/features/employee-search"
 
 interface User {
   id: number
@@ -55,7 +55,8 @@ export function UsersPage() {
   const [username, setUsername] = useState("")
   const [fullName, setFullName] = useState("")
   const [linkEmployee, setLinkEmployee] = useState(true)
-  const [employeeId, setEmployeeId] = useState<string>("none")
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
+  const [password, setPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
 
@@ -104,29 +105,48 @@ export function UsersPage() {
     setUsername("")
     setFullName("")
     setLinkEmployee(true)
-    setEmployeeId("none")
+    setSelectedEmployee(null)
+    setPassword("")
     setError("")
     setDialogOpen(true)
   }
 
-  const openEdit = (user: User) => {
+  const openEdit = async (user: User) => {
     setSelectedUser(user)
     setDialogMode("edit")
     setUsername(user.username)
     setFullName(user.full_name)
     setLinkEmployee(user.employee_id !== null)
-    setEmployeeId(user.employee_id ? String(user.employee_id) : "none")
+    setPassword("")
     setError("")
     setDialogOpen(true)
+
+    if (user.employee_id !== null) {
+      const existing = employees.find((e) => e.id === user.employee_id)
+      if (existing) {
+        setSelectedEmployee(existing)
+      } else {
+        try {
+          const emp = await fetchEmployee(user.employee_id)
+          setSelectedEmployee(emp)
+        } catch (err) {
+          console.error("Не удалось загрузить данные привязанного сотрудника", err)
+          setSelectedEmployee({
+            id: user.employee_id,
+            name: user.employee_name || user.full_name,
+            tab_number: null,
+          } as Employee)
+        }
+      }
+    } else {
+      setSelectedEmployee(null)
+    }
   }
 
-  const handleEmployeeChange = (val: string) => {
-    setEmployeeId(val)
-    if (val !== "none") {
-      const emp = employees.find((e) => String(e.id) === val)
-      if (emp) {
-        setFullName(emp.name)
-      }
+  const handleEmployeeChange = (emp: Employee | null) => {
+    setSelectedEmployee(emp)
+    if (emp) {
+      setFullName(emp.name)
     } else {
       setFullName("")
     }
@@ -138,7 +158,7 @@ export function UsersPage() {
       setError("Имя пользователя обязательно")
       return
     }
-    if (linkEmployee && employeeId === "none") {
+    if (linkEmployee && !selectedEmployee) {
       setError("Выберите сотрудника для привязки")
       return
     }
@@ -150,11 +170,14 @@ export function UsersPage() {
     setSubmitting(true)
     setError("")
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       username: username.trim(),
       full_name: linkEmployee ? undefined : fullName.trim(),
-      employee_id: linkEmployee && employeeId !== "none" ? Number(employeeId) : null,
+      employee_id: linkEmployee && selectedEmployee ? selectedEmployee.id : null,
       role: "admin", // Единственная главная роль
+    }
+    if (password.trim()) {
+      payload.password = password.trim()
     }
 
     try {
@@ -301,8 +324,8 @@ export function UsersPage() {
                     )}
                   </td>
                   <td className="px-6 py-4">
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
-                      <Shield className="h-3.5 w-3.5" />
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800/30">
+                      <Shield className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
                       Администратор
                     </span>
                   </td>
@@ -366,7 +389,7 @@ export function UsersPage() {
                 onChange={(e) => {
                   setLinkEmployee(e.target.checked)
                   if (!e.target.checked) {
-                    setEmployeeId("none")
+                    setSelectedEmployee(null)
                   }
                 }}
                 className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
@@ -379,22 +402,13 @@ export function UsersPage() {
             {/* Выбор сотрудника */}
             {linkEmployee ? (
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Выберите сотрудника
-                </label>
-                <Select value={employeeId} onValueChange={handleEmployeeChange}>
-                  <SelectTrigger className="w-full bg-card">
-                    <SelectValue placeholder="Сотрудник не выбран" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Выберите сотрудника...</SelectItem>
-                    {employees.map((e) => (
-                      <SelectItem key={e.id} value={String(e.id)}>
-                        {e.name} {e.tab_number ? `(Таб. №${e.tab_number})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <EmployeeSearch
+                  value={selectedEmployee}
+                  onChange={handleEmployeeChange}
+                  label="Выберите сотрудника"
+                  placeholder="Начните вводить ФИО..."
+                  width="w-full"
+                />
               </div>
             ) : (
               /* Ручной ввод ФИО */
@@ -410,6 +424,23 @@ export function UsersPage() {
                 />
               </div>
             )}
+
+            {/* Локальный пароль для резервного входа */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Локальный пароль (резервный вход)
+              </label>
+              <Input
+                type="password"
+                placeholder={dialogMode === "edit" ? "Оставьте пустым, чтобы не менять" : "Оставьте пустым для входа только через SSO"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Позволяет входить по логину и паролю, если сервер авторизации KTM-2000 недоступен.
+              </p>
+            </div>
 
             <DialogFooter className="pt-4">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>

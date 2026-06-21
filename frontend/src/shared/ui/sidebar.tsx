@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { NavLink, useLocation } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
-import { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
+import api, { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
 import {
   ChevronDown,
   ChevronRight,
@@ -64,8 +64,32 @@ export function Sidebar() {
   )
   const [absenceOpen, setAbsenceOpen] = useState(false)
 
-  const token = getToken()
-  const user = token ? decodeToken(token) : null
+  const [currentUser, setCurrentUser] = useState<{ username: string; role: string; full_name: string } | null>(() => {
+    const token = getToken()
+    if (!token) return null
+    const decoded = decodeToken(token)
+    if (!decoded) return null
+    return {
+      username: decoded.username || "",
+      role: decoded.hrms_access_level || decoded.role || "viewer",
+      full_name: decoded.full_name || "Пользователь",
+    }
+  })
+
+  useEffect(() => {
+    const token = getToken()
+    if (token) {
+      api.get("/auth/me")
+        .then((res) => {
+          setCurrentUser(res.data)
+        })
+        .catch((err) => {
+          console.error("Не удалось загрузить данные пользователя в сайдбаре:", err)
+        })
+    } else {
+      setCurrentUser(null)
+    }
+  }, [location.pathname])
 
   return (
     <aside className="w-64 h-screen sticky top-0 bg-card border-r flex flex-col shrink-0">
@@ -152,17 +176,12 @@ export function Sidebar() {
       </nav>
 
       <div className="p-3 border-t flex flex-col gap-2">
-        {user ? (
+        {currentUser ? (
           <>
             <div className="px-3 py-1.5 text-xs text-muted-foreground break-all">
               <div className="font-semibold text-foreground text-sm truncate">
-                {user.full_name || "Пользователь"}
+                {currentUser.full_name || "Пользователь"}
               </div>
-              {(user.username || user.sub) && (
-                <div className="text-[10px] text-muted-foreground mt-0.5">
-                  Логин: {user.username || user.sub}
-                </div>
-              )}
             </div>
             <button
               type="button"

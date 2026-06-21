@@ -17,6 +17,9 @@ class UserUpdate(BaseModel):
     full_name: str | None = Field(None, min_length=2, max_length=255)
     role: str | None = Field(None, max_length=50)
     employee_id: int | None = None
+    # Опциональный пароль для резервного входа без SSO.
+    # Если не передан — текущий пароль не изменяется.
+    password: str | None = Field(None, min_length=4, max_length=128)
 
 class UserOut(UserBase):
     id: int
