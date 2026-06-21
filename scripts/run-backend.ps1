@@ -18,4 +18,7 @@ if ($env:ONLYOFFICE_INTERNAL_URL -like "*onlyoffice*") {
 
 $backendPort = if ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { "8000" }
 Set-Location (Join-Path $projectRoot "backend")
-uvicorn app.main:app --host 0.0.0.0 --port $backendPort --reload --reload-dir app
+$uvicornPath = if (Test-Path ".\.venv\Scripts\uvicorn.exe") { ".\.venv\Scripts\uvicorn.exe" } else { "uvicorn" }
+& $uvicornPath app.main:app --host 0.0.0.0 --port $backendPort
+
+
