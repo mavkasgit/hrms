@@ -53,21 +53,11 @@ interface UnpaidLeaveEntry {
   explicitDays: number | null
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const dateValue = dateStr.slice(0, 10)
-  const parts = dateValue.split("-")
-  if (parts.length !== 3) return dateStr
-  return `${parts[2]}.${parts[1]}.${parts[0]}`
-}
+import { formatDate, calculateDaysDifference } from "@/shared/utils/date"
 
 function calcDays(startDate: string, endDate: string): string {
-  if (!startDate || !endDate) return ""
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return ""
-  const days = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
-  return String(days)
+  const days = calculateDaysDifference(startDate, endDate)
+  return days > 0 ? String(days) : ""
 }
 
 function defaultPeriodStartIso(): string {

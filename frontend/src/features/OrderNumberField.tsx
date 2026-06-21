@@ -1,40 +1,7 @@
-import { useState, useEffect, useId, useRef, useMemo } from "react"
-import { ListFilter } from "lucide-react"
-import { Input } from "@/shared/ui/input"
+import { useState, useEffect, useMemo } from "react"
 import { useNextOrderNumber, useRecentOrders } from "@/entities/order/useOrders"
-import type { OrderType, Order } from "@/entities/order/types"
-
-function formatOrderDate(dateStr: string): string {
-  const d = new Date(dateStr)
-  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`
-}
-
-function RecentOrdersList({ orders, onSelect }: { orders: Order[]; onSelect: (num: string) => void }) {
-  const recentOrders = [...orders].sort((a, b) => (b.id ?? 0) - (a.id ?? 0)).slice(0, 8)
-  if (!recentOrders.length) return <p className="text-xs text-muted-foreground py-2">Приказов пока нет</p>
-  return (
-    <div className="flex flex-col gap-1">
-      {recentOrders.map((o) => {
-        const nameParts = (o.employee_name || "").split(" ")
-        const lastName = nameParts[0] || ""
-        const initials = nameParts.slice(1, 3).map((p) => `${p[0]}.`).join("")
-        const typeName = o.order_type_name || ""
-        return (
-          <div
-            key={o.id}
-            className="flex items-center gap-2 text-xs py-1 cursor-pointer hover:bg-muted rounded px-1 whitespace-nowrap"
-            onClick={() => onSelect(o.order_number)}
-          >
-            <span className="font-mono font-semibold shrink-0">№{o.order_number}</span>
-            <span className="text-muted-foreground shrink-0">{formatOrderDate(o.order_date)}</span>
-            <span className="font-semibold shrink-0">{lastName} {initials}</span>
-            <span className="text-muted-foreground truncate max-w-[140px]">{typeName}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
+import type { OrderType } from "@/entities/order/types"
+import { DocumentNumberField } from "./DocumentNumberField"
 
 interface OrderNumberFieldProps {
   value: string
@@ -55,11 +22,7 @@ export function OrderNumberField({
   error,
   isGeneralOrder,
 }: OrderNumberFieldProps) {
-  const id = useId()
   const [letter, setLetter] = useState<string | null>(null)
-  const [popoverOpen, setPopoverOpen] = useState(false)
-  const [userModified, setUserModified] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { data: suggestedNumber } = useNextOrderNumber(orderTypeId)
   const { data: recentOrdersData } = useRecentOrders(100)
@@ -99,28 +62,12 @@ export function OrderNumberField({
     }
     const type = orderTypes.find((t) => t.id === orderTypeId)
     setLetter(type?.letter ?? null)
-    // Сбрасываем флаг при смене типа приказа
-    setUserModified(false)
-  }, [orderTypeId, orderTypes, onChange])
-
-  useEffect(() => {
-    // Автозаполняем только если пользователь еще не менял значение вручную
-    if (!userModified && suggestedNumber && !value) {
-      onChange(suggestedNumber)
-    }
-  }, [suggestedNumber, value, onChange, userModified, orderTypeId])
+  }, [orderTypeId, orderTypes])
 
   // Вычисляем отображаемое значение: убираем суффикс -{letter} если он есть
   const displayValue = letter && value.endsWith(`-${letter}`)
     ? value.slice(0, -(letter.length + 1))
     : value
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value
-    setUserModified(true)
-    // Передаём как есть, без модификаций
-    onChange(v)
-  }
 
   const handleBlur = () => {
     if (letter && value && value.trim() && !value.endsWith(`-${letter}`)) {
@@ -128,70 +75,40 @@ export function OrderNumberField({
     }
   }
 
-  const handleMouseEnter = () => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-    setPopoverOpen(true)
-  }
-
-  const handleMouseLeave = () => {
-    timerRef.current = setTimeout(() => setPopoverOpen(false), 200)
-  }
-
-  const hasError = error || (required && !value)
+  const suffixElement = isGeneralOrder ? (
+    <span className="text-xs text-muted-foreground px-2 py-2 h-10 border rounded-md bg-muted flex items-center whitespace-nowrap">
+      Без литеры
+    </span>
+  ) : letter ? (
+    <span className="text-sm text-muted-foreground px-2 py-2 h-10 border rounded-md bg-muted flex items-center">
+      -{letter}
+    </span>
+  ) : null
 
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium">
-        Номер приказа
-        {required && <span className="text-red-500 ml-1">*</span>}
-      </label>
-      <div
-        className="relative inline-block"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-      >
-        <div className="flex items-center gap-1">
-          <div className="relative">
-            <Input
-              id={id}
-              value={displayValue}
-              onChange={handleChange}
-              onBlur={handleBlur}
-              className={`h-10 text-sm w-[100px] pr-7 ${hasError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
-              onFocus={(e) => e.target.select()}
-            />
-            <ListFilter className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          </div>
-          {isGeneralOrder ? (
-            <span className="text-xs text-muted-foreground px-2 py-2 h-10 border rounded-md bg-muted flex items-center">
-              Без литеры
-            </span>
-          ) : letter ? (
-            <span className="text-sm text-muted-foreground px-2 py-2 h-10 border rounded-md bg-muted flex items-center">
-              -{letter}
-            </span>
-          ) : null}
-        </div>
-        {popoverOpen && (
-          <div
-            className="absolute top-full left-0 mt-1 min-w-[420px] border rounded-md bg-background p-2 z-50 shadow-lg"
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
-          >
-            <p className="text-xs font-semibold mb-2 text-muted-foreground">
-              Последние приказы ({letter ? `литера ${letter}` : "без литеры"})
-            </p>
-            <RecentOrdersList
-              orders={recentOrders}
-              onSelect={(num) => {
-                onChange(num)
-                setPopoverOpen(false)
-              }}
-            />
-          </div>
-        )}
-      </div>
-      {error && <p className="text-xs text-red-500">{error}</p>}
-    </div>
+    <DocumentNumberField
+      value={value}
+      onChange={onChange}
+      useNextNumber={() => ({ data: suggestedNumber })}
+      useRecentItems={() => ({
+        data: {
+          items: recentOrders.map((o) => ({
+            id: o.id ?? 0,
+            number: o.order_number,
+            date: o.order_date,
+            employee_name: o.employee_name,
+            typeLabel: o.order_type_name,
+          })),
+        },
+      })}
+      label="Номер приказа"
+      emptyListLabel="Приказов пока нет"
+      popoverTitle={`Последние приказы (${letter ? `литера ${letter}` : "без литеры"})`}
+      required={required}
+      error={error}
+      displayValue={displayValue}
+      onBlur={handleBlur}
+      suffixElement={suffixElement}
+    />
   )
 }

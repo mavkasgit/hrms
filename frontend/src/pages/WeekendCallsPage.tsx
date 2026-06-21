@@ -50,13 +50,7 @@ interface WeekendCallEntry {
   isGroup: boolean
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const value = dateStr.slice(0, 10)
-  const parts = value.split("-")
-  if (parts.length !== 3) return dateStr
-  return `${parts[2]}.${parts[1]}.${parts[0]}`
-}
+import { formatDate, calculateDaysDifference } from "@/shared/utils/date"
 
 function defaultPeriodStartIso(): string {
   const now = new Date()
@@ -93,10 +87,7 @@ function intersectsPeriod(range: CallRange, periodStart: string, periodEnd: stri
 }
 
 function daysInclusive(start: string, end: string): number {
-  const a = new Date(`${start}T00:00:00`)
-  const b = new Date(`${end}T00:00:00`)
-  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0
-  return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24)) + 1
+  return calculateDaysDifference(start, end)
 }
 
 function overlapDays(range: CallRange, periodStart: string, periodEnd: string): number {

@@ -25,16 +25,9 @@ import {
   useSickLeaves,
 } from "@/entities/sick-leave/useSickLeaves"
 import { EmployeeSearch } from "@/features/employee-search"
+import { formatDate } from "@/shared/utils/date"
 import type { Employee } from "@/entities/employee/types"
 import type { SickLeave } from "@/entities/sick-leave/types"
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const s = dateStr.slice(0, 10)
-  const parts = s.split("-")
-  if (parts.length !== 3) return dateStr
-  return `${parts[2]}.${parts[1]}.${parts[0]}`
-}
 
 type SortField = "employee_name" | "start_date" | "end_date" | "days_count" | "comment"
 

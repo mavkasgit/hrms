@@ -11,33 +11,21 @@ import { useHolidays, usePostponeVacation } from "@/entities/vacation"
 import { VacationSelector } from "@/features/VacationSelector"
 import { VacationHistoryAndPeriods } from "@/features/VacationHistoryAndPeriods"
 import { OrderNumberField } from "@/features/OrderNumberField"
+import { formatDate, parseDate, calculateDaysDifference } from "@/shared/utils/date"
 import type { OrderCreate } from "@/entities/order/types"
 import type { Holiday, Vacation } from "@/entities/vacation/types"
 
 const POSTPONE_ORDER_CODE = "vacation_postpone"
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const s = dateStr.slice(0, 10)
-  const parts = s.split("-")
-  if (parts.length !== 3) return dateStr
-  return `${parts[2]}.${parts[1]}.${parts[0]}`
-}
-
-function toDate(value: string): Date | null {
-  const d = new Date(`${value}T00:00:00`)
-  return Number.isNaN(d.getTime()) ? null : d
-}
-
 function calculateDaysWithHolidays(start: string, end: string, holidays: Holiday[]): number {
-  const startDate = toDate(start)
-  const endDate = toDate(end)
+  const startDate = parseDate(start)
+  const endDate = parseDate(end)
   if (!startDate || !endDate) return 0
   if (endDate < startDate) return 0
 
-  const calendarDays = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
+  const calendarDays = calculateDaysDifference(start, end)
   const holidayDays = holidays.filter((h) => {
-    const d = toDate(h.date)
+    const d = parseDate(h.date)
     if (!d) return false
     return d >= startDate && d <= endDate
   }).length
@@ -111,10 +99,10 @@ export function VacationPostponePage() {
     if (!postponeEndDate) nextErrors.postponeEndDate = "Укажите конец периода переноса"
 
     if (selectedVacation && postponeStartDate && postponeEndDate) {
-      const vacationStart = toDate(selectedVacation.start_date)
-      const vacationEnd = toDate(selectedVacation.end_date)
-      const rangeStart = toDate(postponeStartDate)
-      const rangeEnd = toDate(postponeEndDate)
+      const vacationStart = parseDate(selectedVacation.start_date)
+      const vacationEnd = parseDate(selectedVacation.end_date)
+      const rangeStart = parseDate(postponeStartDate)
+      const rangeEnd = parseDate(postponeEndDate)
       if (!vacationStart || !vacationEnd || !rangeStart || !rangeEnd) {
         nextErrors.range = "Некорректные даты периода переноса"
       } else {

@@ -7,16 +7,9 @@ import { useVacations } from "@/entities/vacation"
 import { getVacations } from "@/entities/vacation/api"
 import type { Vacation } from "@/entities/vacation/types"
 import { useQuery } from "@tanstack/react-query"
+import { formatDate } from "@/shared/utils/date"
 
 const TABLE_PAGE_SIZE = 25
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const s = dateStr.slice(0, 10)
-  const parts = s.split("-")
-  if (parts.length !== 3) return dateStr
-  return `${parts[2]}.${parts[1]}.${parts[0]}`
-}
 
 interface VacationSelectorProps {
   selectedVacation?: Vacation | null

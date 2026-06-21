@@ -11,18 +11,11 @@ import { openOrderPrint } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { VacationSelector } from "@/features/VacationSelector"
 import { VacationHistoryAndPeriods } from "@/features/VacationHistoryAndPeriods"
+import { formatDate, parseDate, formatForInput, calculateDaysDifference } from "@/shared/utils/date"
 import type { OrderCreate } from "@/entities/order/types"
 import type { Vacation } from "@/entities/vacation/types"
 
 const RECALL_ORDER_CODE = "vacation_recall"
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const s = dateStr.slice(0, 10)
-  const parts = s.split("-")
-  if (parts.length !== 3) return dateStr
-  return `${parts[2]}.${parts[1]}.${parts[0]}`
-}
 
 export function VacationRecallPage() {
   const navigate = useNavigate()
@@ -206,10 +199,15 @@ export function VacationRecallPage() {
                     <div className="bg-muted/30 border rounded-md p-4 space-y-2 text-sm">
                       {selectedVacation ? (<>
                         {(() => {
-                          const prevCalendarDays = Math.max(0, Math.round((new Date(selectedVacation.end_date).getTime() - new Date(selectedVacation.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+                          const prevCalendarDays = calculateDaysDifference(selectedVacation.start_date, selectedVacation.end_date)
                           const allPrevHolidays = [...(startYearHolidays || []), ...(endYearHolidays || [])]
                           const uniquePrevHolidays = allPrevHolidays.filter((h, i, arr) => arr.findIndex((t) => t.date === h.date) === i)
-                          const holidaysInPrevRange = uniquePrevHolidays.filter((h) => { const d = new Date(h.date); return d >= new Date(selectedVacation.start_date) && d <= new Date(selectedVacation.end_date) })
+                          const holidaysInPrevRange = uniquePrevHolidays.filter((h) => {
+                            const d = parseDate(h.date)
+                            const start = parseDate(selectedVacation.start_date)
+                            const end = parseDate(selectedVacation.end_date)
+                            return d && start && end && d >= start && d <= end
+                          })
                           return (<>
                             <div className="flex gap-2"><span className="text-muted-foreground">Предыдущий период:</span><span className="font-medium">{formatDate(selectedVacation.start_date)} — {formatDate(selectedVacation.end_date)}</span></div>
                             <div className="flex gap-2"><span className="text-muted-foreground">Календарных дней:</span><span className="font-medium">{prevCalendarDays}</span></div>
@@ -218,15 +216,19 @@ export function VacationRecallPage() {
                           </>)
                         })()}
                         {recallDate && (() => {
-                          const recallDateObj = new Date(recallDate)
-                          if (isNaN(recallDateObj.getTime())) return null
-                          const vacationEndDate = new Date(recallDateObj.getTime() - (1000 * 60 * 60 * 24))
-                          if (isNaN(vacationEndDate.getTime())) return null
-                          const endDateStr = vacationEndDate.toISOString().split("T")[0]
-                          const calendarDays = Math.max(0, Math.round((vacationEndDate.getTime() - new Date(selectedVacation.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1)
+                          const recallDateObj = parseDate(recallDate)
+                          if (!recallDateObj) return null
+                          const vacationEndDate = new Date(recallDateObj.getFullYear(), recallDateObj.getMonth(), recallDateObj.getDate() - 1)
+                          const endDateStr = formatForInput(vacationEndDate)
+                          const calendarDays = calculateDaysDifference(selectedVacation.start_date, endDateStr)
                           const allHolidays = [...(startYearHolidays || []), ...(recallYearHolidays || [])]
                           const uniqueHolidays = allHolidays.filter((h, i, arr) => arr.findIndex((t) => t.date === h.date) === i)
-                          const holidaysInRange = uniqueHolidays.filter((h) => { const d = new Date(h.date); return d >= new Date(selectedVacation.start_date) && d <= vacationEndDate })
+                          const holidaysInRange = uniqueHolidays.filter((h) => {
+                            const d = parseDate(h.date)
+                            const start = parseDate(selectedVacation.start_date)
+                            const end = parseDate(endDateStr)
+                            return d && start && end && d >= start && d <= end
+                          })
                           const totalDays = Math.max(0, calendarDays - holidaysInRange.length)
                           return (<>
                             <div className="border-t pt-2 mt-2" />

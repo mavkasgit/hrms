@@ -140,3 +140,37 @@ export function calcDurationMonths(startStr: string, endStr: string): number {
   const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth())
   return months > 0 ? months : 0
 }
+
+/**
+ * Рассчитать количество календарных дней между двумя датами включительно
+ * Предотвращает ошибки сдвига часовых поясов.
+ */
+export function calculateDaysDifference(
+  startDate: Date | string | null | undefined,
+  endDate: Date | string | null | undefined
+): number {
+  if (!startDate || !endDate) return 0
+  const start = typeof startDate === "string" ? parseDate(startDate) : startDate
+  const end = typeof endDate === "string" ? parseDate(endDate) : endDate
+
+  if (!start || !end || !isValid(start) || !isValid(end) || end < start) {
+    return 0
+  }
+
+  // Сбрасываем время в 00:00:00 локального времени для точного расчета дней
+  const startLocal = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+  const endLocal = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+
+  return Math.round((endLocal.getTime() - startLocal.getTime()) / (1000 * 60 * 60 * 24)) + 1
+}
+
+/**
+ * Форматировать дату и время для отображения (DD.MM.YYYY, HH:mm:ss)
+ */
+export function formatDateTime(date: Date | string | null, includeSeconds = true): string {
+  if (!date) return "—"
+  const d = typeof date === "string" ? new Date(date) : date
+  if (!d || !isValid(d)) return "—"
+  const formatStr = includeSeconds ? "dd.MM.yyyy, HH:mm:ss" : "dd.MM.yyyy, HH:mm"
+  return format(d, formatStr, { locale: ru })
+}

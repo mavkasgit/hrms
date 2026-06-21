@@ -11,23 +11,11 @@ import { openOrderPrint } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { VacationSelector } from "@/features/VacationSelector"
 import { VacationHistoryAndPeriods } from "@/features/VacationHistoryAndPeriods"
+import { formatDate, parseDate, calculateDaysDifference, nextDay } from "@/shared/utils/date"
 import type { OrderCreate } from "@/entities/order/types"
 import type { Vacation } from "@/entities/vacation/types"
 
 const EXTENSION_ORDER_CODE = "vacation_extension"
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const s = dateStr.slice(0, 10)
-  const parts = s.split("-")
-  if (parts.length !== 3) return dateStr
-  return `${parts[2]}.${parts[1]}.${parts[0]}`
-}
-
-function parseIsoDate(value: string): Date | null {
-  const d = new Date(`${value}T00:00:00`)
-  return Number.isNaN(d.getTime()) ? null : d
-}
 
 export function VacationExtensionPage() {
   const navigate = useNavigate()
@@ -50,13 +38,6 @@ export function VacationExtensionPage() {
     setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setErrors({}); setDraftId(null)
   }, [selectedVacation?.id])
 
-  const getNextDayAfterVacation = (vacationEnd: string): string => {
-    const d = parseIsoDate(vacationEnd)
-    if (!d) return ""
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().split("T")[0]
-  }
-
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
     if (!selectedVacation) newErrors.vacation = "Выберите отпуск"
@@ -64,7 +45,7 @@ export function VacationExtensionPage() {
     if (!periodEnd) newErrors.periodEnd = "Укажите конец периода продления"
     if (periodStart && periodEnd && periodEnd < periodStart) newErrors.periodEnd = "Дата конца раньше даты начала"
     if (selectedVacation && periodStart) {
-      const minStart = getNextDayAfterVacation(selectedVacation.end_date)
+      const minStart = nextDay(selectedVacation.end_date)
       if (minStart && periodStart < minStart) {
         newErrors.periodStart = "Период продления должен начинаться после окончания отпуска"
       }
@@ -142,11 +123,9 @@ export function VacationExtensionPage() {
 
   const calculateExtensionInfo = () => {
     if (!selectedVacation || !periodStart || !periodEnd) return null
-    const vacationEnd = parseIsoDate(selectedVacation.end_date)
-    const pStart = parseIsoDate(periodStart)
-    const pEnd = parseIsoDate(periodEnd)
-    if (!vacationEnd || !pStart || !pEnd) return null
-    const calendarDays = Math.max(0, Math.round((pEnd.getTime() - pStart.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+    const vacationEnd = parseDate(selectedVacation.end_date)
+    if (!vacationEnd) return null
+    const calendarDays = calculateDaysDifference(periodStart, periodEnd)
     const extensionDays = calendarDays
     return { extensionDays, calendarDays, newVacationEnd: formatDate(periodEnd) }
   }
@@ -179,7 +158,7 @@ export function VacationExtensionPage() {
                 onSelect={(v) => {
                   if (!v) { setSelectedVacation(null); return }
                   setSelectedVacation(v)
-                  const defaultStart = getNextDayAfterVacation(v.end_date)
+                  const defaultStart = nextDay(v.end_date)
                   setPeriodStart(defaultStart)
                   setPeriodEnd(defaultStart)
                   setErrors({})

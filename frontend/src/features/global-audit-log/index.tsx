@@ -79,14 +79,10 @@ const actionColors: Record<string, string> = {
   position_deleted: "bg-red-100 text-red-800",
 }
 
+import { formatDateTime } from "@/shared/utils/date"
+
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
+  return formatDateTime(dateStr, false)
 }
 
 /** Извлекает ключевые данные из сообщения лога */

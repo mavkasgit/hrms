@@ -1,4 +1,5 @@
 import { Badge } from "@/shared/ui/badge"
+import { formatDate } from "@/shared/utils/date"
 import { Button } from "@/shared/ui/button"
 import { Download, Eye, Trash2 } from "lucide-react"
 import type { VacationPeriodVacation } from "@/entities/vacation-period/types"
@@ -23,13 +24,7 @@ type ParsedExtensionComment = {
   extensionDays: number
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const s = dateStr.slice(0, 10)
-  const parts = s.split("-")
-  if (parts.length !== 3) return dateStr
-  return `${parts[2]}.${parts[1]}.${parts[0]}`
-}
+
 
 function addDaysSafe(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00`)

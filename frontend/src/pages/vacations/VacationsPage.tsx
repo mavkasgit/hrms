@@ -63,33 +63,13 @@ import { GlobalAuditLog } from "@/features/global-audit-log"
 import { useTags } from "@/entities/tag/useTags"
 import { PrintPreviewDialog } from "@/features/print-preview"
 import { OrdersRegistryModal } from "@/features/orders-registry/OrdersRegistryModal"
+import { formatDate, formatDateTime } from "@/shared/utils/date"
 import type { Employee } from "@/entities/employee/types"
 import type { EmployeeVacationSummary } from "@/entities/vacation/types"
 
 const VACATION_ORDER_CODE = "vacation_paid"
 
 const DEFAULT_VACATION_TYPE = "Трудовой"
-
-// Convert ISO date (YYYY-MM-DD) to DD.MM.YYYY
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const s = dateStr.slice(0, 10) // обрезаем время если есть
-  const parts = s.split("-")
-  if (parts.length !== 3) return dateStr
-  return `${parts[2]}.${parts[1]}.${parts[0]}`
-}
-
-function formatDateTime(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const d = new Date(dateStr)
-  if (Number.isNaN(d.getTime())) return formatDate(dateStr)
-  const dd = String(d.getDate()).padStart(2, "0")
-  const mm = String(d.getMonth() + 1).padStart(2, "0")
-  const yyyy = d.getFullYear()
-  const hh = String(d.getHours()).padStart(2, "0")
-  const min = String(d.getMinutes()).padStart(2, "0")
-  return `${dd}.${mm}.${yyyy} ${hh}:${min}`
-}
 
 function formatTransactionType(type: string): string {
   switch (type) {

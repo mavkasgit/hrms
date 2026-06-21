@@ -1,4 +1,5 @@
 import { TableRow, TableCell } from "@/shared/ui/table"
+import { formatDate } from "@/shared/utils/date"
 import type { GroupEmployeeInfo } from "../types"
 
 interface GroupOrderEmployeesRowsProps {
@@ -7,13 +8,7 @@ interface GroupOrderEmployeesRowsProps {
   orderNumber: string
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—"
-  const dateValue = dateStr.slice(0, 10)
-  const parts = dateValue.split("-")
-  if (parts.length !== 3) return dateStr
-  return `${parts[2]}.${parts[1]}.${parts[0]}`
-}
+
 
 export function GroupOrderEmployeesRows({ employees, type, orderNumber }: GroupOrderEmployeesRowsProps) {
   return (

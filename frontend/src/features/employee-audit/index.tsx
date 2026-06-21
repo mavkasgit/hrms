@@ -33,8 +33,10 @@ interface EmployeeAuditDialogProps {
   name: string
 }
 
+import { formatDateTime } from "@/shared/utils/date"
+
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString("ru-RU")
+  return formatDateTime(dateStr, true)
 }
 
 function renderChangedFields(changed_fields: EmployeeAuditLog["changed_fields"]) {

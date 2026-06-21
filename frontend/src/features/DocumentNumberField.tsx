@@ -13,6 +13,9 @@ interface DocumentNumberFieldProps {
   required?: boolean
   error?: string
   renderItem?: (item: { number: string | null; date: string; employee_name: string | null; title?: string; typeLabel?: string }) => React.ReactNode
+  displayValue?: string
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void
+  suffixElement?: React.ReactNode
 }
 
 function defaultFormatDate(dateStr: string): string {
@@ -47,6 +50,9 @@ export function DocumentNumberField({
   required,
   error,
   renderItem,
+  displayValue,
+  onBlur,
+  suffixElement,
 }: DocumentNumberFieldProps) {
   const id = useId()
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -96,13 +102,15 @@ export function DocumentNumberField({
           <div className="relative">
             <Input
               id={id}
-              value={value}
+              value={displayValue !== undefined ? displayValue : value}
               onChange={handleChange}
+              onBlur={onBlur}
               className={`h-10 text-sm w-[100px] pr-7 ${hasError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
               onFocus={(e) => e.target.select()}
             />
             <ListFilter className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           </div>
+          {suffixElement}
         </div>
         {popoverOpen && (
           <div
