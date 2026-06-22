@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo } from "react"
 import { Download, RotateCcw, Eye, Database, Upload, AlertTriangle, Loader2, CheckCircle2, Trash2, X, ArrowLeft, Clock, Save } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
+import { useToast } from "@/shared/ui/use-toast"
 import { cn } from "@/shared/utils/cn"
 import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
 import {
@@ -82,6 +83,8 @@ function backupStageLabel(stage: string): string {
 
 export function BackupsPage() {
   const { data: backups, isLoading, refetch: refetchBackups } = useBackups()
+  const { addToast } = useToast()
+
   type SortField = "filename" | "db_name" | "backup_type" | "size" | "created_at" | "comment"
 
   const [sortConfigs, setSortConfigs] = useState<Array<{ field: SortField; order: "asc" | "desc" }>>([
@@ -254,8 +257,13 @@ export function BackupsPage() {
       setConfigSaveSuccess(true)
       setTimeout(() => setConfigSaveSuccess(false), 3000)
       setConfigModalOpen(false)
+      addToast({
+        title: "Настройки сохранены",
+        description: "Параметры автоматического резервного копирования успешно обновлены.",
+        variant: "success",
+      })
     } catch (e: any) {
-      alert("Ошибка сохранения настроек: " + (e.response?.data?.detail || e.message))
+      console.error("Ошибка сохранения настроек:", e)
     } finally {
       setIsSavingConfig(false)
     }
@@ -318,7 +326,11 @@ export function BackupsPage() {
     }
     if (activeBackupJob.status === "failed") {
       setHandledBackupJobId(activeBackupJob.job_id)
-      alert("Ошибка создания бэкапа: " + (activeBackupJob.error || "неизвестная ошибка"))
+      addToast({
+        title: "Ошибка создания бэкапа",
+        description: activeBackupJob.error || "неизвестная ошибка",
+        variant: "destructive",
+      })
       setActiveBackupJobId(null)
     }
   }, [activeBackupJob, handledBackupJobId, refetchBackups])
@@ -329,7 +341,7 @@ export function BackupsPage() {
       setHandledBackupJobId(null)
       setActiveBackupJobId(job.job_id)
     } catch (e: any) {
-      alert("Ошибка создания бэкапа: " + (e.response?.data?.detail || e.message))
+      console.error("Ошибка создания бэкапа:", e)
     }
   }
 
@@ -341,8 +353,10 @@ export function BackupsPage() {
     try {
       const data = await currentPreview.mutateAsync()
       setPreviewData(data)
-    } catch (e) {
+    } catch (e: any) {
       setPreviewData(null)
+      console.error("Ошибка анализа БД:", e)
+      setPreviewOpen(false)
     } finally {
       setPreviewLoading(false)
     }
@@ -356,8 +370,10 @@ export function BackupsPage() {
     try {
       const data = await previewBackup.mutateAsync(filename)
       setPreviewData(data)
-    } catch (e) {
+    } catch (e: any) {
       setPreviewData(null)
+      console.error("Ошибка анализа бэкапа:", e)
+      setPreviewOpen(false)
     } finally {
       setPreviewLoading(false)
     }
@@ -371,8 +387,10 @@ export function BackupsPage() {
     try {
       const data = await uploadPreview.mutateAsync(file)
       setPreviewData(data)
-    } catch (e) {
+    } catch (e: any) {
       setPreviewData(null)
+      console.error("Ошибка анализа загруженного бэкапа:", e)
+      setPreviewOpen(false)
     } finally {
       setPreviewLoading(false)
     }
@@ -401,7 +419,7 @@ export function BackupsPage() {
       setUploadedRestoreFile(null)
       setSuccessOpen(true)
     } catch (e: any) {
-      alert("Ошибка восстановления: " + (e.response?.data?.detail || e.message))
+      console.error("Ошибка восстановления:", e)
     } finally {
       setRestoreLoading(false)
     }
@@ -434,8 +452,13 @@ export function BackupsPage() {
       await deleteBackup.mutateAsync(deleteTarget)
       setDeleteConfirmOpen(false)
       setDeleteTarget(null)
+      addToast({
+        title: "Бэкап удален",
+        description: "Резервная копия успешно удалена с сервера.",
+        variant: "success",
+      })
     } catch (e: any) {
-      alert("Ошибка удаления: " + (e.response?.data?.detail || e.message))
+      console.error("Ошибка удаления:", e)
     }
   }
 
@@ -449,8 +472,13 @@ export function BackupsPage() {
       await bulkDelete.mutateAsync(Array.from(selectedFilenames))
       setBulkDeleteConfirmOpen(false)
       setSelectedFilenames(new Set())
+      addToast({
+        title: "Бэкапы удалены",
+        description: "Выбранные резервные копии успешно удалены с сервера.",
+        variant: "success",
+      })
     } catch (e: any) {
-      alert("Ошибка удаления: " + (e.response?.data?.detail || e.message))
+      console.error("Ошибка удаления:", e)
     }
   }
 
@@ -477,8 +505,13 @@ export function BackupsPage() {
       await deleteOlderThan.mutateAsync(days)
       setOlderThanOpen(false)
       setSelectedFilenames(new Set())
+      addToast({
+        title: "Старые бэкапы удалены",
+        description: `Резервные копии старше ${days} дн. успешно удалены с сервера.`,
+        variant: "success",
+      })
     } catch (e: any) {
-      alert("Ошибка удаления: " + (e.response?.data?.detail || e.message))
+      console.error("Ошибка удаления:", e)
     }
   }
 
@@ -492,8 +525,13 @@ export function BackupsPage() {
     try {
       await updateComment.mutateAsync({ filename, comment: commentInput })
       setEditingComment(null)
+      addToast({
+        title: "Комментарий сохранен",
+        description: "Комментарий к резервной копии успешно обновлен.",
+        variant: "success",
+      })
     } catch (e: any) {
-      alert("Ошибка сохранения комментария: " + (e.response?.data?.detail || e.message))
+      console.error("Ошибка сохранения комментария:", e)
     }
   }
 

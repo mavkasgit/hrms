@@ -15,6 +15,16 @@ interface ToastContextValue {
 
 const ToastContext = React.createContext<ToastContextValue | undefined>(undefined)
 
+let globalAddToast: ((toast: Omit<Toast, "id">) => void) | null = null
+
+export function showGlobalToast(toast: Omit<Toast, "id">) {
+  if (globalAddToast) {
+    globalAddToast(toast)
+  } else {
+    console.warn("ToastProvider not mounted, but showGlobalToast was called:", toast)
+  }
+}
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<Toast[]>([])
 
@@ -25,6 +35,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     }, 4000)
   }, [])
+
+  React.useEffect(() => {
+    globalAddToast = addToast
+    return () => {
+      globalAddToast = null
+    }
+  }, [addToast])
 
   const removeToast = React.useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))

@@ -1,4 +1,11 @@
 import axios from "axios"
+import { showGlobalToast } from "@/shared/ui/use-toast"
+
+declare module "axios" {
+  export interface AxiosRequestConfig {
+    skipGlobalToast?: boolean
+  }
+}
 
 /** Проверяет, запущен ли фронтенд в dev/test режиме (VITE_AUTH_MODE=dev|test). */
 export function isDevMode(): boolean {
@@ -124,16 +131,96 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+function formatErrorMessage(data: any, fallbackMessage: string): string {
+  if (!data) return fallbackMessage
+
+  const detail = data.detail !== undefined ? data.detail : data
+
+  if (typeof detail === "string") {
+    return detail
+  }
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d: any) => {
+        if (typeof d === "string") return d
+        const field = Array.isArray(d.loc)
+          ? d.loc.filter((l: any) => l !== "body" && l !== "query").join(".")
+          : ""
+        const prefix = field ? `${field}: ` : ""
+        return `${prefix}${d.msg || "некорректное значение"}`
+      })
+      .join("\n")
+  }
+
+  if (typeof detail === "object" && detail !== null) {
+    const msg = detail.message || detail.error || detail.detail
+    if (typeof msg === "string") return msg
+    if (typeof msg === "object" && msg !== null) {
+      return formatErrorMessage(msg, fallbackMessage)
+    }
+    try {
+      return JSON.stringify(detail)
+    } catch (e) {
+      return fallbackMessage
+    }
+  }
+
+  return fallbackMessage
+}
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Если запрос был отменен клиентом, тихо пропускаем без показа тоста
+    if (axios.isCancel(error)) {
+      return Promise.reject(error)
+    }
+
     console.error("[API Error]", error.response?.status, error.response?.data || error.message)
+    
+    // 401 Unauthorized всегда обрабатываем перенаправлением
     if (error.response?.status === 401) {
       localStorage.removeItem("token")
       localStorage.removeItem("ktm2000_token")
       document.cookie = "ktm2000_token=; path=/; max-age=0"
       window.location.href = "/login"
+      return Promise.reject(error)
     }
+
+    // Если запрошено подавление глобального тоста, просто возвращаем ошибку
+    if (error.config?.skipGlobalToast === true) {
+      return Promise.reject(error)
+    }
+
+    let title = "Ошибка запроса"
+    const status = error.response?.status
+    const responseData = error.response?.data
+    let description = formatErrorMessage(responseData, error.message || "Неизвестная ошибка")
+
+    if (!error.response) {
+      title = "Ошибка сети"
+      description = "Сервер недоступен или превышено время ожидания."
+    } else if (status === 403) {
+      title = "Доступ запрещен"
+      description = formatErrorMessage(responseData, "У вас недостаточно прав для выполнения этого действия.")
+    } else if (status === 404) {
+      title = "Ресурс не найден"
+      description = formatErrorMessage(responseData, "Запрошенный ресурс не найден на сервере.")
+    } else if (status === 422) {
+      title = "Ошибка валидации данных"
+      description = formatErrorMessage(responseData, "Ошибка валидации данных.")
+    } else if (status >= 500) {
+      title = "Ошибка сервера"
+      description = formatErrorMessage(responseData, "Внутренняя ошибка сервера. Пожалуйста, попробуйте позже.")
+    }
+
+    showGlobalToast({
+      title,
+      description,
+      variant: "destructive",
+    })
+
     return Promise.reject(error)
   }
 )
