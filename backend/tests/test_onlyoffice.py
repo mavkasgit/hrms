@@ -327,3 +327,58 @@ async def test_order_print_pdf_endpoint_propagates_conversion_error(monkeypatch,
 
     assert exc_info.value.status_code == 502
     assert exc_info.value.error_code == "order_pdf_convert_failed"
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_or_onlyoffice_valid_onlyoffice_token(monkeypatch):
+    from app.api.deps import get_current_user_or_onlyoffice
+
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+
+    token = jwt.encode({"status": 2}, "test-secret", algorithm="HS256")
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    mock_request = SimpleNamespace(headers=headers, method="GET", query_params={})
+
+    result = await get_current_user_or_onlyoffice(request=mock_request, db=object())
+    assert result == "onlyoffice_server"
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_or_onlyoffice_fallback_to_user(monkeypatch):
+    from fastapi import HTTPException
+    from app.api.deps import get_current_user_or_onlyoffice
+
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+
+    headers = {"Authorization": "Bearer invalid-token"}
+    mock_request = SimpleNamespace(headers=headers, method="GET", query_params={})
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user_or_onlyoffice(request=mock_request, db=object())
+    
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_or_onlyoffice_query_token(monkeypatch):
+    from app.api.deps import get_current_user_or_onlyoffice
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+
+    mock_request = SimpleNamespace(
+        headers={},
+        method="GET",
+        query_params={"token": "invalid-token"}
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user_or_onlyoffice(request=mock_request, db=object())
+    
+    assert exc_info.value.status_code == 401
+
+

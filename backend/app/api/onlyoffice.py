@@ -42,7 +42,7 @@ class OnlyOfficeForceSaveRequest(BaseModel):
     document_key: str
 
 
-from app.api.deps import get_current_user as _get_current_user_stub
+from app.api.deps import get_current_user as _get_current_user_stub, get_current_user_or_onlyoffice
 
 
 def _ensure_onlyoffice_enabled() -> None:
@@ -205,7 +205,7 @@ async def order_onlyoffice_config(
 async def order_onlyoffice_file(
     order_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     order = await order_service.get_by_id(db, order_id)
     if not order.file_path:
@@ -224,7 +224,7 @@ async def order_onlyoffice_callback(
     order_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})
@@ -364,7 +364,7 @@ async def draft_onlyoffice_config(
 @router.get("/orders/drafts/{draft_id}/file")
 async def draft_onlyoffice_file(
     draft_id: str,
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     return _file_response(order_draft_service.get_draft_path(draft_id))
 
@@ -373,7 +373,7 @@ async def draft_onlyoffice_file(
 async def draft_onlyoffice_callback(
     draft_id: str,
     request: Request,
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})
@@ -519,7 +519,7 @@ async def template_onlyoffice_config(
 async def template_onlyoffice_file(
     order_type_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     order_type = await order_service.get_order_type_by_id(db, order_type_id)
     if not order_type:
@@ -535,7 +535,7 @@ async def template_onlyoffice_callback(
     order_type_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})
@@ -726,7 +726,7 @@ async def notification_onlyoffice_config(
 async def notification_onlyoffice_file(
     notification_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     notification = await db.get(Notification, notification_id)
     if not notification:
@@ -744,7 +744,7 @@ async def notification_onlyoffice_callback(
     notification_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})
@@ -936,7 +936,7 @@ async def statement_onlyoffice_config(
 async def statement_onlyoffice_file(
     statement_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     statement = await db.get(Statement, statement_id)
     if not statement:
@@ -954,7 +954,7 @@ async def statement_onlyoffice_callback(
     statement_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})

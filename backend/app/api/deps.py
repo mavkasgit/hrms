@@ -122,3 +122,51 @@ async def get_current_user(
                 await db.rollback()
         
     return CurrentUser(username, role=user.role, full_name=user.full_name)
+
+
+async def get_current_user_or_onlyoffice(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+) -> CurrentUser | str:
+    auth_header = request.headers.get("Authorization")
+    
+    # 1. Проверяем, является ли это токеном OnlyOffice из заголовка Authorization
+    if settings.ONLYOFFICE_ENABLED and auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        try:
+            jwt.decode(token, settings.ONLYOFFICE_JWT_SECRET, algorithms=["HS256"])
+            return "onlyoffice_server"
+        except JWTError:
+            pass
+
+    # 2. Проверяем OnlyOffice-токен из тела запроса (для Callback)
+    if settings.ONLYOFFICE_ENABLED and request.method == "POST":
+        try:
+            body = await request.json()
+            token = body.get("token")
+            if token:
+                jwt.decode(str(token), settings.ONLYOFFICE_JWT_SECRET, algorithms=["HS256"])
+                return "onlyoffice_server"
+        except Exception:
+            pass
+
+    # 3. Поддержка передачи токена пользователя через query-параметр "token" (например, при печати в PDF)
+    query_token = request.query_params.get("token")
+    if not auth_header and query_token:
+        class _RequestWithAuthHeader:
+            def __init__(self, req: Request, auth_h: str):
+                self.req = req
+                self.headers = {
+                    "Authorization": auth_h,
+                    "authorization": auth_h
+                }
+
+            def __getattr__(self, name):
+                return getattr(self.req, name)
+
+        wrapped_request = _RequestWithAuthHeader(request, f"Bearer {query_token}")
+        return await get_current_user(wrapped_request, db)
+
+    # 4. Иначе проверяем как стандартный токен пользователя
+    return await get_current_user(request, db)
+

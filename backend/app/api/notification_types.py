@@ -12,7 +12,7 @@ from app.services.template_variables_service import get_template_variables as ge
 router = APIRouter(prefix="/notification-types", tags=["notification-types"])
 
 
-from app.api.deps import get_current_user as _get_current_user_stub
+from app.api.deps import get_current_user as _get_current_user_stub, get_current_user_or_onlyoffice
 
 
 @router.get("/standard-codes")
@@ -230,7 +230,7 @@ async def notification_type_onlyoffice_config(
 async def notification_type_onlyoffice_file(
     notification_type_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     n_type = await notification_type_service.get_notification_type(db, notification_type_id)
     if not n_type:
@@ -249,7 +249,7 @@ async def notification_type_onlyoffice_callback(
     notification_type_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})

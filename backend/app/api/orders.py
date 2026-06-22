@@ -84,7 +84,7 @@ class OrderDeletionPreview(BaseModel):
     warnings: list[str] = []
 
 
-from app.api.deps import get_current_user as _get_current_user_stub
+from app.api.deps import get_current_user as _get_current_user_stub, get_current_user_or_onlyoffice
 
 
 @router.get("/types", response_model=OrderTypeListResponse)
@@ -514,7 +514,7 @@ async def download_order(
 async def print_order_pdf(
     order_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     if not settings.ONLYOFFICE_ENABLED:
         raise HRMSException("OnlyOffice отключен", "onlyoffice_disabled", status_code=503)
