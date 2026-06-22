@@ -63,6 +63,7 @@ import {
   type FieldSchema,
 } from "@/features/dynamic-form"
 import { getOrderTypeLayout } from "@/entities/order/orderTypeLayouts"
+import { formatDate } from "@/shared/utils/date"
 
 const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
   "Прием на работу": "bg-green-100 text-green-800 border-green-200",
@@ -102,7 +103,7 @@ function OrderDeletePreview({ orderId }: { orderId: number | null }) {
         </div>
       )}
       <div className="text-sm">
-        <span className="text-muted-foreground">Дата:</span> {preview.order_date}
+        <span className="text-muted-foreground">Дата:</span> {formatDate(preview.order_date)}
       </div>
       {preview.warnings.length > 0 && (
         <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-md space-y-1">
