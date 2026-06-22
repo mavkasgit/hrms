@@ -20,4 +20,5 @@ $timeoutSec = if ($env:DB_WAIT_TIMEOUT) { [int]$env:DB_WAIT_TIMEOUT } else { 60 
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Set-Location (Join-Path $projectRoot "backend")
+python scripts/migrate_production_version.py
 python -m alembic upgrade head

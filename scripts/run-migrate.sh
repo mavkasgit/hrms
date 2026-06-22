@@ -19,6 +19,13 @@ TIMEOUT="${DB_WAIT_TIMEOUT:-60}"
 "${SCRIPT_DIR}/wait-for-postgres.sh" "${PG_CONTAINER}" "${PG_USER}" "${PG_DB}" "${TIMEOUT}"
 
 cd "${PROJECT_ROOT}/backend"
+
+if command -v python >/dev/null 2>&1; then
+  python scripts/migrate_production_version.py
+elif command -v py.exe >/dev/null 2>&1; then
+  py.exe scripts/migrate_production_version.py
+fi
+
 if command -v py.exe >/dev/null 2>&1; then
   exec py.exe -m alembic upgrade head
 fi
