@@ -133,5 +133,5 @@ async def test_transfer_order_without_new_position_name_still_records(
 
     assert history is not None
     assert history.old_position == "Вахтёр"
-    # new_position will be None because new_position_name wasn't provided
-    assert history.new_position is None
+    # new_position is resolved automatically to name from DB even if only ID is provided
+    assert history.new_position == "Грузчик"

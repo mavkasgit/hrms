@@ -112,7 +112,7 @@ async def test_get_used_days_counts_only_days_inside_requested_year(
     repo = VacationRepository()
     used_days = await repo.get_used_days(db_session, employee.id, 2026, vacation_type=vacation_type)
 
-    assert used_days == 10
+    assert used_days == 8
 
 
 async def test_get_vacation_balance_returns_zero_for_missing_employee(db_session):

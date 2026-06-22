@@ -42,13 +42,13 @@ def test_suggest_field_schema_infers_types():
 
 def test_suggest_field_schema_generates_labels():
     """Labels should be human-readable from snake_case keys."""
-    placeholders = ["vacation_start_date", "new_contract_number"]
+    placeholders = ["custom_start_date", "some_other_field"]
 
     schema = suggest_field_schema(placeholders)
     schema_by_key = {f["key"]: f for f in schema}
 
-    assert schema_by_key["vacation_start_date"]["label"] == "Vacation start date"
-    assert schema_by_key["new_contract_number"]["label"] == "New contract number"
+    assert schema_by_key["custom_start_date"]["label"] == "Custom start date"
+    assert schema_by_key["some_other_field"]["label"] == "Some other field"
 
 
 def test_extract_placeholders_from_nonexistent_file():

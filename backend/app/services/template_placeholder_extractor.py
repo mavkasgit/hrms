@@ -74,7 +74,7 @@ def _key_to_label(key: str) -> str:
         if tv["name"].strip("{}") == key:
             return tv.get("displayName", tv["description"])
     # Fallback: snake_case → Title Case
-    return key.replace("_", " ").title()
+    return key.replace("_", " ").capitalize()
 
 
 def _suggest_field_type(key: str) -> str:
@@ -242,16 +242,17 @@ def suggest_field_schema(placeholders: list[str]) -> list[dict[str, Any]]:
         col = idx % 2
         if col == 0 and idx > 0:
             text_row += 1
+        field_type = _suggest_field_type(text_key)
         schema.append({
             "key": text_key,
             "label": _key_to_label(text_key),
             "displayName": _key_to_display_name(text_key),
-            "type": "text",
+            "type": field_type,
             "required": False,
             "enabled": text_key not in AUTO_HIDDEN,
             "col": col,
             "row": text_row,
-            "width": WIDTH_BY_TYPE["text"],
+            "width": WIDTH_BY_TYPE[field_type],
         })
         used.add(text_key)
 

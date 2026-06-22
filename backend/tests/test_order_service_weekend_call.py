@@ -19,9 +19,9 @@ async def test_ensure_default_order_types_includes_weekend_call(db_session):
     assert weekend_call.show_in_orders_page is False
     assert weekend_call.template_filename == "prikaz_vyzov_v_vyhodnoy.docx"
     assert weekend_call.field_schema == [
-        {"key": "call_date", "label": "Дата вызова", "type": "date", "required": False},
-        {"key": "call_date_start", "label": "Дата начала", "type": "date", "required": False},
-        {"key": "call_date_end", "label": "Дата окончания", "type": "date", "required": False},
+        {"key": "call_date", "label": "Дата вызова", "type": "date", "required": False, "enabled": True},
+        {"key": "call_date_start", "label": "Дата начала", "type": "date", "required": False, "enabled": True},
+        {"key": "call_date_end", "label": "Дата окончания", "type": "date", "required": False, "enabled": True},
     ]
 
 
