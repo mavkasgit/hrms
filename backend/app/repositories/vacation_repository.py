@@ -115,6 +115,16 @@ class VacationRepository:
         vacation = await self.get_by_id(db, id)
         if not vacation:
             return False
+        
+        # Сбрасываем vacation_id во всех транзакциях перед удалением отпуска
+        from app.models.vacation_period_transaction import VacationPeriodTransaction
+        from sqlalchemy import update
+        await db.execute(
+            update(VacationPeriodTransaction)
+            .where(VacationPeriodTransaction.vacation_id == id)
+            .values(vacation_id=None)
+        )
+        
         await db.delete(vacation)
         await db.flush()
         return True

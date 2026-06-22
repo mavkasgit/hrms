@@ -429,13 +429,13 @@ async def delete_department(
     # Проверяем сотрудников
     emp_result = await db.execute(
         select(Employee)
-        .where(Employee.department_id == dept_id, Employee.is_deleted == False)
+        .where(Employee.department_id == dept_id)
     )
     employees = emp_result.scalars().all()
     if employees:
         raise HTTPException(
             status_code=400,
-            detail="Cannot delete department with active employees",
+            detail="Cannot delete department with employees",
         )
 
     # Проверяем связи (и как head, и как child)

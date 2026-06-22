@@ -42,6 +42,13 @@ class ContractHistoryService:
             or ef.get("contract_end_years")
         )
 
+        old_position_name = None
+        if employee and employee.position_id:
+            from app.models.position import Position as _Position
+            from sqlalchemy import select as _select
+            pos_result = await db.execute(_select(_Position.name).where(_Position.id == employee.position_id))
+            old_position_name = pos_result.scalar_one_or_none()
+
         record = ContractHistory(
             employee_id=employee_id,
             order_id=order_id,
@@ -49,7 +56,7 @@ class ContractHistoryService:
             contract_start=contract_start or date.today(),
             contract_end=contract_end,
             order_type_code=order_type_code,
-            old_position=employee.position.name if employee and employee.position else None,
+            old_position=old_position_name,
             new_position=ef.get("new_position_name"),
         )
         db.add(record)

@@ -197,16 +197,15 @@ async def delete_position(
 
     pos_name = pos.name
 
-    # Проверяем сотрудников
     emp_result = await db.execute(
         select(Employee)
-        .where(Employee.position_id == pos_id, Employee.is_deleted == False)
+        .where(Employee.position_id == pos_id)
     )
     employees = emp_result.scalars().all()
     if employees:
         raise HTTPException(
             status_code=400,
-            detail="Cannot delete position with active employees",
+            detail="Cannot delete position with employees",
         )
 
     await db.delete(pos)

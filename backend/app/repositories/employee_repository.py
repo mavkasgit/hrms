@@ -217,54 +217,85 @@ class EmployeeRepository:
         from app.models.tag import EmployeeTag
         from app.models.department import Department
         from app.models.order import Order
+        from app.models.contract_history import ContractHistory
+        from app.models.vacation_period_transaction import VacationPeriodTransaction
         from sqlalchemy import delete, update
 
-        await db.execute(delete(EmployeeTag).where(EmployeeTag.employee_id == employee_id))
-
-        await db.execute(delete(HireDateAdjustment).where(HireDateAdjustment.employee_id == employee_id))
-
-        await db.execute(delete(SickLeave).where(SickLeave.employee_id == employee_id))
-
-        await db.execute(delete(VacationAdjustment).where(VacationAdjustment.employee_id == employee_id))
-
-        from app.models.vacation_period_transaction import VacationPeriodTransaction
-        from app.models.vacation_period_manual_closure import VacationPeriodManualClosure
-
-        # Сначала удаляем транзакции, ссылающиеся на manual closures
-        closure_ids = await db.execute(
+        # 1. Находим manual closure IDs для этого сотрудника
+        closure_ids_result = await db.execute(
             select(VacationPeriodManualClosure.id).where(VacationPeriodManualClosure.employee_id == employee_id)
         )
-        closure_ids = [row[0] for row in closure_ids.all()]
-        if closure_ids:
-            await db.execute(
-                delete(VacationPeriodTransaction).where(
-                    VacationPeriodTransaction.manual_closure_id.in_(closure_ids)
-                )
+        closure_ids = [row[0] for row in closure_ids_result.all()]
+
+        # 2. Находим все периоды сотрудника
+        periods_result = await db.execute(
+            select(VacationPeriod.id).where(VacationPeriod.employee_id == employee_id)
+        )
+        period_ids = [row[0] for row in periods_result.all()]
+
+        # 3. Сначала удаляем транзакции
+        if period_ids:
+            # Находим ID всех транзакций этих периодов
+            tx_result = await db.execute(
+                select(VacationPeriodTransaction.id).where(VacationPeriodTransaction.period_id.in_(period_ids))
             )
+            tx_ids = [row[0] for row in tx_result.all()]
+            if tx_ids:
+                # Сбрасываем reversed_transaction_id для транзакций, которые ссылаются на удаляемые транзакции
+                await db.execute(
+                    update(VacationPeriodTransaction)
+                    .where(VacationPeriodTransaction.reversed_transaction_id.in_(tx_ids))
+                    .values(reversed_transaction_id=None)
+                )
+                # Удаляем все транзакции по period_ids
+                await db.execute(
+                    delete(VacationPeriodTransaction).where(VacationPeriodTransaction.period_id.in_(period_ids))
+                )
 
-        await db.execute(delete(VacationPeriodManualClosure).where(VacationPeriodManualClosure.employee_id == employee_id))
+        # 4. Удаляем корректировки (VacationAdjustment) сотрудника
+        await db.execute(delete(VacationAdjustment).where(VacationAdjustment.employee_id == employee_id))
 
-        await db.execute(delete(VacationPeriod).where(VacationPeriod.employee_id == employee_id))
+        # 5. Сбрасываем все ссылки на приказ в отпусках сотрудника
+        await db.execute(
+            update(Vacation)
+            .where(Vacation.employee_id == employee_id)
+            .values(
+                order_id=None,
+                recall_order_id=None,
+                postpone_order_id=None,
+                extension_order_id=None,
+            )
+        )
 
+        # 6. Удаляем историю контрактов, привязанную к сотруднику
+        await db.execute(delete(ContractHistory).where(ContractHistory.employee_id == employee_id))
+
+        # 7. Удаляем связи с приказами и сами приказы сотрудника
         await db.execute(delete(OrderEmployee).where(OrderEmployee.employee_id == employee_id))
+        await db.execute(delete(Order).where(Order.employee_id == employee_id))
 
+        # 8. Удаляем отпуска (Vacation) сотрудника
+        await db.execute(delete(Vacation).where(Vacation.employee_id == employee_id))
+
+        # 9. Удаляем manual closures и периоды
+        if closure_ids:
+            await db.execute(delete(VacationPeriodManualClosure).where(VacationPeriodManualClosure.id.in_(closure_ids)))
+        if period_ids:
+            await db.execute(delete(VacationPeriod).where(VacationPeriod.id.in_(period_ids)))
+
+        # 10. Удаляем остальные независимые записи
+        await db.execute(delete(EmployeeTag).where(EmployeeTag.employee_id == employee_id))
+        await db.execute(delete(HireDateAdjustment).where(HireDateAdjustment.employee_id == employee_id))
+        await db.execute(delete(SickLeave).where(SickLeave.employee_id == employee_id))
+        await db.execute(delete(VacationPlan).where(VacationPlan.employee_id == employee_id))
+        await db.execute(delete(EmployeeAuditLog).where(EmployeeAuditLog.employee_id == employee_id))
+
+        # 11. Сбрасываем руководство в департаменте
         await db.execute(
             update(Department)
             .where(Department.head_employee_id == employee_id)
             .values(head_employee_id=None)
         )
-
-        await db.execute(
-            update(Vacation).where(Vacation.employee_id == employee_id).values(order_id=None)
-        )
-
-        await db.execute(delete(Order).where(Order.employee_id == employee_id))
-
-        await db.execute(delete(VacationPlan).where(VacationPlan.employee_id == employee_id))
-
-        await db.execute(delete(Vacation).where(Vacation.employee_id == employee_id))
-
-        await db.execute(delete(EmployeeAuditLog).where(EmployeeAuditLog.employee_id == employee_id))
 
         await db.flush()
 

@@ -184,7 +184,7 @@ class OrderService:
         # Подготавливаем extra_fields для продления контракта
         extra_fields = data.extra_fields
         if order_type.code == "contract_extension" and data.extra_fields:
-            new_end = data.extra_fields.get("new_contract_end")
+            new_end = data.extra_fields.get("new_contract_end") or data.extra_fields.get("contract_new_end")
             if new_end:
                 extra_fields = dict(data.extra_fields)
                 extra_fields["old_contract_end"] = (
@@ -273,7 +273,7 @@ class OrderService:
                     extra_fields.get("new_contract_start") or extra_fields.get("hire_date")
                 )
                 new_end = ContractHistoryService._parse_date(
-                    extra_fields.get("new_contract_end") or extra_fields.get("contract_end")
+                    extra_fields.get("new_contract_end") or extra_fields.get("contract_new_end") or extra_fields.get("contract_end")
                 )
                 new_number = extra_fields.get("new_contract_number")
 

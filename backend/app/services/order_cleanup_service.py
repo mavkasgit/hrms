@@ -22,6 +22,31 @@ class OrderCleanupService:
         self.order_repo = OrderRepository()
         self.employee_repo = EmployeeRepository()
 
+    def _clean_vacation_comment(self, comment: str | None, order_number: str | None) -> str | None:
+        if not comment:
+            return comment
+        
+        lines = comment.split("\n")
+        cleaned_lines = []
+        
+        order_suffixes = []
+        if order_number:
+            order_suffixes.append(f"№{order_number}")
+        order_suffixes.append("№—")
+        
+        for line in lines:
+            should_skip = False
+            for suffix in order_suffixes:
+                if (line.startswith("Перенос по приказу") or line.startswith("Продление по приказу")) and suffix in line:
+                    should_skip = True
+                    break
+            if not should_skip:
+                cleaned_lines.append(line)
+                
+        if not cleaned_lines:
+            return None
+        return "\n".join(cleaned_lines)
+
     async def hard_delete_order(self, db: AsyncSession, order_id: int) -> bool:
         order = await self.order_repo.get_by_id(db, order_id)
         if not order:
@@ -95,64 +120,114 @@ class OrderCleanupService:
         affected_period_ids = await vacation_period_service.get_affected_period_ids_for_order(db, order_id)
 
         # Clean up dependent entities explicitly
+
+        # 1. Находим manual closure IDs для этого приказа
+        closure_ids_result = await db.execute(
+            select(VacationPeriodManualClosure.id).where(VacationPeriodManualClosure.order_id == order_id)
+        )
+        closure_ids = [row[0] for row in closure_ids_result.all()]
+
+        # 2. Находим все транзакции, подлежащие удалению
         tx_ids_result = await db.execute(
             select(VacationPeriodTransaction.id).where(
                 or_(
                     VacationPeriodTransaction.original_order_id == order_id,
                     VacationPeriodTransaction.adjustment_order_id == order_id,
+                    VacationPeriodTransaction.manual_closure_id.in_(closure_ids) if closure_ids else False,
                 )
             )
         )
         tx_ids = [row[0] for row in tx_ids_result.all()]
+
+        # 3. Сбрасываем reversed_transaction_id для транзакций, которые ссылаются на удаляемые транзакции
         if tx_ids:
             await db.execute(
                 update(VacationPeriodTransaction)
                 .where(VacationPeriodTransaction.reversed_transaction_id.in_(tx_ids))
                 .values(reversed_transaction_id=None)
             )
+            # 4. Удаляем транзакции
             await db.execute(
                 sa_delete(VacationPeriodTransaction).where(VacationPeriodTransaction.id.in_(tx_ids))
             )
 
-        vacation_ids_result = await db.execute(
-            select(Vacation.id).where(
+        # 5. Разделяем отпуска: те, что созданы приказом (удаляем) и те, что изменены им (обновляем)
+        to_delete_result = await db.execute(
+            select(Vacation.id).where(Vacation.order_id == order_id)
+        )
+        to_delete_ids = [row[0] for row in to_delete_result.all()]
+
+        # 6. Находим корректировки, подлежащие удалению
+        adj_ids_result = await db.execute(
+            select(VacationAdjustment.id).where(
                 or_(
-                    Vacation.order_id == order_id,
+                    VacationAdjustment.original_order_id == order_id,
+                    VacationAdjustment.adjustment_order_id == order_id,
+                    VacationAdjustment.vacation_id.in_(to_delete_ids) if to_delete_ids else False,
+                )
+            )
+        )
+        adj_ids = [row[0] for row in adj_ids_result.all()]
+
+        if adj_ids:
+            # Сбрасываем adjustment_id в транзакциях
+            await db.execute(
+                update(VacationPeriodTransaction)
+                .where(VacationPeriodTransaction.adjustment_id.in_(adj_ids))
+                .values(adjustment_id=None)
+            )
+            # Удаляем корректировки
+            await db.execute(
+                sa_delete(VacationAdjustment).where(VacationAdjustment.id.in_(adj_ids))
+            )
+
+        # 7. Находим и обновляем отпуска (отмена отзывов/переносов/продлений)
+        to_update_result = await db.execute(
+            select(Vacation).where(
+                or_(
                     Vacation.recall_order_id == order_id,
                     Vacation.postpone_order_id == order_id,
                     Vacation.extension_order_id == order_id,
                 )
             )
         )
-        vacation_ids = [row[0] for row in vacation_ids_result.all()]
-        if vacation_ids:
+        to_update_vacations = to_update_result.scalars().all()
+        for vac in to_update_vacations:
+            if vac.recall_order_id == order_id:
+                vac.is_recalled = False
+                vac.recall_date = None
+                vac.recall_order_id = None
+            if vac.postpone_order_id == order_id:
+                vac.is_postponed = False
+                vac.postpone_order_id = None
+                vac.comment = self._clean_vacation_comment(vac.comment, order.order_number)
+            if vac.extension_order_id == order_id:
+                vac.is_extended = False
+                vac.extension_order_id = None
+                vac.comment = self._clean_vacation_comment(vac.comment, order.order_number)
+        if to_update_vacations:
+            await db.flush()
+
+        # 8. Удаляем отпуска, созданные приказом
+        if to_delete_ids:
+            # Сбрасываем vacation_id в транзакциях для удаляемых отпусков
             await db.execute(
                 update(VacationPeriodTransaction)
-                .where(VacationPeriodTransaction.vacation_id.in_(vacation_ids))
+                .where(VacationPeriodTransaction.vacation_id.in_(to_delete_ids))
                 .values(vacation_id=None)
             )
-            await db.execute(sa_delete(Vacation).where(Vacation.id.in_(vacation_ids)))
-
-        await db.execute(
-            sa_delete(VacationAdjustment).where(
-                or_(
-                    VacationAdjustment.original_order_id == order_id,
-                    VacationAdjustment.adjustment_order_id == order_id,
-                )
+            # Удаляем сами отпуска
+            await db.execute(
+                sa_delete(Vacation).where(Vacation.id.in_(to_delete_ids))
             )
-        )
-        # Сначала удаляем транзакции, ссылающиеся на manual closures этого приказа
-        closure_ids_result = await db.execute(
-            select(VacationPeriodManualClosure.id).where(VacationPeriodManualClosure.order_id == order_id)
-        )
-        closure_ids = [row[0] for row in closure_ids_result.all()]
+
+        # 9. Удаляем manual closures
         if closure_ids:
             await db.execute(
-                sa_delete(VacationPeriodTransaction).where(
-                    VacationPeriodTransaction.manual_closure_id.in_(closure_ids)
+                sa_delete(VacationPeriodManualClosure).where(
+                    VacationPeriodManualClosure.id.in_(closure_ids)
                 )
             )
-        await db.execute(sa_delete(VacationPeriodManualClosure).where(VacationPeriodManualClosure.order_id == order_id))
 
         # Delete order file
         if order.file_path:

@@ -278,3 +278,200 @@ async def test_delete_order_recomputes_only_affected_periods_without_full_rebuil
     for period in after:
         period_limit = period.main_days + period.additional_days
         assert period.used_days <= period_limit
+
+
+async def test_delete_recall_order_restores_vacation_state(db_session, create_employee):
+    from app.models.vacation import Vacation
+    from app.models.order import Order
+
+    employee = await create_employee(hire_date=date(2024, 1, 15))
+    created = await _create_paid_vacation(db_session, employee.id, date(2026, 4, 1), date(2026, 4, 11))
+    vacation_id = created["id"]
+    original_order_id = created["order_id"]
+
+    # Выполняем отзыв отпуска
+    await vacation_service.recall_vacation(
+        db_session,
+        vacation_id,
+        {
+            "recall_date": date(2026, 4, 5),
+            "order_date": date(2026, 4, 4),
+            "order_number": "R-DELETE-TEST",
+            "comment": "recall to delete",
+        },
+        "admin",
+    )
+
+    # Проверяем состояние перед удалением
+    vac_db = await db_session.get(Vacation, vacation_id)
+    assert vac_db.is_recalled is True
+    assert vac_db.recall_order_id is not None
+    recall_order_id = vac_db.recall_order_id
+
+    # Удаляем приказ об отзыве
+    await order_service.hard_delete_order(db_session, recall_order_id)
+
+    # Проверяем после удаления
+    await db_session.close() # Закроем и откроем сессию, чтобы обновить состояние ORM
+    vac_db = await db_session.get(Vacation, vacation_id)
+    
+    # 1. Отпуск не должен быть удален
+    assert vac_db is not None
+    assert vac_db.order_id == original_order_id
+    
+    # 2. Состояние отзыва должно быть отменено
+    assert vac_db.is_recalled is False
+    assert vac_db.recall_date is None
+    assert vac_db.recall_order_id is None
+
+    # 3. Корректировка отзыва должна быть удалена
+    adj_result = await db_session.execute(
+        select(VacationAdjustment).where(VacationAdjustment.adjustment_order_id == recall_order_id)
+    )
+    assert len(list(adj_result.scalars().all())) == 0
+
+    # 4. Тразакции отзыва должны быть удалены
+    tx_result = await db_session.execute(
+        select(VacationPeriodTransaction).where(
+            VacationPeriodTransaction.adjustment_order_id == recall_order_id
+        )
+    )
+    assert len(list(tx_result.scalars().all())) == 0
+
+    # 5. Сам приказ должен быть удален
+    order_db = await db_session.get(Order, recall_order_id)
+    assert order_db is None
+
+
+async def test_delete_postpone_order_restores_vacation_state(db_session, create_employee):
+    from app.models.vacation import Vacation
+    from app.models.order import Order
+
+    employee = await create_employee(hire_date=date(2024, 1, 15))
+    created = await _create_paid_vacation(db_session, employee.id, date(2026, 2, 1), date(2026, 2, 10))
+    vacation_id = created["id"]
+    original_order_id = created["order_id"]
+
+    # Выполняем перенос части отпуска
+    await vacation_service.postpone_vacation(
+        db_session,
+        vacation_id,
+        {
+            "order_date": date(2026, 2, 5),
+            "order_number": "P-DELETE-TEST",
+            "start_date": date(2026, 2, 8),
+            "end_date": date(2026, 2, 10),
+            "comment": "some manual comment",
+        },
+        "admin",
+    )
+
+    # Проверяем состояние перед удалением
+    vac_db = await db_session.get(Vacation, vacation_id)
+    assert vac_db.is_postponed is True
+    assert vac_db.postpone_order_id is not None
+    postpone_order_id = vac_db.postpone_order_id
+    assert "Перенос по приказу №P-DELETE-TEST" in vac_db.comment
+
+    # Удаляем приказ о переносе
+    await order_service.hard_delete_order(db_session, postpone_order_id)
+
+    # Проверяем после удаления
+    await db_session.close()
+    vac_db = await db_session.get(Vacation, vacation_id)
+
+    # 1. Отпуск не должен быть удален
+    assert vac_db is not None
+    assert vac_db.order_id == original_order_id
+
+    # 2. Состояние переноса должно быть отменено
+    assert vac_db.is_postponed is False
+    assert vac_db.postpone_order_id is None
+
+    # 3. Авто-комментарий должен быть удален, а ручной комментарий остаться
+    assert "Перенос по приказу №P-DELETE-TEST" not in vac_db.comment
+    assert "some manual comment" in vac_db.comment
+
+    # 4. Корректировка и транзакции должны быть удалены
+    adj_result = await db_session.execute(
+        select(VacationAdjustment).where(VacationAdjustment.adjustment_order_id == postpone_order_id)
+    )
+    assert len(list(adj_result.scalars().all())) == 0
+
+    tx_result = await db_session.execute(
+        select(VacationPeriodTransaction).where(
+            VacationPeriodTransaction.adjustment_order_id == postpone_order_id
+        )
+    )
+    assert len(list(tx_result.scalars().all())) == 0
+
+    # 5. Приказ должен быть удален
+    order_db = await db_session.get(Order, postpone_order_id)
+    assert order_db is None
+
+
+async def test_delete_extension_order_restores_vacation_state(db_session, create_employee):
+    from app.models.vacation import Vacation
+    from app.models.order import Order
+
+    employee = await create_employee(hire_date=date(2024, 1, 15))
+    created = await _create_paid_vacation(db_session, employee.id, date(2026, 3, 1), date(2026, 3, 10))
+    vacation_id = created["id"]
+    original_order_id = created["order_id"]
+
+    # Выполняем продление отпуска
+    await vacation_service.extend_vacation(
+        db_session,
+        vacation_id,
+        {
+            "order_date": date(2026, 3, 6),
+            "order_number": "E-DELETE-TEST",
+            "sick_start_date": date(2026, 3, 3),
+            "sick_end_date": date(2026, 3, 6),
+            "comment": "extend manual comment",
+        },
+        "admin",
+    )
+
+    # Проверяем состояние перед удалением
+    vac_db = await db_session.get(Vacation, vacation_id)
+    assert vac_db.is_extended is True
+    assert vac_db.extension_order_id is not None
+    extension_order_id = vac_db.extension_order_id
+    assert "Продление по приказу №E-DELETE-TEST" in vac_db.comment
+
+    # Удаляем приказ о продлении
+    await order_service.hard_delete_order(db_session, extension_order_id)
+
+    # Проверяем после удаления
+    await db_session.close()
+    vac_db = await db_session.get(Vacation, vacation_id)
+
+    # 1. Отпуск не должен быть удален
+    assert vac_db is not None
+    assert vac_db.order_id == original_order_id
+
+    # 2. Состояние продления должно быть отменено
+    assert vac_db.is_extended is False
+    assert vac_db.extension_order_id is None
+
+    # 3. Авто-комментарий должен быть удален, а ручной комментарий остаться
+    assert "Продление по приказу №E-DELETE-TEST" not in vac_db.comment
+    assert "extend manual comment" in vac_db.comment
+
+    # 4. Корректировка и транзакции должны быть удалены
+    adj_result = await db_session.execute(
+        select(VacationAdjustment).where(VacationAdjustment.adjustment_order_id == extension_order_id)
+    )
+    assert len(list(adj_result.scalars().all())) == 0
+
+    tx_result = await db_session.execute(
+        select(VacationPeriodTransaction).where(
+            VacationPeriodTransaction.adjustment_order_id == extension_order_id
+        )
+    )
+    assert len(list(tx_result.scalars().all())) == 0
+
+    # 5. Приказ должен быть удален
+    order_db = await db_session.get(Order, extension_order_id)
+    assert order_db is None
