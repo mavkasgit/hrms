@@ -84,7 +84,7 @@ app.add_middleware(
 async def check_write_access_middleware(request: Request, call_next):
     if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
         path = request.url.path
-        if path.startswith("/api") and path != "/api/health":
+        if path.startswith("/api") and path != "/api/health" and not path.endswith("/onlyoffice/callback"):
             auth_header = request.headers.get("Authorization")
             if auth_header and auth_header.startswith("Bearer "):
                 token = auth_header[7:]
