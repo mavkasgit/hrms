@@ -24,25 +24,32 @@ async def run_backup_cycle():
         return
 
     now = datetime.now()
-    time_str = now.strftime("%H:%M")
+    target_time_str = config.get("time_of_day", "23:00")
+    try:
+        parts = target_time_str.split(":")
+        target_hour = int(parts[0])
+        target_minute = int(parts[1])
+    except Exception:
+        logger.warning(f"Некорректный формат времени бэкапа: {target_time_str}. Используем 23:00")
+        target_hour, target_minute = 23, 0
+
+    target_time = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
     
-    if time_str != config.get("time_of_day", "23:00"):
+    if now < target_time:
         return
 
-
-    logger.info("Запуск проверки автоматического бэкапа", time=time_str)
-
-    # 1. Проверяем, был ли уже создан бэкап сегодня (защита от повторного запуска в ту же минуту)
+    # 1. Проверяем, был ли уже создан бэкап сегодня
     latest_backups = _iter_backup_files()
     if latest_backups:
         latest_backup = latest_backups[0]
         try:
             mtime = datetime.fromtimestamp(latest_backup.stat().st_mtime)
             if mtime.date() == now.date():
-                logger.info("Бэкап на сегодня уже существует. Пропуск автоматического запуска.", latest_backup=latest_backup.name)
                 return
         except Exception:
             logger.warning("Не удалось прочитать mtime последнего бэкапа. Продолжаем проверку.")
+
+    logger.info("Запуск проверки автоматического бэкапа", time=target_time_str)
 
     # 2. Пытаемся захватить распределенный лок в PostgreSQL
     try:
@@ -127,6 +134,6 @@ async def start_backup_scheduler():
             await run_backup_cycle()
         except Exception:
             logger.exception("Ошибка в цикле планировщика бэкапов")
-        # Спим 60 секунд.
-        await asyncio.sleep(60)
+        # Спим 30 секунд.
+        await asyncio.sleep(30)
 
