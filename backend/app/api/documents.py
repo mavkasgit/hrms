@@ -26,7 +26,7 @@ XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 PDF_MEDIA_TYPE = "application/pdf"
 
 
-from app.api.deps import get_current_user as _get_current_user_stub
+from app.api.deps import get_current_user as _get_current_user_stub, get_current_user_or_onlyoffice
 
 
 def _public_api_url(path: str) -> str:
@@ -322,7 +322,7 @@ async def document_file(
     doc_code: str,
     doc_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     result = await db.execute(
         select(Document).where(Document.id == doc_id, Document.doc_code == doc_code)
@@ -348,7 +348,7 @@ async def document_onlyoffice_callback(
     doc_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: str = Depends(get_current_user_or_onlyoffice),
 ):
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})

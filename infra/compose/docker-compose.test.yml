@@ -8,6 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-hrms_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms_pass_test}
       POSTGRES_DB: ${POSTGRES_DB:-hrms_test}
+      TZ: ${TZ:-Europe/Moscow}
     expose:
       - "5432"
     volumes:
@@ -20,10 +21,12 @@ services:
       retries: 5
 
   onlyoffice:
-    image: onlyoffice/documentserver:latest
+    image: onlyoffice/documentserver:9.4.0
     container_name: hrms-onlyoffice-test
     expose:
       - "80"
+    volumes:
+      - ../onlyoffice/local-production-linux.json:/etc/onlyoffice/documentserver/local-production-linux.json:ro
     environment:
       JWT_ENABLED: "true"
       JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-test-secret}
@@ -52,6 +55,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-hrms_user}:${POSTGRES_PASSWORD:-hrms_pass_test}@postgres:5432/${POSTGRES_DB:-hrms_test}
       ENV: test
+      TZ: ${TZ:-Europe/Moscow}
       ONLYOFFICE_ENABLED: "true"
       ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-test-secret}
       ONLYOFFICE_PUBLIC_URL: ${ONLYOFFICE_PUBLIC_URL:-${PUBLIC_URL:-http://localhost:8080}/onlyoffice}

@@ -19,10 +19,12 @@ services:
       retries: 5
 
   onlyoffice:
-    image: onlyoffice/documentserver:latest
+    image: onlyoffice/documentserver:9.4.0
     container_name: hrms-onlyoffice
     ports:
       - "${DEV_ONLYOFFICE_PORT:-8085}:80"
+    volumes:
+      - ../onlyoffice/local-production-linux.json:/etc/onlyoffice/documentserver/local-production-linux.json:ro
     environment:
       JWT_ENABLED: "true"
       JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-dev-secret-change-me}
