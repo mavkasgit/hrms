@@ -192,7 +192,7 @@ class VacationPeriodService:
 
             rd = relativedelta(today, latest_boundary)
             years_passed = rd.years
-            current_year_number = years_passed + 1 if rd.months > 0 or rd.days > 0 else years_passed
+            current_year_number = years_passed + 1
 
             for year_number in range(last_year + 1, current_year_number + 1):
                 if year_number not in existing_years:
@@ -217,7 +217,7 @@ class VacationPeriodService:
 
             rd = relativedelta(today, hire_date)
             years_passed = rd.years
-            current_year_number = years_passed + 1 if rd.months > 0 or rd.days > 0 else years_passed
+            current_year_number = years_passed + 1
 
             for year_number in range(last_year + 1, current_year_number + 1):
                 if year_number not in existing_years:

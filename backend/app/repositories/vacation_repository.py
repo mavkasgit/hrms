@@ -486,16 +486,15 @@ class VacationRepository:
                 .order_by(VacationPeriod.employee_id, VacationPeriod.year_number)
             )
             
-            # Обновляем словарь периодов
-            for period in updated_periods_result.scalars().all():
-                if period.employee_id not in periods_by_employee:
-                    periods_by_employee[period.employee_id] = []
-                else:
-                    # Удаляем старые периоды этого сотрудника
-                    periods_by_employee[period.employee_id] = []
+            # Обновляем словарь периодов. Сохраняем scalars() в список, чтобы не истощить курсор.
+            updated_periods = list(updated_periods_result.scalars().all())
+
+            # Сначала очистим списки периодов для всех сотрудников, у которых обновились периоды
+            for emp_id in updated_employee_ids:
+                periods_by_employee[emp_id] = []
             
             # Добавляем новые периоды
-            for period in updated_periods_result.scalars().all():
+            for period in updated_periods:
                 periods_by_employee[period.employee_id].append(period)
             
             log.debug(f"[get_employees_summary] Reloaded periods for {len(updated_employee_ids)} employees")
