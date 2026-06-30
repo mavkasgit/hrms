@@ -135,12 +135,16 @@ def _documents_dir(doc_code: str) -> Path:
 
 def _resolve_file_path(relative_path: str, doc_code: str | None = None) -> Path:
     """Convert path stored in DB to absolute path on disk."""
+    key = str(relative_path).strip().replace("\\", "/")
     if doc_code == "vacation_calendar":
-        key = str(relative_path).strip().replace("\\", "/")
         if not key.startswith("vacation_calendar/"):
             key = f"vacation_calendar/{key.lstrip('/')}"
         return storage_path(key, "STAFFING_PATH")
-    return storage_path(relative_path, "STAFFING_PATH")
+    # When doc_code equals the storage marker (e.g. "staffing"), storage_path
+    # would strip the leading directory component, so join directly with the
+    # storage root to preserve the full relative path.
+    from app.core.config import settings
+    return Path(settings.STAFFING_PATH) / key
 
 
 def _make_relative_path(absolute_path: Path) -> str:
