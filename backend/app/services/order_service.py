@@ -245,6 +245,43 @@ class OrderService:
             },
         )
 
+        # Автоматическое создание записи об отпуске при приказе об отпуске
+        if order_type.code in ("vacation_paid", "vacation_unpaid") and employee and extra_fields:
+            start_val = extra_fields.get("vacation_start")
+            end_val = extra_fields.get("vacation_end")
+            if start_val and end_val:
+                from app.services.contract_history_service import ContractHistoryService
+                start_date = ContractHistoryService._parse_date(start_val)
+                end_date = ContractHistoryService._parse_date(end_val)
+                if start_date and end_date:
+                    from app.repositories.references_repository import references_repository
+                    from app.utils.working_days import calculate_vacation_days, count_holidays_in_range
+                    
+                    holidays = await references_repository.get_holidays_for_year(db, start_date.year)
+                    if end_date.year != start_date.year:
+                        holidays += await references_repository.get_holidays_for_year(db, end_date.year)
+                    
+                    holidays_count = count_holidays_in_range(holidays, start_date, end_date)
+                    days_count = calculate_vacation_days(start_date, end_date, holidays_count)
+                    
+                    if days_count > 0:
+                        from app.models.vacation import Vacation
+                        v_type = "Трудовой" if order_type.code == "vacation_paid" else "Отпуск за свой счет"
+                        
+                        db.add(
+                            Vacation(
+                                employee_id=employee.id,
+                                start_date=start_date,
+                                end_date=end_date,
+                                vacation_type=v_type,
+                                days_count=days_count,
+                                vacation_year=start_date.year,
+                                comment=data.notes,
+                                order_id=order.id,
+                            )
+                        )
+                        await db.flush()
+
         # Автоматическая архивация сотрудника при приказе об увольнении
         if order_type.code == "dismissal" and employee and not employee.is_dismissed:
             dismissal_date = data.order_date
