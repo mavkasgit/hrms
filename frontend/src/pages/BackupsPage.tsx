@@ -975,128 +975,130 @@ export function BackupsPage() {
         setPreviewOpen(open)
         if (!open) setUploadedRestoreFile(null)
       }}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-6">
+          <DialogHeader className="shrink-0">
             <DialogTitle>{previewTitle}</DialogTitle>
             <DialogDescription>
               Статистика таблиц и файловой части
             </DialogDescription>
           </DialogHeader>
           {previewLoading ? (
-            <div className="py-8 text-center text-muted-foreground">
-              <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+            <div className="py-8 text-center text-muted-foreground flex-1 flex flex-col justify-center items-center">
+              <Loader2 className="h-6 w-6 animate-spin mb-2" />
               Анализ бэкапа...
             </div>
           ) : previewData ? (
-            <div className="space-y-4">
-              <div className="text-sm space-y-1">
-                <p><span className="text-muted-foreground">Источник:</span> {previewData.source_db}</p>
-                <p><span className="text-muted-foreground">Дата:</span> {previewData.backup_timestamp ? formatDate(previewData.backup_timestamp) : "—"}</p>
-                {previewData.cached !== undefined && (
-                  <p>
-                    <span className="text-muted-foreground">Источник данных:</span>{" "}
-                    {previewData.cached ? (
-                      <span className="text-green-600">JSON-кэш (мгновенно)</span>
-                    ) : (
-                      <span className="text-amber-600">Восстановление во временную БД</span>
-                    )}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium">Файловая часть</h3>
-                  {previewData.storage && (
-                    <span className="text-xs text-muted-foreground">
-                      {Object.values(previewData.storage).reduce((sum, item) => sum + item.files, 0)} файлов · {formatBytes(Object.values(previewData.storage).reduce((sum, item) => sum + item.bytes, 0))}
-                    </span>
+            <>
+              <div className="space-y-4 overflow-y-auto pr-1 flex-1 min-h-0">
+                <div className="text-sm space-y-1">
+                  <p><span className="text-muted-foreground">Источник:</span> {previewData.source_db}</p>
+                  <p><span className="text-muted-foreground">Дата:</span> {previewData.backup_timestamp ? formatDate(previewData.backup_timestamp) : "—"}</p>
+                  {previewData.cached !== undefined && (
+                    <p>
+                      <span className="text-muted-foreground">Источник данных:</span>{" "}
+                      {previewData.cached ? (
+                        <span className="text-green-600">JSON-кэш (мгновенно)</span>
+                      ) : (
+                        <span className="text-amber-600">Восстановление во временную БД</span>
+                      )}
+                    </p>
                   )}
                 </div>
-                {previewData.storage ? (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {Object.entries(previewData.storage).map(([name, storage]) => (
-                      <div key={name} className="rounded-lg border bg-muted/10 p-3 space-y-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-medium">{storageLabel(name)}</div>
-                            <div className="text-xs text-muted-foreground font-mono">data/{name}</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium">Файловая часть</h3>
+                    {previewData.storage && (
+                      <span className="text-xs text-muted-foreground">
+                        {Object.values(previewData.storage).reduce((sum, item) => sum + item.files, 0)} файлов · {formatBytes(Object.values(previewData.storage).reduce((sum, item) => sum + item.bytes, 0))}
+                      </span>
+                    )}
+                  </div>
+                  {previewData.storage ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {Object.entries(previewData.storage).map(([name, storage]) => (
+                        <div key={name} className="rounded-lg border bg-muted/10 p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-medium">{storageLabel(name)}</div>
+                              <div className="text-xs text-muted-foreground font-mono">data/{name}</div>
+                            </div>
+                            <div className="text-right text-xs text-muted-foreground">
+                              <div>{storage.files} файлов</div>
+                              <div>{formatBytes(storage.bytes)}</div>
+                              {(storage.directories ?? 0) > 0 && <div>{storage.directories} папок</div>}
+                            </div>
                           </div>
-                          <div className="text-right text-xs text-muted-foreground">
-                            <div>{storage.files} файлов</div>
-                            <div>{formatBytes(storage.bytes)}</div>
-                            {(storage.directories ?? 0) > 0 && <div>{storage.directories} папок</div>}
-                          </div>
+                          {storage.files > 0 ? (
+                            <div className="max-h-28 overflow-y-auto rounded border bg-background text-xs">
+                              {(storage.folders || []).filter((folder) => folder.files > 0).map((folder) => (
+                                <div key={folder.path} className="grid grid-cols-[1fr_auto_auto] gap-2 border-b last:border-b-0 px-2 py-1">
+                                  <span className="font-mono truncate" title={folder.path}>{folder.path}</span>
+                                  <span className="text-muted-foreground whitespace-nowrap">{folder.files} ф.</span>
+                                  <span className="text-muted-foreground whitespace-nowrap">{formatBytes(folder.bytes)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded border bg-background px-2 py-1 text-xs text-muted-foreground">
+                              Файлов нет
+                            </div>
+                          )}
                         </div>
-                        {storage.files > 0 ? (
-                          <div className="max-h-28 overflow-y-auto rounded border bg-background text-xs">
-                            {(storage.folders || []).filter((folder) => folder.files > 0).map((folder) => (
-                              <div key={folder.path} className="grid grid-cols-[1fr_auto_auto] gap-2 border-b last:border-b-0 px-2 py-1">
-                                <span className="font-mono truncate" title={folder.path}>{folder.path}</span>
-                                <span className="text-muted-foreground whitespace-nowrap">{folder.files} ф.</span>
-                                <span className="text-muted-foreground whitespace-nowrap">{formatBytes(folder.bytes)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="rounded border bg-background px-2 py-1 text-xs text-muted-foreground">
-                            Файлов нет
-                          </div>
-                        )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      В этом бэкапе нет файловой части или метаданных о файлах. Обычно это старый .dump, который содержит только БД.
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium">Табличный экспорт для просмотра</h3>
+                  {previewData.table_exports ? (
+                    <div className="rounded-lg border bg-emerald-50/60 p-3 text-sm">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <div>
+                          <div className="text-xs text-muted-foreground">Excel-файл</div>
+                          <div className="font-mono text-xs break-all">{previewData.table_exports.workbook_path || "exports/hrms_tables.xlsx"}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">CSV-файлы</div>
+                          <div className="font-mono text-xs break-all">{previewData.table_exports.path}/*.csv</div>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    В этом бэкапе нет файловой части или метаданных о файлах. Обычно это старый .dump, который содержит только БД.
-                  </div>
-                )}
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium">Табличный экспорт для просмотра</h3>
-                {previewData.table_exports ? (
-                  <div className="rounded-lg border bg-emerald-50/60 p-3 text-sm">
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <div>
-                        <div className="text-xs text-muted-foreground">Excel-файл</div>
-                        <div className="font-mono text-xs break-all">{previewData.table_exports.workbook_path || "exports/hrms_tables.xlsx"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-muted-foreground">CSV-файлы</div>
-                        <div className="font-mono text-xs break-all">{previewData.table_exports.path}/*.csv</div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        В архиве есть {previewData.table_exports.tables.length} таблиц в CSV и общий Excel workbook. Откройте `.zip` после скачивания и перейдите в `exports/`.
                       </div>
                     </div>
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      В архиве есть {previewData.table_exports.tables.length} таблиц в CSV и общий Excel workbook. Откройте `.zip` после скачивания и перейдите в `exports/`.
+                  ) : (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      Табличного экспорта нет. Обычно это старый `.dump` или бэкап, созданный до добавления экспорта.
                     </div>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    Табличного экспорта нет. Обычно это старый `.dump` или бэкап, созданный до добавления экспорта.
-                  </div>
-                )}
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium">Таблицы БД</h3>
-                <div className="border rounded-lg overflow-hidden max-h-[280px] overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 text-xs sticky top-0">
-                    <tr>
-                      <th className="text-left px-3 py-2 font-medium">Таблица</th>
-                      <th className="text-right px-3 py-2 font-medium">Записей</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(previewData.tables).map(([table, count]) => (
-                      <tr key={table} className="border-t">
-                        <td className="px-3 py-2">{table}</td>
-                        <td className="px-3 py-2 text-right font-mono">{count}</td>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium">Таблицы БД</h3>
+                  <div className="border rounded-lg overflow-hidden max-h-[280px] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50 text-xs sticky top-0">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium">Таблица</th>
+                        <th className="text-right px-3 py-2 font-medium">Записей</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {Object.entries(previewData.tables).map(([table, count]) => (
+                        <tr key={table} className="border-t">
+                          <td className="px-3 py-2">{table}</td>
+                          <td className="px-3 py-2 text-right font-mono">{count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  </div>
                 </div>
               </div>
-              <DialogFooter className="gap-2">
+              <DialogFooter className="gap-2 border-t pt-3 mt-3 shrink-0">
                 {uploadedRestoreFile && (
                   <Button
                     variant="default"
@@ -1114,10 +1116,10 @@ export function BackupsPage() {
                   Закрыть
                 </Button>
               </DialogFooter>
-            </div>
+            </>
           ) : (
-            <div className="py-8 text-center text-red-500">
-              <AlertTriangle className="h-6 w-6 mx-auto mb-2" />
+            <div className="py-8 text-center text-red-500 flex-1 flex flex-col justify-center items-center">
+              <AlertTriangle className="h-6 w-6 mb-2" />
               Не удалось проанализировать бэкап
             </div>
           )}
