@@ -50,6 +50,9 @@ class Employee(Base):
     vacation_plans = relationship("VacationPlan", back_populates="employee")
     orders = relationship("Order", back_populates="employee")
     sick_leaves = relationship("SickLeave", back_populates="employee")
+    work_schedules = relationship(
+        "WorkSchedule", back_populates="employee", cascade="all, delete-orphan"
+    )
     audit_log = relationship("EmployeeAuditLog", back_populates="employee", order_by="EmployeeAuditLog.performed_at.desc()")
     department = relationship("Department", foreign_keys=[department_id], back_populates="employees")
     position = relationship("Position", foreign_keys=[position_id], back_populates="employees")

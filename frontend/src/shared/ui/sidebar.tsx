@@ -39,6 +39,7 @@ function decodeToken(token: string) {
 const topNavItems = [
   { to: "/", label: "Дашборд", icon: LayoutDashboard },
   { to: "/employees", label: "Сотрудники", icon: Users },
+  { to: "/timesheet", label: "Табель учёта", icon: CalendarDays },
   { to: "/structure", label: "Структура", icon: Building2 },
   { to: "/orders", label: "Приказы", icon: FileText },
   { to: "/vacations", label: "Трудовой отпуск", icon: CalendarDays },

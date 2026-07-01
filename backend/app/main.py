@@ -40,6 +40,8 @@ from app.api.statement_types import router as statement_types_router
 from app.api.contract_history import router as contract_history_router
 from app.api.users import router as users_router
 from app.api.auth import router as auth_router
+from app.api.work_schedules import router as work_schedules_router
+from app.api.timesheet import router as timesheet_router
 
 
 # Ссылка на фоновую задачу планировщика (чтобы GC не удалил ее)
@@ -50,12 +52,12 @@ async def lifespan(app: FastAPI):
     global backup_scheduler_task
     configure_logging()
     logger.info("Starting HRMS application", env=settings.ENV)
-    
+
     from app.services.backup_scheduler import start_backup_scheduler
     backup_scheduler_task = asyncio.create_task(start_backup_scheduler())
-    
+
     yield
-    
+
     logger.info("Shutting down HRMS application")
     if backup_scheduler_task:
         backup_scheduler_task.cancel()
@@ -154,6 +156,8 @@ app.include_router(statement_types_router, prefix="/api")
 app.include_router(contract_history_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
+app.include_router(work_schedules_router, prefix="/api")
+app.include_router(timesheet_router, prefix="/api")
 
 
 

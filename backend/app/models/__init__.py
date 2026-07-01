@@ -30,3 +30,5 @@ from app.models.notification_type import NotificationType  # noqa: F401, E402
 from app.models.statement import Statement  # noqa: F401, E402
 from app.models.statement_type import StatementType  # noqa: F401, E402
 from app.models.contract_history import ContractHistory  # noqa: F401, E402
+from app.models.work_schedule import WorkSchedule, WorkScheduleEntry  # noqa: F401, E402
+from app.models.timesheet import TimesheetImport, TimesheetEntry, TimesheetUnmatchedRow  # noqa: F401, E402

@@ -18,6 +18,7 @@ const WeekendCallsPage = lazy(async () => ({ default: (await import("@/pages/Wee
 const SickLeavesPage = lazy(async () => ({ default: (await import("@/pages/SickLeavesPage")).SickLeavesPage }))
 const VacationCalendarPage = lazy(async () => ({ default: (await import("@/pages/VacationCalendarPage")).VacationCalendarPage }))
 const TemplatesPage = lazy(async () => ({ default: (await import("@/pages/TemplatesPage")).TemplatesPage }))
+const TimesheetPage = lazy(async () => ({ default: (await import("@/pages/TimesheetPage")).TimesheetPage }))
 const SettingsPage = lazy(async () => ({ default: (await import("@/pages/SettingsPage")).SettingsPage }))
 const UsersPage = lazy(async () => ({ default: (await import("@/pages/UsersPage")).UsersPage }))
 const HolidaysPage = lazy(async () => ({ default: (await import("@/pages/HolidaysPage")).HolidaysPage }))
@@ -57,6 +58,7 @@ export const router = createBrowserRouter([
       { path: "weekend-calls", element: withSuspense(<WeekendCallsPage />) },
       { path: "sick-leaves", element: withSuspense(<SickLeavesPage />) },
       { path: "vacation-calendar", element: withSuspense(<VacationCalendarPage />) },
+      { path: "timesheet", element: withSuspense(<TimesheetPage />) },
       { path: "templates", element: withSuspense(<TemplatesPage />) },
       { path: "settings", element: withSuspense(<SettingsPage />) },
       { path: "settings/users", element: withSuspense(<UsersPage />) },
