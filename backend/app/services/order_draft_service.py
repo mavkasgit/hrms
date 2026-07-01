@@ -45,7 +45,16 @@ class OrderDraftService:
         raise HRMSException("Черновик не найден", "draft_not_found", status_code=404)
 
     def delete_draft(self, draft_id: str) -> None:
-        self.get_draft_path(draft_id).unlink()
+        try:
+            draft_path = self.get_draft_path(draft_id)
+            if draft_path.exists():
+                draft_path.unlink()
+        except HRMSException as e:
+            if e.status_code != 404:
+                raise
+        except FileNotFoundError:
+            pass
+
         metadata_path = self.get_metadata_path(draft_id)
         if metadata_path.exists():
             metadata_path.unlink()

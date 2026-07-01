@@ -57,3 +57,49 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Исправление границ праздничных и выходных ячеек при border-collapse */
+
+/* 1. Выходные дни (slate-300) */
+td.border-slate-300,
+td[class*="bg-slate-100"],
+th.border-slate-300,
+th[class*="bg-slate-100"] {
+  border: 1px solid #cbd5e1 !important;
+}
+/* Сосед справа от выходного (если он не праздник и не выходной) */
+td[class*="bg-slate-100"] + td:not(.border-red-300):not([class*="bg-red-100"]):not(.border-slate-300):not([class*="bg-slate-100"]),
+td.border-slate-300 + td:not(.border-red-300):not([class*="bg-red-100"]):not(.border-slate-300):not([class*="bg-slate-100"]),
+th[class*="bg-slate-100"] + th:not(.border-red-300):not([class*="bg-red-100"]):not(.border-slate-300):not([class*="bg-slate-100"]),
+th.border-slate-300 + th:not(.border-red-300):not([class*="bg-red-100"]):not(.border-slate-300):not([class*="bg-slate-100"]) {
+  border-left-style: none !important;
+}
+/* Сосед слева от выходного (если он не праздник и не выходной) */
+td:has(+ td.border-slate-300):not(.border-red-300):not([class*="bg-red-100"]):not(.border-slate-300):not([class*="bg-slate-100"]),
+td:has(+ td[class*="bg-slate-100"]):not(.border-red-300):not([class*="bg-red-100"]):not(.border-slate-300):not([class*="bg-slate-100"]),
+th:has(+ th.border-slate-300):not(.border-red-300):not([class*="bg-red-100"]):not(.border-slate-300):not([class*="bg-slate-100"]),
+th:has(+ th[class*="bg-slate-100"]):not(.border-red-300):not([class*="bg-red-100"]):not(.border-slate-300):not([class*="bg-slate-100"]) {
+  border-right-style: none !important;
+}
+
+/* 2. Праздничные дни (red-300) - приоритетнее выходных, поэтому ниже */
+td.border-red-300,
+td[class*="bg-red-100"],
+th.border-red-300,
+th[class*="bg-red-100"] {
+  border: 1px solid #fca5a5 !important;
+}
+/* Сосед справа от праздника (если он не праздник) */
+td[class*="bg-red-100"] + td:not(.border-red-300):not([class*="bg-red-100"]),
+td.border-red-300 + td:not(.border-red-300):not([class*="bg-red-100"]),
+th[class*="bg-red-100"] + th:not(.border-red-300):not([class*="bg-red-100"]),
+th.border-red-300 + th:not(.border-red-300):not([class*="bg-red-100"]) {
+  border-left-style: none !important;
+}
+/* Сосед слева от праздника (если он не праздник) */
+td:has(+ td.border-red-300):not(.border-red-300):not([class*="bg-red-100"]),
+td:has(+ td[class*="bg-red-100"]):not(.border-red-300):not([class*="bg-red-100"]),
+th:has(+ th.border-red-300):not(.border-red-300):not([class*="bg-red-100"]),
+th:has(+ th[class*="bg-red-100"]):not(.border-red-300):not([class*="bg-red-100"]) {
+  border-right-style: none !important;
+}
