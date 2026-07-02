@@ -35,7 +35,7 @@ function normalizeShiftType(raw: {
   sort_order?: number
   sortOrder?: number
   color: string
-  icon: any
+  letter?: string | null
 }) {
   return {
     code: raw.code,
@@ -47,7 +47,7 @@ function normalizeShiftType(raw: {
     is_night: raw.is_night ?? raw.isNight ?? false,
     sort_order: raw.sort_order ?? raw.sortOrder ?? 0,
     color: raw.color,
-    icon: raw.icon,
+    letter: raw.letter ?? null,
   }
 }
 
@@ -418,7 +418,7 @@ export function CellEditPopover({
                     (shiftTypesQuery.data ?? [])
                       .filter((st: any) => !(st.is_working ?? st.isWorking) && st.code !== "off")
                       .map((st: any) => {
-                        const Icon = st.icon || Check
+                        const letter = st.letter ?? st.code?.[0] ?? "?"
                         const isActive = shiftTypeCode === st.code
                         const displayName = st.code === "A" ? "За свой счет" : (st.name ?? st.label ?? st.code)
                         return (
@@ -439,10 +439,10 @@ export function CellEditPopover({
                             }`}
                           >
                             <span
-                              className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full flex-shrink-0"
+                              className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full flex-shrink-0 px-0.5 text-[8px] font-bold leading-none"
                               style={{ backgroundColor: st.color, color: "white" }}
                             >
-                              <Icon className="h-2 w-2" />
+                              {letter}
                             </span>
                             <span>{displayName}</span>
                           </button>

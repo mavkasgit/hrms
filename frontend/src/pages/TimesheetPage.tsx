@@ -237,7 +237,7 @@ export function TimesheetPage() {
       map[st.code] = {
         ...st,
         color: meta?.color ?? "#94a3b8",
-        icon: meta?.icon,
+        letter: meta?.letter,
       }
     }
     return map
