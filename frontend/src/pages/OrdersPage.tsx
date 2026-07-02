@@ -369,7 +369,7 @@ export function OrdersPage() {
     order_number: debouncedOrderNumber || undefined,
   })
 
-  const LS_ORDER_CODES = ["hire", "dismissal", "contract_extension"]
+  const LS_ORDER_CODES = ["hire", "dismissal", "contract_extension", "transfer"]
 
   // General orders query
   const { data: generalOrdersData, isLoading: generalOrdersLoading } = useOrders({
