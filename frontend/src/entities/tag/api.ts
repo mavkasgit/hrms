@@ -1,45 +1,43 @@
-import axios from "axios"
+import api from "@/shared/api/axios"
 import type { Tag, TagCreate, TagUpdate } from "./types"
-
-const API_URL = import.meta.env.VITE_API_URL || "/api"
 
 export const tagApi = {
   async fetchAll(): Promise<Tag[]> {
-    const { data } = await axios.get<Tag[]>(`${API_URL}/tags`)
+    const { data } = await api.get<Tag[]>(`/tags`)
     return data
   },
 
   async create(data: TagCreate): Promise<Tag> {
-    const { data: result } = await axios.post<Tag>(`${API_URL}/tags`, data)
+    const { data: result } = await api.post<Tag>(`/tags`, data)
     return result
   },
 
   async update(id: number, data: TagUpdate): Promise<Tag> {
-    const { data: result } = await axios.patch<Tag>(`${API_URL}/tags/${id}`, data)
+    const { data: result } = await api.patch<Tag>(`/tags/${id}`, data)
     return result
   },
 
   async remove(id: number): Promise<{ ok: boolean }> {
-    const { data } = await axios.delete<{ ok: boolean }>(`${API_URL}/tags/${id}`)
+    const { data } = await api.delete<{ ok: boolean }>(`/tags/${id}`)
     return data
   },
 
   async assignTag(employeeId: number, tagId: number): Promise<{ ok: boolean }> {
-    const { data } = await axios.post<{ ok: boolean }>(
-      `${API_URL}/tags/assign?employee_id=${employeeId}&tag_id=${tagId}`
+    const { data } = await api.post<{ ok: boolean }>(
+      `/tags/assign?employee_id=${employeeId}&tag_id=${tagId}`
     )
     return data
   },
 
   async unassignTag(employeeId: number, tagId: number): Promise<{ ok: boolean }> {
-    const { data } = await axios.delete<{ ok: boolean }>(
-      `${API_URL}/tags/unassign?employee_id=${employeeId}&tag_id=${tagId}`
+    const { data } = await api.delete<{ ok: boolean }>(
+      `/tags/unassign?employee_id=${employeeId}&tag_id=${tagId}`
     )
     return data
   },
 
   async getUsage(id: number): Promise<{ employee_count: number; department_count: number }> {
-    const { data } = await axios.get<{ employee_count: number; department_count: number }>(`${API_URL}/tags/${id}/usage`)
+    const { data } = await api.get<{ employee_count: number; department_count: number }>(`/tags/${id}/usage`)
     return data
   },
 }
