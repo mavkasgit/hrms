@@ -120,11 +120,13 @@ function PositionTreeNode({
     })
   }
  
+  const q = searchQuery.toLowerCase()
+  const positionNameMatch = searchQuery ? position.name.toLowerCase().includes(q) : false
   const filteredEmployees = searchQuery
-    ? employees.filter((e) => e.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    ? employees.filter((e) => e.name.toLowerCase().includes(q))
     : employees
   const hasEmployees = filteredEmployees.length > 0
-  const showEmployees = searchQuery ? hasEmployees : isExpanded
+  const showEmployees = searchQuery ? hasEmployees || positionNameMatch : isExpanded
  
   return (
     <div>
@@ -185,7 +187,13 @@ function PositionTreeNode({
           </button>
         )}
 
-        <span className="font-medium text-sm truncate flex-1 min-w-0">{position.name}</span>
+        <span
+          className={`font-medium text-sm truncate flex-1 min-w-0 ${
+            positionNameMatch ? "bg-yellow-500/20 rounded px-1" : ""
+          }`}
+        >
+          {position.name}
+        </span>
 
         {employees.length === 0 && (
           <span className="text-[10px] text-muted-foreground/50 w-10 text-right flex-shrink-0">
@@ -205,7 +213,7 @@ function PositionTreeNode({
       {showEmployees && hasEmployees && (
         <div className="mt-1 mb-1 space-y-0.5" style={{ paddingLeft: "28px" }}>
           {filteredEmployees.map((emp) => {
-            const isHighlighted = Boolean(searchQuery && emp.name.toLowerCase().includes(searchQuery.toLowerCase()))
+            const isHighlighted = Boolean(searchQuery && emp.name.toLowerCase().includes(q))
             return (
               <EmployeeRowInline
                 key={emp.id}
@@ -306,13 +314,24 @@ export function PositionsTab() {
   const visiblePositions = useMemo(() => {
     if (!searchQuery) return positions
     const q = searchQuery.toLowerCase()
-    return [...positions].sort((a, b) => {
-      const aEmps = employeesByPosition.get(a.id) ?? []
-      const bEmps = employeesByPosition.get(b.id) ?? []
-      const aMatch = aEmps.some((e) => e.name.toLowerCase().includes(q))
-      const bMatch = bEmps.some((e) => e.name.toLowerCase().includes(q))
-      return Number(bMatch) - Number(aMatch)
-    })
+    return [...positions]
+      .filter((p) => {
+        const emps = employeesByPosition.get(p.id) ?? []
+        const matchesName = p.name.toLowerCase().includes(q)
+        const matchesEmployee = emps.some((e) => e.name.toLowerCase().includes(q))
+        return matchesName || matchesEmployee
+      })
+      .sort((a, b) => {
+        const aEmps = employeesByPosition.get(a.id) ?? []
+        const bEmps = employeesByPosition.get(b.id) ?? []
+        const aNameMatch = a.name.toLowerCase().includes(q)
+        const bNameMatch = b.name.toLowerCase().includes(q)
+        const aEmpMatch = aEmps.some((e) => e.name.toLowerCase().includes(q))
+        const bEmpMatch = bEmps.some((e) => e.name.toLowerCase().includes(q))
+        const aScore = (aNameMatch ? 2 : 0) + (aEmpMatch ? 1 : 0)
+        const bScore = (bNameMatch ? 2 : 0) + (bEmpMatch ? 1 : 0)
+        return bScore - aScore
+      })
   }, [positions, employeesByPosition, searchQuery])
 
   useEffect(() => {
@@ -320,7 +339,9 @@ export function PositionsTab() {
       const q = searchQuery.toLowerCase()
       const matched = positions.filter((p) => {
         const emps = employeesByPosition.get(p.id) ?? []
-        return emps.some((e) => e.name.toLowerCase().includes(q))
+        const matchesName = p.name.toLowerCase().includes(q)
+        const matchesEmployee = emps.some((e) => e.name.toLowerCase().includes(q))
+        return matchesName || matchesEmployee
       })
       setExpandedPositions((prev) => {
         const next = new Set(prev)
@@ -385,8 +406,10 @@ export function PositionsTab() {
   const totalMatches = useMemo(() => {
     if (!searchQuery) return 0
     const q = searchQuery.toLowerCase()
-    return employeesData?.items.filter((e) => e.name.toLowerCase().includes(q)).length ?? 0
-  }, [searchQuery, employeesData])
+    const empMatches = employeesData?.items.filter((e) => e.name.toLowerCase().includes(q)).length ?? 0
+    const posMatches = positions.filter((p) => p.name.toLowerCase().includes(q)).length
+    return empMatches + posMatches
+  }, [searchQuery, employeesData, positions])
 
   if (isLoading) {
     return (
@@ -417,7 +440,11 @@ export function PositionsTab() {
         {/* Поиск + раскрыть/скрыть */}
         <div className="flex gap-2 items-center">
           <div className="flex-1">
-            <SearchInput value={searchQuery} onChange={setSearchQuery} />
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Поиск по должности или ФИО..."
+            />
           </div>
           {searchQuery && totalMatches > 0 && (
             <span className="text-xs text-muted-foreground flex-shrink-0">
@@ -442,6 +469,11 @@ export function PositionsTab() {
       {/* Дерево должностей */}
       {positions.length === 0 ? (
         <EmptyState message="Нет должностей" description="Добавьте первую должность" />
+      ) : visiblePositions.length === 0 ? (
+        <EmptyState
+          message="Ничего не найдено"
+          description={`По запросу «${searchQuery}» нет ни должностей, ни сотрудников`}
+        />
       ) : (
         <div className="border rounded-lg p-2 bg-card">
           {visiblePositions.map((pos) => (
