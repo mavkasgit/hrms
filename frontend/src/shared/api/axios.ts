@@ -184,6 +184,11 @@ api.interceptors.response.use(
       localStorage.removeItem("token")
       localStorage.removeItem("ktm2000_token")
       document.cookie = "ktm2000_token=; path=/; max-age=0"
+      showGlobalToast({
+        title: "Сессия истекла",
+        description: "Необходимо войти заново для продолжения работы.",
+        variant: "destructive",
+      })
       window.location.href = "/login"
       return Promise.reject(error)
     }

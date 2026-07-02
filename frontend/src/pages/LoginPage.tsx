@@ -33,9 +33,21 @@ export function LoginPage() {
     }
   }
 
-  function loginAsDev(role: "admin" | "viewer") {
-    localStorage.setItem("token", role)
-    window.location.href = "/"
+  async function loginAsDev(role: "admin" | "viewer") {
+    setLoading(true)
+    setError(null)
+    try {
+      // Сначала пытаемся получить собственный JWT через /api/auth/login
+      // (в dev-режиме бэкенд принимает пароль "dev" для любого пользователя)
+      await loginWithPassword(role, "dev")
+    } catch {
+      // Если собственный токен получить не удалось — fallback на упрощённый bypass-токен
+      // KTM-2000 в этом случае вообще не используется (он читается в getToken только если "token" пуст)
+      localStorage.setItem("token", role)
+    } finally {
+      setLoading(false)
+      window.location.href = "/"
+    }
   }
 
   return (
@@ -135,13 +147,17 @@ export function LoginPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => loginAsDev("admin")}
-                className="flex-1 py-2 px-3 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors cursor-pointer"
+                disabled={loading}
+                title="Полный доступ: создание, редактирование, удаление"
+                className="flex-1 py-2 px-3 text-sm font-medium bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white rounded-lg transition-colors cursor-pointer"
               >
                 Войти как Admin
               </button>
               <button
                 onClick={() => loginAsDev("viewer")}
-                className="flex-1 py-2 px-3 text-sm font-medium bg-white hover:bg-amber-50 text-amber-700 border border-amber-300 rounded-lg transition-colors cursor-pointer"
+                disabled={loading}
+                title="Только просмотр — создание должностей будет недоступно"
+                className="flex-1 py-2 px-3 text-sm font-medium bg-white hover:bg-amber-50 text-amber-700 border border-amber-300 rounded-lg transition-colors cursor-pointer disabled:opacity-60"
               >
                 Войти как Viewer
               </button>
