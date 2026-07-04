@@ -84,6 +84,11 @@ htmlcov/
 .codegraph/
 .qwen/
 .qoder/
+.opencode/
+mcps/
+
+# Local data dumps (repo root)
+/*.xlsx
 
 # Backend data
 backend/data/
