@@ -5,10 +5,10 @@ import { Button } from "@/shared/ui/button"
 import { YearFilter } from "@/shared/ui/year-filter"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
-import { EmptyState } from "@/shared/ui/empty-state"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
-import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
-import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
+
+import { SortableFilterHeader, TableCornerResetCell, TableCornerResetHeader } from "@/shared/ui"
+import { useFilterableTable } from "@/shared/hooks/useFilterableTable"
+import { useTableQueryEngine, type ColumnSortDef } from "@/shared/hooks/useTableQueryEngine"
 import {
   Dialog,
   DialogContent,
@@ -33,20 +33,55 @@ import type { Employee } from "@/entities/employee/types"
 
 type SortField = "contract_number" | "employee_name" | "contract_start" | "contract_end" | "order_type_code" | "order_number" | "order_date"
 
+function formatOrderType(code: string) {
+  return ORDER_TYPE_CODE_LABELS[code] || code
+}
+
+function formatDate(dateStr: string | null) {
+  if (!dateStr) return "—"
+  const d = new Date(dateStr)
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`
+}
+
+function getContractCellValue(contract: ContractHistory, field: SortField): string {
+  switch (field) {
+    case "contract_number":
+      return contract.contract_number ?? "—"
+    case "employee_name":
+      return contract.employee_name ?? "—"
+    case "contract_start":
+      return formatDate(contract.contract_start)
+    case "contract_end":
+      return formatDate(contract.contract_end)
+    case "order_type_code":
+      return formatOrderType(contract.order_type_code)
+    case "order_number":
+      return contract.order_number ?? "—"
+    case "order_date":
+      return formatDate(contract.order_date)
+  }
+}
+
 export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate()
   const [year, setYear] = useState<number | undefined>(undefined)
   const [filterEmployee, setFilterEmployee] = useState<Employee | null>(null)
   const [filterOrderType, setFilterOrderType] = useState<string | undefined>(undefined)
-  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
-  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
-    contract_number: new Set(),
-    employee_name: new Set(),
-    contract_start: new Set(),
-    contract_end: new Set(),
-    order_type_code: new Set(),
-    order_number: new Set(),
-    order_date: new Set(),
+  const hasPanelFiltersActive = Boolean(filterEmployee || filterOrderType || year)
+  const {
+    bindColumn,
+    buildFilterPredicate,
+    sortConfigs,
+    handleSort,
+    hasActiveFilters,
+    resetAll,
+  } = useFilterableTable<SortField>({
+    extraHasActive: hasPanelFiltersActive,
+    onExtraReset: () => {
+      setFilterEmployee(null)
+      setFilterOrderType(undefined)
+      setYear(undefined)
+    },
   })
 
   const { data: years } = useContractYears()
@@ -69,32 +104,7 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
   }, [filterEmployee, filterOrderType, year])
 
   const clearFilters = () => {
-    setFilterEmployee(null)
-    setFilterOrderType(undefined)
-    setYear(undefined)
-    setSortConfigs([])
-    setColumnFilters({
-      contract_number: new Set(),
-      employee_name: new Set(),
-      contract_start: new Set(),
-      contract_end: new Set(),
-      order_type_code: new Set(),
-      order_number: new Set(),
-      order_date: new Set(),
-    })
-  }
-
-  const formatOrderType = (code: string) => ORDER_TYPE_CODE_LABELS[code] || code
-
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return "—"
-    const d = new Date(dateStr)
-    return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`
-  }
-
-  const handleSort = (field: SortField) => {
-    const defaultOrder = (field === "employee_name" || field === "order_type_code") ? "asc" : "desc"
-    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
+    resetAll()
   }
 
   const sortDefs: ColumnSortDef<ContractHistory, SortField>[] = useMemo(() => [
@@ -107,33 +117,16 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
     { field: "order_date", getSortValue: (c) => c.order_date ?? "" },
   ], [])
 
-  const localFilterPredicate = useMemo(() => {
-    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
-    if (!hasFilters) return null
-    return (c: ContractHistory) => {
-      for (const [field, selected] of Object.entries(columnFilters)) {
-        if (selected && selected.size > 0) {
-          let val = ""
-          if (field === "contract_number") val = c.contract_number ?? "—"
-          else if (field === "employee_name") val = c.employee_name ?? "—"
-          else if (field === "contract_start") val = formatDate(c.contract_start)
-          else if (field === "contract_end") val = formatDate(c.contract_end)
-          else if (field === "order_type_code") val = formatOrderType(c.order_type_code)
-          else if (field === "order_number") val = c.order_number ?? "—"
-          else if (field === "order_date") val = formatDate(c.order_date)
-
-          if (!selected.has(val)) return false
-        }
-      }
-      return true
-    }
-  }, [columnFilters])
+  const filterPredicate = useMemo(
+    () => buildFilterPredicate(getContractCellValue),
+    [buildFilterPredicate],
+  )
 
   const engineResult = useTableQueryEngine({
     rows: items,
     getId: (c) => c.id,
     searchQuery: "",
-    filterPredicate: localFilterPredicate,
+    filterPredicate,
     sortConfigs,
     sortDefs,
   })
@@ -224,11 +217,6 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
                 <Skeleton key={i} className="h-8 w-full" />
               ))}
             </div>
-          ) : !displayContracts.length ? (
-            <EmptyState
-              message="Контракты не найдены"
-              description="Создайте приказ, связанный с контрактом"
-            />
           ) : (
             <>
               <Table>
@@ -241,8 +229,7 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
                         currentSorts={sortConfigs}
                         onSortChange={handleSort}
                         values={uniqueValues.contract_number}
-                        selectedValues={columnFilters.contract_number}
-                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                        {...bindColumn("contract_number")}
                       />
                     </TableHead>
                     <TableHead>
@@ -252,8 +239,7 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
                         currentSorts={sortConfigs}
                         onSortChange={handleSort}
                         values={uniqueValues.employee_name}
-                        selectedValues={columnFilters.employee_name}
-                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                        {...bindColumn("employee_name")}
                       />
                     </TableHead>
                     <TableHead>Подразделение</TableHead>
@@ -264,8 +250,7 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
                         currentSorts={sortConfigs}
                         onSortChange={handleSort}
                         values={uniqueValues.contract_start}
-                        selectedValues={columnFilters.contract_start}
-                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                        {...bindColumn("contract_start")}
                       />
                     </TableHead>
                     <TableHead>
@@ -275,8 +260,7 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
                         currentSorts={sortConfigs}
                         onSortChange={handleSort}
                         values={uniqueValues.contract_end}
-                        selectedValues={columnFilters.contract_end}
-                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                        {...bindColumn("contract_end")}
                       />
                     </TableHead>
                     <TableHead>
@@ -286,8 +270,7 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
                         currentSorts={sortConfigs}
                         onSortChange={handleSort}
                         values={uniqueValues.order_type_code}
-                        selectedValues={columnFilters.order_type_code}
-                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                        {...bindColumn("order_type_code")}
                       />
                     </TableHead>
                     <TableHead>
@@ -297,8 +280,7 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
                         currentSorts={sortConfigs}
                         onSortChange={handleSort}
                         values={uniqueValues.order_number}
-                        selectedValues={columnFilters.order_number}
-                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                        {...bindColumn("order_number")}
                       />
                     </TableHead>
                     <TableHead>
@@ -308,15 +290,30 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
                         currentSorts={sortConfigs}
                         onSortChange={handleSort}
                         values={uniqueValues.order_date}
-                        selectedValues={columnFilters.order_date}
-                        onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                        {...bindColumn("order_date")}
                       />
                     </TableHead>
-                    <TableHead className="text-right">Действия</TableHead>
+                    <TableHead className="text-right text-xs font-medium text-muted-foreground">
+                      Действия
+                    </TableHead>
+                    <TableCornerResetHeader
+                      as={TableHead}
+                      hasActiveFilters={hasActiveFilters}
+                      onReset={resetAll}
+                    />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {displayContracts.map((contract) => (
+                  {displayContracts.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={10}
+                        className="px-4 py-10 text-center text-sm text-muted-foreground"
+                      >
+                        Контракты не найдены. Создайте приказ, связанный с контрактом, или измените фильтры.
+                      </TableCell>
+                    </TableRow>
+                  ) : displayContracts.map((contract) => (
                     <TableRow key={contract.id}>
                       <TableCell className="font-mono text-sm">
                         {contract.contract_number || "—"}
@@ -344,6 +341,7 @@ export function ContractRegistryModal({ open, onOpenChange }: { open: boolean; o
                           </Button>
                         )}
                       </TableCell>
+                      <TableCornerResetCell as={TableCell} />
                     </TableRow>
                   ))}
                 </TableBody>

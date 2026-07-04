@@ -10,8 +10,10 @@ import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { Badge } from "@/shared/ui/badge"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
-import type { SortConfig } from "@/shared/hooks/useTableQueryEngine"
+import { SortableFilterHeader, TableCornerResetCell, TableCornerResetHeader } from "@/shared/ui"
+import { useFilterableTable } from "@/shared/hooks/useFilterableTable"
+import { useTableQueryEngine, type ColumnSortDef } from "@/shared/hooks/useTableQueryEngine"
+import { matchesPartialSearch } from "@/shared/lib/columnFilterSearch"
 import {
   Select,
   SelectContent,
@@ -69,24 +71,41 @@ function getCellClasses(days: string | null | undefined): string {
   return base
 }
 
-function compareStr(a: string, b: string, dir: "asc" | "desc"): number {
-  const cmp = a.localeCompare(b, "ru")
-  return dir === "asc" ? cmp : -cmp
+function getCalendarCellValue(row: CalendarRow, field: SortField): string {
+  switch (field) {
+    case "department":
+      return row.department_name
+    case "employee":
+      return row.employee_name
+    case "tags":
+      return row.tags.map((t) => t.name).join(", ")
+  }
 }
 
 export function VacationCalendarPage() {
   const navigate = useNavigate()
   const [year, setYear] = useState(2026)
   const [search, setSearch] = useState("")
-  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
-  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
-    department: new Set(),
-    tags: new Set(),
-    employee: new Set(),
-  })
   const [activeMonthFilters, setActiveMonthFilters] = useState<number[]>([])
   const [importModalOpen, setImportModalOpen] = useState(false)
   const [importSuccess, setImportSuccess] = useState(false)
+
+  const {
+    bindColumn,
+    buildFilterPredicate,
+    columnFilters,
+    columnSearchQueries,
+    sortConfigs,
+    handleSort,
+    hasActiveFilters,
+    resetAll,
+  } = useFilterableTable<SortField>({
+    extraHasActive: search.trim().length > 0 || activeMonthFilters.length > 0,
+    onExtraReset: () => {
+      setSearch("")
+      setActiveMonthFilters([])
+    },
+  })
 
   const { data: summaries, isLoading: plansLoading } = useVacationPlanSummary(year)
   const { data: allEmployees } = useEmployees({ page: 1, per_page: 1000, status: "active" })
@@ -152,71 +171,71 @@ export function VacationCalendarPage() {
     [combinedData]
   )
 
-  const filtered = useMemo(() => {
-    let rows = combinedData
+  const sortDefs: ColumnSortDef<CalendarRow, SortField>[] = useMemo(
+    () => [
+      { field: "department", getSortValue: (row) => row.department_name },
+      { field: "tags", getSortValue: (row) => row.tags[0]?.name ?? "" },
+      { field: "employee", getSortValue: (row) => row.employee_name },
+    ],
+    [],
+  )
 
-    // Фильтр по колонке «Подразделение»
-    if (columnFilters.department.size > 0) {
-      rows = rows.filter((r) => columnFilters.department.has(r.department_name))
-    }
+  const filterPredicate = useMemo(() => {
+    const base = buildFilterPredicate(getCalendarCellValue, ["tags"])
+    const tagsSelected = columnFilters.tags
+    const tagsSearch = columnSearchQueries.tags?.trim()
+    const hasTagsFilter = (tagsSelected && tagsSelected.size > 0) || Boolean(tagsSearch)
+    const hasMonthFilter = activeMonthFilters.length > 0
 
-    // Фильтр по колонке «Теги»
-    if (columnFilters.tags.size > 0) {
-      rows = rows.filter((r) => r.tags.some((t) => columnFilters.tags.has(t.name)))
-    }
+    if (!base && !hasTagsFilter && !hasMonthFilter) return null
 
-    // Фильтр по колонке «Сотрудник»
-    if (columnFilters.employee.size > 0) {
-      rows = rows.filter((r) => columnFilters.employee.has(r.employee_name))
-    }
+    return (row: CalendarRow) => {
+      if (base && !base(row)) return false
 
-    // Фильтр по месяцам (OR — объединение)
-    if (activeMonthFilters.length > 0) {
-      rows = rows.filter((r) =>
-        activeMonthFilters.some((monthNum) => {
-          const val = r.months[monthNum]
+      if (hasTagsFilter) {
+        const tagNames = row.tags.map((t) => t.name)
+        const displayValue = tagNames.join(", ")
+        if (tagsSearch && !matchesPartialSearch(displayValue, tagsSearch)) return false
+        if (tagsSelected && tagsSelected.size > 0) {
+          const hasMatch = tagNames.some((name) => tagsSelected.has(name))
+          if (!hasMatch) return false
+        }
+      }
+
+      if (hasMonthFilter) {
+        const hasMonthValue = activeMonthFilters.some((monthNum) => {
+          const val = row.months[monthNum]
           return val !== null && val !== undefined && val !== ""
         })
-      )
-    }
-
-    // Поиск по тексту
-    const q = search.toLowerCase().trim()
-    if (q) {
-      rows = rows.filter(
-        (s) =>
-          s.employee_name.toLowerCase().includes(q) ||
-          s.department_name.toLowerCase().includes(q) ||
-          s.department_id.toString().includes(q)
-      )
-    }
-
-    // Сортировка по sortConfigs
-    const sortedRows = [...rows].sort((a, b) => {
-      for (const sc of sortConfigs) {
-        let cmp = 0
-        if (sc.field === "department") {
-          cmp = compareStr(a.department_name, b.department_name, sc.order)
-        } else if (sc.field === "tags") {
-          const aTag = a.tags[0]?.name || ""
-          const bTag = b.tags[0]?.name || ""
-          cmp = compareStr(aTag, bTag, sc.order)
-        } else if (sc.field === "employee") {
-          cmp = compareStr(a.employee_name, b.employee_name, sc.order)
-        }
-        if (cmp !== 0) return cmp
+        if (!hasMonthValue) return false
       }
-      return a.employee_name.localeCompare(b.employee_name, "ru")
-    })
 
-    return sortedRows
+      return true
+    }
   }, [
-    combinedData,
-    search,
-    sortConfigs,
-    columnFilters,
+    buildFilterPredicate,
+    columnFilters.tags,
+    columnSearchQueries.tags,
     activeMonthFilters,
   ])
+
+  const effectiveSortConfigs = useMemo(
+    () =>
+      sortConfigs.length > 0
+        ? sortConfigs
+        : [{ field: "employee" as const, order: "asc" as const }],
+    [sortConfigs],
+  )
+
+  const { rows: filtered } = useTableQueryEngine({
+    rows: combinedData,
+    getId: (row) => row.employee_id,
+    searchQuery: search,
+    searchKeys: ["employee_name", "department_name", "department_id"],
+    filterPredicate,
+    sortConfigs: effectiveSortConfigs,
+    sortDefs,
+  })
 
   const groupedRows = useMemo(() => {
     return [{ key: "all", label: null, rows: filtered }]
@@ -263,24 +282,7 @@ export function VacationCalendarPage() {
   }
 
   const handleClearAll = () => {
-    setSearch("")
-    setSortConfigs([])
-    setColumnFilters({ department: new Set(), tags: new Set(), employee: new Set() })
-    setActiveMonthFilters([])
-  }
-
-  const handleSortChange = (field: SortField) => {
-    setSortConfigs((prev) => {
-      const existing = prev.find((s) => s.field === field)
-      if (!existing) return [...prev, { field, order: "asc" as const }]
-      if (existing.order === "asc")
-        return prev.map((s) => (s.field === field ? { ...s, order: "desc" as const } : s))
-      return prev.filter((s) => s.field !== field)
-    })
-  }
-
-  const handleFilterChange = (field: SortField, selected: Set<string>) => {
-    setColumnFilters((prev) => ({ ...prev, [field]: selected }))
+    resetAll()
   }
 
   return (
@@ -367,10 +369,9 @@ export function VacationCalendarPage() {
                     field="department"
                     label="Подразделение"
                     currentSorts={sortConfigs}
-                    onSortChange={handleSortChange}
+                    onSortChange={handleSort}
                     values={uniqueDepartments}
-                    selectedValues={columnFilters.department}
-                    onFilterChange={handleFilterChange}
+                    {...bindColumn("department")}
                   />
                 </th>
                 <th className="text-left font-medium py-2 px-2 w-[60px] border border-zinc-300 bg-background">
@@ -378,10 +379,9 @@ export function VacationCalendarPage() {
                     field="tags"
                     label="Теги"
                     currentSorts={sortConfigs}
-                    onSortChange={handleSortChange}
+                    onSortChange={handleSort}
                     values={uniqueTagNames}
-                    selectedValues={columnFilters.tags}
-                    onFilterChange={handleFilterChange}
+                    {...bindColumn("tags")}
                   />
                 </th>
                 <th className="text-left font-medium py-2 px-3 w-[240px] border border-zinc-300 bg-background">
@@ -389,10 +389,9 @@ export function VacationCalendarPage() {
                     field="employee"
                     label="Сотрудник"
                     currentSorts={sortConfigs}
-                    onSortChange={handleSortChange}
+                    onSortChange={handleSort}
                     values={uniqueEmployees}
-                    selectedValues={columnFilters.employee}
-                    onFilterChange={handleFilterChange}
+                    {...bindColumn("employee")}
                   />
                 </th>
                 {MONTHS.map((m, i) => {
@@ -416,15 +415,29 @@ export function VacationCalendarPage() {
                     </th>
                   )
                 })}
+                <TableCornerResetHeader
+                  hasActiveFilters={hasActiveFilters}
+                  onReset={resetAll}
+                  className="border border-zinc-300 bg-background"
+                />
               </tr>
             </thead>
             <tbody>
-              {groupedRows.map((group) => (
+              {filtered.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={4 + MONTHS.length}
+                    className="py-10 text-center text-sm text-muted-foreground border border-zinc-300"
+                  >
+                    Нет сотрудников, соответствующих фильтру.
+                  </td>
+                </tr>
+              ) : groupedRows.map((group) => (
                 <Fragment key={group.key}>
                   {group.label && (
                     <tr className="bg-muted/50">
                       <td
-                        colSpan={3 + MONTHS.length}
+                        colSpan={4 + MONTHS.length}
                         className="py-1.5 px-3 text-xs font-semibold text-muted-foreground border border-zinc-300 sticky left-0"
                       >
                         {group.label}
@@ -524,6 +537,7 @@ export function VacationCalendarPage() {
                             </td>
                           )
                         })}
+                        <TableCornerResetCell className="h-8 border border-zinc-300 bg-background" />
                       </tr>
                     )
                   })}

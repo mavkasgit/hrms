@@ -17,19 +17,14 @@ export interface TableQueryEngineResult<T> {
   filteredCount: number;
 }
 
-const DIACRITICS_REGEX = /\p{Diacritic}/gu;
+import { normalizeText } from "./textNormalize";
+
 const STRING_COLLATOR = new Intl.Collator(["ru-RU", "en-US"], {
   sensitivity: "base",
   numeric: true,
 });
 
-function normalizeText(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(DIACRITICS_REGEX, "")
-    .replace(/ё/g, "е");
-}
+export { normalizeText } from "./textNormalize";
 
 /**
  * Flatten a value to a searchable string. Handles nested objects recursively.

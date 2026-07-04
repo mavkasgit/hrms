@@ -26,11 +26,11 @@ export function SortableHeader<Field extends string>({
   const priority = activeSort ? currentSorts.indexOf(activeSort) + 1 : null;
 
   const icon = activeSort?.order === "asc" ? (
-    <ArrowUp size={14} className="ml-1 shrink-0" />
+    <ArrowUp size={14} />
   ) : activeSort?.order === "desc" ? (
-    <ArrowDown size={14} className="ml-1 shrink-0" />
+    <ArrowDown size={14} />
   ) : (
-    <ArrowUpDown size={14} className="ml-1 shrink-0 opacity-45" />
+    <ArrowUpDown size={14} className="opacity-45" />
   );
 
   return (
@@ -42,7 +42,7 @@ export function SortableHeader<Field extends string>({
       data-sort-order={activeSort?.order ?? "none"}
       data-sort-priority={priority ?? undefined}
       className={cn(
-        "inline-flex items-center gap-1 text-left font-medium text-xs tracking-normal text-muted-foreground hover:text-foreground transition-colors cursor-pointer w-full select-none",
+        "inline-flex items-center gap-1 text-left font-medium text-xs tracking-normal text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none",
         activeSort && "text-foreground",
         className,
       )}

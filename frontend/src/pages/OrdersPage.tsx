@@ -53,8 +53,11 @@ import { ContractRegistryModal } from "@/pages/ContractRegistryPage"
 import type { Employee } from "@/entities/employee/types"
 import type { Order, OrderType } from "@/entities/order/types"
 import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { TableCornerResetCell, TableCornerResetHeader } from "@/shared/ui"
 import { getUserAccessLevel } from "@/shared/api/axios"
-import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
+import { useTableQueryEngine, type ColumnSortDef } from "@/shared/hooks/useTableQueryEngine"
+import { useFilterableTable } from "@/shared/hooks/useFilterableTable"
+import { matchesPartialSearch } from "@/shared/lib/columnFilterSearch"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import {
   useAutoFillFields,
@@ -64,6 +67,23 @@ import {
 } from "@/features/dynamic-form"
 import { getOrderTypeLayout } from "@/entities/order/orderTypeLayouts"
 import { formatDate } from "@/shared/utils/date"
+
+type OrderSortField = "order_number" | "order_type_name" | "employee_name" | "order_date" | "created_date"
+
+function getOrderCellValue(row: Order, field: OrderSortField): string {
+  switch (field) {
+    case "order_number":
+      return row.order_number
+    case "order_type_name":
+      return row.order_type_name
+    case "employee_name":
+      return row.employee_name ?? "—"
+    case "order_date":
+      return row.order_date ? new Date(row.order_date).toISOString().split("T")[0] : ""
+    case "created_date":
+      return row.created_date ? new Date(row.created_date).toISOString().split("T")[0] : ""
+  }
+}
 
 const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
   "Прием на работу": "bg-green-100 text-green-800 border-green-200",
@@ -157,8 +177,49 @@ export function OrdersPage() {
   const [filterShowGeneral, setFilterShowGeneral] = useState<boolean>(() => getSavedFilter("showGeneral", false))
   const filterOrderTypeRef = useRef<HTMLDivElement>(null)
 
-  const [sortConfigs, setSortConfigs] = useState<SortConfig<string>[]>([])
-  const [columnFilters, setColumnFilters] = useState<Record<string, Set<string>>>({})
+  const hasPanelFiltersActive =
+    Boolean(filterEmployee) ||
+    filterOrderTypes.length > 0 ||
+    Boolean(filterOrderNumber) ||
+    Boolean(filterDateFrom) ||
+    Boolean(filterDateTo) ||
+    Boolean(year) ||
+    Boolean(filterLetter) ||
+    filterLS ||
+    filterShowGeneral
+
+  const {
+    bindColumn,
+    buildFilterPredicate,
+    columnFilters,
+    columnSearchQueries,
+    sortConfigs,
+    setSortConfigs,
+    hasActiveFilters,
+    resetAll,
+  } = useFilterableTable<OrderSortField>({
+    extraHasActive: hasPanelFiltersActive,
+    onExtraReset: () => {
+      setFilterEmployee(null)
+      setFilterOrderTypes([])
+      setFilterOrderTypeSearch("")
+      setFilterOrderNumber("")
+      setFilterDateFrom("")
+      setFilterDateTo("")
+      setYear(new Date().getFullYear())
+      setFilterLetter(undefined)
+      setFilterLS(false)
+      setFilterShowGeneral(false)
+      setAppliedPresetId(null)
+      localStorage.removeItem("hrms_active_preset_id")
+    },
+  })
+
+  const handleSort = (field: OrderSortField) => {
+    const defaultOrder =
+      field === "order_number" || field === "order_date" || field === "created_date" ? "desc" : "asc"
+    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
+  }
 
   interface FilterPreset {
     id: string
@@ -405,7 +466,7 @@ export function OrdersPage() {
     }
   }, [data, filterLS, filterShowGeneral])
 
-  const sortDefs: ColumnSortDef<Order, string>[] = useMemo(() => [
+  const sortDefs: ColumnSortDef<Order, OrderSortField>[] = useMemo(() => [
     { field: "order_number", getSortValue: (o) => o.order_number },
     { field: "order_type_name", getSortValue: (o) => o.order_type_name },
     {
@@ -425,39 +486,47 @@ export function OrdersPage() {
     { field: "created_date", getSortValue: (o) => o.created_date ?? "" },
   ], [])
 
-  const localFilterPredicate = useMemo(() => {
-    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
-    if (!hasFilters) return null
+  const columnFilterPredicate = useMemo(
+    () => buildFilterPredicate(getOrderCellValue, ["employee_name"]),
+    [buildFilterPredicate],
+  )
+
+  const filterPredicate = useMemo(() => {
+    const empFilter = columnFilters.employee_name
+    const empSearch = columnSearchQueries.employee_name?.trim()
+    const hasEmpColumnFilter = (empFilter && empFilter.size > 0) || Boolean(empSearch)
+
+    if (!columnFilterPredicate && !hasEmpColumnFilter) return null
+
     return (row: Order) => {
-      for (const [field, selected] of Object.entries(columnFilters)) {
-        if (selected && selected.size > 0) {
-          let val = ""
-          if (field === "order_number") val = row.order_number
-          else if (field === "order_type_name") val = row.order_type_name
-          else if (field === "employee_name") {
-            if (row.is_group && row.group_employees) {
-              const hasMatchingEmployee = row.group_employees.some(e => selected.has(e.employee_full_name))
-              if (!hasMatchingEmployee) return false
-              continue
-            } else {
-              val = row.employee_name ?? "—"
-            }
+      if (hasEmpColumnFilter) {
+        if (row.is_group && row.group_employees) {
+          if (empFilter && empFilter.size > 0) {
+            const hasMatching = row.group_employees.some((e) => empFilter.has(e.employee_full_name))
+            if (!hasMatching) return false
           }
-          else if (field === "order_date") val = row.order_date ? new Date(row.order_date).toISOString().split("T")[0] : ""
-          else if (field === "created_date") val = row.created_date ? new Date(row.created_date).toISOString().split("T")[0] : ""
-          
-          if (!selected.has(val)) return false
+          if (empSearch) {
+            const hasMatching = row.group_employees.some((e) =>
+              matchesPartialSearch(e.employee_full_name ?? "", empSearch),
+            )
+            if (!hasMatching) return false
+          }
+        } else {
+          const val = row.employee_name ?? "—"
+          if (empFilter && empFilter.size > 0 && !empFilter.has(val)) return false
+          if (empSearch && !matchesPartialSearch(val, empSearch)) return false
         }
       }
+      if (columnFilterPredicate && !columnFilterPredicate(row)) return false
       return true
     }
-  }, [columnFilters])
+  }, [columnFilterPredicate, columnFilters.employee_name, columnSearchQueries.employee_name])
 
   const engineResult = useTableQueryEngine({
     rows: filteredData?.items ?? [],
     getId: (o) => o.id,
     searchQuery: "",
-    filterPredicate: localFilterPredicate,
+    filterPredicate,
     sortConfigs,
     sortDefs,
   })
@@ -818,18 +887,7 @@ export function OrdersPage() {
   }, [filterEmployee, filterOrderTypes, filterOrderNumber, filterDateFrom, filterDateTo, year, filterLetter, filterLS])
 
   const clearFilters = () => {
-    setFilterEmployee(null)
-    setFilterOrderTypes([])
-    setFilterOrderTypeSearch("")
-    setFilterOrderNumber("")
-    setFilterDateFrom("")
-    setFilterDateTo("")
-    setYear(new Date().getFullYear())
-    setFilterLetter(undefined)
-    setFilterLS(false)
-    setFilterShowGeneral(false)
-    setAppliedPresetId(null)
-    localStorage.removeItem("hrms_active_preset_id")
+    resetAll()
   }
 
   // Close filter type dropdown on outside click
@@ -1452,11 +1510,6 @@ export function OrdersPage() {
               <Skeleton key={i} className="h-8 w-full" />
             ))}
           </div>
-        ) : !displayOrders?.length ? (
-          <EmptyState
-            message="Приказы не найдены"
-            description="Создайте первый приказ или измените фильтры"
-          />
         ) : (
           <Table>
             <TableHeader>
@@ -1466,10 +1519,9 @@ export function OrdersPage() {
                     field="order_number"
                     label="№"
                     currentSorts={sortConfigs}
-                    onSortChange={(field) => setSortConfigs(prev => nextMultiSortConfigs(prev, field, "desc"))}
+                    onSortChange={handleSort}
                     values={uniqueValues.order_number}
-                    selectedValues={columnFilters.order_number ?? new Set()}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("order_number")}
                   />
                 </TableHead>
                 <TableHead>
@@ -1477,10 +1529,9 @@ export function OrdersPage() {
                     field="order_type_name"
                     label="Тип"
                     currentSorts={sortConfigs}
-                    onSortChange={(field) => setSortConfigs(prev => nextMultiSortConfigs(prev, field, "asc"))}
+                    onSortChange={handleSort}
                     values={uniqueValues.order_type_name}
-                    selectedValues={columnFilters.order_type_name ?? new Set()}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("order_type_name")}
                   />
                 </TableHead>
                 <TableHead>
@@ -1488,10 +1539,9 @@ export function OrdersPage() {
                     field="employee_name"
                     label="Сотрудник"
                     currentSorts={sortConfigs}
-                    onSortChange={(field) => setSortConfigs(prev => nextMultiSortConfigs(prev, field, "asc"))}
+                    onSortChange={handleSort}
                     values={uniqueValues.employee_name}
-                    selectedValues={columnFilters.employee_name ?? new Set()}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("employee_name")}
                   />
                 </TableHead>
                 <TableHead>
@@ -1499,10 +1549,9 @@ export function OrdersPage() {
                     field="order_date"
                     label="Дата приказа"
                     currentSorts={sortConfigs}
-                    onSortChange={(field) => setSortConfigs(prev => nextMultiSortConfigs(prev, field, "desc"))}
+                    onSortChange={handleSort}
                     values={uniqueValues.order_date}
-                    selectedValues={columnFilters.order_date ?? new Set()}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("order_date")}
                     valueLabel={(val) => {
                       if (!val) return "—"
                       const parts = val.split("-")
@@ -1517,10 +1566,9 @@ export function OrdersPage() {
                     field="created_date"
                     label="Дата создания"
                     currentSorts={sortConfigs}
-                    onSortChange={(field) => setSortConfigs(prev => nextMultiSortConfigs(prev, field, "desc"))}
+                    onSortChange={handleSort}
                     values={uniqueValues.created_date}
-                    selectedValues={columnFilters.created_date ?? new Set()}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("created_date")}
                     valueLabel={(val) => {
                       if (!val) return "—"
                       const parts = val.split("-")
@@ -1530,11 +1578,27 @@ export function OrdersPage() {
                     }}
                   />
                 </TableHead>
-                <TableHead className="text-right">Действия</TableHead>
+                <TableHead className="text-right text-xs font-medium text-muted-foreground">
+                  Действия
+                </TableHead>
+                <TableCornerResetHeader
+                  as={TableHead}
+                  hasActiveFilters={hasActiveFilters}
+                  onReset={resetAll}
+                />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {displayOrders.map((order) => {
+              {!displayOrders?.length ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="px-4 py-10 text-center text-sm text-muted-foreground"
+                  >
+                    Приказы не найдены. Создайте первый приказ или измените фильтры.
+                  </TableCell>
+                </TableRow>
+              ) : displayOrders.map((order) => {
                 const isGroup = order.is_group
                 return (
                   <Fragment key={order.id}>
@@ -1574,6 +1638,7 @@ export function OrdersPage() {
                           )}
                         </div>
                       </TableCell>
+                      <TableCornerResetCell as={TableCell} />
                     </TableRow>
                     {isGroup && order.group_employees && (
                       <GroupOrderEmployeesRows

@@ -1,8 +1,10 @@
 import { useEffect, useState, useMemo } from "react"
 import { Download, Eye, FilePen, Printer, Trash2, X } from "lucide-react"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { SortableFilterHeader, TableCornerResetCell, TableCornerResetHeader } from "@/shared/ui"
 import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
-import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
+import { useFilterableTable } from "@/shared/hooks/useFilterableTable"
+import { useTableQueryEngine, type ColumnSortDef } from "@/shared/hooks/useTableQueryEngine"
+import { matchesPartialSearch } from "@/shared/lib/columnFilterSearch"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import { Button } from "@/shared/ui/button"
 import { DatePicker } from "@/shared/ui/date-picker"
@@ -140,6 +142,39 @@ interface GroupEmployeeRow extends WeekendCallGroupEmployeeCreate {
 }
 
 type SortField = "order_number" | "employee_name" | "order_date" | "call_date"
+type SummarySortField = "name" | "calls" | "days"
+
+interface EmployeeSummaryRow {
+  name: string
+  calls: number
+  days: number
+}
+
+function getWeekendCallCellValue(order: Order, field: SortField): string {
+  switch (field) {
+    case "order_number":
+      return order.order_number ?? "—"
+    case "employee_name":
+      return order.employee_name ?? "—"
+    case "call_date": {
+      const extra = (order.extra_fields || {}) as Record<string, unknown>
+      return callPeriodLabel(extra)
+    }
+    case "order_date":
+      return formatDate(order.order_date)
+  }
+}
+
+function getSummaryCellValue(row: EmployeeSummaryRow, field: SummarySortField): string {
+  switch (field) {
+    case "name":
+      return row.name
+    case "calls":
+      return String(row.calls)
+    case "days":
+      return String(row.days)
+  }
+}
 
 export function WeekendCallsPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
@@ -179,6 +214,36 @@ export function WeekendCallsPage() {
     per_page: 1000,
     order_type_code: WEEKEND_CALL_CODE,
   })
+
+  const {
+    bindColumn: bindDetailColumn,
+    buildFilterPredicate: buildDetailFilterPredicate,
+    columnFilters: detailColumnFilters,
+    columnSearchQueries: detailColumnSearchQueries,
+    sortConfigs: detailSortConfigs,
+    setSortConfigs: setDetailSortConfigs,
+    hasActiveFilters: detailHasActiveFilters,
+    resetAll: resetDetailAll,
+  } = useFilterableTable<SortField>()
+
+  const {
+    bindColumn: bindSummaryColumn,
+    buildFilterPredicate: buildSummaryFilterPredicate,
+    sortConfigs: summarySortConfigs,
+    setSortConfigs: setSummarySortConfigs,
+    hasActiveFilters: summaryHasActiveFilters,
+    resetAll: resetSummaryAll,
+  } = useFilterableTable<SummarySortField>()
+
+  const handleDetailSort = (field: SortField) => {
+    const defaultOrder = field === "employee_name" ? "asc" : "desc"
+    setDetailSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
+  }
+
+  const handleSummarySort = (field: SummarySortField) => {
+    const defaultOrder = field === "name" ? "asc" : "desc"
+    setSummarySortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
+  }
 
   const weekendCallType = orderTypes.find((item) => item.code === WEEKEND_CALL_CODE) ?? null
 
@@ -436,19 +501,6 @@ export function WeekendCallsPage() {
   const filteredOrderIds = new Set(filteredEntries.map((entry) => entry.orderId))
   const filteredOrders = orders.filter((order) => filteredOrderIds.has(order.id))
 
-  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
-  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
-    order_number: new Set(),
-    employee_name: new Set(),
-    call_date: new Set(),
-    order_date: new Set(),
-  })
-
-  const handleSort = (field: SortField) => {
-    const defaultOrder = field === "employee_name" ? "asc" : "desc"
-    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
-  }
-
   const sortDefs: ColumnSortDef<Order, SortField>[] = useMemo(() => [
     { field: "order_number", getSortValue: (order) => order.order_number ?? "" },
     {
@@ -482,46 +534,80 @@ export function WeekendCallsPage() {
     { field: "order_date", getSortValue: (order) => order.order_date ?? "" },
   ], [])
 
-  const localFilterPredicate = useMemo(() => {
-    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
-    if (!hasFilters) return null
+  const columnFilterPredicate = useMemo(
+    () => buildDetailFilterPredicate(getWeekendCallCellValue, ["employee_name", "call_date"]),
+    [buildDetailFilterPredicate],
+  )
+
+  const filterPredicate = useMemo(() => {
+    const empFilter = detailColumnFilters.employee_name
+    const empSearch = detailColumnSearchQueries.employee_name?.trim()
+    const hasEmpColumnFilter = (empFilter && empFilter.size > 0) || Boolean(empSearch)
+
+    const callFilter = detailColumnFilters.call_date
+    const callSearch = detailColumnSearchQueries.call_date?.trim()
+    const hasCallColumnFilter = (callFilter && callFilter.size > 0) || Boolean(callSearch)
+
+    if (!columnFilterPredicate && !hasEmpColumnFilter && !hasCallColumnFilter) return null
+
     return (order: Order) => {
-      for (const [field, selected] of Object.entries(columnFilters)) {
-        if (selected && selected.size > 0) {
-          if (field === "order_number") {
-            const val = order.order_number ?? "—"
-            if (!selected.has(val)) return false
-          } else if (field === "employee_name") {
-            if (order.is_group && order.group_employees) {
-              const hasMatchingEmployee = order.group_employees.some(e => selected.has(e.employee_full_name))
-              if (!hasMatchingEmployee) return false
-            } else {
-              const val = order.employee_name ?? "—"
-              if (!selected.has(val)) return false
-            }
-          } else if (field === "call_date") {
-            if (order.is_group && order.group_employees) {
-              const hasMatchingEmployee = order.group_employees.some(e => {
-                const label = formatDate(e.vacation_start) === formatDate(e.vacation_end)
-                  ? formatDate(e.vacation_start)
-                  : `${formatDate(e.vacation_start)} — ${formatDate(e.vacation_end)}`
-                return selected.has(label)
-              })
-              if (!hasMatchingEmployee) return false
-            } else {
-              const extra = (order.extra_fields || {}) as Record<string, unknown>
-              const val = callPeriodLabel(extra)
-              if (!selected.has(val)) return false
-            }
-          } else if (field === "order_date") {
-            const val = formatDate(order.order_date)
-            if (!selected.has(val)) return false
+      if (hasEmpColumnFilter) {
+        if (order.is_group && order.group_employees) {
+          if (empFilter && empFilter.size > 0) {
+            const hasMatching = order.group_employees.some((e) => empFilter.has(e.employee_full_name))
+            if (!hasMatching) return false
           }
+          if (empSearch) {
+            const hasMatching = order.group_employees.some((e) =>
+              matchesPartialSearch(e.employee_full_name ?? "", empSearch),
+            )
+            if (!hasMatching) return false
+          }
+        } else {
+          const val = order.employee_name ?? "—"
+          if (empFilter && empFilter.size > 0 && !empFilter.has(val)) return false
+          if (empSearch && !matchesPartialSearch(val, empSearch)) return false
         }
       }
+
+      if (hasCallColumnFilter) {
+        if (order.is_group && order.group_employees) {
+          if (callFilter && callFilter.size > 0) {
+            const hasMatching = order.group_employees.some((e) => {
+              const label = formatDate(e.vacation_start) === formatDate(e.vacation_end)
+                ? formatDate(e.vacation_start)
+                : `${formatDate(e.vacation_start)} — ${formatDate(e.vacation_end)}`
+              return callFilter.has(label)
+            })
+            if (!hasMatching) return false
+          }
+          if (callSearch) {
+            const hasMatching = order.group_employees.some((e) => {
+              const label = formatDate(e.vacation_start) === formatDate(e.vacation_end)
+                ? formatDate(e.vacation_start)
+                : `${formatDate(e.vacation_start)} — ${formatDate(e.vacation_end)}`
+              return matchesPartialSearch(label, callSearch)
+            })
+            if (!hasMatching) return false
+          }
+        } else {
+          const extra = (order.extra_fields || {}) as Record<string, unknown>
+          const val = callPeriodLabel(extra)
+          if (callFilter && callFilter.size > 0 && !callFilter.has(val)) return false
+          if (callSearch && !matchesPartialSearch(val, callSearch)) return false
+        }
+      }
+
+      if (columnFilterPredicate && !columnFilterPredicate(order)) return false
       return true
     }
-  }, [columnFilters])
+  }, [
+    columnFilterPredicate,
+    detailColumnFilters.employee_name,
+    detailColumnSearchQueries.employee_name,
+    detailColumnFilters.call_date,
+    detailColumnSearchQueries.call_date,
+  ])
 
   const uniqueValues = useMemo(() => {
     const items = filteredOrders ?? []
@@ -555,8 +641,8 @@ export function WeekendCallsPage() {
     rows: filteredOrders ?? [],
     getId: (order) => order.id,
     searchQuery: "",
-    filterPredicate: localFilterPredicate,
-    sortConfigs,
+    filterPredicate,
+    sortConfigs: detailSortConfigs,
     sortDefs,
   })
   const displayOrders = engineResult.rows
@@ -567,13 +653,13 @@ export function WeekendCallsPage() {
     let filtered = order.group_employees
 
     // 1. Filter by employee_name if active
-    const selectedNames = columnFilters.employee_name
+    const selectedNames = detailColumnFilters.employee_name
     if (selectedNames && selectedNames.size > 0) {
       filtered = filtered.filter(e => selectedNames.has(e.employee_full_name))
     }
 
     // 2. Filter by call_date if active
-    const selectedCallDates = columnFilters.call_date
+    const selectedCallDates = detailColumnFilters.call_date
     if (selectedCallDates && selectedCallDates.size > 0) {
       filtered = filtered.filter(e => {
         const label = formatDate(e.vacation_start) === formatDate(e.vacation_end)
@@ -584,7 +670,7 @@ export function WeekendCallsPage() {
     }
     
     // Sort by employee_name or call_date
-    const nameSort = sortConfigs.find(s => s.field === "employee_name")
+    const nameSort = detailSortConfigs.find(s => s.field === "employee_name")
     if (nameSort) {
       const sorted = [...filtered].sort((a, b) => {
         const nameA = a.employee_full_name ?? ""
@@ -597,7 +683,7 @@ export function WeekendCallsPage() {
       return sorted
     }
 
-    const callSort = sortConfigs.find(s => s.field === "call_date")
+    const callSort = detailSortConfigs.find(s => s.field === "call_date")
     if (callSort) {
       const sorted = [...filtered].sort((a, b) => {
         const pA = a.vacation_start ?? ""
@@ -625,49 +711,32 @@ export function WeekendCallsPage() {
   }
   const employeesSummary = Array.from(employeesMap.values()).sort((a, b) => b.calls - a.calls)
 
-  type SummarySortField = "name" | "calls" | "days"
-  const [summarySortConfigs, setSummarySortConfigs] = useState<SortConfig<SummarySortField>[]>([])
-  const [summaryColumnFilters, setSummaryColumnFilters] = useState<Record<SummarySortField, Set<string>>>({
-    name: new Set(),
-    calls: new Set(),
-    days: new Set(),
-  })
-
-  const handleSummarySort = (field: SummarySortField) => {
-    const defaultOrder = field === "name" ? "asc" : "desc"
-    setSummarySortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
-  }
-  const handleSummaryFilter = (field: SummarySortField, selected: Set<string>) => {
-    setSummaryColumnFilters((prev) => ({ ...prev, [field]: selected }))
-  }
-
   const summaryUniqueValues = {
     name: [...new Set(employeesSummary.map((e) => e.name))].sort(),
     calls: [...new Set(employeesSummary.map((e) => String(e.calls)))].sort((a, b) => Number(b) - Number(a)),
     days: [...new Set(employeesSummary.map((e) => String(e.days)))].sort((a, b) => Number(b) - Number(a)),
   }
 
-  const displayedEmployeesSummary = useMemo(() => {
-    let rows = employeesSummary
-    if (summaryColumnFilters.name.size > 0) rows = rows.filter((e) => summaryColumnFilters.name.has(e.name))
-    if (summaryColumnFilters.calls.size > 0) rows = rows.filter((e) => summaryColumnFilters.calls.has(String(e.calls)))
-    if (summaryColumnFilters.days.size > 0) rows = rows.filter((e) => summaryColumnFilters.days.has(String(e.days)))
-    if (summarySortConfigs.length > 0) {
-      rows = [...rows].sort((a, b) => {
-        for (const sc of summarySortConfigs) {
-          let cmp = 0
-          if (sc.field === "name") cmp = a.name.localeCompare(b.name, "ru")
-          else if (sc.field === "calls") cmp = a.calls - b.calls
-          else if (sc.field === "days") cmp = a.days - b.days
-          if (sc.order === "desc") cmp = -cmp
-          if (cmp !== 0) return cmp
-        }
-        return 0
-      })
-    }
-    return rows
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employeesSummary, summarySortConfigs, summaryColumnFilters])
+  const summarySortDefs: ColumnSortDef<EmployeeSummaryRow, SummarySortField>[] = useMemo(() => [
+    { field: "name", getSortValue: (row) => row.name },
+    { field: "calls", getSortValue: (row) => row.calls },
+    { field: "days", getSortValue: (row) => row.days },
+  ], [])
+
+  const summaryFilterPredicate = useMemo(
+    () => buildSummaryFilterPredicate(getSummaryCellValue),
+    [buildSummaryFilterPredicate],
+  )
+
+  const summaryEngineResult = useTableQueryEngine({
+    rows: employeesSummary,
+    getId: (row) => row.name,
+    searchQuery: "",
+    filterPredicate: summaryFilterPredicate,
+    sortConfigs: summarySortConfigs,
+    sortDefs: summarySortDefs,
+  })
+  const displayedEmployeesSummary = summaryEngineResult.rows
 
   return (
     <div className="space-y-4">
@@ -1010,8 +1079,7 @@ export function WeekendCallsPage() {
                       currentSorts={summarySortConfigs}
                       onSortChange={handleSummarySort}
                       values={summaryUniqueValues.name}
-                      selectedValues={summaryColumnFilters.name}
-                      onFilterChange={handleSummaryFilter}
+                      {...bindSummaryColumn("name")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
@@ -1021,8 +1089,7 @@ export function WeekendCallsPage() {
                       currentSorts={summarySortConfigs}
                       onSortChange={handleSummarySort}
                       values={summaryUniqueValues.calls}
-                      selectedValues={summaryColumnFilters.calls}
-                      onFilterChange={handleSummaryFilter}
+                      {...bindSummaryColumn("calls")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
@@ -1032,10 +1099,14 @@ export function WeekendCallsPage() {
                       currentSorts={summarySortConfigs}
                       onSortChange={handleSummarySort}
                       values={summaryUniqueValues.days}
-                      selectedValues={summaryColumnFilters.days}
-                      onFilterChange={handleSummaryFilter}
+                      {...bindSummaryColumn("days")}
                     />
                   </TableHead>
+                  <TableCornerResetHeader
+                    as={TableHead}
+                    hasActiveFilters={summaryHasActiveFilters}
+                    onReset={resetSummaryAll}
+                  />
                 </TableRow>
               </TableHeader>
               {showEmployeesTable && (
@@ -1046,6 +1117,7 @@ export function WeekendCallsPage() {
                       <TableCell className="font-medium">{employee.name}</TableCell>
                       <TableCell>{employee.calls}</TableCell>
                       <TableCell>{employee.days}</TableCell>
+                      <TableCornerResetCell as={TableCell} />
                     </TableRow>
                   ))}
                 </TableBody>
@@ -1054,61 +1126,70 @@ export function WeekendCallsPage() {
             </div>
           )}
 
-          {displayOrders.length === 0 ? (
-            <EmptyState message="Нет вызовов за выбранный период" description="Измените период или создайте новый приказ" />
-          ) : (
-            <Table>
+          <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="p-0">
                     <SortableFilterHeader
                       field="order_number"
                       label="№"
-                      currentSorts={sortConfigs}
-                      onSortChange={handleSort}
+                      currentSorts={detailSortConfigs}
+                      onSortChange={handleDetailSort}
                       values={uniqueValues.order_number}
-                      selectedValues={columnFilters.order_number}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindDetailColumn("order_number")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
                     <SortableFilterHeader
                       field="employee_name"
                       label="Сотрудник"
-                      currentSorts={sortConfigs}
-                      onSortChange={handleSort}
+                      currentSorts={detailSortConfigs}
+                      onSortChange={handleDetailSort}
                       values={uniqueValues.employee_name}
-                      selectedValues={columnFilters.employee_name}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindDetailColumn("employee_name")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
                     <SortableFilterHeader
                       field="call_date"
                       label="Дата вызова"
-                      currentSorts={sortConfigs}
-                      onSortChange={handleSort}
+                      currentSorts={detailSortConfigs}
+                      onSortChange={handleDetailSort}
                       values={uniqueValues.call_date}
-                      selectedValues={columnFilters.call_date}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindDetailColumn("call_date")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
                     <SortableFilterHeader
                       field="order_date"
                       label="Дата приказа"
-                      currentSorts={sortConfigs}
-                      onSortChange={handleSort}
+                      currentSorts={detailSortConfigs}
+                      onSortChange={handleDetailSort}
                       values={uniqueValues.order_date}
-                      selectedValues={columnFilters.order_date}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindDetailColumn("order_date")}
                     />
                   </TableHead>
-                  <TableHead className="text-right">Действия</TableHead>
+                  <TableHead className="text-right text-xs font-medium text-muted-foreground">
+                    Действия
+                  </TableHead>
+                  <TableCornerResetHeader
+                    as={TableHead}
+                    hasActiveFilters={detailHasActiveFilters}
+                    onReset={resetDetailAll}
+                  />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayOrders.map((order) => {
+                {displayOrders.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="px-4 py-10 text-center text-sm text-muted-foreground"
+                    >
+                      Нет вызовов за выбранный период. Измените период, фильтры или создайте новый приказ.
+                    </TableCell>
+                  </TableRow>
+                ) : displayOrders.map((order) => {
                   const extra = (order.extra_fields || {}) as Record<string, unknown>
                   const isGroup = order.is_group
 
@@ -1153,6 +1234,7 @@ export function WeekendCallsPage() {
                             </Button>
                           </div>
                         </TableCell>
+                        <TableCornerResetCell as={TableCell} />
                       </TableRow>
                       {isGroup && order.group_employees && (
                         <GroupOrderEmployeesRows
@@ -1166,7 +1248,6 @@ export function WeekendCallsPage() {
                 })}
               </TableBody>
             </Table>
-          )}
         </div>
       )}
 

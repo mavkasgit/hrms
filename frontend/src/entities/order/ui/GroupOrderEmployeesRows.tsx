@@ -1,4 +1,5 @@
 import { TableRow, TableCell } from "@/shared/ui/table"
+import { TableCornerResetCell } from "@/shared/ui"
 import { formatDate } from "@/shared/utils/date"
 import type { GroupEmployeeInfo } from "../types"
 
@@ -35,6 +36,7 @@ export function GroupOrderEmployeesRows({ employees, type, orderNumber }: GroupO
               <TableCell className="py-1" />
               <TableCell className="py-1" />
               <TableCell className="py-1" />
+              <TableCornerResetCell as={TableCell} className="py-1" />
             </TableRow>
           )
         }
@@ -50,6 +52,7 @@ export function GroupOrderEmployeesRows({ employees, type, orderNumber }: GroupO
               <TableCell className="py-1">{emp.vacation_days}</TableCell>
               <TableCell className="py-1" />
               <TableCell className="py-1" />
+              <TableCornerResetCell as={TableCell} className="py-1" />
             </TableRow>
           )
         }
@@ -66,6 +69,7 @@ export function GroupOrderEmployeesRows({ employees, type, orderNumber }: GroupO
               </TableCell>
               <TableCell className="py-1" />
               <TableCell className="py-1" />
+              <TableCornerResetCell as={TableCell} className="py-1" />
             </TableRow>
           )
         }

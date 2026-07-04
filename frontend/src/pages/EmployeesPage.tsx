@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import { Plus, Filter, Pencil, Upload, ScrollText, Tag, Building2, Printer, Users } from "lucide-react"
 import { Button } from "@/shared/ui/button"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
-import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
-import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
+import { SortableFilterHeader, TableCornerResetCell, TableCornerResetHeader } from "@/shared/ui"
+import { useFilterableTable } from "@/shared/hooks/useFilterableTable"
+import { useTableQueryEngine, type ColumnSortDef } from "@/shared/hooks/useTableQueryEngine"
+import { matchesPartialSearch } from "@/shared/lib/columnFilterSearch"
 import { getUserAccessLevel } from "@/shared/api/axios"
 
 import { Alert, AlertDescription } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
-import { EmptyState } from "@/shared/ui/empty-state"
+
 import {
   Table,
   TableBody,
@@ -40,6 +41,25 @@ function calculateAge(birthDate: string | null): number | null {
 
 type SortField = "name" | "age" | "department" | "tags" | "position" | "hire_date"
 
+function getEmployeeCellValue(emp: Employee, field: SortField): string {
+  switch (field) {
+    case "name":
+      return emp.name
+    case "department":
+      return emp.department?.name ?? "Без подразделения"
+    case "position":
+      return emp.position?.name ?? "—"
+    case "age": {
+      const age = calculateAge(emp.birth_date)
+      return age !== null ? `${age} лет` : "—"
+    }
+    case "hire_date":
+      return emp.contract_end ? new Date(emp.contract_end).toLocaleDateString("ru-RU") : "—"
+    case "tags":
+      return ""
+  }
+}
+
 const GENDERS = [
   { value: "М", label: "Мужчины", activeBg: "bg-sky-100", activeText: "text-sky-700", activeBorder: "border-sky-300" },
   { value: "Ж", label: "Женщины", activeBg: "bg-rose-100", activeText: "text-rose-700", activeBorder: "border-rose-300" },
@@ -61,14 +81,32 @@ export function EmployeesPage() {
   const [selectedGenders, setSelectedGenders] = useState<Set<string>>(new Set())
   const [selectedRateTypes, setSelectedRateTypes] = useState<Set<"full" | "partial">>(new Set())
   const [selectedEmploymentTypes, setSelectedEmploymentTypes] = useState<Set<"internal" | "external">>(new Set())
-  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
-  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
-    name: new Set(),
-    age: new Set(),
-    department: new Set(),
-    tags: new Set(),
-    position: new Set(),
-    hire_date: new Set(),
+  const hasFilters =
+    (selectedStatuses.size > 0 && !(selectedStatuses.size === 1 && selectedStatuses.has("active"))) ||
+    selectedRateTypes.size > 0 ||
+    selectedEmploymentTypes.size > 0
+  const hasPanelFiltersActive =
+    q.trim().length > 0 ||
+    selectedGenders.size > 0 ||
+    hasFilters
+  const {
+    bindColumn,
+    buildFilterPredicate,
+    columnFilters,
+    columnSearchQueries,
+    sortConfigs,
+    handleSort,
+    hasActiveFilters,
+    resetAll,
+  } = useFilterableTable<SortField>({
+    extraHasActive: hasPanelFiltersActive,
+    onExtraReset: () => {
+      setQ("")
+      setSelectedGenders(new Set())
+      setSelectedRateTypes(new Set())
+      setSelectedEmploymentTypes(new Set())
+      setSelectedStatuses(new Set(["active"]))
+    },
   })
   const filtersRef = useRef<HTMLDivElement>(null)
 
@@ -90,10 +128,6 @@ export function EmployeesPage() {
   const employmentTypeFilter = selectedEmploymentTypes.size > 0 ? [...selectedEmploymentTypes] : undefined
   const statusFilter = selectedStatuses.size === 1 ? [...selectedStatuses][0] : undefined
   const showTerminationDate = selectedStatuses.has("dismissed")
-  const hasFilters =
-    (selectedStatuses.size > 0 && !(selectedStatuses.size === 1 && selectedStatuses.has("active"))) ||
-    selectedRateTypes.size > 0 ||
-    selectedEmploymentTypes.size > 0
 
   const { data, isLoading, error } = useEmployees({
     page: 1,
@@ -152,25 +186,7 @@ export function EmployeesPage() {
   }
 
   const resetFilters = () => {
-    setQ("")
-    setSelectedGenders(new Set())
-    setSelectedRateTypes(new Set())
-    setSelectedEmploymentTypes(new Set())
-    setSelectedStatuses(new Set(["active"]))
-    setSortConfigs([])
-    setColumnFilters({
-      name: new Set(),
-      age: new Set(),
-      department: new Set(),
-      tags: new Set(),
-      position: new Set(),
-      hire_date: new Set(),
-    })
-  }
-
-  const handleSort = (field: SortField) => {
-    const defaultOrder = (field === "age" || field === "hire_date") ? "desc" : "asc"
-    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
+    resetAll()
   }
 
   const sortDefs: ColumnSortDef<Employee, SortField>[] = useMemo(() => [
@@ -182,48 +198,41 @@ export function EmployeesPage() {
     { field: "hire_date", getSortValue: (emp) => emp.contract_end ?? "" },
   ], [])
 
-  const localFilterPredicate = useMemo(() => {
-    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
-    if (!hasFilters) return null
+  const filterPredicate = useMemo(() => {
+    const base = buildFilterPredicate(getEmployeeCellValue, ["tags"])
+    const tagsSelected = columnFilters.tags
+    const tagsSearch = columnSearchQueries.tags?.trim()
+    const hasTagsFilter = (tagsSelected && tagsSelected.size > 0) || Boolean(tagsSearch)
+
+    if (!base && !hasTagsFilter) return null
+
     return (emp: Employee) => {
-      for (const [field, selected] of Object.entries(columnFilters)) {
-        if (selected && selected.size > 0) {
-          if (field === "name") {
-            if (!selected.has(emp.name)) return false
-          } else if (field === "department") {
-            const val = emp.department?.name ?? "Без подразделения"
-            if (!selected.has(val)) return false
-          } else if (field === "tags") {
-            const empTags = (emp.tags || []).map(t => t.name)
-            const hasMatch = empTags.some(name => selected.has(name))
-            const hasNoTags = selected.has("Без тегов") && empTags.length === 0
-            if (!hasMatch && !hasNoTags) return false
-          } else if (field === "position") {
-            const val = emp.position?.name ?? "—"
-            if (!selected.has(val)) return false
-          } else if (field === "age") {
-            const age = calculateAge(emp.birth_date)
-            const val = age !== null ? `${age} лет` : "—"
-            if (!selected.has(val)) return false
-          } else if (field === "hire_date") {
-            const val = emp.contract_end ? new Date(emp.contract_end).toLocaleDateString("ru-RU") : "—"
-            if (!selected.has(val)) return false
-          }
+      if (base && !base(emp)) return false
+      if (hasTagsFilter) {
+        const empTags = (emp.tags || []).map((t) => t.name)
+        const displayValue = empTags.length === 0 ? "Без тегов" : empTags.join(", ")
+        if (tagsSearch && !matchesPartialSearch(displayValue, tagsSearch)) return false
+        if (tagsSelected && tagsSelected.size > 0) {
+          const hasMatch = empTags.some((name) => tagsSelected.has(name))
+          const hasNoTags = tagsSelected.has("Без тегов") && empTags.length === 0
+          if (!hasMatch && !hasNoTags) return false
         }
       }
       return true
     }
-  }, [columnFilters])
+  }, [buildFilterPredicate, columnFilters.tags, columnSearchQueries.tags])
 
   const engineResult = useTableQueryEngine({
     rows: data?.items ?? [],
     getId: (emp) => emp.id,
     searchQuery: "",
-    filterPredicate: localFilterPredicate,
+    filterPredicate,
     sortConfigs,
     sortDefs,
   })
   const displayEmployees = engineResult.rows
+  const tableColumnCount =
+    9 + (showTerminationDate ? 1 : 0) + (showRateColumn ? 1 : 0)
 
   const uniqueValues = useMemo(() => {
     const items = data?.items ?? []
@@ -412,11 +421,6 @@ export function EmployeesPage() {
             <Skeleton key={i} className="h-8 w-full" />
           ))}
         </div>
-      ) : !displayEmployees?.length ? (
-        <EmptyState
-          message="Сотрудники не найдены"
-          description="Добавьте первого сотрудника или измените фильтры"
-        />
       ) : (
         <Table>
           <TableHeader>
@@ -429,8 +433,7 @@ export function EmployeesPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.name}
-                  selectedValues={columnFilters.name}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("name")}
                 />
               </TableHead>
               <TableHead>
@@ -440,8 +443,7 @@ export function EmployeesPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.department}
-                  selectedValues={columnFilters.department}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("department")}
                 />
               </TableHead>
               <TableHead>
@@ -456,8 +458,7 @@ export function EmployeesPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.tags}
-                  selectedValues={columnFilters.tags}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("tags")}
                 />
               </TableHead>
               <TableHead>
@@ -467,8 +468,7 @@ export function EmployeesPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.position}
-                  selectedValues={columnFilters.position}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("position")}
                 />
               </TableHead>
               <TableHead>
@@ -478,8 +478,7 @@ export function EmployeesPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.age}
-                  selectedValues={columnFilters.age}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("age")}
                 />
               </TableHead>
               <TableHead>
@@ -489,8 +488,7 @@ export function EmployeesPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.hire_date}
-                  selectedValues={columnFilters.hire_date}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("hire_date")}
                 />
               </TableHead>
               {showTerminationDate && (
@@ -499,11 +497,27 @@ export function EmployeesPage() {
               {showRateColumn && (
                 <TableHead className="px-2 py-1">Ставка / Совмещение</TableHead>
               )}
-              <TableHead className="text-right px-2 py-1"></TableHead>
+              <TableHead className="text-right px-2 py-1 text-xs font-medium text-muted-foreground">
+                Действия
+              </TableHead>
+              <TableCornerResetHeader
+                as={TableHead}
+                hasActiveFilters={hasActiveFilters}
+                onReset={resetAll}
+              />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {displayEmployees.map((emp) => {
+            {displayEmployees.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={tableColumnCount}
+                  className="px-4 py-10 text-center text-sm text-muted-foreground"
+                >
+                  Сотрудники не найдены. Добавьте первого сотрудника или измените фильтры.
+                </TableCell>
+              </TableRow>
+            ) : displayEmployees.map((emp) => {
               const age = calculateAge(emp.birth_date)
               return (
                 <TableRow
@@ -573,6 +587,7 @@ export function EmployeesPage() {
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
                   </TableCell>
+                  <TableCornerResetCell as={TableCell} />
                 </TableRow>
               )
             })}
