@@ -55,6 +55,19 @@ class Settings(BaseSettings):
 
     ALGORITHM: str = "HS256"
 
+    # Telegram Login (OIDC + Bot) — Phase 0 foundation
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_BOT_USERNAME: str = ""
+    TELEGRAM_OIDC_CLIENT_ID: str = ""
+    TELEGRAM_OIDC_CLIENT_SECRET: str = ""
+    TELEGRAM_OIDC_REDIRECT_URI: str = ""
+    TELEGRAM_ALLOWED_ORIGINS: str = "http://localhost:5173"  # comma-separated
+    TELEGRAM_ALLOW_JIT: bool = False
+    TELEGRAM_DEFAULT_ROLE: str = "viewer"
+    TELEGRAM_BOT_CHALLENGE_TTL_SECONDS: int = 300
+    TELEGRAM_AUTH_DATE_MAX_AGE_SECONDS: int = 86400
+    TELEGRAM_WEBHOOK_SECRET: str = ""  # X-Telegram-Bot-Api-Secret-Token expected value
+
     model_config = {"env_file": _env_file, "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

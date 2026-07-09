@@ -1,8 +1,17 @@
 from enum import Enum
 
-from sqlalchemy import Column, Integer, String, DateTime, CheckConstraint, Boolean, ForeignKey
-from sqlalchemy.sql import func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.models.base import Base
 
@@ -26,9 +35,14 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default=UserRole.VIEWER.value)
     full_name = Column(String(255), nullable=False)
-    
+
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
     employee = relationship("Employee")
+
+    # Telegram / phone auth identity
+    telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
+    phone = Column(String(32), unique=True, nullable=True, index=True)
+    phone_verified_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

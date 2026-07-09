@@ -1,8 +1,4 @@
-import time
-from datetime import timedelta
-
 from fastapi import APIRouter, Depends, HTTPException, status
-from jose import jwt
 import bcrypt
 from pydantic import BaseModel
 from sqlalchemy.future import select
@@ -12,6 +8,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user, CurrentUser
+from app.services.auth_token import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -27,20 +24,6 @@ class LoginResponse(BaseModel):
     username: str
     role: str
     full_name: str
-
-
-def _create_token(username: str, role: str, full_name: str) -> str:
-    """Создать JWT-токен с hrms_access_level."""
-    expire = time.time() + settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-    payload = {
-        "sub": username,
-        "username": username,
-        "full_name": full_name,
-        "hrms_access_level": role,
-        "exp": int(expire),
-    }
-    secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
-    return jwt.encode(payload, secret_key, algorithm=settings.ALGORITHM)
 
 
 def _verify_password(plain: str, hashed: str) -> bool:
@@ -83,7 +66,7 @@ async def login(
             detail="Неверный логин или пароль",
         )
 
-    token = _create_token(
+    token = create_access_token(
         username=user.username,
         role=user.role,
         full_name=user.full_name or user.username,
