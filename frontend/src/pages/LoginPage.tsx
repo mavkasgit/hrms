@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react"
 import { Loader2, Bug, LogIn, AlertCircle } from "lucide-react"
 import { loginWithPassword, redirectToKtmLogin, isDevMode, pingKtm } from "@/shared/api/axios"
+import {
+  fetchTelegramOidcConfig,
+  startTelegramLogin,
+  type TelegramOidcConfig,
+} from "@/shared/api/telegramAuth"
 
 export function LoginPage() {
   const [username, setUsername] = useState("")
@@ -8,6 +13,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isKtmDown, setIsKtmDown] = useState(false)
+  const [telegramConfig, setTelegramConfig] = useState<TelegramOidcConfig | null>(null)
 
   const devMode = isDevMode()
 
@@ -18,6 +24,36 @@ export function LoginPage() {
     }
     checkKtm()
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadTelegramConfig() {
+      try {
+        const cfg = await fetchTelegramOidcConfig()
+        if (!cancelled) setTelegramConfig(cfg)
+      } catch {
+        if (!cancelled) setTelegramConfig(null)
+      }
+    }
+    loadTelegramConfig()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleTelegramLogin() {
+    if (!telegramConfig?.enabled) return
+    setError(null)
+    setLoading(true)
+    try {
+      await startTelegramLogin(telegramConfig)
+      window.location.href = "/"
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Ошибка входа через Telegram")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -131,6 +167,19 @@ export function LoginPage() {
         >
           Войти через SSO (KTM-2000) {isKtmDown && "(недоступен)"}
         </button>
+
+        {/* Telegram OIDC — только если backend вернул enabled (client_id задан) */}
+        {telegramConfig?.enabled && (
+          <button
+            type="button"
+            onClick={handleTelegramLogin}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-2 bg-[#2AABEE] hover:bg-[#229ED9] disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Войти через Telegram
+          </button>
+        )}
 
         {/* Dev-блок — только в dev/test режиме */}
         {devMode && (

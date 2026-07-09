@@ -38,6 +38,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // COOP: same-origin breaks Telegram Login popup; allow popups for OIDC widget
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
