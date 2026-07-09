@@ -1,13 +1,14 @@
 /**
- * Telegram OIDC client helper (Phase 1).
+ * Telegram OIDC + bot challenge client helper (Phase 1–2).
  *
  * Widget glue expects BotFather Web Login client_id configured on backend
  * (TELEGRAM_OIDC_CLIENT_ID) and domain allowlisted in BotFather.
- * Load script: https://telegram.org/js/telegram-login.js (see LoginPage).
+ * Bot deep-link uses TELEGRAM_BOT_USERNAME + webhook secret on backend.
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api"
 const NONCE_STORAGE_KEY = "telegram_oidc_nonce"
+const BOT_POLL_INTERVAL_MS = 1500
 
 export type TelegramOidcConfig = {
   enabled: boolean
@@ -23,6 +24,22 @@ export type TelegramLoginResponse = {
   username: string
   role: string
   full_name: string
+}
+
+export type TelegramBotChallenge = {
+  challenge_id: string
+  deep_link: string
+  expires_in: number
+  poll_url: string
+}
+
+export type TelegramBotChallengeStatus = {
+  status: "pending" | "confirmed" | "expired" | "consumed"
+  access_token: string | null
+  token_type: string
+  username: string | null
+  role: string | null
+  full_name: string | null
 }
 
 declare global {
@@ -170,4 +187,143 @@ export async function startTelegramLogin(config: TelegramOidcConfig): Promise<Te
   throw new Error(
     "Открыто окно Telegram OAuth. Для автоматического обмена id_token настройте BotFather Web Login и callback (см. telegramAuth.ts)."
   )
+}
+
+// ─── Bot deep-link login (Phase 2) ───────────────────────────────────────
+
+/** Create login challenge → deep_link + poll_url */
+export async function createTelegramBotChallenge(): Promise<TelegramBotChallenge> {
+  const response = await fetch(`${API_BASE}/auth/telegram/bot/challenge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ purpose: "login" }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    const detail =
+      typeof data.detail === "string" ? data.detail : "Не удалось создать challenge бота"
+    throw new Error(detail)
+  }
+  return response.json()
+}
+
+export async function pollTelegramBotChallenge(
+  challengeId: string
+): Promise<TelegramBotChallengeStatus> {
+  const response = await fetch(
+    `${API_BASE}/auth/telegram/bot/challenge/${encodeURIComponent(challengeId)}`
+  )
+  if (response.status === 410) {
+    return {
+      status: "expired",
+      access_token: null,
+      token_type: "bearer",
+      username: null,
+      role: null,
+      full_name: null,
+    }
+  }
+  if (response.status === 404) {
+    throw new Error("challenge_not_found")
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    const detail =
+      typeof data.detail === "string" ? data.detail : "Ошибка опроса challenge"
+    throw new Error(detail)
+  }
+  return response.json()
+}
+
+/** QR image URL without adding a npm dependency (external chart API). */
+export function telegramDeepLinkQrUrl(deepLink: string, size = 200): string {
+  const data = encodeURIComponent(deepLink)
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${data}`
+}
+
+export type BotLoginHandlers = {
+  onChallenge: (challenge: TelegramBotChallenge) => void
+  onStatus?: (status: TelegramBotChallengeStatus["status"]) => void
+  signal?: AbortSignal
+}
+
+/**
+ * Create challenge, open deep link, poll every 1.5s until confirmed/expired/aborted.
+ * On success stores JWT in localStorage.token.
+ */
+export async function startTelegramBotLogin(
+  handlers: BotLoginHandlers = { onChallenge: () => undefined }
+): Promise<TelegramLoginResponse> {
+  const challenge = await createTelegramBotChallenge()
+  handlers.onChallenge(challenge)
+
+  // Open Telegram deep link (mobile app / desktop Telegram)
+  try {
+    window.open(challenge.deep_link, "_blank", "noopener,noreferrer")
+  } catch {
+    // ignore popup blockers — user can open link / scan QR manually
+  }
+
+  const deadline = Date.now() + challenge.expires_in * 1000
+
+  return new Promise<TelegramLoginResponse>((resolve, reject) => {
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const cleanup = () => {
+      stopped = true
+      if (timer) clearTimeout(timer)
+      handlers.signal?.removeEventListener("abort", onAbort)
+    }
+
+    const onAbort = () => {
+      cleanup()
+      reject(new Error("Вход через Telegram-бота отменён"))
+    }
+    handlers.signal?.addEventListener("abort", onAbort)
+
+    const tick = async () => {
+      if (stopped) return
+      if (Date.now() > deadline) {
+        cleanup()
+        reject(new Error("Время ожидания подтверждения в Telegram истекло"))
+        return
+      }
+      try {
+        const status = await pollTelegramBotChallenge(challenge.challenge_id)
+        handlers.onStatus?.(status.status)
+
+        if (status.status === "confirmed" && status.access_token) {
+          localStorage.setItem("token", status.access_token)
+          cleanup()
+          resolve({
+            access_token: status.access_token,
+            token_type: status.token_type || "bearer",
+            username: status.username || "",
+            role: status.role || "",
+            full_name: status.full_name || "",
+          })
+          return
+        }
+        if (status.status === "expired") {
+          cleanup()
+          reject(new Error("Challenge истёк. Запросите новый вход через бота."))
+          return
+        }
+        if (status.status === "consumed" && !status.access_token) {
+          cleanup()
+          reject(new Error("Challenge уже использован"))
+          return
+        }
+      } catch (err) {
+        if (stopped) return
+        cleanup()
+        reject(err instanceof Error ? err : new Error(String(err)))
+        return
+      }
+      timer = setTimeout(tick, BOT_POLL_INTERVAL_MS)
+    }
+
+    timer = setTimeout(tick, BOT_POLL_INTERVAL_MS)
+  })
 }

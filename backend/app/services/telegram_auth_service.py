@@ -1,12 +1,13 @@
-"""Telegram authentication service (OIDC Phase 1).
-
-Bot webhook / link live in Phase 2.
-"""
+"""Telegram authentication service (OIDC + bot challenge/webhook + link)."""
 
 from __future__ import annotations
 
+import re
+import secrets
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import UUID
 
 import httpx
 from fastapi import HTTPException, status
@@ -15,7 +16,9 @@ from jose.exceptions import ExpiredSignatureError, JWTClaimsError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.auth_challenge import AuthLoginChallenge
 from app.models.user import User
+from app.repositories.challenge_repository import ChallengeRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_token import create_access_token
 
@@ -28,11 +31,16 @@ TELEGRAM_OIDC_ALGORITHMS = ["RS256", "ES256", "ES256K", "EdDSA"]
 _jwks_cache: tuple[float, dict[str, Any]] | None = None
 _JWKS_TTL_SECONDS = 3600
 
+_START_PAYLOAD_RE = re.compile(r"^/start(?:@\w+)?(?:\s+(.+))?$", re.IGNORECASE)
+
 
 class TelegramAuthService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.users = UserRepository()
+        self.challenges = ChallengeRepository()
+
+    # ─── config guards ────────────────────────────────────────────────────
 
     def _require_oidc_configured(self) -> str:
         client_id = (settings.TELEGRAM_OIDC_CLIENT_ID or "").strip()
@@ -42,6 +50,26 @@ class TelegramAuthService:
                 detail="telegram_not_configured",
             )
         return client_id
+
+    def _require_bot_configured(self) -> str:
+        bot_username = (settings.TELEGRAM_BOT_USERNAME or "").strip().lstrip("@")
+        if not bot_username:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="telegram_not_configured",
+            )
+        return bot_username
+
+    def _require_webhook_secret(self) -> str:
+        secret = (settings.TELEGRAM_WEBHOOK_SECRET or "").strip()
+        if not secret:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="telegram_not_configured",
+            )
+        return secret
+
+    # ─── OIDC ─────────────────────────────────────────────────────────────
 
     async def _fetch_jwks(self) -> dict[str, Any]:
         """Fetch Telegram JWKS with simple module-level TTL cache (~1h)."""
@@ -102,7 +130,6 @@ class TelegramAuthService:
                 detail="telegram_expired",
             ) from exc
         except JWTClaimsError as exc:
-            # aud/iss mismatch etc.
             message = str(exc).lower()
             if "expir" in message:
                 raise HTTPException(
@@ -175,6 +202,8 @@ class TelegramAuthService:
             phone=phone,
         )
         return self.issue_login_response(user)
+
+    # ─── identity resolve ─────────────────────────────────────────────────
 
     async def resolve_or_provision_user(
         self,
@@ -256,3 +285,306 @@ class TelegramAuthService:
             "role": user.role,
             "full_name": full_name,
         }
+
+    # ─── bot challenge ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _generate_challenge_token() -> str:
+        # secrets.token_urlsafe → A-Za-z0-9_-; keep ≤64 chars
+        return secrets.token_urlsafe(32)[:64]
+
+    def _is_expired(self, challenge: AuthLoginChallenge) -> bool:
+        expires_at = challenge.expires_at
+        if expires_at is None:
+            return True
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) >= expires_at
+
+    async def create_bot_challenge(
+        self,
+        *,
+        purpose: str = "login",
+        user_id: int | None = None,
+    ) -> dict:
+        """Create one-time deep-link challenge. purpose=link requires user_id."""
+        bot_username = self._require_bot_configured()
+        if purpose not in ("login", "link"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_purpose",
+            )
+        if purpose == "link" and user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing authentication token",
+            )
+
+        ttl = int(settings.TELEGRAM_BOT_CHALLENGE_TTL_SECONDS or 300)
+        token = self._generate_challenge_token()
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
+        challenge = await self.challenges.create(
+            self.db,
+            token=token,
+            purpose=purpose,
+            expires_at=expires_at,
+            user_id=user_id,
+        )
+        await self.db.commit()
+
+        challenge_id = str(challenge.id)
+        deep_link = f"https://t.me/{bot_username}?start={token}"
+        poll_url = f"/api/auth/telegram/bot/challenge/{challenge_id}"
+        return {
+            "challenge_id": challenge_id,
+            "deep_link": deep_link,
+            "expires_in": ttl,
+            "poll_url": poll_url,
+        }
+
+    async def poll_bot_challenge(self, challenge_id: UUID | str) -> dict:
+        """
+        Poll challenge status.
+        - pending → no token
+        - confirmed (login) → issue JWT once, mark consumed
+        - confirmed (link) → no JWT (link via POST /link)
+        - consumed → no token
+        - expired → 410
+        """
+        try:
+            cid = challenge_id if isinstance(challenge_id, UUID) else UUID(str(challenge_id))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="challenge_not_found",
+            ) from exc
+
+        challenge = await self.challenges.get_by_id(self.db, cid)
+        if challenge is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="challenge_not_found",
+            )
+
+        if challenge.status == "expired" or (
+            challenge.status == "pending" and self._is_expired(challenge)
+        ):
+            if challenge.status != "expired":
+                await self.challenges.mark_expired(self.db, challenge)
+                await self.db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="challenge_expired",
+            )
+
+        if challenge.status == "pending":
+            return self._status_body("pending")
+
+        if challenge.status == "consumed":
+            return self._status_body("consumed")
+
+        if challenge.status == "confirmed":
+            # Link challenges are consumed by POST /link, not poll.
+            if challenge.purpose == "link":
+                return self._status_body("confirmed")
+
+            # Login: issue JWT once, then consume.
+            if challenge.telegram_id is None:
+                return self._status_body("confirmed")
+
+            try:
+                user = await self.resolve_or_provision_user(
+                    telegram_id=int(challenge.telegram_id),
+                    full_name=f"tg_{challenge.telegram_id}",
+                    preferred_username=None,
+                    phone=None,
+                )
+            except HTTPException:
+                # Keep confirmed so client can retry after admin pre-link;
+                # re-raise (403/409).
+                raise
+
+            login = self.issue_login_response(user)
+            await self.challenges.consume(self.db, challenge)
+            await self.db.commit()
+            return {
+                "status": "confirmed",
+                "access_token": login["access_token"],
+                "token_type": login["token_type"],
+                "username": login["username"],
+                "role": login["role"],
+                "full_name": login["full_name"],
+            }
+
+        return self._status_body(challenge.status or "pending")
+
+    @staticmethod
+    def _status_body(status_value: str) -> dict:
+        return {
+            "status": status_value,
+            "access_token": None,
+            "token_type": "bearer",
+            "username": None,
+            "role": None,
+            "full_name": None,
+        }
+
+    # ─── webhook ──────────────────────────────────────────────────────────
+
+    async def handle_webhook(
+        self,
+        update: dict[str, Any],
+        *,
+        secret_header: str | None,
+    ) -> dict:
+        """
+        Process Telegram Bot update. Always returns quickly after work.
+        Secret header must match TELEGRAM_WEBHOOK_SECRET (503 if empty).
+        """
+        expected = self._require_webhook_secret()
+        provided = (secret_header or "").strip()
+        if provided != expected:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="telegram_invalid_token",
+            )
+
+        message = update.get("message") or update.get("edited_message") or {}
+        text = (message.get("text") or "").strip()
+        if not text:
+            return {"ok": True}
+
+        match = _START_PAYLOAD_RE.match(text)
+        if not match:
+            return {"ok": True}
+
+        start_payload = (match.group(1) or "").strip()
+        if not start_payload:
+            return {"ok": True}
+
+        from_user = message.get("from") or {}
+        raw_tg_id = from_user.get("id")
+        if raw_tg_id is None:
+            return {"ok": True}
+        try:
+            telegram_id = int(raw_tg_id)
+        except (TypeError, ValueError):
+            return {"ok": True}
+
+        challenge = await self.challenges.get_by_token(self.db, start_payload)
+        if challenge is None:
+            return {"ok": True}
+
+        if challenge.status != "pending":
+            return {"ok": True}
+
+        if self._is_expired(challenge):
+            await self.challenges.mark_expired(self.db, challenge)
+            await self.db.commit()
+            return {"ok": True}
+
+        # Optional enrich: first/last name stored only for login resolve via telegram_id
+        await self.challenges.confirm(self.db, challenge, telegram_id=telegram_id)
+        await self.db.commit()
+        return {"ok": True}
+
+    # ─── link / unlink ────────────────────────────────────────────────────
+
+    async def link_to_current_user(
+        self,
+        user: User,
+        *,
+        id_token: str | None = None,
+        nonce: str | None = None,
+        challenge_id: UUID | str | None = None,
+    ) -> dict:
+        """Attach telegram_id to Bearer user via OIDC id_token or confirmed link challenge."""
+        telegram_id: int | None = None
+        phone: str | None = None
+
+        if challenge_id is not None:
+            try:
+                cid = (
+                    challenge_id
+                    if isinstance(challenge_id, UUID)
+                    else UUID(str(challenge_id))
+                )
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="challenge_not_found",
+                ) from exc
+
+            challenge = await self.challenges.get_by_id(self.db, cid)
+            if challenge is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="challenge_not_found",
+                )
+            if challenge.purpose != "link":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="invalid_purpose",
+                )
+            if challenge.status == "expired" or self._is_expired(challenge):
+                if challenge.status != "expired":
+                    await self.challenges.mark_expired(self.db, challenge)
+                    await self.db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_410_GONE,
+                    detail="challenge_expired",
+                )
+            if challenge.status != "confirmed" or challenge.telegram_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="challenge_not_confirmed",
+                )
+            if challenge.user_id is not None and int(challenge.user_id) != int(user.id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="telegram_not_allowed",
+                )
+            telegram_id = int(challenge.telegram_id)
+            await self.challenges.consume(self.db, challenge)
+
+        elif id_token:
+            if not nonce:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="nonce_required",
+                )
+            claims = await self.verify_oidc_id_token(id_token, nonce)
+            telegram_id, _, _, phone = self._extract_identity(claims)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="id_token_or_challenge_required",
+            )
+
+        assert telegram_id is not None
+
+        existing = await self.users.get_by_telegram_id(self.db, telegram_id)
+        if existing is not None and existing.id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="telegram_already_linked",
+            )
+
+        if user.telegram_id is not None and user.telegram_id != telegram_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="telegram_already_linked",
+            )
+
+        await self.users.link_telegram(self.db, user, telegram_id, phone=phone)
+        await self.db.commit()
+        await self.db.refresh(user)
+        return {"telegram_id": user.telegram_id, "linked": True}
+
+    async def unlink_current_user(self, user: User) -> dict:
+        await self.users.unlink_telegram(self.db, user)
+        await self.db.commit()
+        return {"telegram_id": None, "linked": False}
+
+    async def get_user_by_username(self, username: str) -> User | None:
+        return await self.users.get_by_username(self.db, username)

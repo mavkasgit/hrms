@@ -40,6 +40,19 @@ class UserRepository:
         await db.refresh(user)
         return user
 
+    async def unlink_telegram(self, db: AsyncSession, user: User) -> User:
+        user.telegram_id = None
+        db.add(user)
+        await db.flush()
+        await db.refresh(user)
+        return user
+
+    async def get_by_id(self, db: AsyncSession, user_id: int) -> User | None:
+        result = await db.execute(
+            select(User).where(User.id == user_id, User.is_deleted == False)
+        )
+        return result.scalar_one_or_none()
+
     async def create_telegram_user(
         self,
         db: AsyncSession,

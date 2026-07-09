@@ -43,6 +43,29 @@ class ChallengeRepository:
         )
         return result.scalar_one_or_none()
 
+    async def confirm(
+        self,
+        db: AsyncSession,
+        challenge: AuthLoginChallenge,
+        *,
+        telegram_id: int,
+    ) -> AuthLoginChallenge:
+        challenge.status = "confirmed"
+        challenge.telegram_id = telegram_id
+        db.add(challenge)
+        await db.flush()
+        await db.refresh(challenge)
+        return challenge
+
+    async def mark_expired(
+        self, db: AsyncSession, challenge: AuthLoginChallenge
+    ) -> AuthLoginChallenge:
+        challenge.status = "expired"
+        db.add(challenge)
+        await db.flush()
+        await db.refresh(challenge)
+        return challenge
+
     async def consume(self, db: AsyncSession, challenge: AuthLoginChallenge) -> AuthLoginChallenge:
         challenge.status = "consumed"
         challenge.consumed_at = datetime.now(timezone.utc)

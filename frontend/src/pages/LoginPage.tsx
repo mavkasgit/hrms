@@ -1,10 +1,13 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Loader2, Bug, LogIn, AlertCircle } from "lucide-react"
 import { loginWithPassword, redirectToKtmLogin, isDevMode, pingKtm } from "@/shared/api/axios"
 import {
   fetchTelegramOidcConfig,
   startTelegramLogin,
+  startTelegramBotLogin,
+  telegramDeepLinkQrUrl,
   type TelegramOidcConfig,
+  type TelegramBotChallenge,
 } from "@/shared/api/telegramAuth"
 
 export function LoginPage() {
@@ -14,8 +17,12 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [isKtmDown, setIsKtmDown] = useState(false)
   const [telegramConfig, setTelegramConfig] = useState<TelegramOidcConfig | null>(null)
+  const [botChallenge, setBotChallenge] = useState<TelegramBotChallenge | null>(null)
+  const [botPolling, setBotPolling] = useState(false)
+  const botAbortRef = useRef<AbortController | null>(null)
 
   const devMode = isDevMode()
+  const botEnabled = Boolean(telegramConfig?.bot_username)
 
   useEffect(() => {
     async function checkKtm() {
@@ -38,6 +45,7 @@ export function LoginPage() {
     loadTelegramConfig()
     return () => {
       cancelled = true
+      botAbortRef.current?.abort()
     }
   }, [])
 
@@ -53,6 +61,37 @@ export function LoginPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleTelegramBotLogin() {
+    if (!botEnabled) return
+    setError(null)
+    setLoading(true)
+    setBotPolling(true)
+    botAbortRef.current?.abort()
+    const controller = new AbortController()
+    botAbortRef.current = controller
+    try {
+      await startTelegramBotLogin({
+        onChallenge: (ch) => setBotChallenge(ch),
+        signal: controller.signal,
+      })
+      window.location.href = "/"
+    } catch (err: unknown) {
+      if (!controller.signal.aborted) {
+        setError(err instanceof Error ? err.message : "Ошибка входа через Telegram-бота")
+      }
+    } finally {
+      setLoading(false)
+      setBotPolling(false)
+    }
+  }
+
+  function cancelBotLogin() {
+    botAbortRef.current?.abort()
+    setBotChallenge(null)
+    setBotPolling(false)
+    setLoading(false)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -176,9 +215,54 @@ export function LoginPage() {
             disabled={loading}
             className="w-full flex items-center justify-center gap-2 bg-[#2AABEE] hover:bg-[#229ED9] disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {loading && !botPolling ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Войти через Telegram
           </button>
+        )}
+
+        {/* Telegram Bot deep-link / QR — если bot_username задан */}
+        {botEnabled && (
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={handleTelegramBotLogin}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 bg-white hover:bg-sky-50 disabled:opacity-60 text-[#2AABEE] font-medium py-2.5 px-4 rounded-xl border border-[#2AABEE]/40 transition-colors cursor-pointer text-sm"
+            >
+              {botPolling ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Войти через Telegram-бота
+            </button>
+
+            {botChallenge && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3 text-center">
+                <p className="text-xs text-slate-600">
+                  Откройте ссылку в Telegram или отсканируйте QR. Ожидаем подтверждение…
+                </p>
+                <img
+                  src={telegramDeepLinkQrUrl(botChallenge.deep_link, 180)}
+                  alt="QR для входа через Telegram"
+                  width={180}
+                  height={180}
+                  className="mx-auto rounded-lg bg-white p-2 border border-slate-200"
+                />
+                <a
+                  href={botChallenge.deep_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-xs text-[#2AABEE] hover:underline break-all"
+                >
+                  {botChallenge.deep_link}
+                </a>
+                <button
+                  type="button"
+                  onClick={cancelBotLogin}
+                  className="text-xs text-slate-500 hover:text-slate-700 underline cursor-pointer"
+                >
+                  Отменить
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Dev-блок — только в dev/test режиме */}
