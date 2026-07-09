@@ -177,4 +177,8 @@ async def delete_user(
         
     user.is_deleted = True
     user.deleted_at = func.now()
+    # Free telegram/phone identity for re-link after soft-delete (M3).
+    user.telegram_id = None
+    user.phone = None
+    user.phone_verified_at = None
     await db.commit()

@@ -7,8 +7,10 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
+    text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -28,6 +30,19 @@ class User(Base):
             "role IN ('admin', 'viewer')",
             name="ck_users_role",
         ),
+        # Partial unique: soft-deleted rows do not block re-link / JIT (M3).
+        Index(
+            "ix_users_telegram_id_active",
+            "telegram_id",
+            unique=True,
+            postgresql_where=text("is_deleted = false"),
+        ),
+        Index(
+            "ix_users_phone_active",
+            "phone",
+            unique=True,
+            postgresql_where=text("is_deleted = false"),
+        ),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -39,9 +54,9 @@ class User(Base):
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
     employee = relationship("Employee")
 
-    # Telegram / phone auth identity
-    telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
-    phone = Column(String(32), unique=True, nullable=True, index=True)
+    # Telegram / phone auth identity (uniqueness via partial indexes above)
+    telegram_id = Column(BigInteger, nullable=True, index=True)
+    phone = Column(String(32), nullable=True, index=True)
     phone_verified_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

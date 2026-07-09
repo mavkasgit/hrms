@@ -1,13 +1,15 @@
 /**
- * Telegram OIDC + bot challenge client helper (Phase 1–2).
+ * Telegram Login Widget + OIDC + bot challenge client helper.
  *
- * Widget glue expects BotFather Web Login client_id configured on backend
- * (TELEGRAM_OIDC_CLIENT_ID) and domain allowlisted in BotFather.
- * Bot deep-link uses TELEGRAM_BOT_USERNAME + webhook secret on backend.
+ * Primary browser path: official Login Widget callback fields → POST /widget
+ * (HMAC verified server-side with bot token). OIDC path only when a real
+ * id_token is returned from authorize URL that included the same nonce.
+ * Bot deep-link uses poll_secret (sessionStorage) so deep_link alone cannot poll.
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api"
 const NONCE_STORAGE_KEY = "telegram_oidc_nonce"
+const BOT_POLL_SECRET_PREFIX = "telegram_bot_poll_secret:"
 const BOT_POLL_INTERVAL_MS = 1500
 
 export type TelegramOidcConfig = {
@@ -28,6 +30,7 @@ export type TelegramLoginResponse = {
 
 export type TelegramBotChallenge = {
   challenge_id: string
+  poll_secret: string
   deep_link: string
   expires_in: number
   poll_url: string
@@ -40,6 +43,17 @@ export type TelegramBotChallengeStatus = {
   username: string | null
   role: string | null
   full_name: string | null
+}
+
+/** Fields returned by Telegram Login Widget / Telegram.Login.auth (legacy). */
+export type TelegramWidgetAuthData = {
+  id: number
+  first_name?: string
+  last_name?: string
+  username?: string
+  photo_url?: string
+  auth_date: number
+  hash: string
 }
 
 declare global {
@@ -84,7 +98,24 @@ export function clearStoredTelegramNonce(): void {
   sessionStorage.removeItem(NONCE_STORAGE_KEY)
 }
 
-/** POST id_token + nonce → store HRMS JWT in localStorage.token */
+function storeBotPollSecret(challengeId: string, pollSecret: string): void {
+  sessionStorage.setItem(`${BOT_POLL_SECRET_PREFIX}${challengeId}`, pollSecret)
+}
+
+function getBotPollSecret(challengeId: string): string | null {
+  return sessionStorage.getItem(`${BOT_POLL_SECRET_PREFIX}${challengeId}`)
+}
+
+function clearBotPollSecret(challengeId: string): void {
+  sessionStorage.removeItem(`${BOT_POLL_SECRET_PREFIX}${challengeId}`)
+}
+
+function storeLoginResponse(data: TelegramLoginResponse): TelegramLoginResponse {
+  localStorage.setItem("token", data.access_token)
+  return data
+}
+
+/** POST id_token + nonce → store HRMS JWT. Only when nonce was in OIDC authorize. */
 export async function loginWithTelegramOidc(
   idToken: string,
   nonce: string
@@ -100,14 +131,64 @@ export async function loginWithTelegramOidc(
     throw new Error(detail)
   }
   const data: TelegramLoginResponse = await response.json()
-  localStorage.setItem("token", data.access_token)
   clearStoredTelegramNonce()
-  return data
+  return storeLoginResponse(data)
+}
+
+/** POST Login Widget fields → HMAC verify on backend → JWT. */
+export async function loginWithTelegramWidget(
+  authData: TelegramWidgetAuthData
+): Promise<TelegramLoginResponse> {
+  const response = await fetch(`${API_BASE}/auth/telegram/widget`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: authData.id,
+      first_name: authData.first_name,
+      last_name: authData.last_name,
+      username: authData.username,
+      photo_url: authData.photo_url,
+      auth_date: authData.auth_date,
+      hash: authData.hash,
+    }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    const detail =
+      typeof data.detail === "string" ? data.detail : "Ошибка входа через Telegram Widget"
+    throw new Error(detail)
+  }
+  const data: TelegramLoginResponse = await response.json()
+  return storeLoginResponse(data)
+}
+
+function parseWidgetAuthData(raw: Record<string, unknown>): TelegramWidgetAuthData | null {
+  const id = raw.id
+  const hash = raw.hash
+  const authDate = raw.auth_date
+  if (id === undefined || id === null || typeof hash !== "string" || !hash) {
+    return null
+  }
+  const numericId = typeof id === "number" ? id : Number(id)
+  if (!Number.isFinite(numericId)) return null
+  const numericAuthDate =
+    typeof authDate === "number" ? authDate : Number(authDate)
+  if (!Number.isFinite(numericAuthDate)) return null
+
+  return {
+    id: numericId,
+    first_name: typeof raw.first_name === "string" ? raw.first_name : undefined,
+    last_name: typeof raw.last_name === "string" ? raw.last_name : undefined,
+    username: typeof raw.username === "string" ? raw.username : undefined,
+    photo_url: typeof raw.photo_url === "string" ? raw.photo_url : undefined,
+    auth_date: numericAuthDate,
+    hash,
+  }
 }
 
 /**
- * Load telegram-login.js once (BotFather Web Login).
- * Comment: register domain + client in BotFather → Web Login.
+ * Load telegram-widget.js once (official Login Widget).
+ * Domain must be allowlisted in BotFather for the bot.
  */
 export function loadTelegramLoginScript(): Promise<void> {
   const existing = document.querySelector<HTMLScriptElement>(
@@ -128,22 +209,21 @@ export function loadTelegramLoginScript(): Promise<void> {
 }
 
 /**
- * Start Telegram login: nonce → optional Telegram.Login.auth popup → backend exchange.
- * If widget API is unavailable, throws with setup hint.
+ * Start Telegram login.
+ * Primary: Login Widget → POST /widget (no fake OIDC nonce).
+ * Secondary: if callback returns id_token only, require stored OIDC nonce match path
+ *   (do not POST OIDC with a nonce that was never sent to Telegram).
+ * Fallback: open oauth.telegram.org with nonce (manual setup).
  */
 export async function startTelegramLogin(config: TelegramOidcConfig): Promise<TelegramLoginResponse> {
   if (!config.enabled || !config.client_id) {
     throw new Error("Telegram login не настроен")
   }
 
-  const nonce = createTelegramNonce()
-
-  // Prefer Telegram.Login.auth when script exposes it (legacy widget path).
-  // OIDC id_token path: widget/callback should supply id_token; we exchange on backend.
   try {
     await loadTelegramLoginScript()
   } catch {
-    // Script optional if host already injected; continue to manual flow check
+    // Script optional if host already injected
   }
 
   const authFn = window.Telegram?.Login?.auth
@@ -164,18 +244,26 @@ export async function startTelegramLogin(config: TelegramOidcConfig): Promise<Te
       )
     })
 
-    // Modern OIDC may return id_token; legacy returns fields + hash.
-    // Phase 1 backend accepts id_token + nonce only.
-    const idToken = authData.id_token
-    if (typeof idToken !== "string" || !idToken) {
-      throw new Error(
-        "Telegram не вернул id_token. Настройте Web Login (OIDC) в BotFather и telegram-login.js."
-      )
+    // Prefer verified Login Widget path (hash + id). Never invent OIDC nonce.
+    const widgetData = parseWidgetAuthData(authData)
+    if (widgetData) {
+      return loginWithTelegramWidget(widgetData)
     }
-    return loginWithTelegramOidc(idToken, nonce)
+
+    // True OIDC id_token only if nonce was previously bound to authorize request.
+    const idToken = authData.id_token
+    const nonce = getStoredTelegramNonce()
+    if (typeof idToken === "string" && idToken && nonce) {
+      return loginWithTelegramOidc(idToken, nonce)
+    }
+
+    throw new Error(
+      "Telegram вернул неожиданный ответ. Ожидаются поля Login Widget (hash) или id_token после OIDC authorize."
+    )
   }
 
-  // Fallback: open authorize URL (user completes flow; full redirect/callback = BotFather setup).
+  // Fallback: open Web Login authorize URL with nonce (for true OIDC clients).
+  const nonce = createTelegramNonce()
   const params = new URLSearchParams({
     client_id: config.client_id,
     scope: (config.scopes || ["openid", "profile"]).join(" "),
@@ -185,13 +273,13 @@ export async function startTelegramLogin(config: TelegramOidcConfig): Promise<Te
   const url = `${config.authorize_url}?${params.toString()}`
   window.open(url, "telegram_oauth", "width=550,height=600")
   throw new Error(
-    "Открыто окно Telegram OAuth. Для автоматического обмена id_token настройте BotFather Web Login и callback (см. telegramAuth.ts)."
+    "Открыто окно Telegram OAuth. После получения id_token обмен через POST /auth/telegram/oidc с тем же nonce (sessionStorage)."
   )
 }
 
-// ─── Bot deep-link login (Phase 2) ───────────────────────────────────────
+// ─── Bot deep-link login ─────────────────────────────────────────────────
 
-/** Create login challenge → deep_link + poll_url */
+/** Create login challenge → deep_link + poll_secret (store secret in sessionStorage). */
 export async function createTelegramBotChallenge(): Promise<TelegramBotChallenge> {
   const response = await fetch(`${API_BASE}/auth/telegram/bot/challenge`, {
     method: "POST",
@@ -204,16 +292,27 @@ export async function createTelegramBotChallenge(): Promise<TelegramBotChallenge
       typeof data.detail === "string" ? data.detail : "Не удалось создать challenge бота"
     throw new Error(detail)
   }
-  return response.json()
+  const challenge: TelegramBotChallenge = await response.json()
+  if (challenge.poll_secret) {
+    storeBotPollSecret(challenge.challenge_id, challenge.poll_secret)
+  }
+  return challenge
 }
 
 export async function pollTelegramBotChallenge(
-  challengeId: string
+  challengeId: string,
+  pollSecret?: string
 ): Promise<TelegramBotChallengeStatus> {
+  const secret = pollSecret || getBotPollSecret(challengeId)
+  if (!secret) {
+    throw new Error("telegram_invalid_poll_secret")
+  }
+  const params = new URLSearchParams({ poll_secret: secret })
   const response = await fetch(
-    `${API_BASE}/auth/telegram/bot/challenge/${encodeURIComponent(challengeId)}`
+    `${API_BASE}/auth/telegram/bot/challenge/${encodeURIComponent(challengeId)}?${params}`
   )
   if (response.status === 410) {
+    clearBotPollSecret(challengeId)
     return {
       status: "expired",
       access_token: null,
@@ -225,6 +324,9 @@ export async function pollTelegramBotChallenge(
   }
   if (response.status === 404) {
     throw new Error("challenge_not_found")
+  }
+  if (response.status === 401) {
+    throw new Error("telegram_invalid_poll_secret")
   }
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))
@@ -248,7 +350,7 @@ export type BotLoginHandlers = {
 }
 
 /**
- * Create challenge, open deep link, poll every 1.5s until confirmed/expired/aborted.
+ * Create challenge, open deep link, poll every 1.5s with poll_secret until done.
  * On success stores JWT in localStorage.token.
  */
 export async function startTelegramBotLogin(
@@ -257,7 +359,6 @@ export async function startTelegramBotLogin(
   const challenge = await createTelegramBotChallenge()
   handlers.onChallenge(challenge)
 
-  // Open Telegram deep link (mobile app / desktop Telegram)
   try {
     window.open(challenge.deep_link, "_blank", "noopener,noreferrer")
   } catch {
@@ -265,6 +366,7 @@ export async function startTelegramBotLogin(
   }
 
   const deadline = Date.now() + challenge.expires_in * 1000
+  const pollSecret = challenge.poll_secret
 
   return new Promise<TelegramLoginResponse>((resolve, reject) => {
     let stopped = false
@@ -278,6 +380,7 @@ export async function startTelegramBotLogin(
 
     const onAbort = () => {
       cleanup()
+      clearBotPollSecret(challenge.challenge_id)
       reject(new Error("Вход через Telegram-бота отменён"))
     }
     handlers.signal?.addEventListener("abort", onAbort)
@@ -286,15 +389,20 @@ export async function startTelegramBotLogin(
       if (stopped) return
       if (Date.now() > deadline) {
         cleanup()
+        clearBotPollSecret(challenge.challenge_id)
         reject(new Error("Время ожидания подтверждения в Telegram истекло"))
         return
       }
       try {
-        const status = await pollTelegramBotChallenge(challenge.challenge_id)
+        const status = await pollTelegramBotChallenge(
+          challenge.challenge_id,
+          pollSecret
+        )
         handlers.onStatus?.(status.status)
 
         if (status.status === "confirmed" && status.access_token) {
           localStorage.setItem("token", status.access_token)
+          clearBotPollSecret(challenge.challenge_id)
           cleanup()
           resolve({
             access_token: status.access_token,
@@ -307,17 +415,20 @@ export async function startTelegramBotLogin(
         }
         if (status.status === "expired") {
           cleanup()
+          clearBotPollSecret(challenge.challenge_id)
           reject(new Error("Challenge истёк. Запросите новый вход через бота."))
           return
         }
         if (status.status === "consumed" && !status.access_token) {
           cleanup()
+          clearBotPollSecret(challenge.challenge_id)
           reject(new Error("Challenge уже использован"))
           return
         }
       } catch (err) {
         if (stopped) return
         cleanup()
+        clearBotPollSecret(challenge.challenge_id)
         reject(err instanceof Error ? err : new Error(String(err)))
         return
       }

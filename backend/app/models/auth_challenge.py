@@ -15,6 +15,8 @@ class AuthLoginChallenge(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     token = Column(String(64), unique=True, nullable=False, index=True)
+    # sha256 hex of poll_secret (never store plaintext; not in deep_link)
+    poll_secret_hash = Column(String(64), nullable=False, default="", server_default="")
     purpose = Column(String(16), nullable=False)  # login | link
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(String(16), nullable=False, default="pending", server_default="pending")

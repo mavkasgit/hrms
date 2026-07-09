@@ -1,4 +1,4 @@
-"""Pydantic schemas for Telegram auth (OIDC Phase 1 + bot/link Phase 2)."""
+"""Pydantic schemas for Telegram auth (OIDC + Login Widget + bot/link)."""
 
 from typing import Literal
 from uuid import UUID
@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class TelegramOidcLoginRequest(BaseModel):
-    """Frontend received id_token via telegram-login.js / OIDC popup."""
+    """Frontend received id_token via oauth.telegram.org / Web Login with matching nonce."""
 
     id_token: str
     nonce: str
@@ -29,12 +29,25 @@ class TelegramOidcConfigResponse(BaseModel):
     scopes: list[str] = Field(default_factory=lambda: ["openid", "profile"])
 
 
+class TelegramWidgetLoginRequest(BaseModel):
+    """Telegram Login Widget callback fields (HMAC verified server-side)."""
+
+    id: int
+    first_name: str | None = None
+    last_name: str | None = None
+    username: str | None = None
+    photo_url: str | None = None
+    auth_date: int
+    hash: str
+
+
 class TelegramBotChallengeRequest(BaseModel):
     purpose: Literal["login", "link"] = "login"
 
 
 class TelegramBotChallengeResponse(BaseModel):
     challenge_id: str
+    poll_secret: str
     deep_link: str
     expires_in: int
     poll_url: str

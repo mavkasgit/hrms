@@ -1,9 +1,9 @@
-"""Telegram auth HTTP routes (OIDC + bot challenge/webhook + link)."""
+"""Telegram auth HTTP routes (OIDC + Login Widget + bot challenge/webhook + link)."""
 
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import LoginResponse
@@ -18,6 +18,7 @@ from app.schemas.telegram_auth import (
     TelegramLinkResponse,
     TelegramOidcConfigResponse,
     TelegramOidcLoginRequest,
+    TelegramWidgetLoginRequest,
 )
 from app.services.telegram_auth_service import (
     TELEGRAM_AUTHORIZE_URL,
@@ -50,9 +51,27 @@ async def telegram_oidc_login(
     Exchange Telegram OIDC id_token + nonce for HRMS LoginResponse.
 
     Verifies JWKS signature, iss/aud/exp/nonce, then resolve/provision User.
+    Only call when nonce was part of the OIDC authorize request.
     """
     service = TelegramAuthService(db)
     result = await service.login_with_oidc(payload.id_token, payload.nonce)
+    return LoginResponse(**result)
+
+
+@router.post("/widget", response_model=LoginResponse)
+async def telegram_widget_login(
+    payload: TelegramWidgetLoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> LoginResponse:
+    """
+    Telegram Login Widget auth (HMAC-SHA256 with bot token).
+
+    Primary browser path when Telegram.Login.auth returns legacy fields
+    (id, hash, auth_date, …) rather than an OIDC id_token.
+    """
+    service = TelegramAuthService(db)
+    data = payload.model_dump(exclude_none=True)
+    result = await service.login_with_widget(data)
     return LoginResponse(**result)
 
 
@@ -88,11 +107,16 @@ async def create_bot_challenge(
 )
 async def poll_bot_challenge(
     challenge_id: UUID,
+    poll_secret: str | None = Query(default=None),
+    x_telegram_poll_secret: str | None = Header(
+        default=None, alias="X-Telegram-Poll-Secret"
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> TelegramBotChallengeStatus:
-    """Poll challenge; on first confirmed login returns JWT once then consumes."""
+    """Poll challenge; requires poll_secret (query or X-Telegram-Poll-Secret)."""
     service = TelegramAuthService(db)
-    result = await service.poll_bot_challenge(challenge_id)
+    secret = poll_secret or x_telegram_poll_secret
+    result = await service.poll_bot_challenge(challenge_id, poll_secret=secret)
     return TelegramBotChallengeStatus(**result)
 
 

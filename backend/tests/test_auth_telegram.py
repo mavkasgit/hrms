@@ -1,5 +1,8 @@
-"""Telegram OIDC + bot challenge/webhook/link tests (Phase 1–2)."""
+"""Telegram OIDC + widget + bot challenge/webhook/link tests."""
 
+import hashlib
+import hmac
+import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
@@ -12,11 +15,10 @@ from app.api.auth import LoginRequest, login
 from app.api.telegram_auth import (
     create_bot_challenge,
     get_telegram_oidc_config,
-    link_telegram,
     poll_bot_challenge,
     telegram_oidc_login,
     telegram_webhook,
-    unlink_telegram,
+    telegram_widget_login,
 )
 from app.api.users import create_user
 from app.core.config import settings
@@ -24,8 +26,8 @@ from app.repositories.challenge_repository import ChallengeRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.telegram_auth import (
     TelegramBotChallengeRequest,
-    TelegramLinkRequest,
     TelegramOidcLoginRequest,
+    TelegramWidgetLoginRequest,
 )
 from app.schemas.user import UserCreate
 from app.services.telegram_auth_service import TelegramAuthService
@@ -68,13 +70,28 @@ def jit_on():
 def bot_configured():
     orig_user = settings.TELEGRAM_BOT_USERNAME
     orig_secret = settings.TELEGRAM_WEBHOOK_SECRET
+    orig_token = settings.TELEGRAM_BOT_TOKEN
     settings.TELEGRAM_BOT_USERNAME = "hrms_test_bot"
     settings.TELEGRAM_WEBHOOK_SECRET = "test-webhook-secret"
+    settings.TELEGRAM_BOT_TOKEN = "123456:ABC-DEF_test_bot_token"
     try:
         yield
     finally:
         settings.TELEGRAM_BOT_USERNAME = orig_user
         settings.TELEGRAM_WEBHOOK_SECRET = orig_secret
+        settings.TELEGRAM_BOT_TOKEN = orig_token
+
+
+def _sign_widget_payload(bot_token: str, fields: dict) -> dict:
+    """Build Telegram Login Widget payload with valid HMAC hash."""
+    data = dict(fields)
+    pairs = [f"{k}={data[k]}" for k in sorted(data.keys()) if k != "hash"]
+    data_check_string = "\n".join(pairs)
+    secret_key = hashlib.sha256(bot_token.encode("utf-8")).digest()
+    data["hash"] = hmac.new(
+        secret_key, data_check_string.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    return data
 
 
 async def test_oidc_config_disabled_when_no_client_id():
@@ -315,6 +332,86 @@ async def test_password_login_still_works(db_session, create_employee):
     assert response.access_token is not None
 
 
+# ─── Widget login ─────────────────────────────────────────────────────────
+
+
+async def test_widget_login_valid_hmac(db_session, bot_configured, jit_on):
+    fields = {
+        "id": 9001001,
+        "first_name": "Widget",
+        "last_name": "User",
+        "username": "widget_user",
+        "auth_date": int(time.time()),
+    }
+    signed = _sign_widget_payload(settings.TELEGRAM_BOT_TOKEN, fields)
+    payload = TelegramWidgetLoginRequest(**signed)
+    response = await telegram_widget_login(payload=payload, db=db_session)
+    assert response.access_token
+    assert response.username in ("widget_user", "tg_9001001")
+    assert response.full_name == "Widget User"
+
+
+async def test_widget_login_bad_hash_401(db_session, bot_configured):
+    payload = TelegramWidgetLoginRequest(
+        id=1,
+        first_name="X",
+        auth_date=int(time.time()),
+        hash="0" * 64,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await telegram_widget_login(payload=payload, db=db_session)
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "telegram_invalid_token"
+
+
+async def test_widget_not_configured_503(db_session):
+    original = settings.TELEGRAM_BOT_TOKEN
+    settings.TELEGRAM_BOT_TOKEN = ""
+    try:
+        payload = TelegramWidgetLoginRequest(
+            id=1, auth_date=int(time.time()), hash="ab"
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            await telegram_widget_login(payload=payload, db=db_session)
+        assert exc_info.value.status_code == 503
+    finally:
+        settings.TELEGRAM_BOT_TOKEN = original
+
+
+# ─── No phone auto-link (M2) ──────────────────────────────────────────────
+
+
+async def test_resolve_does_not_auto_link_by_phone(db_session, jit_off):
+    """Phone match without telegram_id must not silent-link (M2)."""
+    repo = UserRepository()
+    employee_user = await repo.create_telegram_user(
+        db_session,
+        telegram_id=0,  # will clear after create — use plain user instead
+        username="phone_only_user",
+        full_name="Phone Only",
+        role="viewer",
+        phone="+79001234567",
+    )
+    # create_telegram_user always sets telegram_id; fix to phone-only identity
+    employee_user.telegram_id = None
+    db_session.add(employee_user)
+    await db_session.commit()
+
+    service = TelegramAuthService(db_session)
+    with pytest.raises(HTTPException) as exc_info:
+        await service.resolve_or_provision_user(
+            telegram_id=555123,
+            full_name="Attacker TG",
+            preferred_username=None,
+            phone="+79001234567",
+        )
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "telegram_not_allowed"
+
+    await db_session.refresh(employee_user)
+    assert employee_user.telegram_id is None
+
+
 # ─── Phase 2: bot challenge / webhook / link ─────────────────────────────
 
 
@@ -335,13 +432,37 @@ async def test_bot_challenge_create_and_pending_poll(db_session, bot_configured)
     service = TelegramAuthService(db_session)
     created = await service.create_bot_challenge(purpose="login")
     assert created["challenge_id"]
+    assert created["poll_secret"]
     assert created["deep_link"].startswith("https://t.me/hrms_test_bot?start=")
+    assert created["poll_secret"] not in created["deep_link"]
     assert created["expires_in"] == settings.TELEGRAM_BOT_CHALLENGE_TTL_SECONDS
     assert created["poll_url"].endswith(created["challenge_id"])
 
-    status = await service.poll_bot_challenge(created["challenge_id"])
+    status = await service.poll_bot_challenge(
+        created["challenge_id"], poll_secret=created["poll_secret"]
+    )
     assert status["status"] == "pending"
     assert status["access_token"] is None
+
+
+async def test_poll_without_secret_401(db_session, bot_configured):
+    service = TelegramAuthService(db_session)
+    created = await service.create_bot_challenge(purpose="login")
+    with pytest.raises(HTTPException) as exc_info:
+        await service.poll_bot_challenge(created["challenge_id"], poll_secret=None)
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "telegram_invalid_poll_secret"
+
+
+async def test_poll_wrong_secret_401(db_session, bot_configured):
+    service = TelegramAuthService(db_session)
+    created = await service.create_bot_challenge(purpose="login")
+    with pytest.raises(HTTPException) as exc_info:
+        await service.poll_bot_challenge(
+            created["challenge_id"], poll_secret="wrong-secret-value"
+        )
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "telegram_invalid_poll_secret"
 
 
 async def test_bot_flow_webhook_poll_token_once(db_session, bot_configured, jit_on):
@@ -350,6 +471,7 @@ async def test_bot_flow_webhook_poll_token_once(db_session, bot_configured, jit_
     created = await service.create_bot_challenge(purpose="login")
     token = created["deep_link"].split("start=")[1]
     challenge_id = created["challenge_id"]
+    poll_secret = created["poll_secret"]
 
     update = {
         "update_id": 1,
@@ -370,7 +492,7 @@ async def test_bot_flow_webhook_poll_token_once(db_session, bot_configured, jit_
     )
     assert ok == {"ok": True}
 
-    first = await service.poll_bot_challenge(challenge_id)
+    first = await service.poll_bot_challenge(challenge_id, poll_secret=poll_secret)
     assert first["status"] == "confirmed"
     assert first["access_token"]
     assert first["username"]
@@ -387,9 +509,46 @@ async def test_bot_flow_webhook_poll_token_once(db_session, bot_configured, jit_
     assert "hrms_access_level" in decoded
     assert "exp" in decoded
 
-    second = await service.poll_bot_challenge(challenge_id)
+    second = await service.poll_bot_challenge(challenge_id, poll_secret=poll_secret)
     assert second["status"] == "consumed"
     assert second["access_token"] is None
+
+
+async def test_bot_poll_atomic_second_consume_empty(
+    db_session, bot_configured, jit_on
+):
+    """After first successful poll consume, second poll returns no token (M1)."""
+    service = TelegramAuthService(db_session)
+    created = await service.create_bot_challenge(purpose="login")
+    token = created["deep_link"].split("start=")[1]
+    await service.handle_webhook(
+        {
+            "update_id": 11,
+            "message": {
+                "text": f"/start {token}",
+                "from": {"id": 555002, "first_name": "Race"},
+            },
+        },
+        secret_header=settings.TELEGRAM_WEBHOOK_SECRET,
+    )
+    first = await service.poll_bot_challenge(
+        created["challenge_id"], poll_secret=created["poll_secret"]
+    )
+    assert first["access_token"]
+    # Simulate second concurrent-style call after consume
+    second = await service.poll_bot_challenge(
+        created["challenge_id"], poll_secret=created["poll_secret"]
+    )
+    assert second["status"] == "consumed"
+    assert second["access_token"] is None
+
+    # try_consume_confirmed on already-consumed returns None
+    from uuid import UUID
+
+    claimed = await ChallengeRepository().try_consume_confirmed(
+        db_session, UUID(created["challenge_id"])
+    )
+    assert claimed is None
 
 
 async def test_bot_webhook_bad_secret_401(db_session, bot_configured):
@@ -417,17 +576,19 @@ async def test_bot_webhook_empty_secret_503(db_session, bot_configured):
 
 async def test_bot_challenge_expired_410(db_session, bot_configured):
     repo = ChallengeRepository()
+    poll_secret = "expired-poll-secret"
     challenge = await repo.create(
         db_session,
         token="expired-token-xyz",
         purpose="login",
         expires_at=datetime.now(timezone.utc) - timedelta(seconds=10),
+        poll_secret_hash=TelegramAuthService.hash_poll_secret(poll_secret),
     )
     await db_session.commit()
 
     service = TelegramAuthService(db_session)
     with pytest.raises(HTTPException) as exc_info:
-        await service.poll_bot_challenge(challenge.id)
+        await service.poll_bot_challenge(challenge.id, poll_secret=poll_secret)
     assert exc_info.value.status_code == 410
     assert exc_info.value.detail == "challenge_expired"
 
@@ -435,7 +596,7 @@ async def test_bot_challenge_expired_410(db_session, bot_configured):
 async def test_bot_challenge_not_found_404(db_session, bot_configured):
     service = TelegramAuthService(db_session)
     with pytest.raises(HTTPException) as exc_info:
-        await service.poll_bot_challenge(uuid4())
+        await service.poll_bot_challenge(uuid4(), poll_secret="any")
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "challenge_not_found"
 
@@ -457,7 +618,9 @@ async def test_bot_jit_off_unknown_403_on_poll(db_session, bot_configured, jit_o
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await service.poll_bot_challenge(created["challenge_id"])
+        await service.poll_bot_challenge(
+            created["challenge_id"], poll_secret=created["poll_secret"]
+        )
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "telegram_not_allowed"
 
@@ -486,7 +649,9 @@ async def test_bot_prelinked_user_jit_off(db_session, bot_configured, jit_off):
         },
         secret_header=settings.TELEGRAM_WEBHOOK_SECRET,
     )
-    result = await service.poll_bot_challenge(created["challenge_id"])
+    result = await service.poll_bot_challenge(
+        created["challenge_id"], poll_secret=created["poll_secret"]
+    )
     assert result["status"] == "confirmed"
     assert result["username"] == user.username
     assert result["access_token"]
@@ -519,7 +684,6 @@ async def test_link_conflict_409(db_session, bot_configured, create_employee):
     target = await service.get_user_by_username("wants_same_tg")
     assert target is not None
 
-    # confirmed link challenge with conflicting telegram_id
     ch = await service.create_bot_challenge(purpose="link", user_id=target.id)
     token = ch["deep_link"].split("start=")[1]
     await service.handle_webhook(
@@ -643,6 +807,7 @@ async def test_router_webhook_and_poll_helpers(db_session, bot_configured, jit_o
 
     polled = await poll_bot_challenge(
         challenge_id=UUID(created.challenge_id),
+        poll_secret=created.poll_secret,
         db=db_session,
     )
     assert polled.status == "confirmed"

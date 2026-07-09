@@ -1,7 +1,9 @@
-"""Telegram authentication service (OIDC + bot challenge/webhook + link)."""
+"""Telegram authentication service (OIDC + widget + bot challenge/webhook + link)."""
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import re
 import secrets
 import time
@@ -60,6 +62,15 @@ class TelegramAuthService:
             )
         return bot_username
 
+    def _require_bot_token(self) -> str:
+        token = (settings.TELEGRAM_BOT_TOKEN or "").strip()
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="telegram_not_configured",
+            )
+        return token
+
     def _require_webhook_secret(self) -> str:
         secret = (settings.TELEGRAM_WEBHOOK_SECRET or "").strip()
         if not secret:
@@ -68,6 +79,19 @@ class TelegramAuthService:
                 detail="telegram_not_configured",
             )
         return secret
+
+    # ─── poll secret helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def hash_poll_secret(poll_secret: str) -> str:
+        return hashlib.sha256(poll_secret.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def verify_poll_secret(provided: str | None, stored_hash: str | None) -> bool:
+        if not provided or not stored_hash:
+            return False
+        expected = hashlib.sha256(provided.encode("utf-8")).hexdigest()
+        return hmac.compare_digest(expected, stored_hash)
 
     # ─── OIDC ─────────────────────────────────────────────────────────────
 
@@ -203,6 +227,95 @@ class TelegramAuthService:
         )
         return self.issue_login_response(user)
 
+    # ─── Login Widget (HMAC) ──────────────────────────────────────────────
+
+    def verify_widget_payload(self, data: dict[str, Any]) -> dict[str, Any]:
+        """
+        Verify Telegram Login Widget data-check-string + HMAC-SHA256(bot_token).
+
+        See https://core.telegram.org/widgets/login#checking-authorization
+        """
+        bot_token = self._require_bot_token()
+        check_hash = data.get("hash")
+        if not check_hash or not isinstance(check_hash, str):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="telegram_invalid_token",
+            )
+
+        auth_date_raw = data.get("auth_date")
+        try:
+            auth_date = int(auth_date_raw)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="telegram_invalid_token",
+            ) from exc
+
+        max_age = int(settings.TELEGRAM_AUTH_DATE_MAX_AGE_SECONDS or 86400)
+        now = int(time.time())
+        if auth_date > now + 60 or now - auth_date > max_age:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="telegram_expired",
+            )
+
+        # Build data-check-string from all fields except hash (sorted by key).
+        pairs: list[str] = []
+        for key in sorted(data.keys()):
+            if key == "hash":
+                continue
+            value = data[key]
+            if value is None:
+                continue
+            pairs.append(f"{key}={value}")
+        data_check_string = "\n".join(pairs)
+
+        secret_key = hashlib.sha256(bot_token.encode("utf-8")).digest()
+        calculated = hmac.new(
+            secret_key,
+            data_check_string.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(calculated, check_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="telegram_invalid_token",
+            )
+
+        raw_id = data.get("id")
+        try:
+            telegram_id = int(raw_id)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="telegram_invalid_token",
+            ) from exc
+
+        first = str(data.get("first_name") or "").strip()
+        last = str(data.get("last_name") or "").strip()
+        full_name = " ".join(p for p in (first, last) if p) or f"tg_{telegram_id}"
+        preferred = data.get("username")
+        if preferred is not None:
+            preferred = str(preferred).strip() or None
+
+        return {
+            "telegram_id": telegram_id,
+            "full_name": full_name,
+            "preferred_username": preferred,
+        }
+
+    async def login_with_widget(self, data: dict[str, Any]) -> dict:
+        """Verify Login Widget HMAC → resolve/provision → LoginResponse dict."""
+        identity = self.verify_widget_payload(data)
+        user = await self.resolve_or_provision_user(
+            telegram_id=identity["telegram_id"],
+            full_name=identity["full_name"],
+            preferred_username=identity["preferred_username"],
+            phone=None,
+        )
+        return self.issue_login_response(user)
+
     # ─── identity resolve ─────────────────────────────────────────────────
 
     async def resolve_or_provision_user(
@@ -215,9 +328,11 @@ class TelegramAuthService:
     ) -> User:
         """
         1. get_by_telegram_id
-        2. if phone: get_by_phone (optional match + set telegram_id if unlinked)
-        3. if none and TELEGRAM_ALLOW_JIT: create username=preferred if free else tg_<id>
-        4. else raise HTTPException 403 detail=telegram_not_allowed
+        2. if none and TELEGRAM_ALLOW_JIT: create username=preferred if free else tg_<id>
+        3. else raise HTTPException 403 detail=telegram_not_allowed
+
+        Phone is never used for silent auto-link (M2). It may only update when
+        the user is already matched by telegram_id.
         """
         user = await self.users.get_by_telegram_id(self.db, telegram_id)
         if user is not None:
@@ -228,20 +343,7 @@ class TelegramAuthService:
                 await self.db.refresh(user)
             return user
 
-        if phone:
-            by_phone = await self.users.get_by_phone(self.db, phone)
-            if by_phone is not None:
-                if by_phone.telegram_id is None:
-                    return await self.users.link_telegram(
-                        self.db, by_phone, telegram_id, phone=phone
-                    )
-                if by_phone.telegram_id != telegram_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="telegram_already_linked",
-                    )
-                return by_phone
-
+        # No auto-link by phone — prevents silent account takeover (M2).
         if not settings.TELEGRAM_ALLOW_JIT:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -293,6 +395,10 @@ class TelegramAuthService:
         # secrets.token_urlsafe → A-Za-z0-9_-; keep ≤64 chars
         return secrets.token_urlsafe(32)[:64]
 
+    @staticmethod
+    def _generate_poll_secret() -> str:
+        return secrets.token_urlsafe(32)
+
     def _is_expired(self, challenge: AuthLoginChallenge) -> bool:
         expires_at = challenge.expires_at
         if expires_at is None:
@@ -307,7 +413,10 @@ class TelegramAuthService:
         purpose: str = "login",
         user_id: int | None = None,
     ) -> dict:
-        """Create one-time deep-link challenge. purpose=link requires user_id."""
+        """Create one-time deep-link challenge. purpose=link requires user_id.
+
+        Returns poll_secret only here (never in deep_link / webhook).
+        """
         bot_username = self._require_bot_configured()
         if purpose not in ("login", "link"):
             raise HTTPException(
@@ -322,6 +431,8 @@ class TelegramAuthService:
 
         ttl = int(settings.TELEGRAM_BOT_CHALLENGE_TTL_SECONDS or 300)
         token = self._generate_challenge_token()
+        poll_secret = self._generate_poll_secret()
+        poll_secret_hash = self.hash_poll_secret(poll_secret)
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
         challenge = await self.challenges.create(
             self.db,
@@ -329,6 +440,7 @@ class TelegramAuthService:
             purpose=purpose,
             expires_at=expires_at,
             user_id=user_id,
+            poll_secret_hash=poll_secret_hash,
         )
         await self.db.commit()
 
@@ -337,19 +449,26 @@ class TelegramAuthService:
         poll_url = f"/api/auth/telegram/bot/challenge/{challenge_id}"
         return {
             "challenge_id": challenge_id,
+            "poll_secret": poll_secret,
             "deep_link": deep_link,
             "expires_in": ttl,
             "poll_url": poll_url,
         }
 
-    async def poll_bot_challenge(self, challenge_id: UUID | str) -> dict:
+    async def poll_bot_challenge(
+        self,
+        challenge_id: UUID | str,
+        *,
+        poll_secret: str | None = None,
+    ) -> dict:
         """
-        Poll challenge status.
+        Poll challenge status (requires poll_secret from create response).
         - pending → no token
-        - confirmed (login) → issue JWT once, mark consumed
+        - confirmed (login) → atomic consume + issue JWT once
         - confirmed (link) → no JWT (link via POST /link)
         - consumed → no token
         - expired → 410
+        - missing/wrong secret → 401
         """
         try:
             cid = challenge_id if isinstance(challenge_id, UUID) else UUID(str(challenge_id))
@@ -359,11 +478,18 @@ class TelegramAuthService:
                 detail="challenge_not_found",
             ) from exc
 
+        # First load without lock for secret check / status (cheap 401/404).
         challenge = await self.challenges.get_by_id(self.db, cid)
         if challenge is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="challenge_not_found",
+            )
+
+        if not self.verify_poll_secret(poll_secret, challenge.poll_secret_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="telegram_invalid_poll_secret",
             )
 
         if challenge.status == "expired" or (
@@ -388,7 +514,8 @@ class TelegramAuthService:
             if challenge.purpose == "link":
                 return self._status_body("confirmed")
 
-            # Login: issue JWT once, then consume.
+            # Login: resolve first (403 keeps confirmed for admin pre-link retry),
+            # then atomic consume so concurrent polls cannot issue two JWTs (M1).
             if challenge.telegram_id is None:
                 return self._status_body("confirmed")
 
@@ -400,12 +527,15 @@ class TelegramAuthService:
                     phone=None,
                 )
             except HTTPException:
-                # Keep confirmed so client can retry after admin pre-link;
-                # re-raise (403/409).
+                # Keep confirmed so client can retry after admin pre-link.
                 raise
 
+            claimed = await self.challenges.try_consume_confirmed(self.db, cid)
+            if claimed is None:
+                # Lost race: another poll already consumed.
+                return self._status_body("consumed")
+
             login = self.issue_login_response(user)
-            await self.challenges.consume(self.db, challenge)
             await self.db.commit()
             return {
                 "status": "confirmed",
@@ -443,7 +573,10 @@ class TelegramAuthService:
         """
         expected = self._require_webhook_secret()
         provided = (secret_header or "").strip()
-        if provided != expected:
+        # Constant-time compare; pad-safe via hashes (compare_digest needs equal length).
+        provided_digest = hashlib.sha256(provided.encode("utf-8")).digest()
+        expected_digest = hashlib.sha256(expected.encode("utf-8")).digest()
+        if not hmac.compare_digest(provided_digest, expected_digest):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="telegram_invalid_token",
@@ -483,7 +616,6 @@ class TelegramAuthService:
             await self.db.commit()
             return {"ok": True}
 
-        # Optional enrich: first/last name stored only for login resolve via telegram_id
         await self.challenges.confirm(self.db, challenge, telegram_id=telegram_id)
         await self.db.commit()
         return {"ok": True}
