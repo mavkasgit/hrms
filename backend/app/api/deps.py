@@ -81,10 +81,17 @@ async def get_current_user(
 
     expected_role = "admin" if hrms_access_level == "admin" else "viewer"
 
-    # Check if the user exists in the local HRMS database
-    result = await db.execute(select(User).where(User.username == username, User.is_deleted == False))
+    # Check if the user exists in the local HRMS database (including deleted)
+    result = await db.execute(select(User).where(User.username == username))
     user = result.scalars().first()
     
+    if user and user.is_deleted:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Пользователь удален из системы",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
     if not user:
         # Just-In-Time provisioning (автоматически создаем запись пользователя в БД HRMS при первом входе SSO)
         jwt_full_name = payload.get("full_name") or username

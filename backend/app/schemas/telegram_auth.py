@@ -27,6 +27,17 @@ class TelegramOidcConfigResponse(BaseModel):
     bot_username: str = ""
     authorize_url: str = "https://oauth.telegram.org/auth"
     scopes: list[str] = Field(default_factory=lambda: ["openid", "profile"])
+    # Bot/QR login button: real bot username OR dev QR (DEV_BYPASS_AUTH)
+    bot_enabled: bool = False
+    # True only when QR opens local confirm page (no real Telegram bot)
+    dev_qr: bool = False
+
+
+class TelegramDevConfirmRequest(BaseModel):
+    """Dev-only: confirm bot challenge as existing HRMS username (no Telegram)."""
+
+    token: str
+    username: str
 
 
 class TelegramWidgetLoginRequest(BaseModel):
@@ -42,7 +53,8 @@ class TelegramWidgetLoginRequest(BaseModel):
 
 
 class TelegramBotChallengeRequest(BaseModel):
-    purpose: Literal["login", "link"] = "login"
+    purpose: Literal["login", "link", "invite"] = "login"
+    invite_code: str | None = None
 
 
 class TelegramBotChallengeResponse(BaseModel):
@@ -60,6 +72,7 @@ class TelegramBotChallengeStatus(BaseModel):
     username: str | None = None
     role: str | None = None
     full_name: str | None = None
+    require_password_setup: bool | None = None
 
 
 class TelegramLinkRequest(BaseModel):

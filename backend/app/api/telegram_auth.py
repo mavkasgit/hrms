@@ -4,6 +4,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import LoginResponse
@@ -28,17 +29,72 @@ from app.services.telegram_auth_service import (
 router = APIRouter(prefix="/auth/telegram", tags=["auth-telegram"])
 
 
+def _dev_confirm_html(
+    *,
+    token: str = "",
+    message: str | None = None,
+    error: str | None = None,
+    ok: bool = False,
+) -> str:
+    """Minimal self-contained confirm page for dev QR (no frontend build)."""
+    status_block = ""
+    if ok and message:
+        status_block = (
+            f'<p style="color:#15803d;background:#f0fdf4;border:1px solid #bbf7d0;'
+            f'padding:12px;border-radius:8px">{message}</p>'
+        )
+    elif error:
+        status_block = (
+            f'<p style="color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;'
+            f'padding:12px;border-radius:8px">{error}</p>'
+        )
+    form_block = ""
+    if not ok:
+        form_block = f"""
+        <form method="post" action="/api/auth/telegram/bot/dev-confirm">
+          <input type="hidden" name="token" value="{token}" />
+          <label style="display:block;font-size:14px;margin-bottom:6px">
+            Логин HRMS (профиль, в который войти)
+          </label>
+          <input name="username" value="admin" required autocomplete="username"
+            style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px" />
+          <button type="submit"
+            style="width:100%;padding:12px;background:#2AABEE;color:#fff;border:0;
+            border-radius:10px;font-weight:600;cursor:pointer">
+            Подтвердить вход
+          </button>
+        </form>
+        """
+    return f"""<!DOCTYPE html>
+<html lang="ru"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>HRMS · Dev Telegram QR</title>
+</head>
+<body style="font-family:system-ui,sans-serif;max-width:420px;margin:40px auto;padding:0 16px;color:#0f172a">
+  <h1 style="font-size:1.25rem;margin-bottom:4px">Подтверждение входа</h1>
+  <p style="color:#64748b;font-size:14px;margin-top:0">
+    Dev-режим: без реального бота Telegram. После подтверждения вернитесь на страницу логина.
+  </p>
+  {status_block}
+  {form_block}
+</body></html>
+"""
+
+
 @router.get("/oidc/config", response_model=TelegramOidcConfigResponse)
 async def get_telegram_oidc_config() -> TelegramOidcConfigResponse:
     """Public config for LoginPage Telegram button (no secrets)."""
     client_id = (settings.TELEGRAM_OIDC_CLIENT_ID or "").strip()
     bot_username = (settings.TELEGRAM_BOT_USERNAME or "").strip()
+    dev_qr = TelegramAuthService.is_dev_qr_enabled() and not bot_username
     return TelegramOidcConfigResponse(
         enabled=bool(client_id),
         client_id=client_id,
         bot_username=bot_username,
         authorize_url=TELEGRAM_AUTHORIZE_URL,
         scopes=["openid", "profile"],
+        bot_enabled=TelegramAuthService.is_bot_login_enabled(),
+        dev_qr=dev_qr,
     )
 
 
@@ -97,8 +153,83 @@ async def create_bot_challenge(
             )
         user_id = user.id
 
+    if body.purpose == "invite":
+        if not body.invite_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invite_code_required",
+            )
+        user = await service.get_user_by_invite_code(body.invite_code)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="invalid_invite_code",
+            )
+        user_id = user.id
+
     result = await service.create_bot_challenge(purpose=body.purpose, user_id=user_id)
     return TelegramBotChallengeResponse(**result)
+
+
+@router.get("/bot/dev-confirm", response_class=HTMLResponse)
+async def bot_dev_confirm_page(
+    token: str = Query(default=""),
+) -> HTMLResponse:
+    """QR target in dev: form to confirm login as HRMS username (DEV_BYPASS_AUTH only)."""
+    if not TelegramAuthService.is_dev_qr_enabled():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+    if not (token or "").strip():
+        return HTMLResponse(
+            _dev_confirm_html(error="В ссылке нет token. Сгенерируйте QR заново на /login."),
+            status_code=400,
+        )
+    return HTMLResponse(_dev_confirm_html(token=token.strip()))
+
+
+@router.post("/bot/dev-confirm")
+async def bot_dev_confirm_submit(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Confirm challenge as username.
+
+    - form POST (from QR HTML page) → HTML response
+    - JSON {"token","username"} → JSON body (tests/API)
+    """
+    if not TelegramAuthService.is_dev_qr_enabled():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not_found")
+
+    content_type = (request.headers.get("content-type") or "").lower()
+    want_json = "application/json" in content_type
+    token = ""
+    username = ""
+
+    if want_json:
+        body = await request.json()
+        token = str(body.get("token") or "")
+        username = str(body.get("username") or "")
+    else:
+        form = await request.form()
+        token = str(form.get("token") or "")
+        username = str(form.get("username") or "")
+
+    service = TelegramAuthService(db)
+    try:
+        result = await service.confirm_dev_challenge(token=token, username=username)
+    except HTTPException as exc:
+        if want_json:
+            raise
+        return HTMLResponse(
+            _dev_confirm_html(token=token, error=str(exc.detail)),
+            status_code=exc.status_code,
+        )
+
+    if want_json:
+        return result
+    return HTMLResponse(
+        _dev_confirm_html(ok=True, message=result["message"], token=token)
+    )
 
 
 @router.get(

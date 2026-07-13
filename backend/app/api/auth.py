@@ -26,6 +26,10 @@ class LoginResponse(BaseModel):
     full_name: str
 
 
+class InviteLoginRequest(BaseModel):
+    invite_code: str
+
+
 def _verify_password(plain: str, hashed: str) -> bool:
     """Проверить пароль. В dev-режиме принимаем пароль 'dev' без хэша."""
     # Dev bypass: если DEV_BYPASS_AUTH включён и пароль "dev" — пропускаем
@@ -80,13 +84,62 @@ async def login(
     )
 
 
+@router.post("/invite/login", response_model=LoginResponse)
+async def invite_login(
+    payload: InviteLoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> LoginResponse:
+    """
+    Вход по одноразовому инвайт-коду.
+    """
+    result = await db.execute(
+        select(User).where(User.invite_code == payload.invite_code, User.is_deleted == False)
+    )
+    user = result.scalars().first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Код приглашения недействителен. Убедитесь, что код введен верно, или что аккаунт не был активирован ранее (в этом случае войдите с помощью пароля или Telegram).",
+        )
+
+    token = create_access_token(
+        username=user.username,
+        role=user.role,
+        full_name=user.full_name or user.username,
+    )
+
+    return LoginResponse(
+        access_token=token,
+        username=user.username,
+        role=user.role,
+        full_name=user.full_name or user.username,
+    )
+
+
 @router.get("/me")
 async def get_me(
     current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Получить информацию о текущем авторизованном пользователе."""
+    result = await db.execute(
+        select(User).where(User.username == current_user.username, User.is_deleted == False)
+    )
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден",
+        )
     return {
-        "username": current_user.username,
-        "role": current_user.role,
-        "full_name": current_user.full_name,
+        "username": user.username,
+        "role": user.role,
+        "full_name": user.full_name,
+        "has_telegram": user.telegram_id is not None,
+        "telegram_id": user.telegram_id,
+        "telegram_username": user.telegram_username,
+        "has_password": user.password_hash is not None and user.password_hash != "sso_bypass_hash",
+        "invite_code": user.invite_code,
+        "avatar_seed": user.avatar_seed,
     }
