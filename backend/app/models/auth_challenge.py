@@ -21,6 +21,7 @@ class AuthLoginChallenge(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(String(16), nullable=False, default="pending", server_default="pending")
     telegram_id = Column(BigInteger, nullable=True)
+    telegram_username = Column(String(100), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)
     consumed_at = Column(DateTime(timezone=True), nullable=True)

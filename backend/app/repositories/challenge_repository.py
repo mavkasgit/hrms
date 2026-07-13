@@ -62,9 +62,12 @@ class ChallengeRepository:
         challenge: AuthLoginChallenge,
         *,
         telegram_id: int,
+        telegram_username: str | None = None,
     ) -> AuthLoginChallenge:
         challenge.status = "confirmed"
         challenge.telegram_id = telegram_id
+        if telegram_username is not None:
+            challenge.telegram_username = telegram_username
         db.add(challenge)
         await db.flush()
         await db.refresh(challenge)

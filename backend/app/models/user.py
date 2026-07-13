@@ -56,8 +56,13 @@ class User(Base):
 
     # Telegram / phone auth identity (uniqueness via partial indexes above)
     telegram_id = Column(BigInteger, nullable=True, index=True)
+    telegram_username = Column(String(100), nullable=True)
     phone = Column(String(32), nullable=True, index=True)
     phone_verified_at = Column(DateTime(timezone=True), nullable=True)
+    # Multiavatar seed (явный выбор пользователя/админа). NULL → автогенерация
+    # по telegram_id → username → id. До 64 ASCII-символов (8 hex = 4 байта).
+    avatar_seed = Column(String(64), nullable=True)
+    invite_code = Column(String(64), unique=True, nullable=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

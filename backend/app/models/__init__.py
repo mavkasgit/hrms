@@ -33,3 +33,5 @@ from app.models.statement_type import StatementType  # noqa: F401, E402
 from app.models.contract_history import ContractHistory  # noqa: F401, E402
 from app.models.work_schedule import WorkSchedule, WorkScheduleEntry  # noqa: F401, E402
 from app.models.timesheet import TimesheetImport, TimesheetEntry, TimesheetUnmatchedRow  # noqa: F401, E402
+from app.models.used_signature import UsedTelegramSignature  # noqa: F401, E402
+
