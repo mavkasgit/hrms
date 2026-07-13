@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
-import { Users, Plus, Shield, Search, Edit2, Trash2, Loader2, ArrowLeft, AlertCircle, Link } from "lucide-react"
+import { Users, Plus, Shield, ShieldCheck, UserCheck, Search, Edit2, Trash2, Loader2, ArrowLeft, AlertCircle, Link, Copy, Check, User as UserIcon } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import {
@@ -26,7 +26,8 @@ import { fetchEmployees, fetchEmployee } from "@/entities/employee/api"
 import type { Employee } from "@/entities/employee/types"
 import { EmployeeSearch } from "@/features/employee-search"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select"
-
+import { UserAvatar } from "@/shared/ui/user-avatar"
+import { getUserSeed } from "@/shared/lib/avatar"
 interface User {
   id: number
   username: string
@@ -35,9 +36,73 @@ interface User {
   employee_id: number | null
   employee_name: string | null
   created_at: string
+  telegram_id: number | null
+  telegram_username: string | null
+  phone: string | null
+  phone_verified_at: string | null
+  invite_code: string | null
+  avatar_seed?: string | null
 }
 
+function TelegramIdDisplay({ telegramId }: { telegramId: number }) {
+  const [copied, setCopied] = useState(false)
 
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(String(telegramId))
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error("Не удалось скопировать ID:", err)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1 text-[#2AABEE] hover:text-[#229ED9] transition-colors font-mono focus:outline-none"
+      title="Нажмите, чтобы скопировать Telegram ID"
+    >
+      <span>ID: {telegramId}</span>
+      {copied ? (
+        <Check className="h-3 w-3 text-emerald-500 animate-in fade-in zoom-in-95 duration-150" />
+      ) : (
+        <Copy className="h-3 w-3 opacity-60 hover:opacity-100" />
+      )}
+    </button>
+  )
+}
+
+function InviteCodeDisplay({ inviteCode }: { inviteCode: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteCode)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error("Не удалось скопировать код:", err)
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded focus:outline-none transition-colors font-mono"
+      title="Нажмите, чтобы скопировать инвайт-код"
+    >
+      <span>Инвайт: {inviteCode}</span>
+      {copied ? (
+        <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+      ) : (
+        <Copy className="h-3 w-3 opacity-60 hover:opacity-100" />
+      )}
+    </button>
+  )
+}
 const rusToEng: Record<string, string> = {
   "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo", "ж": "zh",
   "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o",
@@ -72,25 +137,54 @@ function generateUsername(fullName: string): string {
   return transliterate(parts[0]).toLowerCase().replace(/[^a-z0-9._-]/g, "")
 }
 
-function formatApiError(err: any): string {
-  const detail = err.response?.data?.detail
-  if (!detail) {
-    return err.message || "Произошла ошибка при сохранении"
+
+function formatApiError(err: unknown): string {
+  if (err && typeof err === "object" && "response" in err) {
+    const response = err.response
+    if (response && typeof response === "object" && "data" in response) {
+      const data = response.data
+      if (data && typeof data === "object" && "detail" in data) {
+        const detail = data.detail
+        if (typeof detail === "string") {
+          return detail
+        }
+        if (Array.isArray(detail)) {
+          return detail
+            .map((item) => {
+              if (!item || typeof item !== "object") {
+                return JSON.stringify(item)
+              }
+              const loc =
+                "loc" in item && Array.isArray(item.loc) ? item.loc : []
+              const field =
+                loc.length > 0 ? String(loc[loc.length - 1]) : ""
+              const fieldNameRu =
+                field === "username"
+                  ? "Логин"
+                  : field === "full_name"
+                    ? "ФИО"
+                    : field === "telegram_id"
+                      ? "Telegram ID"
+                      : field
+              const msg =
+                "msg" in item && typeof item.msg === "string"
+                  ? item.msg
+                  : JSON.stringify(item)
+              return `${fieldNameRu ? fieldNameRu + ": " : ""}${msg}`
+            })
+            .join("; ")
+        }
+        if (detail && typeof detail === "object") {
+          if ("message" in detail && typeof detail.message === "string") {
+            return detail.message
+          }
+          return JSON.stringify(detail)
+        }
+      }
+    }
   }
-  if (typeof detail === "string") {
-    return detail
-  }
-  if (Array.isArray(detail)) {
-    return detail
-      .map((d: any) => {
-        const field = d.loc && d.loc.length > 0 ? d.loc[d.loc.length - 1] : ""
-        const fieldNameRu = field === "username" ? "Логин" : field === "full_name" ? "ФИО" : field
-        return `${fieldNameRu ? fieldNameRu + ": " : ""}${d.msg || JSON.stringify(d)}`
-      })
-      .join("; ")
-  }
-  if (typeof detail === "object") {
-    return detail.message || JSON.stringify(detail)
+  if (err instanceof Error && err.message) {
+    return err.message
   }
   return "Произошла ошибка при сохранении"
 }
@@ -102,6 +196,22 @@ export function UsersPage() {
   const [users, setUsers] = useState<User[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
+  const [generatingInvites, setGeneratingInvites] = useState<Record<number, boolean>>({})
+
+  const handleGenerateInvite = async (userId: number) => {
+    setGeneratingInvites(prev => ({ ...prev, [userId]: true }))
+    try {
+      const response = await api.post<{ invite_code: string }>(`/users/${userId}/generate-invite`)
+      setUsers(prevUsers =>
+        prevUsers.map(u => (u.id === userId ? { ...u, invite_code: response.data.invite_code } : u))
+      )
+    } catch (err) {
+      console.error("Не удалось сгенерировать инвайт:", err)
+      alert("Не удалось сгенерировать инвайт-код")
+    } finally {
+      setGeneratingInvites(prev => ({ ...prev, [userId]: false }))
+    }
+  }
   const [search, setSearch] = useState("")
   
   // Состояние диалога создания/редактирования
@@ -111,12 +221,8 @@ export function UsersPage() {
   
   // Поля формы
   const [username, setUsername] = useState("")
-  const [fullName, setFullName] = useState("")
-  const [linkEmployee, setLinkEmployee] = useState(true)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [password, setPassword] = useState("")
   const [role, setRole] = useState("viewer")
-  const [isUsernameAutoGenerated, setIsUsernameAutoGenerated] = useState(true)
   const [usernameError, setUsernameError] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
@@ -172,24 +278,25 @@ export function UsersPage() {
   const filteredUsers = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return users
-    return users.filter(
-      (u) =>
+    return users.filter((u) => {
+      const tg = u.telegram_id != null ? String(u.telegram_id) : ""
+      const phoneVal = (u.phone || "").toLowerCase()
+      return (
         u.username.toLowerCase().includes(q) ||
         u.full_name.toLowerCase().includes(q) ||
-        (u.employee_name && u.employee_name.toLowerCase().includes(q))
-    )
+        (u.employee_name && u.employee_name.toLowerCase().includes(q)) ||
+        tg.includes(q) ||
+        phoneVal.includes(q)
+      )
+    })
   }, [users, search])
 
   const openCreate = () => {
     setSelectedUser(null)
     setDialogMode("create")
     setUsername("")
-    setFullName("")
-    setLinkEmployee(true)
     setSelectedEmployee(null)
-    setPassword("")
     setRole("viewer")
-    setIsUsernameAutoGenerated(true)
     setUsernameError("")
     setError("")
     setDialogOpen(true)
@@ -199,11 +306,7 @@ export function UsersPage() {
     setSelectedUser(user)
     setDialogMode("edit")
     setUsername(user.username)
-    setFullName(user.full_name)
-    setLinkEmployee(user.employee_id !== null)
-    setPassword("")
     setRole(user.role)
-    setIsUsernameAutoGenerated(false)
     setUsernameError("")
     setError("")
     setDialogOpen(true)
@@ -229,25 +332,17 @@ export function UsersPage() {
       setSelectedEmployee(null)
     }
   }
-
   const handleEmployeeChange = (emp: Employee | null) => {
     setSelectedEmployee(emp)
     if (emp) {
-      setFullName(emp.name)
-      if (isUsernameAutoGenerated) {
-        const generated = generateUsername(emp.name)
-        setUsername(generated)
-        setUsernameError(validateUsername(generated))
-      }
+      const generated = generateUsername(emp.name)
+      setUsername(generated)
+      setUsernameError(validateUsername(generated))
     } else {
-      setFullName("")
-      if (isUsernameAutoGenerated) {
-        setUsername("")
-        setUsernameError("")
-      }
+      setUsername("")
+      setUsernameError("")
     }
   }
-
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     const currentError = validateUsername(username)
@@ -256,12 +351,8 @@ export function UsersPage() {
       setError(currentError)
       return
     }
-    if (linkEmployee && !selectedEmployee) {
-      setError("Выберите сотрудника для привязки")
-      return
-    }
-    if (!linkEmployee && !fullName.trim()) {
-      setError("Введите ФИО пользователя")
+    if (!selectedEmployee) {
+      setError("Выберите сотрудника")
       return
     }
 
@@ -270,12 +361,9 @@ export function UsersPage() {
 
     const payload: Record<string, unknown> = {
       username: username.trim(),
-      full_name: linkEmployee ? undefined : fullName.trim(),
-      employee_id: linkEmployee && selectedEmployee ? selectedEmployee.id : null,
+      full_name: selectedEmployee.name,
+      employee_id: selectedEmployee.id,
       role: role,
-    }
-    if (password.trim()) {
-      payload.password = password.trim()
     }
 
     try {
@@ -286,7 +374,7 @@ export function UsersPage() {
       }
       setDialogOpen(false)
       loadData()
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(formatApiError(err))
     } finally {
       setSubmitting(false)
@@ -350,7 +438,8 @@ export function UsersPage() {
           </p>
           <ul className="list-disc list-inside text-xs text-muted-foreground pl-1 space-y-1">
             <li>Логин в списке ниже должен <strong>в точности совпадать</strong> с логином пользователя в KTM-2000.</li>
-            <li>Любому зарегистрированному здесь пользователю автоматически выдаются полные права администратора кадровой системы (роль `admin`).</li>
+            <li>Для входа через Telegram укажите <strong>Telegram ID</strong> (при выключенном JIT без привязки вход запрещён).</li>
+            <li>Роль HRMS задаётся в колонке «Роль» (admin / viewer).</li>
           </ul>
         </div>
       </div>
@@ -360,7 +449,7 @@ export function UsersPage() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Поиск по логину или ФИО..."
+            placeholder="Поиск по логину, ФИО, Telegram ID..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 bg-card"
@@ -395,6 +484,7 @@ export function UsersPage() {
                 <th className="px-6 py-3 text-left">Логин в KTM-2000</th>
                 <th className="px-6 py-3 text-left">ФИО пользователя</th>
                 <th className="px-6 py-3 text-left">Связанный сотрудник</th>
+                <th className="px-6 py-3 text-left">Telegram</th>
                 <th className="px-6 py-3 text-left">Роль в HRMS</th>
                 <th className="px-6 py-3 text-left">Дата добавления</th>
                 <th className="px-6 py-3 text-right">Действия</th>
@@ -407,7 +497,14 @@ export function UsersPage() {
                     {u.username}
                   </td>
                   <td className="px-6 py-4 font-medium">
-                    {u.full_name}
+                    <div className="flex items-center gap-3">
+                      <UserAvatar
+                        seed={getUserSeed(u)}
+                        name={u.full_name}
+                        size={32}
+                      />
+                      <span>{u.full_name}</span>
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     {u.employee_name ? (
@@ -422,12 +519,76 @@ export function UsersPage() {
                     )}
                   </td>
                   <td className="px-6 py-4">
+                    {u.telegram_id != null ? (
+                      <div className="space-y-0.5">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800/30">
+                          <span
+                            className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#2AABEE] text-[9px] font-bold text-white"
+                            aria-hidden
+                          >
+                            TG
+                          </span>
+                          Привязан
+                        </span>
+                        <div className="text-[11px] text-muted-foreground font-mono pl-0.5 space-y-0.5">
+                          {u.telegram_username ? (
+                            <a
+                              href={`https://t.me/${u.telegram_username.replace("@", "")}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[#2AABEE] hover:underline underline-offset-2 font-medium"
+                              title="Открыть профиль в Telegram"
+                            >
+                              @{u.telegram_username.replace("@", "")}
+                            </a>
+                          ) : (
+                            <TelegramIdDisplay telegramId={u.telegram_id} />
+                          )}
+                          {u.phone ? <span className="block">Тел: {u.phone}</span> : null}
+                          {u.phone_verified_at ? (
+                            <span className="block text-emerald-600 dark:text-emerald-400">
+                              Телефон подтверждён
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {u.invite_code ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[11px] text-muted-foreground/60 italic">Не привязан</span>
+                            <InviteCodeDisplay inviteCode={u.invite_code} />
+                          </div>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs gap-1 border-dashed hover:border-solid transition-all"
+                            onClick={() => handleGenerateInvite(u.id)}
+                            disabled={generatingInvites[u.id]}
+                          >
+                            {generatingInvites[u.id] ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Plus className="h-3 w-3" />
+                            )}
+                            Сгенерировать инвайт
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
                     <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full ${
                       u.role === "admin"
                         ? "bg-violet-50 text-violet-700 border border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800/30"
                         : "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800/30"
                     }`}>
-                      <Shield className={`h-3.5 w-3.5 ${u.role === "admin" ? "text-violet-600 dark:text-violet-400" : "text-blue-600 dark:text-blue-400"}`} />
+                      {u.role === "admin" ? (
+                        <ShieldCheck className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+                      ) : (
+                        <UserCheck className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                      )}
                       {u.role === "admin" ? "Администратор" : u.role === "viewer" ? "Наблюдатель" : u.role}
                     </span>
                   </td>
@@ -451,17 +612,17 @@ export function UsersPage() {
 
       {/* Диалог создания/редактирования */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-[450px]">
+        <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>
               {dialogMode === "create" ? "Добавление пользователя" : "Редактирование пользователя"}
             </DialogTitle>
             <DialogDescription>
-              Настройте учетные данные и привязку к сотруднику.
+              Настройте учётную запись пользователя и привязку к сотруднику.
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSave} className="space-y-4 py-2">
+          <form onSubmit={handleSave} className="space-y-3.5 py-1">
             {error && (
               <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-md flex items-start gap-2">
                 <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -469,115 +630,73 @@ export function UsersPage() {
               </div>
             )}
 
-            {/* Опция привязки к сотруднику */}
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                type="checkbox"
-                id="link-employee-chk"
-                checked={linkEmployee}
-                onChange={(e) => {
-                  setLinkEmployee(e.target.checked)
-                  if (!e.target.checked) {
-                    setSelectedEmployee(null)
-                  }
-                }}
-                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-              />
-              <label htmlFor="link-employee-chk" className="text-sm font-medium text-foreground cursor-pointer select-none">
-                Связать с сотрудником из реестра
-              </label>
-            </div>
+            {/* Секция 1: Сотрудник и имя */}
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2 text-foreground font-semibold text-sm">
+                <UserIcon className="h-4 w-4 text-primary" />
+                <span>Сотрудник и имя</span>
+              </div>
 
-            {/* Выбор сотрудника */}
-            {linkEmployee ? (
-              <div className="space-y-1.5">
+              {/* Выбор сотрудника */}
+              <div className="space-y-1">
                 <EmployeeSearch
                   value={selectedEmployee}
                   onChange={handleEmployeeChange}
-                  label="Выберите сотрудника"
+                  label="Связать с сотрудником"
                   placeholder="Начните вводить ФИО..."
                   width="w-full"
                 />
               </div>
-            ) : (
-              /* Ручной ввод ФИО */
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  ФИО Пользователя
-                </label>
-                <Input
-                  placeholder="Иванов Иван Иванович"
-                  value={fullName}
-                  onChange={(e) => {
-                    const name = e.target.value
-                    setFullName(name)
-                    if (isUsernameAutoGenerated) {
-                      const generated = generateUsername(name)
-                      setUsername(generated)
-                      setUsernameError(validateUsername(generated))
-                    }
-                  }}
-                  required
-                />
+            </div>
+
+            {/* Секция 2: Доступ */}
+            <div className="space-y-2.5 border-t border-border/40 pt-3">
+              <div className="flex items-center gap-2 text-foreground font-semibold text-sm">
+                <Shield className="h-4 w-4 text-primary" />
+                <span>Учетные данные</span>
               </div>
-            )}
 
-            {/* Имя пользователя (логин) */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Логин (точно как в KTM-2000)
-              </label>
-              <Input
-                placeholder="Например, ivanov_i"
-                value={username}
-                onChange={(e) => {
-                  const val = e.target.value
-                  setUsername(val)
-                  setIsUsernameAutoGenerated(false)
-                  setUsernameError(validateUsername(val))
-                }}
-                required
-                className={usernameError ? "border-destructive focus-visible:ring-destructive" : ""}
-              />
-              {usernameError && (
-                <p className="text-[11px] text-destructive mt-0.5">{usernameError}</p>
-              )}
+              <div className="grid grid-cols-2 gap-4">
+                {/* Логин */}
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Логин
+                  </label>
+                  <Input
+                    placeholder="ivanov_i"
+                    value={username}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setUsername(val)
+                      setUsernameError(validateUsername(val))
+                    }}
+                    required
+                    className={usernameError ? "border-destructive focus-visible:ring-destructive" : ""}
+                  />
+                  {usernameError && (
+                    <p className="text-[11px] text-destructive mt-0.5">{usernameError}</p>
+                  )}
+                </div>
+
+                {/* Роль в системе */}
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Роль
+                  </label>
+                  <Select value={role} onValueChange={setRole}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Выберите роль" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="viewer">Наблюдатель</SelectItem>
+                      <SelectItem value="admin">Администратор</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
 
-            {/* Роль в системе */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Роль в системе
-              </label>
-              <Select value={role} onValueChange={setRole}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Выберите роль" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="viewer">Наблюдатель</SelectItem>
-                  <SelectItem value="admin">Администратор</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Локальный пароль для резервного входа */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Локальный пароль (резервный вход)
-              </label>
-              <Input
-                type="password"
-                placeholder={dialogMode === "edit" ? "Оставьте пустым, чтобы не менять" : "Оставьте пустым для входа только через SSO"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Позволяет входить по логину и паролю, если сервер авторизации KTM-2000 недоступен.
-              </p>
-            </div>
-
-            <DialogFooter className="pt-4">
+            <DialogFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
                 Отмена
               </Button>

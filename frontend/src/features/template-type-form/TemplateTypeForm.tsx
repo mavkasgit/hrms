@@ -287,13 +287,7 @@ export function TemplateTypeForm({
               <FieldGridEditor
                 fields={fields as FieldSchemaItem[]}
                 onChange={(newFields) => setFields(newFields)}
-                templateVariables={templateVariables.map((v) => ({
-                  key: v.key,
-                  name: v.name,
-                  description: v.description,
-                  displayName: v.displayName,
-                  category: v.category,
-                }))}
+                templateVariables={templateVariables}
                 readOnly={isStandard}
               />
             </div>

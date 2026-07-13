@@ -36,7 +36,7 @@ export const AUTO_FILL_RULES: Array<{
     ],
     build: (empData) => {
       const name = empData.name as string | undefined
-      if (!name) return {}
+      if (!name) return {} as Record<string, string>
 
       const parts = name.split(" ")
       const lastName = parts[0] || ""
@@ -68,7 +68,7 @@ export const AUTO_FILL_RULES: Array<{
     keys: ["oznak", "oznak_gender"],
     build: (empData) => {
       const gender = empData.gender as string | undefined
-      if (!gender) return {}
+      if (!gender) return {} as Record<string, string>
       const oznak = gender === "female" ? "ознакомлена" : "ознакомлен"
       return { oznak, oznak_gender: oznak }
     },
@@ -81,7 +81,7 @@ export const AUTO_FILL_RULES: Array<{
       const hireD = isoDate(empData.hire_date)
       const contractStartD = isoDate(empData.contract_start)
       const date = hireD || contractStartD
-      if (!date) return {}
+      if (!date) return {} as Record<string, string>
       return {
         hire_date: date,
         hire_order_date: date,
@@ -93,14 +93,14 @@ export const AUTO_FILL_RULES: Array<{
     keys: ["contract_end"],
     build: (empData) => {
       const d = isoDate(empData.contract_end)
-      return d ? { contract_end: d } : {}
+      return d ? { contract_end: d } : ({} as Record<string, string>)
     },
   },
   {
     keys: ["position", "position_cap"],
     build: (empData) => {
       const position = (empData.position as any)?.name
-      if (!position) return {}
+      if (!position) return {} as Record<string, string>
       return {
         position: position.toLowerCase(),
         position_cap: position.charAt(0).toUpperCase() + position.slice(1).toLowerCase(),
@@ -111,14 +111,14 @@ export const AUTO_FILL_RULES: Array<{
     keys: ["department"],
     build: (empData) => {
       const department = (empData.department as any)?.name
-      return department ? { department } : {}
+      return department ? { department } : ({} as Record<string, string>)
     },
   },
   {
     keys: ["tab_number"],
     build: (empData) => {
       const tab = empData.tab_number
-      return tab ? { tab_number: String(tab) } : {}
+      return tab ? { tab_number: String(tab) } : ({} as Record<string, string>)
     },
   },
   {

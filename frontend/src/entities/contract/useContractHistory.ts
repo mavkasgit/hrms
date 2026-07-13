@@ -39,7 +39,7 @@ export function useContractYears() {
 
 export function useContractRegistry(params: UseContractRegistryParams = {}) {
   return useQuery({
-    queryKey: CONTRACT_HISTORY_KEYS.registry(params),
+    queryKey: CONTRACT_HISTORY_KEYS.registry({ ...params } as Record<string, unknown>),
     queryFn: async () => {
       const queryParams: Record<string, string | number> = {}
       if (params.page !== undefined) queryParams.page = params.page

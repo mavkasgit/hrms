@@ -68,7 +68,7 @@ export function ComboboxCreate({
 
   const handleCreate = useCallback(async () => {
     const name = search.trim()
-    if (!name || creating) return
+    if (!name || creating || !onCreate) return
     setCreating(true)
     try {
       const newId = await onCreate(name)

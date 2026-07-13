@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as api from "./api"
 import type { OrderCreate, OrderUpdate, OrdersQueryParams, OrderTypeCreate, OrderTypeUpdate, OrderDeletionPreview, VacationUnpaidGroupOrderCreate, WeekendCallGroupOrderCreate } from "./types"
 
-export function useOrders(params: OrdersQueryParams) {
+export function useOrders(params: OrdersQueryParams | null | undefined) {
   return useQuery({
     queryKey: ["orders", params],
-    queryFn: () => api.fetchOrders(params),
+    queryFn: () => api.fetchOrders(params as OrdersQueryParams),
+    enabled: params != null,
   })
 }
 
