@@ -71,15 +71,19 @@ def bot_configured():
     orig_user = settings.TELEGRAM_BOT_USERNAME
     orig_secret = settings.TELEGRAM_WEBHOOK_SECRET
     orig_token = settings.TELEGRAM_BOT_TOKEN
+    orig_poll = settings.TELEGRAM_UPDATES_POLLING
     settings.TELEGRAM_BOT_USERNAME = "hrms_test_bot"
     settings.TELEGRAM_WEBHOOK_SECRET = "test-webhook-secret"
     settings.TELEGRAM_BOT_TOKEN = "123456:ABC-DEF_test_bot_token"
+    # Unit tests use mock webhook, not live getUpdates.
+    settings.TELEGRAM_UPDATES_POLLING = False
     try:
         yield
     finally:
         settings.TELEGRAM_BOT_USERNAME = orig_user
         settings.TELEGRAM_WEBHOOK_SECRET = orig_secret
         settings.TELEGRAM_BOT_TOKEN = orig_token
+        settings.TELEGRAM_UPDATES_POLLING = orig_poll
 
 
 def _sign_widget_payload(bot_token: str, fields: dict) -> dict:
@@ -417,7 +421,9 @@ async def test_resolve_does_not_auto_link_by_phone(db_session, jit_off):
 
 async def test_bot_challenge_not_configured_503(db_session):
     original = settings.TELEGRAM_BOT_USERNAME
+    original_bypass = settings.DEV_BYPASS_AUTH
     settings.TELEGRAM_BOT_USERNAME = ""
+    settings.DEV_BYPASS_AUTH = False
     try:
         service = TelegramAuthService(db_session)
         with pytest.raises(HTTPException) as exc_info:
@@ -426,6 +432,174 @@ async def test_bot_challenge_not_configured_503(db_session):
         assert exc_info.value.detail == "telegram_not_configured"
     finally:
         settings.TELEGRAM_BOT_USERNAME = original
+        settings.DEV_BYPASS_AUTH = original_bypass
+
+
+async def test_fake_confirm_only_when_explicitly_enabled(db_session):
+    """TELEGRAM_DEV_FAKE_CONFIRM=false: no bot → 503 (no username fake login)."""
+    original_user = settings.TELEGRAM_BOT_USERNAME
+    original_fake = settings.TELEGRAM_DEV_FAKE_CONFIRM
+    original_env = settings.ENV
+    settings.TELEGRAM_BOT_USERNAME = ""
+    settings.TELEGRAM_DEV_FAKE_CONFIRM = False
+    settings.ENV = "development"
+    try:
+        service = TelegramAuthService(db_session)
+        with pytest.raises(HTTPException) as exc_info:
+            await service.create_bot_challenge(purpose="login")
+        assert exc_info.value.status_code == 503
+    finally:
+        settings.TELEGRAM_BOT_USERNAME = original_user
+        settings.TELEGRAM_DEV_FAKE_CONFIRM = original_fake
+        settings.ENV = original_env
+
+
+async def test_dev_qr_challenge_and_confirm(db_session):
+    """Explicit TELEGRAM_DEV_FAKE_CONFIRM: QR without bot → confirm username → JWT."""
+    original_user = settings.TELEGRAM_BOT_USERNAME
+    original_fake = settings.TELEGRAM_DEV_FAKE_CONFIRM
+    original_env = settings.ENV
+    settings.TELEGRAM_BOT_USERNAME = ""
+    settings.TELEGRAM_DEV_FAKE_CONFIRM = True
+    settings.ENV = "development"
+    try:
+        create_payload = UserCreate(
+            username="dev_qr_user",
+            full_name="Dev QR User",
+            role="admin",
+            password="secret",
+        )
+        await create_user(payload=create_payload, db=db_session, _current_user="admin")
+
+        service = TelegramAuthService(db_session)
+        created = await service.create_bot_challenge(purpose="login")
+        assert "/api/auth/telegram/bot/dev-confirm" in created["deep_link"]
+        assert "token=" in created["deep_link"]
+        assert created["poll_secret"] not in created["deep_link"]
+
+        from urllib.parse import parse_qs, urlparse
+
+        qs = parse_qs(urlparse(created["deep_link"]).query)
+        token = qs["token"][0]
+
+        confirmed = await service.confirm_dev_challenge(
+            token=token, username="dev_qr_user"
+        )
+        assert confirmed["ok"] is True
+        assert confirmed["username"] == "dev_qr_user"
+
+        first = await service.poll_bot_challenge(
+            created["challenge_id"], poll_secret=created["poll_secret"]
+        )
+        assert first["status"] == "confirmed"
+        assert first["access_token"]
+        assert first["username"] == "dev_qr_user"
+
+        second = await service.poll_bot_challenge(
+            created["challenge_id"], poll_secret=created["poll_secret"]
+        )
+        assert second["status"] == "consumed"
+        assert second["access_token"] is None
+    finally:
+        settings.TELEGRAM_BOT_USERNAME = original_user
+        settings.TELEGRAM_DEV_FAKE_CONFIRM = original_fake
+        settings.ENV = original_env
+
+
+async def test_oidc_config_bot_enabled_with_username():
+    original_user = settings.TELEGRAM_BOT_USERNAME
+    original_client = settings.TELEGRAM_OIDC_CLIENT_ID
+    original_fake = settings.TELEGRAM_DEV_FAKE_CONFIRM
+    settings.TELEGRAM_BOT_USERNAME = "my_hrms_bot"
+    settings.TELEGRAM_OIDC_CLIENT_ID = ""
+    settings.TELEGRAM_DEV_FAKE_CONFIRM = False
+    try:
+        cfg = await get_telegram_oidc_config()
+        assert cfg.bot_enabled is True
+        assert cfg.dev_qr is False
+        assert cfg.bot_username == "my_hrms_bot"
+        assert cfg.enabled is False
+    finally:
+        settings.TELEGRAM_BOT_USERNAME = original_user
+        settings.TELEGRAM_OIDC_CLIENT_ID = original_client
+        settings.TELEGRAM_DEV_FAKE_CONFIRM = original_fake
+
+
+async def test_poll_drains_real_telegram_updates(db_session, jit_on):
+    """TELEGRAM_UPDATES_POLLING: pending poll pulls getUpdates → real tg id → JWT."""
+    original_user = settings.TELEGRAM_BOT_USERNAME
+    original_token = settings.TELEGRAM_BOT_TOKEN
+    original_poll = settings.TELEGRAM_UPDATES_POLLING
+    settings.TELEGRAM_BOT_USERNAME = "hrms_poll_bot"
+    settings.TELEGRAM_BOT_TOKEN = "999:TESTTOKEN"
+    settings.TELEGRAM_UPDATES_POLLING = True
+    # reset module offset between tests
+    import app.services.telegram_auth_service as tg_mod
+
+    tg_mod._telegram_updates_offset = None
+    tg_mod._telegram_webhook_cleared_for_polling = False
+
+    try:
+        service = TelegramAuthService(db_session)
+        created = await service.create_bot_challenge(purpose="login")
+        start_token = created["deep_link"].split("start=")[1]
+
+        fake_updates = {
+            "ok": True,
+            "result": [
+                {
+                    "update_id": 42,
+                    "message": {
+                        "message_id": 1,
+                        "text": f"/start {start_token}",
+                        "from": {
+                            "id": 777001,
+                            "first_name": "Real",
+                            "username": "real_tg_user",
+                        },
+                        "chat": {"id": 777001, "type": "private"},
+                    },
+                }
+            ],
+        }
+
+        class _Resp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return fake_updates
+
+        class _Client:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return None
+
+            async def get(self, url, params=None):
+                assert "getUpdates" in url
+                return _Resp()
+
+            async def post(self, url, json=None):
+                assert "deleteWebhook" in url
+                return _Resp()
+
+        with patch("app.services.telegram_auth_service.httpx.AsyncClient", _Client):
+            first = await service.poll_bot_challenge(
+                created["challenge_id"], poll_secret=created["poll_secret"]
+            )
+
+        assert first["status"] == "confirmed"
+        assert first["access_token"]
+        assert first["username"]  # JIT created tg_777001
+    finally:
+        settings.TELEGRAM_BOT_USERNAME = original_user
+        settings.TELEGRAM_BOT_TOKEN = original_token
+        settings.TELEGRAM_UPDATES_POLLING = original_poll
 
 
 async def test_bot_challenge_create_and_pending_poll(db_session, bot_configured):
@@ -730,7 +904,7 @@ async def test_link_and_unlink_via_challenge(db_session, bot_configured, create_
             "update_id": 5,
             "message": {
                 "text": f"/start {token}",
-                "from": {"id": 333444, "first_name": "Linkable"},
+                "from": {"id": 333444, "first_name": "Linkable", "username": "linkable_tg"},
             },
         },
         secret_header=settings.TELEGRAM_WEBHOOK_SECRET,
@@ -741,10 +915,59 @@ async def test_link_and_unlink_via_challenge(db_session, bot_configured, create_
     )
     assert linked["linked"] is True
     assert linked["telegram_id"] == 333444
+    assert user.telegram_username == "linkable_tg"
 
     unlinked = await service.unlink_current_user(user)
     assert unlinked["linked"] is False
     assert unlinked["telegram_id"] is None
+    assert user.telegram_username is None
+
+
+async def test_link_via_challenge_with_jit_enabled(db_session, bot_configured, jit_on, create_employee):
+    """Verify that even with JIT enabled, linking Telegram to an existing user does not provision a new user."""
+    employee = await create_employee()
+    await db_session.commit()
+    create_payload = UserCreate(
+        username="link_jit_user",
+        full_name="Link JIT User",
+        employee_id=employee.id,
+        role="viewer",
+        password="password123",
+    )
+    await create_user(payload=create_payload, db=db_session, _current_user="admin")
+    await db_session.commit()
+
+    service = TelegramAuthService(db_session)
+    user = await service.get_user_by_username("link_jit_user")
+    assert user is not None
+
+    ch = await service.create_bot_challenge(purpose="link", user_id=user.id)
+    token = ch["deep_link"].split("start=")[1]
+    
+    # Process /start token from a Telegram ID that doesn't exist yet
+    await service.handle_webhook(
+        {
+            "update_id": 55,
+            "message": {
+                "text": f"/start {token}",
+                "from": {"id": 888999, "first_name": "JIT-proof", "username": "jit_proof_tg"},
+            },
+        },
+        secret_header=settings.TELEGRAM_WEBHOOK_SECRET,
+    )
+
+    # Verify that a user named 'jit_proof_tg' or with telegram_id=888999 was NOT created
+    repo = UserRepository()
+    tg_user = await repo.get_by_telegram_id(db_session, 888999)
+    assert tg_user is None, "Should not auto-create a user during a link challenge even if JIT is enabled"
+
+    # Now verify linking is successful
+    linked = await service.link_to_current_user(
+        user, challenge_id=ch["challenge_id"]
+    )
+    assert linked["linked"] is True
+    assert linked["telegram_id"] == 888999
+    assert user.telegram_username == "jit_proof_tg"
 
 
 async def test_link_via_oidc_id_token(db_session, oidc_client_id, create_employee):
@@ -812,3 +1035,116 @@ async def test_router_webhook_and_poll_helpers(db_session, bot_configured, jit_o
     )
     assert polled.status == "confirmed"
     assert polled.access_token
+
+
+async def test_widget_login_replay_prevention(db_session, bot_configured, jit_on):
+    """widget signature already used -> 401."""
+    fields = {
+        "id": 9001002,
+        "first_name": "WidgetReplay",
+        "last_name": "User",
+        "username": "widget_replay_user",
+        "auth_date": int(time.time()),
+    }
+    signed = _sign_widget_payload(settings.TELEGRAM_BOT_TOKEN, fields)
+    payload = TelegramWidgetLoginRequest(**signed)
+
+    # First request should succeed
+    response = await telegram_widget_login(payload=payload, db=db_session)
+    assert response.access_token
+
+    # Second request with the same payload (same HMAC hash) should be rejected
+    with pytest.raises(HTTPException) as exc_info:
+        await telegram_widget_login(payload=payload, db=db_session)
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "telegram_signature_already_used"
+
+
+async def test_dev_confirm_blocked_in_production(db_session):
+    """ENV = 'production' -> dev-confirm returns 404 Not Found."""
+    from app.api.telegram_auth import bot_dev_confirm_page, bot_dev_confirm_submit
+    from fastapi import Request
+    from starlette.datastructures import Headers
+
+    original_env = settings.ENV
+    original_fake = settings.TELEGRAM_DEV_FAKE_CONFIRM
+    settings.ENV = "production"
+    settings.TELEGRAM_DEV_FAKE_CONFIRM = True
+    try:
+        # GET request to dev-confirm should raise 404
+        with pytest.raises(HTTPException) as exc_info_get:
+            await bot_dev_confirm_page(token="some-token")
+        assert exc_info_get.value.status_code == 404
+        assert exc_info_get.value.detail == "not_found"
+
+        # POST request to dev-confirm should raise 404
+        scope = {
+            "type": "http",
+            "headers": Headers({"content-type": "application/json"}).raw,
+        }
+        mock_request = Request(scope)
+        with pytest.raises(HTTPException) as exc_info_post:
+            await bot_dev_confirm_submit(request=mock_request, db=db_session)
+        assert exc_info_post.value.status_code == 404
+        assert exc_info_post.value.detail == "not_found"
+    finally:
+        settings.ENV = original_env
+        settings.TELEGRAM_DEV_FAKE_CONFIRM = original_fake
+
+
+async def test_jwks_rotation_on_unknown_kid(db_session, oidc_client_id):
+    """
+    Test JWKS rotation: cache is cleared and refetched when an unknown kid is encountered,
+    allowing successful validation if the key is present in the updated JWKS.
+    """
+    import app.services.telegram_auth_service as tg_mod
+
+    # Reset JWKS module variables
+    tg_mod._jwks_cache = (time.time(), {"keys": [{"kid": "old-kid"}]})
+    tg_mod._last_jwks_reset_time = 0.0
+
+    service = TelegramAuthService(db_session)
+
+    id_token = "fake.id.token"
+    nonce = "expected-nonce"
+
+    fake_claims = {
+        "iss": "https://oauth.telegram.org",
+        "aud": oidc_client_id,
+        "exp": int(time.time()) + 3600,
+        "id": 12345,
+        "nonce": nonce,
+    }
+
+    jwks_old = {"keys": [{"kid": "old-kid"}]}
+    jwks_new = {"keys": [{"kid": "new-kid"}]}
+
+    mock_fetch_jwks = AsyncMock(side_effect=[jwks_old, jwks_new])
+
+    with (
+        patch("app.services.telegram_auth_service.jwt.get_unverified_header", return_value={"kid": "new-kid"}),
+        patch.object(TelegramAuthService, "_fetch_jwks", mock_fetch_jwks),
+        patch("app.services.telegram_auth_service.jwt.decode", return_value=fake_claims) as mock_decode,
+    ):
+        claims = await service.verify_oidc_id_token(id_token, nonce)
+        assert claims == fake_claims
+
+        # Verify that _fetch_jwks was called twice (first to get keys, second on retry after clear)
+        assert mock_fetch_jwks.call_count == 2
+        # Verify cache was cleared
+        assert tg_mod._jwks_cache is None
+        # Verify jwt.decode was called with updated JWKS
+        mock_decode.assert_called_once_with(
+            id_token,
+            jwks_new,
+            algorithms=tg_mod.TELEGRAM_OIDC_ALGORITHMS,
+            audience=oidc_client_id,
+            issuer=tg_mod.TELEGRAM_OIDC_ISSUER,
+            options={
+                "verify_aud": True,
+                "verify_iss": True,
+                "verify_exp": True,
+                "require_exp": True,
+            },
+        )
+
