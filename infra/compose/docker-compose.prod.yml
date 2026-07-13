@@ -56,16 +56,11 @@ services:
     env_file:
       - ../../.env.prod
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-hrms_user}:${POSTGRES_PASSWORD:-hrms_pass_prod}@postgres:5432/${POSTGRES_DB:-hrms_prod}
       ENV: prod
       TZ: ${TZ:-Europe/Moscow}
       SECRET_KEY: ${SECRET_KEY:-hrms-prod-local-secret-change-before-real-production}
       ONLYOFFICE_ENABLED: "true"
-      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice-prod-secret-change-before-real-production}
       # ONLYOFFICE_PUBLIC_URL: empty (will fall back to dynamic request host)
-      ONLYOFFICE_INTERNAL_URL: ${ONLYOFFICE_INTERNAL_URL:-http://nginx/onlyoffice}
-      BACKEND_INTERNAL_CALLBACK_URL: ${BACKEND_INTERNAL_CALLBACK_URL:-http://backend:8000}
-      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://backend:8000}
       HTTP_PROXY: ""
       http_proxy: ""
       HTTPS_PROXY: ""
