@@ -179,17 +179,22 @@ api.interceptors.response.use(
 
     console.error("[API Error]", error.response?.status, error.response?.data || error.message)
     
-    // 401 Unauthorized всегда обрабатываем перенаправлением
+    // 401 Unauthorized обрабатываем перенаправлением, только если мы не на странице логина и это не запрос авторизации
     if (error.response?.status === 401) {
-      localStorage.removeItem("token")
-      localStorage.removeItem("ktm2000_token")
-      document.cookie = "ktm2000_token=; path=/; max-age=0"
-      showGlobalToast({
-        title: "Сессия истекла",
-        description: "Необходимо войти заново для продолжения работы.",
-        variant: "destructive",
-      })
-      window.location.href = "/login"
+      const isLoginRequest = error.config?.url?.includes("/auth/")
+      const isLoginPage = window.location.pathname === "/login"
+      
+      if (!isLoginRequest && !isLoginPage) {
+        localStorage.removeItem("token")
+        localStorage.removeItem("ktm2000_token")
+        document.cookie = "ktm2000_token=; path=/; max-age=0"
+        showGlobalToast({
+          title: "Сессия истекла",
+          description: "Необходимо войти заново для продолжения работы.",
+          variant: "destructive",
+        })
+        window.location.href = "/login"
+      }
       return Promise.reject(error)
     }
 

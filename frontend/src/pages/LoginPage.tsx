@@ -1,36 +1,49 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Loader2, Bug, LogIn, AlertCircle } from "lucide-react"
-import { loginWithPassword, redirectToKtmLogin, isDevMode, pingKtm } from "@/shared/api/axios"
+import api, { loginWithPassword, isDevMode } from "@/shared/api/axios"
+import { TelegramIcon } from "@/shared/ui/icons"
 import {
   fetchTelegramOidcConfig,
-  startTelegramLogin,
-  startTelegramBotLogin,
-  telegramDeepLinkQrUrl,
   type TelegramOidcConfig,
-  type TelegramBotChallenge,
+  type TelegramLoginResponse,
 } from "@/shared/api/telegramAuth"
+import { TelegramLoginModal } from "@/features/auth/telegram/TelegramLoginModal"
+import { Button } from "@/shared/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/ui/dialog"
 
 export function LoginPage() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isKtmDown, setIsKtmDown] = useState(false)
   const [telegramConfig, setTelegramConfig] = useState<TelegramOidcConfig | null>(null)
-  const [botChallenge, setBotChallenge] = useState<TelegramBotChallenge | null>(null)
-  const [botPolling, setBotPolling] = useState(false)
-  const botAbortRef = useRef<AbortController | null>(null)
+  const [tgModalOpen, setTgModalOpen] = useState(false)
+  const [inviteModalOpen, setInviteModalOpen] = useState(false)
+  const [inviteCodeInput, setInviteCodeInput] = useState("")
+  const [inviteError, setInviteError] = useState<string | null>(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
+
+  // Состояние для установки пароля
+  const [setupPasswordModalOpen, setSetupPasswordModalOpen] = useState(false)
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [setupLoading, setSetupLoading] = useState(false)
+  const [setupError, setSetupError] = useState<string | null>(null)
 
   const devMode = isDevMode()
-  const botEnabled = Boolean(telegramConfig?.bot_username)
-
-  useEffect(() => {
-    async function checkKtm() {
-      const isUp = await pingKtm()
-      setIsKtmDown(!isUp)
-    }
-    checkKtm()
-  }, [])
+  const botEnabled =
+    Boolean(telegramConfig?.bot_enabled) ||
+    Boolean(telegramConfig?.bot_username) ||
+    Boolean(telegramConfig?.dev_qr)
+  const widgetEnabled = Boolean(telegramConfig?.enabled)
+  const telegramEnabled = widgetEnabled || botEnabled
 
   useEffect(() => {
     let cancelled = false
@@ -45,54 +58,8 @@ export function LoginPage() {
     loadTelegramConfig()
     return () => {
       cancelled = true
-      botAbortRef.current?.abort()
     }
   }, [])
-
-  async function handleTelegramLogin() {
-    if (!telegramConfig?.enabled) return
-    setError(null)
-    setLoading(true)
-    try {
-      await startTelegramLogin(telegramConfig)
-      window.location.href = "/"
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Ошибка входа через Telegram")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleTelegramBotLogin() {
-    if (!botEnabled) return
-    setError(null)
-    setLoading(true)
-    setBotPolling(true)
-    botAbortRef.current?.abort()
-    const controller = new AbortController()
-    botAbortRef.current = controller
-    try {
-      await startTelegramBotLogin({
-        onChallenge: (ch) => setBotChallenge(ch),
-        signal: controller.signal,
-      })
-      window.location.href = "/"
-    } catch (err: unknown) {
-      if (!controller.signal.aborted) {
-        setError(err instanceof Error ? err.message : "Ошибка входа через Telegram-бота")
-      }
-    } finally {
-      setLoading(false)
-      setBotPolling(false)
-    }
-  }
-
-  function cancelBotLogin() {
-    botAbortRef.current?.abort()
-    setBotChallenge(null)
-    setBotPolling(false)
-    setLoading(false)
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -108,6 +75,58 @@ export function LoginPage() {
     }
   }
 
+  async function handleTelegramSuccess(data: TelegramLoginResponse) {
+    if (data.require_password_setup) {
+      setSetupPasswordModalOpen(true)
+    } else {
+      window.location.href = "/"
+    }
+  }
+
+  async function handleSetupPasswordSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (newPassword !== confirmPassword) {
+      setSetupError("Пароли не совпадают")
+      return
+    }
+    if (newPassword.length < 4) {
+      setSetupError("Пароль должен быть не менее 4 символов")
+      return
+    }
+    setSetupLoading(true)
+    setSetupError(null)
+    try {
+      await api.post("/users/me/setup-password", { password: newPassword })
+      window.location.href = "/"
+    } catch (err: unknown) {
+      setSetupError(err instanceof Error ? err.message : "Не удалось сохранить пароль")
+    } finally {
+      setSetupLoading(false)
+    }
+  }
+
+  async function handleInviteSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (inviteCodeInput.trim().length !== 6) return
+    setInviteLoading(true)
+    setInviteError(null)
+    try {
+      const response = await api.post("/auth/invite/login", {
+        invite_code: inviteCodeInput.trim(),
+      }, { skipGlobalToast: true })
+      localStorage.setItem("token", response.data.access_token)
+      window.location.href = "/"
+    } catch (err: any) {
+      setInviteError(
+        err.response?.data?.detail || err.message || "Ошибка входа по коду приглашения"
+      )
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  // SSO click handler removed as SSO is hidden
+
   async function loginAsDev(role: "admin" | "viewer") {
     setLoading(true)
     setError(null)
@@ -116,8 +135,7 @@ export function LoginPage() {
       // (в dev-режиме бэкенд принимает пароль "dev" для любого пользователя)
       await loginWithPassword(role, "dev")
     } catch {
-      // Если собственный токен получить не удалось — fallback на упрощённый bypass-токен
-      // KTM-2000 в этом случае вообще не используется (он читается в getToken только если "token" пуст)
+      // Fallback на упрощённый bypass-токен, если собственный получить не удалось
       localStorage.setItem("token", role)
     } finally {
       setLoading(false)
@@ -136,15 +154,7 @@ export function LoginPage() {
         </div>
 
         {/* Форма логин/пароль */}
-        {isKtmDown && (
-          <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl p-3.5">
-            <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p className="font-semibold">Сервер авторизации KTM-2000 недоступен</p>
-              <p className="text-red-600">Вы переведены в локальный режим авторизации. Пожалуйста, войдите под своим логином и паролем.</p>
-            </div>
-          </div>
-        )}
+
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
@@ -188,80 +198,35 @@ export function LoginPage() {
           </button>
         </form>
 
-        {/* Разделитель */}
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t border-slate-200" />
-          </div>
-          <div className="relative flex justify-center text-xs">
-            <span className="bg-white px-3 text-slate-400">или</span>
-          </div>
-        </div>
+        {/* SSO кнопка скрыта по требованию */}
 
-        {/* SSO кнопка */}
-        <button
-          onClick={redirectToKtmLogin}
-          disabled={isKtmDown}
-          className="w-full flex items-center justify-center gap-2 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 text-slate-700 font-medium py-2.5 px-4 rounded-xl border border-slate-200 transition-colors cursor-pointer disabled:cursor-not-allowed text-sm"
-        >
-          Войти через SSO (KTM-2000) {isKtmDown && "(недоступен)"}
-        </button>
-
-        {/* Telegram OIDC — только если backend вернул enabled (client_id задан) */}
-        {telegramConfig?.enabled && (
-          <button
-            type="button"
-            onClick={handleTelegramLogin}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-[#2AABEE] hover:bg-[#229ED9] disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
-          >
-            {loading && !botPolling ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Войти через Telegram
-          </button>
-        )}
-
-        {/* Telegram Bot deep-link / QR — если bot_username задан */}
-        {botEnabled && (
-          <div className="space-y-3">
+        {/* Telegram: две кнопки */}
+        {telegramEnabled && (
+          <div className="space-y-2">
             <button
               type="button"
-              onClick={handleTelegramBotLogin}
+              onClick={() => {
+                setInviteCodeInput("")
+                setInviteError(null)
+                setInviteModalOpen(true)
+              }}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-white hover:bg-sky-50 disabled:opacity-60 text-[#2AABEE] font-medium py-2.5 px-4 rounded-xl border border-[#2AABEE]/40 transition-colors cursor-pointer text-sm"
+              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white font-semibold py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
             >
-              {botPolling ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Войти через Telegram-бота
+              <LogIn className="h-4 w-4" />
+              Вход по коду приглашения
             </button>
-
-            {botChallenge && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3 text-center">
-                <p className="text-xs text-slate-600">
-                  Откройте ссылку в Telegram или отсканируйте QR. Ожидаем подтверждение…
-                </p>
-                <img
-                  src={telegramDeepLinkQrUrl(botChallenge.deep_link, 180)}
-                  alt="QR для входа через Telegram"
-                  width={180}
-                  height={180}
-                  className="mx-auto rounded-lg bg-white p-2 border border-slate-200"
-                />
-                <a
-                  href={botChallenge.deep_link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block text-xs text-[#2AABEE] hover:underline break-all"
-                >
-                  {botChallenge.deep_link}
-                </a>
-                <button
-                  type="button"
-                  onClick={cancelBotLogin}
-                  className="text-xs text-slate-500 hover:text-slate-700 underline cursor-pointer"
-                >
-                  Отменить
-                </button>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                setTgModalOpen(true)
+              }}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 bg-[#2AABEE] hover:bg-[#229ED9] disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
+            >
+              <TelegramIcon className="h-5 w-5" />
+              Войти через Telegram
+            </button>
           </div>
         )}
 
@@ -298,6 +263,140 @@ export function LoginPage() {
           </div>
         )}
       </div>
+
+      <Dialog open={inviteModalOpen} onOpenChange={setInviteModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Вход по коду приглашения</DialogTitle>
+            <DialogDescription>
+              Введите 6-значный цифровой инвайт-код для входа в систему.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleInviteSubmit} className="space-y-4 py-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">Инвайт-код</label>
+              <input
+                type="text"
+                value={inviteCodeInput}
+                onChange={(e) => {
+                  setInviteCodeInput(e.target.value.replace(/\D/g, '').slice(0, 6))
+                  setInviteError(null)
+                }}
+                placeholder="000000"
+                required
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 bg-white text-slate-900 placeholder:text-slate-400 uppercase font-mono text-center tracking-widest text-lg"
+              />
+            </div>
+            {inviteError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {inviteError}
+              </p>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setInviteModalOpen(false)}
+                disabled={inviteLoading}
+              >
+                Отмена
+              </Button>
+              <Button
+                type="submit"
+                disabled={inviteCodeInput.trim().length !== 6 || inviteLoading}
+                className="bg-amber-500 hover:bg-amber-600 text-white font-medium flex items-center justify-center gap-1.5"
+              >
+                {inviteLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                Войти
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <TelegramLoginModal
+        open={tgModalOpen}
+        onOpenChange={setTgModalOpen}
+        config={telegramConfig}
+        onSuccess={handleTelegramSuccess}
+      />
+
+      <Dialog open={setupPasswordModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Установка пароля</DialogTitle>
+            <DialogDescription>
+              Для вашего аккаунта необходимо установить пароль. Это позволит вам входить в систему без использования Telegram.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSetupPasswordSubmit} className="space-y-4 py-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">Новый пароль</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => {
+                  setNewPassword(e.target.value)
+                  setSetupError(null)
+                }}
+                placeholder="Минимум 4 символа"
+                required
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 bg-white text-slate-900 placeholder:text-slate-400"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">Подтвердите пароль</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value)
+                  setSetupError(null)
+                }}
+                placeholder="Повторите пароль"
+                required
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 bg-white text-slate-900 placeholder:text-slate-400"
+              />
+            </div>
+
+            {newPassword && confirmPassword && newPassword !== confirmPassword && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5" />
+                Пароли не совпадают
+              </p>
+            )}
+
+            {newPassword && newPassword.length < 4 && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5" />
+                Пароль должен содержать не менее 4 символов
+              </p>
+            )}
+
+            {setupError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5" />
+                {setupError}
+              </p>
+            )}
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="submit"
+                disabled={
+                  setupLoading ||
+                  newPassword.length < 4 ||
+                  newPassword !== confirmPassword
+                }
+                className="w-full bg-slate-900 hover:bg-slate-700 text-white font-medium flex items-center justify-center gap-1.5"
+              >
+                {setupLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                Сохранить пароль
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

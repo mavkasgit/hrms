@@ -18,6 +18,10 @@ export type TelegramOidcConfig = {
   bot_username: string
   authorize_url: string
   scopes: string[]
+  /** Real bot username or dev QR path available */
+  bot_enabled?: boolean
+  /** QR opens local confirm page (no Telegram bot) */
+  dev_qr?: boolean
 }
 
 export type TelegramLoginResponse = {
@@ -26,6 +30,7 @@ export type TelegramLoginResponse = {
   username: string
   role: string
   full_name: string
+  require_password_setup?: boolean
 }
 
 export type TelegramBotChallenge = {
@@ -43,6 +48,7 @@ export type TelegramBotChallengeStatus = {
   username: string | null
   role: string | null
   full_name: string | null
+  require_password_setup?: boolean
 }
 
 /** Fields returned by Telegram Login Widget / Telegram.Login.auth (legacy). */
@@ -299,6 +305,26 @@ export async function createTelegramBotChallenge(): Promise<TelegramBotChallenge
   return challenge
 }
 
+/** Create invite challenge → deep_link + poll_secret (store secret in sessionStorage). */
+export async function createTelegramBotInviteChallenge(inviteCode: string): Promise<TelegramBotChallenge> {
+  const response = await fetch(`${API_BASE}/auth/telegram/bot/challenge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ purpose: "invite", invite_code: inviteCode }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    const detail =
+      typeof data.detail === "string" ? data.detail : "Не удалось активировать инвайт-код"
+    throw new Error(detail)
+  }
+  const challenge: TelegramBotChallenge = await response.json()
+  if (challenge.poll_secret) {
+    storeBotPollSecret(challenge.challenge_id, challenge.poll_secret)
+  }
+  return challenge
+}
+
 export async function pollTelegramBotChallenge(
   challengeId: string,
   pollSecret?: string
@@ -337,34 +363,38 @@ export async function pollTelegramBotChallenge(
   return response.json()
 }
 
-/** QR image URL without adding a npm dependency (external chart API). */
-export function telegramDeepLinkQrUrl(deepLink: string, size = 200): string {
-  const data = encodeURIComponent(deepLink)
-  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${data}`
-}
-
 export type BotLoginHandlers = {
   onChallenge: (challenge: TelegramBotChallenge) => void
   onStatus?: (status: TelegramBotChallengeStatus["status"]) => void
   signal?: AbortSignal
+  /**
+   * Whether to auto-open the deep link in a new tab. Default true
+   * (preserves prior UX for callers that want a "one click" flow).
+   * Set false for QR-only flows where the user scans the code with a phone.
+   */
+  openDeepLink?: boolean
 }
 
 /**
- * Create challenge, open deep link, poll every 1.5s with poll_secret until done.
- * On success stores JWT in localStorage.token.
+ * Create challenge, optionally open deep link, poll every 1.5s with
+ * poll_secret until done. On success stores JWT in localStorage.token.
  */
 export async function startTelegramBotLogin(
-  handlers: BotLoginHandlers = { onChallenge: () => undefined }
+  handlers: BotLoginHandlers = { onChallenge: () => undefined },
+  inviteCode?: string
 ): Promise<TelegramLoginResponse> {
-  const challenge = await createTelegramBotChallenge()
+  const challenge = inviteCode
+    ? await createTelegramBotInviteChallenge(inviteCode)
+    : await createTelegramBotChallenge()
   handlers.onChallenge(challenge)
 
-  try {
-    window.open(challenge.deep_link, "_blank", "noopener,noreferrer")
-  } catch {
-    // ignore popup blockers — user can open link / scan QR manually
+  if (handlers.openDeepLink !== false) {
+    try {
+      window.open(challenge.deep_link, "_blank", "noopener,noreferrer")
+    } catch {
+      // ignore popup blockers — user can open link / scan QR manually
+    }
   }
-
   const deadline = Date.now() + challenge.expires_in * 1000
   const pollSecret = challenge.poll_secret
 
@@ -410,6 +440,7 @@ export async function startTelegramBotLogin(
             username: status.username || "",
             role: status.role || "",
             full_name: status.full_name || "",
+            require_password_setup: status.require_password_setup,
           })
           return
         }
@@ -437,4 +468,39 @@ export async function startTelegramBotLogin(
 
     timer = setTimeout(tick, BOT_POLL_INTERVAL_MS)
   })
+}
+
+export function translateTelegramError(detail: string): string {
+  switch (detail) {
+    case "telegram_not_allowed":
+      return "Данный аккаунт Telegram не зарегистрирован или не привязан к системе. Войдите по паролю или инвайт-коду и привяжите Telegram в настройках профиля."
+    case "telegram_already_linked":
+      return "Этот аккаунт Telegram уже привязан к другому пользователю."
+    case "challenge_expired":
+      return "Срок действия запроса истек. Пожалуйста, обновите QR-код."
+    case "challenge_not_found":
+      return "Запрос авторизации не найден или был аннулирован."
+    case "challenge_not_confirmed":
+      return "Вход еще не подтвержден в Telegram-боте. Откройте бота и нажмите СТАРТ."
+    case "invalid_purpose":
+      return "Неверная цель запроса авторизации."
+    case "user_not_found":
+      return "Пользователь с таким именем не найден."
+    case "telegram_invalid_token":
+      return "Неверный токен авторизации Telegram."
+    case "telegram_bot_not_configured":
+      return "Интеграция с Telegram-ботом не настроена на сервере."
+    case "invite_code_required":
+      return "Код приглашения обязателен для входа."
+    case "invalid_invite_code":
+      return "Введен неверный код приглашения."
+    case "telegram_id_required":
+      return "Идентификатор Telegram обязателен."
+    case "telegram_signature_invalid":
+      return "Подпись авторизации Telegram недействительна."
+    case "telegram_auth_expired":
+      return "Срок действия сессии авторизации Telegram истек."
+    default:
+      return detail
+  }
 }

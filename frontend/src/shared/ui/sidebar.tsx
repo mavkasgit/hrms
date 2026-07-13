@@ -1,7 +1,11 @@
-import { useMemo, useState, useEffect } from "react"
+import { useMemo, useState, useEffect, useCallback } from "react"
 import { NavLink, useLocation } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
 import api, { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
+import { UserProfileModal } from "@/features/user-profile/UserProfileModal"
+import { UserAvatar } from "@/shared/ui/user-avatar"
+import { getUserSeed } from "@/shared/lib/avatar"
+import { TelegramIcon } from "@/shared/ui/icons"
 import {
   ChevronDown,
   ChevronRight,
@@ -64,8 +68,9 @@ export function Sidebar() {
     [location.pathname]
   )
   const [absenceOpen, setAbsenceOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
 
-  const [currentUser, setCurrentUser] = useState<{ username: string; role: string; full_name: string } | null>(() => {
+  const [currentUser, setCurrentUser] = useState<any>(() => {
     const token = getToken()
     if (!token) return null
     const decoded = decodeToken(token)
@@ -77,7 +82,7 @@ export function Sidebar() {
     }
   })
 
-  useEffect(() => {
+  const refreshProfile = useCallback(() => {
     const token = getToken()
     if (token) {
       api.get("/auth/me")
@@ -85,12 +90,19 @@ export function Sidebar() {
           setCurrentUser(res.data)
         })
         .catch((err) => {
-          console.error("Не удалось загрузить данные пользователя в сайдбаре:", err)
+          console.error("Не удалось перезагрузить данные пользователя:", err)
         })
+    }
+  }, [])
+
+  useEffect(() => {
+    const token = getToken()
+    if (token) {
+      refreshProfile()
     } else {
       setCurrentUser(null)
     }
-  }, [location.pathname])
+  }, [location.pathname, refreshProfile])
 
   return (
     <aside className="w-64 h-screen sticky top-0 bg-card border-r flex flex-col shrink-0">
@@ -179,11 +191,35 @@ export function Sidebar() {
       <div className="p-3 border-t flex flex-col gap-2">
         {currentUser ? (
           <>
-            <div className="px-3 py-1.5 text-xs text-muted-foreground break-all">
-              <div className="font-semibold text-foreground text-sm truncate">
-                {currentUser.full_name || "Пользователь"}
+            <button
+              type="button"
+              onClick={() => setProfileOpen(true)}
+              className="flex w-full items-center gap-3 px-3 py-2 rounded-xl text-left hover:bg-accent transition-all group"
+            >
+              <UserAvatar
+                seed={getUserSeed(currentUser)}
+                name={currentUser.full_name}
+                size={32}
+                className="group-hover:scale-105 transition-transform"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-foreground text-sm truncate group-hover:text-primary transition-colors">
+                  {currentUser.full_name || "Пользователь"}
+                </div>
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground truncate">
+                  <span className="truncate">Настройки профиля</span>
+                  {currentUser.telegram_id != null && (
+                    <span
+                      className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2AABEE] text-white shrink-0"
+                      title={currentUser.telegram_username ? `@${currentUser.telegram_username.replace("@", "")}` : "Telegram привязан"}
+                      aria-label="Telegram привязан"
+                    >
+                      <TelegramIcon className="h-2 w-2 fill-current" />
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
+            </button>
             <button
               type="button"
               onClick={logout}
@@ -192,6 +228,12 @@ export function Sidebar() {
               <LogOut className="h-4 w-4" />
               Выйти
             </button>
+            <UserProfileModal
+              open={profileOpen}
+              onOpenChange={setProfileOpen}
+              currentUser={currentUser}
+              onUpdateProfile={refreshProfile}
+            />
           </>
         ) : (
           <button
