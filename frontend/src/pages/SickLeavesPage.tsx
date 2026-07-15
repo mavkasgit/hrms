@@ -1,14 +1,14 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { ChevronDown, ChevronRight, Trash2, X } from "lucide-react"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
-import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
-import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
+import { SortableFilterHeader, TableCornerResetCell, TableCornerResetHeader } from "@/shared/ui"
+import { useFilterableTable } from "@/shared/hooks/useFilterableTable"
+import { useTableQueryEngine, type ColumnSortDef } from "@/shared/hooks/useTableQueryEngine"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { Skeleton } from "@/shared/ui/skeleton"
-import { EmptyState } from "@/shared/ui/empty-state"
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +30,21 @@ import type { Employee } from "@/entities/employee/types"
 import type { SickLeave } from "@/entities/sick-leave/types"
 
 type SortField = "employee_name" | "start_date" | "end_date" | "days_count" | "comment"
+
+function getSickLeaveCellValue(sl: SickLeave, field: SortField): string {
+  switch (field) {
+    case "employee_name":
+      return sl.employee_name
+    case "start_date":
+      return formatDate(sl.start_date)
+    case "end_date":
+      return formatDate(sl.end_date)
+    case "days_count":
+      return `${sl.days_count} дн.`
+    case "comment":
+      return sl.comment ?? "—"
+  }
+}
 
 export function SickLeavesPage() {
   const [collapsed, setCollapsed] = useState(false)
@@ -147,19 +162,17 @@ export function SickLeavesPage() {
     setDeleteId(null)
   }
 
-  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
-  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
-    employee_name: new Set(),
-    start_date: new Set(),
-    end_date: new Set(),
-    days_count: new Set(),
-    comment: new Set(),
+  const {
+    bindColumn,
+    buildFilterPredicate,
+    sortConfigs,
+    handleSort,
+    hasActiveFilters,
+    resetAll,
+  } = useFilterableTable<SortField>({
+    extraHasActive: nameFilter.trim().length > 0,
+    onExtraReset: () => setNameFilter(""),
   })
-
-  const handleSort = (field: SortField) => {
-    const defaultOrder = (field === "start_date" || field === "end_date" || field === "days_count") ? "desc" : "asc"
-    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
-  }
 
   const sortDefs: ColumnSortDef<SickLeave, SortField>[] = useMemo(() => [
     { field: "employee_name", getSortValue: (sl) => sl.employee_name },
@@ -169,32 +182,10 @@ export function SickLeavesPage() {
     { field: "comment", getSortValue: (sl) => sl.comment ?? "" },
   ], [])
 
-  const localFilterPredicate = useMemo(() => {
-    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
-    if (!hasFilters) return null
-    return (sl: SickLeave) => {
-      for (const [field, selected] of Object.entries(columnFilters)) {
-        if (selected && selected.size > 0) {
-          if (field === "employee_name") {
-            if (!selected.has(sl.employee_name)) return false
-          } else if (field === "start_date") {
-            const val = formatDate(sl.start_date)
-            if (!selected.has(val)) return false
-          } else if (field === "end_date") {
-            const val = formatDate(sl.end_date)
-            if (!selected.has(val)) return false
-          } else if (field === "days_count") {
-            const val = `${sl.days_count} дн.`
-            if (!selected.has(val)) return false
-          } else if (field === "comment") {
-            const val = sl.comment ?? "—"
-            if (!selected.has(val)) return false
-          }
-        }
-      }
-      return true
-    }
-  }, [columnFilters])
+  const filterPredicate = useMemo(
+    () => buildFilterPredicate(getSickLeaveCellValue),
+    [buildFilterPredicate],
+  )
 
   const uniqueValues = useMemo(() => {
     const items = allSickLeaves ?? []
@@ -211,7 +202,7 @@ export function SickLeavesPage() {
     rows: allSickLeaves ?? [],
     getId: (sl) => sl.id,
     searchQuery: "",
-    filterPredicate: localFilterPredicate,
+    filterPredicate,
     sortConfigs,
     sortDefs,
   })
@@ -345,8 +336,6 @@ export function SickLeavesPage() {
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : displaySickLeaves.length === 0 ? (
-        <EmptyState message="Нет больничных" description="Создайте первый больничный лист" />
       ) : (
         <>
           <div className="border rounded-lg overflow-hidden bg-card">
@@ -360,8 +349,7 @@ export function SickLeavesPage() {
                       currentSorts={sortConfigs}
                       onSortChange={handleSort}
                       values={uniqueValues.employee_name}
-                      selectedValues={columnFilters.employee_name}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindColumn("employee_name")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
@@ -371,8 +359,7 @@ export function SickLeavesPage() {
                       currentSorts={sortConfigs}
                       onSortChange={handleSort}
                       values={uniqueValues.start_date}
-                      selectedValues={columnFilters.start_date}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindColumn("start_date")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
@@ -382,8 +369,7 @@ export function SickLeavesPage() {
                       currentSorts={sortConfigs}
                       onSortChange={handleSort}
                       values={uniqueValues.end_date}
-                      selectedValues={columnFilters.end_date}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindColumn("end_date")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
@@ -393,8 +379,7 @@ export function SickLeavesPage() {
                       currentSorts={sortConfigs}
                       onSortChange={handleSort}
                       values={uniqueValues.days_count}
-                      selectedValues={columnFilters.days_count}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindColumn("days_count")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
@@ -404,15 +389,30 @@ export function SickLeavesPage() {
                       currentSorts={sortConfigs}
                       onSortChange={handleSort}
                       values={uniqueValues.comment}
-                      selectedValues={columnFilters.comment}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindColumn("comment")}
                     />
                   </TableHead>
-                  <TableHead className="w-[80px]"></TableHead>
+                  <TableHead className="text-right text-xs font-medium text-muted-foreground w-[80px]">
+                    Действия
+                  </TableHead>
+                  <TableCornerResetHeader
+                    as={TableHead}
+                    hasActiveFilters={hasActiveFilters}
+                    onReset={resetAll}
+                  />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displaySickLeaves.map((sl: SickLeave) => (
+                {displaySickLeaves.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={7}
+                      className="px-4 py-10 text-center text-sm text-muted-foreground"
+                    >
+                      Нет больничных. Создайте первый больничный лист или измените фильтры.
+                    </TableCell>
+                  </TableRow>
+                ) : displaySickLeaves.map((sl: SickLeave) => (
                   <TableRow key={sl.id} className="border-t hover:bg-muted/30">
                     <TableCell className="px-4 py-2 font-medium">{sl.employee_name}</TableCell>
                     <TableCell className="px-4 py-2">{formatDate(sl.start_date)}</TableCell>
@@ -434,6 +434,7 @@ export function SickLeavesPage() {
                         </Button>
                       </div>
                     </TableCell>
+                    <TableCornerResetCell as={TableCell} />
                   </TableRow>
                 ))}
               </TableBody>

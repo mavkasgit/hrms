@@ -104,6 +104,9 @@ terminals/
 brain/
 agent-tools/
 
+# Local data dumps (repo root)
+/*.xlsx
+
 # Backend data
 backend/data/
 storage/

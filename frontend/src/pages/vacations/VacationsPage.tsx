@@ -13,9 +13,12 @@ import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
-import { EmptyState } from "@/shared/ui/empty-state"
+
 import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
-import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
+import { TableCornerResetCell, TableCornerResetHeader } from "@/shared/ui"
+import { useTableQueryEngine, type ColumnSortDef } from "@/shared/hooks/useTableQueryEngine"
+import { useFilterableTable } from "@/shared/hooks/useFilterableTable"
+import { matchesPartialSearch } from "@/shared/lib/columnFilterSearch"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import {
   Table,
@@ -616,6 +619,27 @@ type SortField =
   | "additional_vacation_days"
   | "hire_date"
 
+function getVacationCellValue(emp: EmployeeVacationSummary, field: SortField): string {
+  switch (field) {
+    case "tab_number":
+      return emp.tab_number !== null ? String(emp.tab_number) : "—"
+    case "name":
+      return emp.name
+    case "department":
+      return emp.department ?? "Без подразделения"
+    case "tags":
+      return (emp.tags || []).map((t) => t.name).join(", ") || "Без тегов"
+    case "position":
+      return emp.position ?? "—"
+    case "remaining_days":
+      return emp.remaining_days !== null ? `${emp.remaining_days} дн.` : "—"
+    case "additional_vacation_days":
+      return `${emp.additional_vacation_days} дн.`
+    case "hire_date":
+      return emp.hire_date ? formatDate(emp.hire_date) : "—"
+  }
+}
+
 export function VacationsPage() {
   const navigate = useNavigate()
   // --- Form state ---
@@ -823,25 +847,33 @@ export function VacationsPage() {
   const [searchName, setSearchName] = useState("")
   const debouncedSearch = useDebounce(searchName, 300)
   const [dismissalFilter, setDismissalFilter] = useState<"active" | "dismissed" | "all">("active")
+  const hasPanelFiltersActive =
+    searchName.trim().length > 0 || dismissalFilter !== "active"
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
   const [editingAddDays, setEditingAddDays] = useState<number | null>(null)
   const [editingAddDaysValue, setEditingAddDaysValue] = useState("")
   const updateAddDaysMutation = useUpdateEmployee()
 
-  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
-  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
-    tab_number: new Set(),
-    name: new Set(),
-    department: new Set(),
-    tags: new Set(),
-    position: new Set(),
-    remaining_days: new Set(),
-    additional_vacation_days: new Set(),
-    hire_date: new Set(),
+  const {
+    bindColumn,
+    buildFilterPredicate,
+    columnFilters,
+    columnSearchQueries,
+    sortConfigs,
+    setSortConfigs,
+    hasActiveFilters,
+    resetAll,
+  } = useFilterableTable<SortField>({
+    extraHasActive: hasPanelFiltersActive,
+    onExtraReset: () => {
+      setSearchName("")
+      setDismissalFilter("active")
+    },
   })
 
   const handleSort = (field: SortField) => {
-    const defaultOrder = (field === "remaining_days" || field === "additional_vacation_days" || field === "hire_date") ? "desc" : "asc"
+    const defaultOrder =
+      field === "remaining_days" || field === "additional_vacation_days" || field === "hire_date" ? "desc" : "asc"
     setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
   }
 
@@ -886,43 +918,36 @@ export function VacationsPage() {
     { field: "hire_date", getSortValue: (emp) => emp.hire_date ?? "" },
   ], [])
 
-  const localFilterPredicate = useMemo(() => {
-    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
-    if (!hasFilters) return null
+  const columnFilterPredicate = useMemo(
+    () => buildFilterPredicate(getVacationCellValue, ["tags"]),
+    [buildFilterPredicate],
+  )
+
+  const filterPredicate = useMemo(() => {
+    const tagsFilter = columnFilters.tags
+    const tagsSearch = columnSearchQueries.tags?.trim()
+    const hasTagsFilter = (tagsFilter && tagsFilter.size > 0) || Boolean(tagsSearch)
+
+    if (!columnFilterPredicate && !hasTagsFilter) return null
+
     return (emp: EmployeeVacationSummary) => {
-      for (const [field, selected] of Object.entries(columnFilters)) {
-        if (selected && selected.size > 0) {
-          if (field === "tab_number") {
-            const val = emp.tab_number !== null ? String(emp.tab_number) : "—"
-            if (!selected.has(val)) return false
-          } else if (field === "name") {
-            if (!selected.has(emp.name)) return false
-          } else if (field === "department") {
-            const val = emp.department ?? "Без подразделения"
-            if (!selected.has(val)) return false
-          } else if (field === "tags") {
-            const empTags = (emp.tags || []).map(t => t.name)
-            const hasMatch = empTags.some(name => selected.has(name))
-            const hasNoTags = selected.has("Без тегов") && empTags.length === 0
-            if (!hasMatch && !hasNoTags) return false
-          } else if (field === "position") {
-            const val = emp.position ?? "—"
-            if (!selected.has(val)) return false
-          } else if (field === "remaining_days") {
-            const val = emp.remaining_days !== null ? `${emp.remaining_days} дн.` : "—"
-            if (!selected.has(val)) return false
-          } else if (field === "additional_vacation_days") {
-            const val = `${emp.additional_vacation_days} дн.`
-            if (!selected.has(val)) return false
-          } else if (field === "hire_date") {
-            const val = emp.hire_date ? formatDate(emp.hire_date) : "—"
-            if (!selected.has(val)) return false
-          }
+      if (hasTagsFilter) {
+        const empTags = (emp.tags || []).map((t) => t.name)
+        if (tagsFilter && tagsFilter.size > 0) {
+          const hasMatch = empTags.some((name) => tagsFilter.has(name))
+          const hasNoTags = tagsFilter.has("Без тегов") && empTags.length === 0
+          if (!hasMatch && !hasNoTags) return false
+        }
+        if (tagsSearch) {
+          const hasNoTagsMatch = matchesPartialSearch("Без тегов", tagsSearch) && empTags.length === 0
+          const hasTagMatch = empTags.some((name) => matchesPartialSearch(name, tagsSearch))
+          if (!hasNoTagsMatch && !hasTagMatch) return false
         }
       }
+      if (columnFilterPredicate && !columnFilterPredicate(emp)) return false
       return true
     }
-  }, [columnFilters])
+  }, [columnFilterPredicate, columnFilters.tags, columnSearchQueries.tags])
 
   const uniqueValues = useMemo(() => {
     const items = filteredEmployees ?? []
@@ -950,7 +975,7 @@ export function VacationsPage() {
     rows: filteredEmployees ?? [],
     getId: (emp) => emp.id,
     searchQuery: "",
-    filterPredicate: localFilterPredicate,
+    filterPredicate,
     sortConfigs,
     sortDefs,
   })
@@ -1202,8 +1227,6 @@ export function VacationsPage() {
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : !displayEmployees.length ? (
-        <EmptyState message="Нет сотрудников" description="Нет сотрудников, соответствующих фильтру" />
       ) : (
         <div className="border rounded-lg overflow-hidden bg-card">
           <Table>
@@ -1217,8 +1240,7 @@ export function VacationsPage() {
                     currentSorts={sortConfigs}
                     onSortChange={handleSort}
                     values={uniqueValues.tab_number}
-                    selectedValues={columnFilters.tab_number}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("tab_number")}
                   />
                 </TableHead>
                 <TableHead className="p-0">
@@ -1228,8 +1250,7 @@ export function VacationsPage() {
                     currentSorts={sortConfigs}
                     onSortChange={handleSort}
                     values={uniqueValues.name}
-                    selectedValues={columnFilters.name}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("name")}
                   />
                 </TableHead>
                 <TableHead className="p-0">
@@ -1239,8 +1260,7 @@ export function VacationsPage() {
                     currentSorts={sortConfigs}
                     onSortChange={handleSort}
                     values={uniqueValues.department}
-                    selectedValues={columnFilters.department}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("department")}
                   />
                 </TableHead>
                 <TableHead className="p-0">
@@ -1250,8 +1270,7 @@ export function VacationsPage() {
                     currentSorts={sortConfigs}
                     onSortChange={handleSort}
                     values={uniqueValues.tags}
-                    selectedValues={columnFilters.tags}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("tags")}
                   />
                 </TableHead>
                 <TableHead className="p-0">
@@ -1261,8 +1280,7 @@ export function VacationsPage() {
                     currentSorts={sortConfigs}
                     onSortChange={handleSort}
                     values={uniqueValues.position}
-                    selectedValues={columnFilters.position}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("position")}
                   />
                 </TableHead>
                 <TableHead className="p-0">
@@ -1272,8 +1290,7 @@ export function VacationsPage() {
                     currentSorts={sortConfigs}
                     onSortChange={handleSort}
                     values={uniqueValues.remaining_days}
-                    selectedValues={columnFilters.remaining_days}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("remaining_days")}
                   />
                 </TableHead>
                 <TableHead className="p-0">
@@ -1283,8 +1300,7 @@ export function VacationsPage() {
                     currentSorts={sortConfigs}
                     onSortChange={handleSort}
                     values={uniqueValues.additional_vacation_days}
-                    selectedValues={columnFilters.additional_vacation_days}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("additional_vacation_days")}
                   />
                 </TableHead>
                 <TableHead className="p-0">
@@ -1294,14 +1310,27 @@ export function VacationsPage() {
                     currentSorts={sortConfigs}
                     onSortChange={handleSort}
                     values={uniqueValues.hire_date}
-                    selectedValues={columnFilters.hire_date}
-                    onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                    {...bindColumn("hire_date")}
                   />
                 </TableHead>
+                <TableCornerResetHeader
+                  as={TableHead}
+                  hasActiveFilters={hasActiveFilters}
+                  onReset={resetAll}
+                />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {displayEmployees.map((emp) => {
+              {displayEmployees.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={10}
+                    className="px-4 py-10 text-center text-sm text-muted-foreground"
+                  >
+                    Нет сотрудников, соответствующих фильтру.
+                  </TableCell>
+                </TableRow>
+              ) : displayEmployees.map((emp) => {
                 const isExpanded = expandedRows.has(emp.id)
 
                 return (
@@ -1421,10 +1450,11 @@ export function VacationsPage() {
                       <TableCell className="px-4 py-2 text-muted-foreground">
                         {formatDate(emp.hire_date)}
                       </TableCell>
+                      <TableCornerResetCell as={TableCell} />
                     </TableRow>
                     {isExpanded && (
                       <TableRow key={`${emp.id}-history`}>
-                        <TableCell colSpan={9} className="p-0">
+                        <TableCell colSpan={10} className="p-0">
                           <EmployeeHistoryRow 
                             employeeId={emp.id}
                             partialClosePeriodId={partialClosePeriodId}

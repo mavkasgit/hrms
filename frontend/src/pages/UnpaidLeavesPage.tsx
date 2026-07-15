@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useState, useMemo } from "react"
 import { Download, Eye, FilePen, Printer, Trash2, X } from "lucide-react"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { SortableFilterHeader, TableCornerResetCell, TableCornerResetHeader } from "@/shared/ui"
 import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
-import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
-import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
+import { useFilterableTable } from "@/shared/hooks/useFilterableTable"
+import { useTableQueryEngine, type ColumnSortDef } from "@/shared/hooks/useTableQueryEngine"
+import { matchesPartialSearch } from "@/shared/lib/columnFilterSearch"
 import { Button } from "@/shared/ui/button"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { EmptyState } from "@/shared/ui/empty-state"
@@ -134,6 +135,46 @@ function toUnpaidLeaveEntries(order: Order): UnpaidLeaveEntry[] {
 
 type SortField = "order_number" | "employee_name" | "order_date" | "vacation_period" | "vacation_days"
 
+type SummarySortField = "name" | "days" | "orders"
+
+interface SummaryRow {
+  name: string
+  orders: number
+  days: number
+}
+
+function getUnpaidLeaveOrderCellValue(order: Order, field: SortField): string {
+  switch (field) {
+    case "order_number":
+      return order.order_number ?? "—"
+    case "employee_name":
+      return order.employee_name ?? "—"
+    case "vacation_period": {
+      const extra = order.extra_fields || {}
+      return extra.vacation_start
+        ? `${formatDate(String(extra.vacation_start))} — ${formatDate(String(extra.vacation_end || extra.vacation_start))}`
+        : "—"
+    }
+    case "vacation_days": {
+      const extra = order.extra_fields || {}
+      return extra.vacation_days ? String(extra.vacation_days) : "—"
+    }
+    case "order_date":
+      return formatDate(order.order_date)
+  }
+}
+
+function getSummaryCellValue(row: SummaryRow, field: SummarySortField): string {
+  switch (field) {
+    case "name":
+      return row.name
+    case "days":
+      return String(row.days)
+    case "orders":
+      return String(row.orders)
+  }
+}
+
 export function UnpaidLeavesPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
@@ -168,6 +209,26 @@ export function UnpaidLeavesPage() {
     per_page: 1000,
     order_type_code: UNPAID_LEAVE_CODE,
   })
+
+  const {
+    bindColumn: bindDetailColumn,
+    buildFilterPredicate: buildDetailFilterPredicate,
+    sortConfigs,
+    handleSort,
+    hasActiveFilters: hasDetailActiveFilters,
+    resetAll: resetDetailAll,
+    columnFilters,
+    columnSearchQueries,
+  } = useFilterableTable<SortField>()
+
+  const {
+    bindColumn: bindSummaryColumn,
+    buildFilterPredicate: buildSummaryFilterPredicate,
+    sortConfigs: summarySortConfigs,
+    handleSort: handleSummarySort,
+    hasActiveFilters: hasSummaryActiveFilters,
+    resetAll: resetSummaryAll,
+  } = useFilterableTable<SummarySortField>()
 
   const unpaidLeaveType = orderTypes.find((item) => item.code === UNPAID_LEAVE_CODE) ?? null
 
@@ -439,20 +500,6 @@ export function UnpaidLeavesPage() {
   const filteredOrderIds = new Set(filteredEntries.map((entry) => entry.orderId))
   const filteredOrders = orders.filter((order) => filteredOrderIds.has(order.id))
 
-  const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
-  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
-    order_number: new Set(),
-    employee_name: new Set(),
-    vacation_period: new Set(),
-    vacation_days: new Set(),
-    order_date: new Set(),
-  })
-
-  const handleSort = (field: SortField) => {
-    const defaultOrder = field === "employee_name" ? "asc" : "desc"
-    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
-  }
-
   const sortDefs: ColumnSortDef<Order, SortField>[] = useMemo(() => [
     { field: "order_number", getSortValue: (order) => order.order_number ?? "" },
     {
@@ -498,53 +545,93 @@ export function UnpaidLeavesPage() {
     { field: "order_date", getSortValue: (order) => order.order_date ?? "" },
   ], [])
 
-  const localFilterPredicate = useMemo(() => {
-    const hasFilters = Object.values(columnFilters).some((s) => s && s.size > 0)
-    if (!hasFilters) return null
+  const columnFilterPredicate = useMemo(
+    () => buildDetailFilterPredicate(getUnpaidLeaveOrderCellValue, ["employee_name", "vacation_period", "vacation_days"]),
+    [buildDetailFilterPredicate],
+  )
+
+  const filterPredicate = useMemo(() => {
+    const empFilter = columnFilters.employee_name
+    const empSearch = columnSearchQueries.employee_name?.trim()
+    const periodFilter = columnFilters.vacation_period
+    const periodSearch = columnSearchQueries.vacation_period?.trim()
+    const daysFilter = columnFilters.vacation_days
+    const daysSearch = columnSearchQueries.vacation_days?.trim()
+
+    const hasEmpColumnFilter = (empFilter && empFilter.size > 0) || Boolean(empSearch)
+    const hasPeriodColumnFilter = (periodFilter && periodFilter.size > 0) || Boolean(periodSearch)
+    const hasDaysColumnFilter = (daysFilter && daysFilter.size > 0) || Boolean(daysSearch)
+
+    if (!columnFilterPredicate && !hasEmpColumnFilter && !hasPeriodColumnFilter && !hasDaysColumnFilter) {
+      return null
+    }
+
     return (order: Order) => {
-      for (const [field, selected] of Object.entries(columnFilters)) {
-        if (selected && selected.size > 0) {
-          if (field === "order_number") {
-            const val = order.order_number ?? "—"
-            if (!selected.has(val)) return false
-          } else if (field === "employee_name") {
-            if (order.is_group && order.group_employees) {
-              const hasMatchingEmployee = order.group_employees.some(e => selected.has(e.employee_full_name))
-              if (!hasMatchingEmployee) return false
-            } else {
-              const val = order.employee_name ?? "—"
-              if (!selected.has(val)) return false
-            }
-          } else if (field === "vacation_period") {
-            if (order.is_group && order.group_employees) {
-              const hasMatchingEmployee = order.group_employees.some(e => {
-                const label = `${formatDate(e.vacation_start)} — ${formatDate(e.vacation_end)}`
-                return selected.has(label)
-              })
-              if (!hasMatchingEmployee) return false
-            } else {
-              const extra = order.extra_fields || {}
-              const val = extra.vacation_start ? `${formatDate(String(extra.vacation_start))} — ${formatDate(String(extra.vacation_end || extra.vacation_start))}` : "—"
-              if (!selected.has(val)) return false
-            }
-          } else if (field === "vacation_days") {
-            if (order.is_group && order.group_employees) {
-              const hasMatchingEmployee = order.group_employees.some(e => selected.has(String(e.vacation_days)))
-              if (!hasMatchingEmployee) return false
-            } else {
-              const extra = order.extra_fields || {}
-              const val = extra.vacation_days ? String(extra.vacation_days) : "—"
-              if (!selected.has(val)) return false
-            }
-          } else if (field === "order_date") {
-            const val = formatDate(order.order_date)
-            if (!selected.has(val)) return false
+      if (hasEmpColumnFilter) {
+        if (order.is_group && order.group_employees) {
+          if (empFilter && empFilter.size > 0) {
+            const hasMatching = order.group_employees.some((e) => empFilter.has(e.employee_full_name))
+            if (!hasMatching) return false
           }
+          if (empSearch) {
+            const hasMatching = order.group_employees.some((e) =>
+              matchesPartialSearch(e.employee_full_name ?? "", empSearch),
+            )
+            if (!hasMatching) return false
+          }
+        } else {
+          const val = order.employee_name ?? "—"
+          if (empFilter && empFilter.size > 0 && !empFilter.has(val)) return false
+          if (empSearch && !matchesPartialSearch(val, empSearch)) return false
         }
       }
+
+      if (hasPeriodColumnFilter) {
+        if (order.is_group && order.group_employees) {
+          if (periodFilter && periodFilter.size > 0) {
+            const hasMatching = order.group_employees.some((e) => {
+              const label = `${formatDate(e.vacation_start)} — ${formatDate(e.vacation_end)}`
+              return periodFilter.has(label)
+            })
+            if (!hasMatching) return false
+          }
+          if (periodSearch) {
+            const hasMatching = order.group_employees.some((e) => {
+              const label = `${formatDate(e.vacation_start)} — ${formatDate(e.vacation_end)}`
+              return matchesPartialSearch(label, periodSearch)
+            })
+            if (!hasMatching) return false
+          }
+        } else {
+          const val = getUnpaidLeaveOrderCellValue(order, "vacation_period")
+          if (periodFilter && periodFilter.size > 0 && !periodFilter.has(val)) return false
+          if (periodSearch && !matchesPartialSearch(val, periodSearch)) return false
+        }
+      }
+
+      if (hasDaysColumnFilter) {
+        if (order.is_group && order.group_employees) {
+          if (daysFilter && daysFilter.size > 0) {
+            const hasMatching = order.group_employees.some((e) => daysFilter.has(String(e.vacation_days)))
+            if (!hasMatching) return false
+          }
+          if (daysSearch) {
+            const hasMatching = order.group_employees.some((e) =>
+              matchesPartialSearch(String(e.vacation_days), daysSearch),
+            )
+            if (!hasMatching) return false
+          }
+        } else {
+          const val = getUnpaidLeaveOrderCellValue(order, "vacation_days")
+          if (daysFilter && daysFilter.size > 0 && !daysFilter.has(val)) return false
+          if (daysSearch && !matchesPartialSearch(val, daysSearch)) return false
+        }
+      }
+
+      if (columnFilterPredicate && !columnFilterPredicate(order)) return false
       return true
     }
-  }, [columnFilters])
+  }, [columnFilterPredicate, columnFilters, columnSearchQueries])
 
   const uniqueValues = useMemo(() => {
     const items = filteredOrders ?? []
@@ -580,7 +667,7 @@ export function UnpaidLeavesPage() {
     rows: filteredOrders ?? [],
     getId: (order) => order.id,
     searchQuery: "",
-    filterPredicate: localFilterPredicate,
+    filterPredicate,
     sortConfigs,
     sortDefs,
   })
@@ -668,49 +755,32 @@ export function UnpaidLeavesPage() {
   }
   const employeesSummary = Array.from(employeesMap.values()).sort((a, b) => b.days - a.days)
 
-  type SummarySortField = "name" | "days" | "orders"
-  const [summarySortConfigs, setSummarySortConfigs] = useState<SortConfig<SummarySortField>[]>([])
-  const [summaryColumnFilters, setSummaryColumnFilters] = useState<Record<SummarySortField, Set<string>>>({
-    name: new Set(),
-    days: new Set(),
-    orders: new Set(),
-  })
+  const summarySortDefs: ColumnSortDef<SummaryRow, SummarySortField>[] = useMemo(() => [
+    { field: "name", getSortValue: (e) => e.name },
+    { field: "days", getSortValue: (e) => e.days },
+    { field: "orders", getSortValue: (e) => e.orders },
+  ], [])
 
-  const handleSummarySort = (field: SummarySortField) => {
-    const defaultOrder = field === "name" ? "asc" : "desc"
-    setSummarySortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
-  }
-  const handleSummaryFilter = (field: SummarySortField, selected: Set<string>) => {
-    setSummaryColumnFilters((prev) => ({ ...prev, [field]: selected }))
-  }
+  const summaryFilterPredicate = useMemo(
+    () => buildSummaryFilterPredicate(getSummaryCellValue),
+    [buildSummaryFilterPredicate],
+  )
 
-  const summaryUniqueValues = {
+  const summaryUniqueValues = useMemo(() => ({
     name: [...new Set(employeesSummary.map((e) => e.name))].sort(),
     days: [...new Set(employeesSummary.map((e) => String(e.days)))].sort((a, b) => Number(b) - Number(a)),
     orders: [...new Set(employeesSummary.map((e) => String(e.orders)))].sort((a, b) => Number(b) - Number(a)),
-  }
+  }), [employeesSummary])
 
-  const displayedEmployeesSummary = useMemo(() => {
-    let rows = employeesSummary
-    if (summaryColumnFilters.name.size > 0) rows = rows.filter((e) => summaryColumnFilters.name.has(e.name))
-    if (summaryColumnFilters.days.size > 0) rows = rows.filter((e) => summaryColumnFilters.days.has(String(e.days)))
-    if (summaryColumnFilters.orders.size > 0) rows = rows.filter((e) => summaryColumnFilters.orders.has(String(e.orders)))
-    if (summarySortConfigs.length > 0) {
-      rows = [...rows].sort((a, b) => {
-        for (const sc of summarySortConfigs) {
-          let cmp = 0
-          if (sc.field === "name") cmp = a.name.localeCompare(b.name, "ru")
-          else if (sc.field === "days") cmp = a.days - b.days
-          else if (sc.field === "orders") cmp = a.orders - b.orders
-          if (sc.order === "desc") cmp = -cmp
-          if (cmp !== 0) return cmp
-        }
-        return 0
-      })
-    }
-    return rows
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employeesSummary, summarySortConfigs, summaryColumnFilters])
+  const summaryEngineResult = useTableQueryEngine({
+    rows: employeesSummary,
+    getId: (e) => e.name,
+    searchQuery: "",
+    filterPredicate: summaryFilterPredicate,
+    sortConfigs: summarySortConfigs,
+    sortDefs: summarySortDefs,
+  })
+  const displayedEmployeesSummary = summaryEngineResult.rows
 
   const setCalendarYearPeriod = () => {
     setPeriodMode("calendarYear")
@@ -1014,8 +1084,7 @@ export function UnpaidLeavesPage() {
                     currentSorts={summarySortConfigs}
                     onSortChange={handleSummarySort}
                     values={summaryUniqueValues.name}
-                    selectedValues={summaryColumnFilters.name}
-                    onFilterChange={handleSummaryFilter}
+                    {...bindSummaryColumn("name")}
                   />
                 </TableHead>
                 <TableHead className="p-0">
@@ -1025,8 +1094,7 @@ export function UnpaidLeavesPage() {
                     currentSorts={summarySortConfigs}
                     onSortChange={handleSummarySort}
                     values={summaryUniqueValues.days}
-                    selectedValues={summaryColumnFilters.days}
-                    onFilterChange={handleSummaryFilter}
+                    {...bindSummaryColumn("days")}
                   />
                 </TableHead>
                 <TableHead className="p-0">
@@ -1036,10 +1104,14 @@ export function UnpaidLeavesPage() {
                     currentSorts={summarySortConfigs}
                     onSortChange={handleSummarySort}
                     values={summaryUniqueValues.orders}
-                    selectedValues={summaryColumnFilters.orders}
-                    onFilterChange={handleSummaryFilter}
+                    {...bindSummaryColumn("orders")}
                   />
                 </TableHead>
+                <TableCornerResetHeader
+                  as={TableHead}
+                  hasActiveFilters={hasSummaryActiveFilters}
+                  onReset={resetSummaryAll}
+                />
               </TableRow>
             </TableHeader>
             {showEmployeesTable && (
@@ -1051,11 +1123,12 @@ export function UnpaidLeavesPage() {
                       <TableCell className="font-medium">{employee.name}</TableCell>
                       <TableCell>{employee.days}</TableCell>
                       <TableCell>{employee.orders}</TableCell>
+                      <TableCornerResetCell as={TableCell} />
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground text-sm py-4">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-4">
                       Нет сотрудников с отпусками за выбранный период
                     </TableCell>
                   </TableRow>
@@ -1065,10 +1138,7 @@ export function UnpaidLeavesPage() {
           </Table>
           </div>
 
-          {displayOrders.length === 0 ? (
-            <EmptyState message="Нет отпусков за выбранный период" description="Измените фильтры периода или сотрудника" />
-          ) : (
-            <Table>
+          <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="p-0">
@@ -1078,8 +1148,7 @@ export function UnpaidLeavesPage() {
                       currentSorts={sortConfigs}
                       onSortChange={handleSort}
                       values={uniqueValues.order_number}
-                      selectedValues={columnFilters.order_number}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindDetailColumn("order_number")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
@@ -1089,8 +1158,7 @@ export function UnpaidLeavesPage() {
                       currentSorts={sortConfigs}
                       onSortChange={handleSort}
                       values={uniqueValues.employee_name}
-                      selectedValues={columnFilters.employee_name}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindDetailColumn("employee_name")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
@@ -1100,8 +1168,7 @@ export function UnpaidLeavesPage() {
                       currentSorts={sortConfigs}
                       onSortChange={handleSort}
                       values={uniqueValues.vacation_period}
-                      selectedValues={columnFilters.vacation_period}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindDetailColumn("vacation_period")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
@@ -1111,8 +1178,7 @@ export function UnpaidLeavesPage() {
                       currentSorts={sortConfigs}
                       onSortChange={handleSort}
                       values={uniqueValues.vacation_days}
-                      selectedValues={columnFilters.vacation_days}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindDetailColumn("vacation_days")}
                     />
                   </TableHead>
                   <TableHead className="p-0">
@@ -1122,15 +1188,30 @@ export function UnpaidLeavesPage() {
                       currentSorts={sortConfigs}
                       onSortChange={handleSort}
                       values={uniqueValues.order_date}
-                      selectedValues={columnFilters.order_date}
-                      onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                      {...bindDetailColumn("order_date")}
                     />
                   </TableHead>
-                  <TableHead className="text-right">Действия</TableHead>
+                  <TableHead className="text-right text-xs font-medium text-muted-foreground">
+                    Действия
+                  </TableHead>
+                  <TableCornerResetHeader
+                    as={TableHead}
+                    hasActiveFilters={hasDetailActiveFilters}
+                    onReset={resetDetailAll}
+                  />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayOrders.map((order) => {
+                {displayOrders.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={7}
+                      className="px-4 py-10 text-center text-sm text-muted-foreground"
+                    >
+                      Нет отпусков за выбранный период. Измените фильтры периода или сотрудника.
+                    </TableCell>
+                  </TableRow>
+                ) : displayOrders.map((order) => {
                   const extra = order.extra_fields || {}
                   const isGroup = order.is_group
 
@@ -1184,6 +1265,7 @@ export function UnpaidLeavesPage() {
                             </Button>
                           </div>
                         </TableCell>
+                        <TableCornerResetCell as={TableCell} />
                       </TableRow>
                       {isGroup && order.group_employees && (
                         <GroupOrderEmployeesRows
@@ -1197,7 +1279,6 @@ export function UnpaidLeavesPage() {
                 })}
               </TableBody>
             </Table>
-          )}
         </div>
       )}
 

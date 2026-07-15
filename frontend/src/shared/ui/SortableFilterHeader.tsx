@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from "react";
-import { ArrowUp, ArrowDown, ArrowUpDown, X } from "lucide-react";
+import React, { useState, useMemo, useCallback } from "react";
+import { ArrowUp, ArrowDown, ArrowUpDown, Search, X } from "lucide-react";
 import { cn } from "@/shared/utils/cn";
 import { Popover, PopoverTrigger, PopoverContent } from "./popover";
 import { Input } from "./input";
 import { Button } from "./button";
 import type { SortConfig } from "../hooks/useTableQueryEngine";
+import { sortByPartialSearchMatch } from "@/shared/lib/columnFilterSearch";
 
 export interface SortableFilterHeaderProps<Field extends string> {
   field: Field;
@@ -15,12 +16,16 @@ export interface SortableFilterHeaderProps<Field extends string> {
   selectedValues: Set<string>;
   onFilterChange: (field: Field, selected: Set<string>) => void;
   valueLabel?: (value: string) => string;
+  /** Controlled search query for live table filtering */
+  searchQuery?: string;
+  onSearchChange?: (field: Field, query: string) => void;
 }
 
 /**
  * Unified column header with sort + filter:
  * - Click text → filter popover with clickable rows (filled when selected)
  * - Click sort icon → cycle sort (none → asc → desc)
+ * - Search in popover: partial match + relevance sort; live table filter via onSearchChange
  */
 export function SortableFilterHeader<Field extends string>({
   field,
@@ -31,22 +36,43 @@ export function SortableFilterHeader<Field extends string>({
   selectedValues,
   onFilterChange,
   valueLabel,
+  searchQuery: controlledSearchQuery,
+  onSearchChange,
 }: SortableFilterHeaderProps<Field>) {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [internalSearchQuery, setInternalSearchQuery] = useState("");
   const [open, setOpen] = useState(false);
+
+  const isSearchControlled = controlledSearchQuery !== undefined;
+  const searchQuery = isSearchControlled ? controlledSearchQuery : internalSearchQuery;
+
+  const setSearchQuery = useCallback(
+    (query: string) => {
+      if (isSearchControlled) {
+        onSearchChange?.(field, query);
+      } else {
+        setInternalSearchQuery(query);
+        onSearchChange?.(field, query);
+      }
+    },
+    [field, isSearchControlled, onSearchChange],
+  );
 
   const activeSort = currentSorts.find((s) => s.field === field);
   const sortPriority = activeSort ? currentSorts.indexOf(activeSort) + 1 : null;
 
-  const hasFilter = selectedValues.size > 0;
+  const hasSetFilter = selectedValues.size > 0;
+  const hasSearchFilter = searchQuery.trim().length > 0;
+  const hasFilter = hasSetFilter || hasSearchFilter;
 
-  const displayLabel = (v: string) => (valueLabel ? valueLabel(v) : v);
+  const displayLabel = useCallback(
+    (v: string) => (valueLabel ? valueLabel(v) : v),
+    [valueLabel],
+  );
 
-  const filteredValues = useMemo(() => {
-    if (!searchQuery.trim()) return values;
-    const q = searchQuery.trim().toLowerCase();
-    return values.filter((v) => displayLabel(v).toLowerCase().includes(q));
-  }, [values, searchQuery, valueLabel, displayLabel]);
+  const filteredValues = useMemo(
+    () => sortByPartialSearchMatch(values, searchQuery, displayLabel),
+    [values, searchQuery, displayLabel],
+  );
 
   const toggleOne = (value: string) => {
     const newSelected = new Set(selectedValues);
@@ -59,11 +85,16 @@ export function SortableFilterHeader<Field extends string>({
   };
 
   const selectAll = () => {
-    onFilterChange(field, new Set(values));
+    onFilterChange(field, new Set(filteredValues));
   };
 
   const clearAll = () => {
     onFilterChange(field, new Set());
+    setSearchQuery("");
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
   };
 
   const sortIcon =
@@ -75,22 +106,35 @@ export function SortableFilterHeader<Field extends string>({
       <ArrowUpDown size={14} className="shrink-0 opacity-45" />
     );
 
+  const filterBadge = hasSearchFilter ? (
+    <Search className="h-2.5 w-2.5" aria-hidden />
+  ) : hasSetFilter ? (
+    String(selectedValues.size)
+  ) : null;
+
   return (
-    <div className="inline-flex items-center gap-0.5">
-      <Popover open={open} onOpenChange={setOpen}>
+    <div className="inline-flex items-center gap-1 max-w-full">
+      <Popover open={open} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <button
             type="button"
             className={cn(
-              "inline-flex items-center gap-1 text-left font-medium text-xs tracking-normal text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none",
+              "inline-flex items-center gap-1 text-left font-medium text-xs tracking-normal text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none min-w-0",
               activeSort && "text-foreground",
             )}
           >
             <span className="truncate">{label}</span>
             <span className="shrink-0">
-              {hasFilter && (
-                <span className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-primary text-[8px] font-bold text-primary-foreground">
-                  {selectedValues.size}
+              {hasFilter && filterBadge && (
+                <span
+                  className={cn(
+                    "inline-flex items-center justify-center h-3.5 min-w-[14px] px-0.5 rounded-full text-[8px] font-bold",
+                    hasSearchFilter
+                      ? "bg-primary/15 text-primary"
+                      : "bg-primary text-primary-foreground",
+                  )}
+                >
+                  {filterBadge}
                 </span>
               )}
             </span>
@@ -100,7 +144,6 @@ export function SortableFilterHeader<Field extends string>({
           className="w-56 p-2 bg-popover text-popover-foreground border shadow-md"
           align="start"
           side="bottom"
-          onCloseAutoFocus={() => setSearchQuery("")}
         >
           <div className="space-y-2">
             <Input
@@ -108,6 +151,7 @@ export function SortableFilterHeader<Field extends string>({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-7 text-xs"
+              autoFocus
             />
             <div className="flex items-center justify-between px-1">
               <button
@@ -140,8 +184,8 @@ export function SortableFilterHeader<Field extends string>({
                 );
               })}
             </div>
-            {hasFilter && (
-              <div className="flex justify-end gap-1 pt-1 border-t">
+            <div className="flex justify-end gap-1 pt-1 border-t">
+              {hasFilter && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -149,15 +193,22 @@ export function SortableFilterHeader<Field extends string>({
                   onClick={clearAll}
                 >
                   <X className="h-3 w-3 mr-1" />
-                  Сброс
+                  Сбросить колонку
                 </Button>
-              </div>
-            )}
+              )}
+              <Button
+                variant="default"
+                size="sm"
+                className="h-6 text-xs"
+                onClick={() => setOpen(false)}
+              >
+                Готово
+              </Button>
+            </div>
           </div>
         </PopoverContent>
       </Popover>
 
-      {/* Sort button */}
       <button
         type="button"
         onClick={() => onSortChange(field)}

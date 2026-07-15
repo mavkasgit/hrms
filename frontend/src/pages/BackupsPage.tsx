@@ -4,7 +4,10 @@ import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { useToast } from "@/shared/ui/use-toast"
 import { cn } from "@/shared/utils/cn"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { SortableFilterHeader, TableCornerResetCell, TableCornerResetHeader } from "@/shared/ui"
+import { useFilterableTable } from "@/shared/hooks/useFilterableTable"
+import { useTableQueryEngine, type ColumnSortDef } from "@/shared/hooks/useTableQueryEngine"
+import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import {
   Dialog,
   DialogContent,
@@ -39,7 +42,7 @@ import {
   useDeleteBackupsOlderThan,
   useStartBackupJob,
 } from "@/entities/backup/useBackups"
-import type { BackupPreview } from "@/entities/backup/types"
+import type { BackupInfo, BackupPreview } from "@/entities/backup/types"
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B"
@@ -65,6 +68,25 @@ function storageLabel(name: string): string {
   return labels[name] || name
 }
 
+type BackupSortField = "filename" | "db_name" | "backup_type" | "size" | "created_at" | "comment"
+
+function getBackupCellValue(backup: BackupInfo, field: BackupSortField): string {
+  switch (field) {
+    case "filename":
+      return backup.filename
+    case "db_name":
+      return backup.db_name
+    case "backup_type":
+      return backup.backup_type || "manual"
+    case "size":
+      return String(backup.size)
+    case "created_at":
+      return backup.created_at
+    case "comment":
+      return backup.comment || "—"
+  }
+}
+
 function backupStageLabel(stage: string): string {
   const labels: Record<string, string> = {
     queued: "Очередь",
@@ -85,33 +107,20 @@ export function BackupsPage() {
   const { data: backups, isLoading, refetch: refetchBackups } = useBackups()
   const { addToast } = useToast()
 
-  type SortField = "filename" | "db_name" | "backup_type" | "size" | "created_at" | "comment"
+  const {
+    bindColumn,
+    columnFilters,
+    buildFilterPredicate,
+    sortConfigs,
+    setSortConfigs,
+    hasActiveFilters,
+    resetAll: clearFilters,
+    setColumnFilters,
+  } = useFilterableTable<BackupSortField>()
 
-  const [sortConfigs, setSortConfigs] = useState<Array<{ field: SortField; order: "asc" | "desc" }>>([
-    { field: "created_at", order: "desc" }
-  ])
-
-  const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
-    filename: new Set(),
-    db_name: new Set(),
-    backup_type: new Set(),
-    size: new Set(),
-    created_at: new Set(),
-    comment: new Set(),
-  })
-
-  const handleSort = (field: SortField) => {
-    const defaultOrder = (field === "created_at" || field === "size") ? "desc" : "asc"
-    setSortConfigs((prev) => {
-      const active = prev[0]
-      if (!active || active.field !== field) {
-        return [{ field, order: defaultOrder }]
-      }
-      if (active.order === defaultOrder) {
-        return [{ field, order: defaultOrder === "asc" ? "desc" : "asc" }]
-      }
-      return []
-    })
+  const handleSort = (field: BackupSortField) => {
+    const defaultOrder = field === "created_at" || field === "size" ? "desc" : "asc"
+    setSortConfigs((prev) => nextMultiSortConfigs(prev, field, defaultOrder))
   }
 
   const activeTypeFilter = useMemo(() => {
@@ -121,39 +130,45 @@ export function BackupsPage() {
   }, [columnFilters.backup_type])
 
   const handleTypeFilterChange = (type: string) => {
-    setColumnFilters(prev => ({
+    setColumnFilters((prev) => ({
       ...prev,
-      backup_type: type === "all" ? new Set() : new Set([type])
+      backup_type: type === "all" ? new Set() : new Set([type]),
     }))
   }
 
-  const hasActiveFilters = useMemo(() => {
-    const hasFilters = Object.values(columnFilters).some(selected => selected && selected.size > 0)
-    if (hasFilters) return true
+  const filterPredicate = useMemo(
+    () => buildFilterPredicate(getBackupCellValue),
+    [buildFilterPredicate],
+  )
 
-    if (sortConfigs.length > 0) {
-      const active = sortConfigs[0]
-      if (active.field !== "created_at" || active.order !== "desc") {
-        return true
-      }
-    }
-    return false
-  }, [columnFilters, sortConfigs])
+  const sortDefs: ColumnSortDef<BackupInfo, BackupSortField>[] = useMemo(
+    () => [
+      { field: "filename", getSortValue: (b) => b.filename },
+      { field: "db_name", getSortValue: (b) => b.db_name },
+      { field: "backup_type", getSortValue: (b) => b.backup_type || "manual" },
+      { field: "size", getSortValue: (b) => b.size },
+      { field: "created_at", getSortValue: (b) => new Date(b.created_at).getTime() },
+      { field: "comment", getSortValue: (b) => b.comment || "—" },
+    ],
+    [],
+  )
 
-  const clearFilters = () => {
-    setColumnFilters({
-      filename: new Set(),
-      db_name: new Set(),
-      backup_type: new Set(),
-      size: new Set(),
-      created_at: new Set(),
-      comment: new Set(),
-    })
-    setSortConfigs([{ field: "created_at", order: "desc" }])
-  }
+  const effectiveSortConfigs = useMemo(
+    () =>
+      sortConfigs.length > 0
+        ? sortConfigs
+        : [{ field: "created_at" as const, order: "desc" as const }],
+    [sortConfigs],
+  )
 
-
-
+  const { rows: displayedBackups } = useTableQueryEngine({
+    rows: backups ?? [],
+    getId: (b) => b.filename,
+    searchQuery: "",
+    filterPredicate,
+    sortConfigs: effectiveSortConfigs,
+    sortDefs,
+  })
 
   const uniqueValues = useMemo(() => {
     const items = backups ?? []
@@ -166,54 +181,6 @@ export function BackupsPage() {
       comment: [...new Set(items.map(b => b.comment || "—"))].sort(),
     }
   }, [backups])
-
-  const displayedBackups = useMemo(() => {
-    if (!backups) return []
-    
-    // 1. Filter
-    let result = [...backups]
-    for (const [field, selected] of Object.entries(columnFilters)) {
-      if (selected && selected.size > 0) {
-        result = result.filter(b => {
-          let val = ""
-          if (field === "backup_type") {
-            val = b.backup_type || "manual"
-          } else if (field === "comment") {
-            val = b.comment || "—"
-          } else if (field === "size" || field === "created_at" || field === "db_name" || field === "filename") {
-            val = String(b[field as keyof typeof b] || "")
-          }
-          return selected.has(val)
-        })
-      }
-    }
-    
-    // 2. Sort (default to created_at desc if no sorting active)
-    const activeSort = sortConfigs[0] || { field: "created_at", order: "desc" }
-    result.sort((a, b) => {
-      let valA = a[activeSort.field]
-      let valB = b[activeSort.field]
-      
-      if (activeSort.field === "created_at") {
-        const timeA = new Date(valA || 0).getTime()
-        const timeB = new Date(valB || 0).getTime()
-        return activeSort.order === "asc" ? timeA - timeB : timeB - timeA
-      }
-      
-      if (activeSort.field === "size") {
-        const numA = Number(valA || 0)
-        const numB = Number(valB || 0)
-        return activeSort.order === "asc" ? numA - numB : numB - numA
-      }
-      
-      const strA = String(valA || "")
-      const strB = String(valB || "")
-      if (strA < strB) return activeSort.order === "asc" ? -1 : 1
-      if (strA > strB) return activeSort.order === "asc" ? 1 : -1
-      return 0
-    })
-    return result
-  }, [backups, columnFilters, sortConfigs])
 
   const { data: config, isLoading: isConfigLoading } = useBackupConfig()
   const dbName = config?.db_name || "unknown"
@@ -735,17 +702,6 @@ export function BackupsPage() {
           <Trash2 className="h-4 w-4 mr-1" />
           Удалить старые
         </Button>
-        {hasActiveFilters && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={clearFilters}
-            className="ml-auto cursor-pointer"
-          >
-            <RotateCcw className="h-4 w-4 mr-1" />
-            Сбросить фильтры
-          </Button>
-        )}
       </div>
 
       {/* Table */}
@@ -768,8 +724,7 @@ export function BackupsPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.filename}
-                  selectedValues={columnFilters.filename}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("filename")}
                 />
               </th>
               <th className="text-left px-3 py-2 font-medium p-0">
@@ -779,8 +734,7 @@ export function BackupsPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.db_name}
-                  selectedValues={columnFilters.db_name}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("db_name")}
                 />
               </th>
               <th className="text-left px-3 py-2 font-medium p-0">
@@ -790,8 +744,7 @@ export function BackupsPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.backup_type}
-                  selectedValues={columnFilters.backup_type}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("backup_type")}
                   valueLabel={(val) => {
                     const labels: Record<string, string> = {
                       monthly: "Ежемесячный",
@@ -810,8 +763,7 @@ export function BackupsPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.size}
-                  selectedValues={columnFilters.size}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("size")}
                   valueLabel={(val) => formatBytes(Number(val))}
                 />
               </th>
@@ -822,8 +774,7 @@ export function BackupsPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.created_at}
-                  selectedValues={columnFilters.created_at}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("created_at")}
                   valueLabel={formatDate}
                 />
               </th>
@@ -834,29 +785,34 @@ export function BackupsPage() {
                   currentSorts={sortConfigs}
                   onSortChange={handleSort}
                   values={uniqueValues.comment}
-                  selectedValues={columnFilters.comment}
-                  onFilterChange={(field, selected) => setColumnFilters(prev => ({ ...prev, [field]: selected }))}
+                  {...bindColumn("comment")}
                 />
               </th>
-              <th className="text-right px-2 py-2 w-44"></th>
+              <th className="text-right px-2 py-2 text-xs font-medium text-muted-foreground">
+                Действия
+              </th>
+              <TableCornerResetHeader
+                hasActiveFilters={hasActiveFilters}
+                onReset={clearFilters}
+              />
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={8} className="px-3 py-4 text-center text-muted-foreground text-xs">
+                <td colSpan={9} className="px-3 py-4 text-center text-muted-foreground text-xs">
                   Загрузка...
                 </td>
               </tr>
             ) : !backups || backups.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-4 text-center text-muted-foreground text-xs">
+                <td colSpan={9} className="px-3 py-4 text-center text-muted-foreground text-xs">
                   Нет бэкапов. Нажмите "Создать бэкап"
                 </td>
               </tr>
             ) : displayedBackups.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-4 text-center text-muted-foreground text-xs">
+                <td colSpan={9} className="px-3 py-4 text-center text-muted-foreground text-xs">
                   Нет бэкапов, соответствующих выбранным фильтрам.
                 </td>
               </tr>
@@ -963,6 +919,7 @@ export function BackupsPage() {
                       </Button>
                     </div>
                   </td>
+                  <TableCornerResetCell />
                 </tr>
               ))
             )}
