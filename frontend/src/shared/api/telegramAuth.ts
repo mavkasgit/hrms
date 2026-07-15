@@ -88,26 +88,6 @@ export async function createTelegramBotChallenge(): Promise<TelegramBotChallenge
   return challenge
 }
 
-/** Create invite challenge → deep_link + poll_secret (store secret in sessionStorage). */
-export async function createTelegramBotInviteChallenge(inviteCode: string): Promise<TelegramBotChallenge> {
-  const response = await fetch(`${API_BASE}/auth/telegram/bot/challenge`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ purpose: "invite", invite_code: inviteCode }),
-  })
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}))
-    const detail =
-      typeof data.detail === "string" ? data.detail : "Не удалось активировать инвайт-код"
-    throw new Error(detail)
-  }
-  const challenge: TelegramBotChallenge = await response.json()
-  if (challenge.poll_secret) {
-    storeBotPollSecret(challenge.challenge_id, challenge.poll_secret)
-  }
-  return challenge
-}
-
 export async function pollTelegramBotChallenge(
   challengeId: string,
   pollSecret?: string
@@ -163,12 +143,9 @@ export type BotLoginHandlers = {
  * poll_secret until done. On success stores JWT in localStorage.token.
  */
 export async function startTelegramBotLogin(
-  handlers: BotLoginHandlers = { onChallenge: () => undefined },
-  inviteCode?: string
+  handlers: BotLoginHandlers = { onChallenge: () => undefined }
 ): Promise<TelegramLoginResponse> {
-  const challenge = inviteCode
-    ? await createTelegramBotInviteChallenge(inviteCode)
-    : await createTelegramBotChallenge()
+  const challenge = await createTelegramBotChallenge()
   handlers.onChallenge(challenge)
 
   if (handlers.openDeepLink !== false) {

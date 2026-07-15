@@ -24,7 +24,6 @@ type TelegramLoginModalProps = {
   onOpenChange: (open: boolean) => void
   config: TelegramBotConfig | null
   onSuccess?: (data: any) => void
-  inviteCode?: string
   purpose?: "login" | "link"
 }
 
@@ -33,7 +32,6 @@ export function TelegramLoginModal({
   onOpenChange,
   config,
   onSuccess,
-  inviteCode,
   purpose = "login",
 }: TelegramLoginModalProps) {
   const botEnabled =
@@ -141,7 +139,7 @@ export function TelegramLoginModal({
           signal: controller.signal,
           // QR tab: user scans the code with their phone — no auto-open.
           openDeepLink: false,
-        }, inviteCode)
+        })
         finish(loginData)
       }
     } catch (err: any) {
@@ -153,7 +151,7 @@ export function TelegramLoginModal({
       setBusy(false)
       setPolling(false)
     }
-  }, [botEnabled, finish, inviteCode, purpose])
+  }, [botEnabled, finish, purpose])
 
   const cancelQr = useCallback(() => {
     abortRef.current?.abort()
