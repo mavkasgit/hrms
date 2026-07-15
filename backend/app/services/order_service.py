@@ -146,11 +146,25 @@ class OrderService:
     async def create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
         await self.ensure_default_order_types(db)
         if db.in_transaction():
-            return await self._do_create_order(db, data)
-        async with db.begin():
-            return await self._do_create_order(db, data)
+            order = await self._do_create_order(db, data)
+        else:
+            async with db.begin():
+                order = await self._do_create_order(db, data)
+
+        # Draft delete only after successful create (+ TX commit when we own it), like group commit.
+        if data.draft_id:
+            try:
+                order_draft_service.delete_draft(data.draft_id)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    "Failed to delete committed order draft %s", data.draft_id
+                )
+        return order
 
     async def _do_create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
+        from app.core.paths import storage_path as resolve_storage_path
+
         order_number = data.order_number
         if not order_number:
             order_number = await self.order_repo.get_next_order_number(db, data.order_type_id)
@@ -180,7 +194,41 @@ class OrderService:
         year_dir.mkdir(parents=True, exist_ok=True)
 
         file_path, display_name = await generate_document(order_number, data, employee, order_type, year_dir)
+        # Permanent file copied from draft — unlink on failure so draft remains for retry.
+        permanent_abs: Path | None = None
+        if data.draft_id and file_path:
+            try:
+                permanent_abs = resolve_storage_path(file_path, "ORDERS_PATH")
+            except Exception:
+                permanent_abs = year_dir / Path(str(file_path)).name
 
+        try:
+            return await self._finish_create_order(
+                db, data, order_number, employee, order_type, file_path, display_name
+            )
+        except Exception:
+            if permanent_abs is not None:
+                try:
+                    if permanent_abs.exists():
+                        permanent_abs.unlink()
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).exception(
+                        "Failed to cleanup permanent order file after failed create: %s",
+                        permanent_abs,
+                    )
+            raise
+
+    async def _finish_create_order(
+        self,
+        db: AsyncSession,
+        data: OrderCreate,
+        order_number: str,
+        employee: Employee | None,
+        order_type: OrderType,
+        file_path: str,
+        display_name: str,
+    ) -> Order:
         # Подготавливаем extra_fields для продления контракта
         extra_fields = data.extra_fields
         if order_type.code == "contract_extension" and data.extra_fields:

@@ -1,7 +1,7 @@
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 import os
 import time
 
@@ -144,7 +144,8 @@ def test_order_draft_service_rejects_unknown_draft(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_order_service_uses_draft_docx(monkeypatch, tmp_path):
+async def test_generate_document_from_draft_keeps_draft(monkeypatch, tmp_path):
+    """generate_document copies draft to permanent storage but does NOT delete the draft."""
     from app.services.order_document_service import generate_document
 
     monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
@@ -152,7 +153,8 @@ async def test_order_service_uses_draft_docx(monkeypatch, tmp_path):
     draft_service = OrderDraftService()
     draft_service._drafts_dir = tmp_path / ".drafts"
     draft_service.ensure_drafts_dir()
-    draft_path = draft_service._drafts_dir / "12345678-1234-1234-1234-123456789abc_order.docx"
+    draft_id = "12345678-1234-1234-1234-123456789abc"
+    draft_path = draft_service._drafts_dir / f"{draft_id}_order.docx"
     draft_path.write_bytes(b"draft")
 
     monkeypatch.setattr("app.services.order_draft_service.order_draft_service", draft_service)
@@ -166,7 +168,7 @@ async def test_order_service_uses_draft_docx(monkeypatch, tmp_path):
             order_type_id=2,
             order_date=date.today(),
             order_number="1",
-            draft_id="12345678-1234-1234-1234-123456789abc",
+            draft_id=draft_id,
         ),
         SimpleNamespace(name="Иванов Иван Иванович"),
         SimpleNamespace(code="test", name="Тест", filename_pattern="final.docx"),
@@ -174,7 +176,115 @@ async def test_order_service_uses_draft_docx(monkeypatch, tmp_path):
     )
 
     assert (tmp_path / result[0]).read_bytes() == b"draft"
+    # Draft must remain until create_order succeeds (retry-safe).
+    assert draft_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_create_order_deletes_draft_after_success(monkeypatch, tmp_path):
+    """Draft is deleted only after _do_create_order succeeds (group-commit pattern)."""
+    from app.services.order_draft_service import order_draft_service
+    from app.services.order_service import OrderService
+
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    order_draft_service._drafts_dir = tmp_path / ".drafts"
+    order_draft_service.ensure_drafts_dir()
+
+    draft_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    draft_path = order_draft_service._drafts_dir / f"{draft_id}_order.docx"
+    draft_path.write_bytes(b"draft-content")
+
+    svc = OrderService()
+    fake_order = SimpleNamespace(id=42)
+
+    async def fake_ensure(db):
+        return []
+
+    async def fake_do_create(db, data):
+        assert data.draft_id == draft_id
+        assert draft_path.exists(), "draft must still exist during create"
+        return fake_order
+
+    monkeypatch.setattr(svc, "ensure_default_order_types", fake_ensure)
+    monkeypatch.setattr(svc, "_do_create_order", fake_do_create)
+
+    db = MagicMock()
+    db.in_transaction.return_value = True
+
+    order = await svc.create_order(
+        db,
+        OrderCreate(
+            employee_id=None,
+            order_type_id=1,
+            order_date=date.today(),
+            order_number="DRAFT-OK-1",
+            draft_id=draft_id,
+        ),
+    )
+
+    assert order.id == 42
     assert not draft_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_create_order_keeps_draft_when_create_fails(monkeypatch, tmp_path):
+    """If create fails after draft copy, draft remains and permanent file is cleaned up."""
+    from app.services import order_service as order_service_module
+    from app.services.order_draft_service import order_draft_service
+    from app.services.order_service import OrderService
+
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    order_draft_service._drafts_dir = tmp_path / ".drafts"
+    order_draft_service.ensure_drafts_dir()
+
+    draft_id = "11111111-2222-3333-4444-555555555555"
+    draft_path = order_draft_service._drafts_dir / f"{draft_id}_order.docx"
+    draft_path.write_bytes(b"draft-retry")
+
+    permanent_written: list[Path] = []
+
+    async def fake_generate(order_number, data, employee, order_type, year_dir_arg):
+        year_dir_arg.mkdir(parents=True, exist_ok=True)
+        dest = year_dir_arg / f"{order_type.code}_{order_number}.docx"
+        dest.write_bytes(b"copied-from-draft")
+        permanent_written.append(dest)
+        return f"{data.order_date.year}/{dest.name}", dest.name
+
+    async def failing_finish(*_args, **_kwargs):
+        raise RuntimeError("simulated DB failure")
+
+    svc = OrderService()
+    order_type = SimpleNamespace(id=1, code="general_order", name="Общий", is_active=True)
+
+    async def fake_ensure(db):
+        return [order_type]
+
+    async def fake_get_type(db, type_id):
+        return order_type
+
+    monkeypatch.setattr(order_service_module, "generate_document", fake_generate)
+    monkeypatch.setattr(svc, "ensure_default_order_types", fake_ensure)
+    monkeypatch.setattr(svc.order_type_repo, "get_by_id", fake_get_type)
+    monkeypatch.setattr(svc, "_finish_create_order", failing_finish)
+
+    db = MagicMock()
+    db.in_transaction.return_value = True
+
+    with pytest.raises(RuntimeError, match="simulated DB failure"):
+        await svc.create_order(
+            db,
+            OrderCreate(
+                employee_id=None,
+                order_type_id=1,
+                order_date=date.today(),
+                order_number="DRAFT-FAIL-1",
+                draft_id=draft_id,
+            ),
+        )
+
+    assert draft_path.exists(), "draft must remain for retry after failed create"
+    for p in permanent_written:
+        assert not p.exists(), f"orphan permanent file should be cleaned up: {p}"
 
 
 @pytest.mark.asyncio

@@ -339,13 +339,13 @@ async def generate_document(
     file_path = year_dir / storage_name
 
     if data.draft_id:
+        # Copy only — draft is deleted after successful order create (order_service).
         from app.services.order_draft_service import order_draft_service
 
         draft_path = order_draft_service.get_draft_path(data.draft_id)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         import shutil
         shutil.copy2(str(draft_path), str(file_path))
-        order_draft_service.delete_draft(data.draft_id)
         return storage_key(file_path, "ORDERS_PATH"), display_name
 
     await asyncio.wait_for(
