@@ -2,47 +2,57 @@
 
 ## Обзор тестов
 
-В проекте **HRMS** реализовано сквозное тестирование (E2E) с помощью **Playwright**. Тесты разделены на три ключевые области:
-1. **UI тесты (`e2e/ui/`)** — проверка интерфейса, форм создания сотрудников, структуры организации.
-2. **API тесты (`e2e/api/`)** — проверка эндпоинтов авторизации, отпусков и документов.
-3. **Domain тесты (`e2e/domain/`)** — интеграционные сценарии бизнес-логики (например, генерация периодов отпусков).
+В проекте **HRMS** — E2E на **Playwright**. Идёт **rewrite** на ветке `feat/e2e-rewrite`.
+
+**Канон:** [`e2e/AGENTS.md`](../e2e/AGENTS.md) (слои, cleanup, selectors, auth, npm-скрипты).
+
+| Набор | Где | Команда |
+|-------|-----|---------|
+| **Legacy** (временный) | `e2e/_legacy/{ui,api,domain}/` | `npm run test:e2e:legacy` / `test:e2e:regression` |
+| **New smoke / api / ui** | projects + tags `@smoke` / `@api` / `@ui` | `npm run test:e2e:smoke` · `test:e2e:api` · `test:e2e:ui` |
+| **Auth** | `e2e/auth/` | `npm run test:e2e:auth` |
+| **Все projects** | — | `npm run test:e2e` |
+
+Пока new-слои пустые — scripts ок (0 tests). Старый smoke из 3 файлов: `npm run test:e2e:smoke:legacy`.
+
+## Cleanup policy (кратко)
+
+Каждый create → **track** → teardown **delete**; prefix `e2e-`. Create without track = bug. **Нет** wipe всей БД; residual только после crash.
 
 ## Запуск тестов
 
-Для запуска E2E-тестов необходимо поднять тестовое окружение и запустить соответствующую команду:
-
 ```bash
-# 1. Поднимите тестовое окружение в Docker
+# 1. Тестовое окружение
 npm run docker:test:up
 
-# 2. Дождитесь готовности контейнеров и запустите тесты
-# Запуск регрессионного набора тестов
-npm run test:e2e:regression
+# 2. Legacy regression (текущий рабочий набор)
+npm run test:e2e:legacy
 
-# Запуск только UI-тестов
-npm run test:e2e:ui
-
-# Запуск только API-тестов
-npm run test:e2e:api
-
-# Запуск дымовых тестов (smoke)
+# New layers (skeleton; 0 tests until E1+)
 npm run test:e2e:smoke
+npm run test:e2e:api
+npm run test:e2e:ui
+npm run test:e2e:auth
+
+# Список без запуска
+npx playwright test --list
+npx playwright test --project=legacy --list
 ```
 
-### Параллельный прогон (opt-in)
+### Параллельный прогон (opt-in, после rewrite)
 
-По умолчанию Playwright работает в serial-режиме (`workers: 1`).  
-Multi-worker включается через `PW_WORKERS`; при `workers>1` нужен managed browser (shared CDP несовместим).
+По умолчанию Playwright: `workers: 1`, `fullyParallel: false`.  
+Multi-worker — через `PW_WORKERS` **после** стабильного rewrite; при `workers>1` нужен managed browser (shared CDP несовместим).
 
 ```bash
 # serial (default)
-npm run test:e2e:smoke
+npm run test:e2e:legacy
 
-# opt-in parallel (managed browser only)
-cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:smoke
+# opt-in parallel (managed browser only; не default на rewrite)
+cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:legacy
 ```
 
-Имена сущностей, создаваемых через `apiOps`, получают префикс `w{N}-` (worker index) для изоляции данных на shared app DB.
+Имена сущностей через `apiOps` могут получать worker-prefix `w{N}-` при multi-worker.
 
 ## Backend (pytest)
 
