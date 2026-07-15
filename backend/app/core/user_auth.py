@@ -23,8 +23,9 @@ def clear_invite_if_fully_activated(user: User) -> bool:
     """
     Сбросить invite_code только когда заданы и пароль, и Telegram.
 
-    Инвайт-код — маркер незавершённого онбординга: баннер в UI
-    показывается, пока код есть и не выполнен любой из пунктов.
+    invite_code — маркер незавершённого онбординга (код ещё действует,
+    пока нет полного набора факторов). Баннер UI завязан на
+    needs_security_setup, а не только на наличие invite_code.
     """
     if has_local_password(user) and user.telegram_id is not None:
         if user.invite_code is not None:

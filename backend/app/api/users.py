@@ -241,7 +241,9 @@ async def update_user(
             payload.password.encode("utf-8"), bcrypt.gensalt()
         ).decode("utf-8")
         user.password_changed_at = _utcnow()
-        
+        # Симметрия с setup-password: clear invite только при password + TG
+        clear_invite_if_fully_activated(user)
+
     await db.commit()
     
     # Подгрузим сотрудника для ответа
@@ -347,7 +349,7 @@ async def setup_my_password(
     password_hash = bcrypt.hashpw(payload.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     db_user.password_hash = password_hash
     db_user.password_changed_at = _utcnow()
-    # invite_code сбрасываем только после пароля И Telegram (баннер онбординга)
+    # invite_code сбрасываем только при password + TG (clear_if_fully)
     clear_invite_if_fully_activated(db_user)
     db.add(db_user)
     await db.commit()

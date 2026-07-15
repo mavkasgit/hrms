@@ -84,7 +84,8 @@ UI: `TelegramLoginModal` + poll ~1.5s; secret в `sessionStorage`.
 
 ### 2.4. Invite + Telegram (API)
 
-`purpose=invite` + `invite_code` на create challenge: после confirm poll выдаёт JWT и `require_password_setup: true`, очищает `invite_code`.  
+`purpose=invite` + `invite_code` на create challenge: после confirm poll выдаёт JWT и `require_password_setup: true`.  
+`invite_code` сбрасывается только когда заданы **и** локальный пароль, **и** Telegram (`clear_invite_if_fully_activated`); один TG-confirm без пароля invite не чистит (онбординг продолжается).  
 **FE primary invite path** — `POST /api/auth/invite/login` (код), не TG deep-link.
 
 ### 2.5. Widget login (API only)
