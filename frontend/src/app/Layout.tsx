@@ -96,8 +96,8 @@ export function Layout() {
     return <Navigate to="/login" replace />
   }
 
-  // Баннер, пока не выполнены ОБА пункта: пароль и Telegram.
-  // Не завязан на invite_code (он мог уже сброситься) — только на фактический статус.
+  // Баннер по needs_security_setup (нужны оба фактора: пароль и Telegram).
+  // invite_code не gate — сбрасывается только при полной активации.
   const showSecurityBanner = Boolean(
     profile &&
       (profile.needs_security_setup ??

@@ -147,8 +147,6 @@ export function LoginPage() {
     }
   }
 
-  // SSO click handler removed as SSO is hidden
-
   async function loginAsDev(role: "admin" | "viewer") {
     setLoading(true)
     setError(null)
@@ -219,8 +217,6 @@ export function LoginPage() {
             Войти
           </button>
         </form>
-
-        {/* SSO кнопка скрыта по требованию */}
 
         {/* Telegram: две кнопки */}
         {botEnabled && (
@@ -348,7 +344,7 @@ export function LoginPage() {
           <DialogHeader>
             <DialogTitle>Установка пароля</DialogTitle>
             <DialogDescription>
-              Для вашего аккаунта необходимо установить пароль. Это позволит вам входить в систему без использования Telegram.
+              Установите пароль для входа по логину/паролю.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSetupPasswordSubmit} className="space-y-4 py-2">

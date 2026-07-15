@@ -208,8 +208,6 @@ export function UserProfileModal({
 
   if (!localUser) return null
 
-  // Инициалы теперь вычисляет <UserAvatar> при fallback-рендере.
-
   const handleCopyUsername = () => {
     navigator.clipboard.writeText(localUser.username)
     setCopied(true)
@@ -274,7 +272,6 @@ export function UserProfileModal({
               <div className="relative group">
                 <UserAvatar
                   seed={getUserSeed(localUser)}
-                  name={localUser.full_name}
                   size={80}
                   className="shadow-md"
                 />
@@ -393,7 +390,7 @@ export function UserProfileModal({
                         Вы вошли по одноразовому инвайт-коду
                       </p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Рекомендуем установить пароль или привязать аккаунт Telegram во вкладке «Безопасность», чтобы защитить свой аккаунт.
+                        Рекомендуем установить пароль и привязать аккаунт Telegram во вкладке «Безопасность», чтобы защитить свой аккаунт.
                       </p>
                     </div>
                   </div>
@@ -634,10 +631,11 @@ export function UserProfileModal({
         onOpenChange={setTgModalOpen}
         config={telegramConfig}
         purpose="link"
-        onSuccess={() => {
+        onSuccess={async () => {
           setTgModalOpen(false)
           setTgSuccess("Telegram успешно привязан!")
-          onUpdateProfile()
+          // Как после setup-password: refresh + hrms:profile-updated для баннера Layout
+          await fetchUserData()
         }}
       />
 
