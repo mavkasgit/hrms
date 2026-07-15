@@ -26,25 +26,57 @@ Object.entries(envVars).forEach(([k, v]) => {
 
 const ADMIN_STORAGE = 'e2e/.auth/admin.json';
 
+/** Opt-in multi-worker: default 1 (serial/stable). CI must stay at 1. */
+const WORKERS = process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 1;
+/**
+ * Browser mode from e2e/.env:
+ * - managed | headless | headed — Playwright launches its own Chromium (multi-worker OK)
+ * - cdp — shared Chrome on BROWSER_PORT (single-worker only; not implemented in this suite)
+ */
+const BROWSER_MODE = (process.env.E2E_BROWSER_MODE || 'managed').toLowerCase();
+
+if (!Number.isFinite(WORKERS) || WORKERS < 1) {
+  throw new Error(
+    `Invalid PW_WORKERS=${process.env.PW_WORKERS}: must be a positive integer`
+  );
+}
+
+// Shared CDP cannot host parallel workers — fail-fast before tests start.
+if (WORKERS > 1 && BROWSER_MODE === 'cdp') {
+  throw new Error(
+    [
+      `E2E: PW_WORKERS=${WORKERS} is incompatible with E2E_BROWSER_MODE=cdp.`,
+      'Shared CDP Chrome cannot serve multiple Playwright workers.',
+      'Use: cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:smoke',
+      'Or leave workers at default 1 for CDP/debug.',
+    ].join(' ')
+  );
+}
+
 /**
  * E2E suite (post-cutover): setup → api/smoke/ui (storageState); auth clean.
  * No legacy project / hardcoded JWT.
+ *
+ * Workers: default 1; opt-in via PW_WORKERS (+ E2E_BROWSER_MODE=managed when >1).
+ * fullyParallel only when multi-worker so serial default stays predictable.
  */
 export default defineConfig({
   testDir: './e2e',
   testIgnore: ['**/*.js', '**/*.js.map'],
-  fullyParallel: false,
+  fullyParallel: WORKERS > 1,
   forbidOnly: !!process.env.CI,
   passWithNoTests: true,
   // CI: extra retry for infra flake; local: one retry is enough
   retries: process.env.CI ? 2 : 1,
-  workers: process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 1,
+  workers: WORKERS,
   reporter: process.env.CI
     ? [['list'], ['html', { open: 'never' }]]
     : 'list',
   timeout: 60000,
   use: {
     baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173',
+    // headless when managed/headless; headed only if explicitly requested
+    headless: BROWSER_MODE !== 'headed',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

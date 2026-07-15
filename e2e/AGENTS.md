@@ -22,8 +22,17 @@
 | **setup** | `setup` | `setup/*.setup.ts` | login → `storageState` в `.auth/` | бизнес-assert'ы, UI journeys |
 | **api** | `api` + tag `@api` | `api/**/*.spec.ts` | HTTP через `request`, seed/cleanup, контракты API | клики, POM, browser-only assert |
 | **smoke** | `smoke` + tag `@smoke` | `**/*.spec.ts` с `@smoke` | критичный happy-path UI/API, быстрый gate | глубокие edge-cases, тяжёлые матрицы |
-| **ui** | `ui` + tag `@ui` | `**/*.spec.ts` с `@ui` | пользовательские сценарии, POM, формы | «сырой» HTTP без UI-смысла; balance math |
+| **ui** | `ui` + tag `@ui` | `**/*.spec.ts` с `@ui` | пользовательские сценарии, POM, формы, **клики для контроля процесса** | «сырой» HTTP без UI-смысла; balance math |
 | **auth** | `auth` | `auth/**/*.spec.ts` | login / invite / logout **без** готового storageState | зависимость от admin storage из setup |
+
+### Когда какой слой (контроль процесса)
+
+| Нужно | Слой | Почему |
+|-------|------|--------|
+| Быстрый gate «стенд жив / login / core pages» | **`@smoke`** | короткий happy-path, CI e2e-smoke |
+| Проверить **клики, формы, POM, UX-поток** (контроль процесса глазами пользователя) | **`@ui`** | именно клики и UI-состояния; не заменять API-only assert'ами |
+| Контракт API, коды ошибок, seed/cleanup без UI | **`@api`** | HTTP `request`, без кликов |
+| Login / bad password без storage | **auth** | чистая сессия |
 
 **Правило импортов:** specs → fixtures/helpers/pages; pages не импортируют specs; fixtures не импортируют specs.
 
@@ -32,7 +41,7 @@
 ## 3. Cleanup policy
 
 1. **Каждый create → track → teardown delete.** Нет «создали и забыли».
-2. Имена сущностей — prefix **`e2e-`** (и worker-prefix, если multi-worker когда-нибудь включат).
+2. Имена сущностей — prefix **`e2e-`** + worker tag **`w{N}-`** через `apiOps.uid()` (`parallelIndex`).
 3. **Create without track = bug** — фикстура/хелпер обязан зарегистрировать id для cleanup.
 4. **Нет** wipe всей БД между тестами (ни TRUNCATE app DB, ни drop schema).
 5. Residual data допустим **только** после crash/timeout runner'а; в зелёном прогоне БД чистая по tracked entities.
@@ -98,12 +107,16 @@ Hardcoded JWT / `extraHTTPHeaders` Authorization — **удалены** (E4).
 # Всё (все projects)
 npm run test:e2e
 
-# Слои
-npm run test:e2e:smoke        # setup + smoke
-npm run test:e2e:api          # setup + api
-npm run test:e2e:ui           # setup + ui
+# Слои — serial (default, workers: 1) — контроль / debug
+npm run test:e2e:smoke        # setup + smoke (быстрый gate)
+npm run test:e2e:api          # setup + api (контракты HTTP)
+npm run test:e2e:ui           # setup + ui (клики / контроль процесса)
 npm run test:e2e:auth         # auth only (no storage)
 npm run test:e2e:regression   # setup + smoke + ui + api + auth
+
+# Parallel opt-in (managed browser only; не для CI)
+cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:smoke
+cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:ui
 
 # Список без запуска
 npx playwright test --list
@@ -116,15 +129,22 @@ Base URL: `E2E_BASE_URL` (default `http://localhost:5173`).
 
 ## 7. Workers / parallel
 
-- **Default:** `workers: 1` (`PW_WORKERS` не задан).
-- `fullyParallel: false` — стабильность важнее скорости.
-- Multi-worker (`PW_WORKERS=N`) — **после** green rewrite (E6). При `workers>1` нужен managed browser; shared CDP несовместим.
-- **CI:** `retries: 2`, HTML reporter, `reuseExistingServer: false` (см. `playwright.config.ts`).
+| Режим | Как | `fullyParallel` | Browser |
+|-------|-----|-----------------|---------|
+| **Serial (default)** | `PW_WORKERS` не задан → `workers: 1` | `false` | managed/headless/headed/cdp |
+| **Opt-in parallel** | `PW_WORKERS=2+` + `E2E_BROWSER_MODE=managed` | `true` | **только** managed/headless/headed |
+| **CI e2e-smoke** | без `PW_WORKERS` → **workers: 1** | `false` | managed (GHA) |
+
+- Multi-worker **opt-in**: data isolation через `apiOps.uid()` → `w{N}-…` (`workerPrefix(parallelIndex)`).
+- Shared admin `storageState` OK (read-heavy + unique `e2e-` names). Отдельные admin-аккаунты **не** нужны.
+- **CDP + multi-worker = fail-fast** в `playwright.config.ts` (`E2E_BROWSER_MODE=cdp` и `PW_WORKERS>1` → throw).
+- **CI:** всегда `workers: 1` (стабильность). Не включать multi-worker в workflow.
+- **CI knobs:** `retries: 2`, HTML reporter, `reuseExistingServer: false` (см. `playwright.config.ts`).
 
 ### CI e2e-smoke
 
 Workflow: [`.github/workflows/e2e-smoke.yml`](../.github/workflows/e2e-smoke.yml)  
-Команда: `npx playwright test --project=setup --project=smoke`  
+Команда: `npx playwright test --project=setup --project=smoke` (**workers: 1**, без `PW_WORKERS`)  
 Стек: postgres service + migrate + seed admin + uvicorn + Vite (webServer).  
 PR path — **best-effort** (`continue-on-error`); для intentional run — `workflow_dispatch`.  
 Подробности: `docs/testing-guide.md` → «E2E smoke (Playwright)».

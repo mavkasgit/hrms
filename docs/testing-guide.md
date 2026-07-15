@@ -6,14 +6,14 @@
 
 **Канон:** [`e2e/AGENTS.md`](../e2e/AGENTS.md) (слои, cleanup, selectors, auth, npm-скрипты).
 
-| Набор | Где | Команда |
-|-------|-----|---------|
-| **Smoke** | tag `@smoke` | `npm run test:e2e:smoke` |
-| **API** | `e2e/api/` + tag `@api` | `npm run test:e2e:api` |
-| **UI** | tag `@ui` | `npm run test:e2e:ui` |
-| **Auth** | `e2e/auth/` | `npm run test:e2e:auth` |
-| **Regression** | setup + smoke + ui + api + auth | `npm run test:e2e:regression` |
-| **Все projects** | — | `npm run test:e2e` |
+| Набор | Где | Команда | Для чего |
+|-------|-----|---------|----------|
+| **Smoke** | tag `@smoke` | `npm run test:e2e:smoke` | быстрый gate (core pages / happy-path) |
+| **API** | `e2e/api/` + tag `@api` | `npm run test:e2e:api` | HTTP-контракты, без кликов |
+| **UI** | tag `@ui` | `npm run test:e2e:ui` | **клики / формы / POM — контроль процесса** |
+| **Auth** | `e2e/auth/` | `npm run test:e2e:auth` | login без preloaded storage |
+| **Regression** | setup + smoke + ui + api + auth | `npm run test:e2e:regression` | полный локальный прогон |
+| **Все projects** | — | `npm run test:e2e` | все projects config |
 
 ## Cleanup policy (кратко)
 
@@ -38,18 +38,22 @@ npx playwright test --list
 
 ### Параллельный прогон (opt-in)
 
-По умолчанию Playwright: `workers: 1`, `fullyParallel: false`.  
-Multi-worker — через `PW_WORKERS` после стабильного rewrite (E6).
+По умолчанию Playwright: **`workers: 1`**, `fullyParallel: false` (serial — контроль / debug).  
+Multi-worker — **opt-in** через `PW_WORKERS` + **`E2E_BROWSER_MODE=managed`** (Playwright сам поднимает Chromium на worker).  
+`E2E_BROWSER_MODE=cdp` + `PW_WORKERS>1` → **fail-fast** (shared CDP не обслуживает несколько workers).  
+**CI e2e-smoke остаётся на workers: 1** (не задавать `PW_WORKERS` в workflow).
 
 ```bash
-# serial (default)
+# serial (default) — контроль / debug
+npm run test:e2e:ui
 npm run test:e2e:smoke
 
-# opt-in parallel (не default)
-cross-env PW_WORKERS=2 npm run test:e2e:api
+# parallel opt-in (local only)
+cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:smoke
+cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:ui
 ```
 
-Имена сущностей через `apiOps` могут получать worker-prefix `w{N}-` при multi-worker.
+Изоляция данных: `apiOps.uid()` → prefix `w{N}-` (`workerPrefix(parallelIndex)`), сущности `e2e-…`.
 
 ## Backend (pytest)
 

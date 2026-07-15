@@ -92,11 +92,13 @@ async function apiCreateEmployee(
   overrides: Record<string, unknown> = {}
 ): Promise<Employee> {
   const u = uid()
+  // tab_number: timestamp+noise cuts multi-worker collisions (override via overrides)
   const empData = {
     name: `e2e-emp-${u}`,
     gender: 'М',
     birth_date: '1990-05-15',
-    tab_number: Math.floor(100000 + Math.random() * 900000),
+    // unique-ish under multi-worker; stay within signed int32-ish range
+    tab_number: 100_000_000 + Math.floor(Math.random() * 800_000_000) + (Date.now() % 1000),
     department_id: departmentId,
     position_id: positionId,
     hire_date: '2024-01-15',
