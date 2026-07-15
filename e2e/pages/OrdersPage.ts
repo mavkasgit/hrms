@@ -123,6 +123,32 @@ export class OrdersPage {
   }
 
   /**
+   * Fill extra field on create form by accessible label (DatePicker / text / number).
+   * Date values: DD.MM.YYYY (DatePicker display mask).
+   */
+  async fillExtraFieldByLabel(label: string | RegExp, value: string) {
+    const input = this.page.getByLabel(label).first()
+    await expect(input).toBeVisible({ timeout: 10_000 })
+    await input.click()
+    await input.fill(value)
+    await input.blur()
+  }
+
+  /**
+   * Confirm dismissal dialog after «Создать приказ» for type «Увольнение».
+   * Title: «Уволить сотрудника?» → action «Уволить» (opens draft popup).
+   */
+  async confirmDismissalDialog() {
+    const title = this.page.getByRole('heading', { name: /Уволить сотрудника\?/ })
+    await expect(title).toBeVisible({ timeout: 10_000 })
+    const dialog = this.page.getByRole('alertdialog').filter({ has: title })
+    const confirmBtn = dialog
+      .getByRole('button', { name: 'Уволить', exact: true })
+      .or(this.page.getByRole('button', { name: 'Уволить', exact: true }))
+    await confirmBtn.first().click()
+  }
+
+  /**
    * Click create → wait for OnlyOffice draft popup.
    */
   async createOrderOpenEditor(): Promise<Page> {
@@ -131,6 +157,76 @@ export class OrdersPage {
     const popup = await popupPromise
     await popup.waitForLoadState('domcontentloaded')
     await popup.waitForURL(/\/orders\/drafts\/[^/]+\/edit-docx/, { timeout: 60_000 })
+    return popup
+  }
+
+  /**
+   * Open existing-order DOCX editor from list action «Редактировать DOCX».
+   * Matches row by order number or employee name substring.
+   */
+  async openEditDocxForOrder(orderNumberOrEmployeeName: string): Promise<Page> {
+    // Apply order-number filter only for short codes (not employee FIO).
+    // Scope to «Фильтры» so we do not fill the create-form «Номер приказа».
+    const looksLikeOrderNumber =
+      orderNumberOrEmployeeName.length <= 24 &&
+      /^[\dA-Za-zА-Яа-яЁё\-./]+$/u.test(orderNumberOrEmployeeName)
+    if (looksLikeOrderNumber) {
+      const filtersHeading = this.page.locator('h2').filter({ hasText: 'Фильтры' })
+      if (await filtersHeading.isVisible().catch(() => false)) {
+        // Expand collapsed filters panel
+        const filterPanel = filtersHeading.locator('xpath=ancestor::div[contains(@class,"rounded") or contains(@class,"border")][1]')
+        let numberLabel = filterPanel.locator('label').filter({ hasText: /Номер приказа/i })
+        if (!(await numberLabel.isVisible().catch(() => false))) {
+          await filtersHeading.click().catch(() => {})
+          numberLabel = filterPanel.locator('label').filter({ hasText: /Номер приказа/i })
+        }
+        // Fallback: last «Номер приказа» on page is usually the filter (create form is first)
+        if (!(await numberLabel.isVisible().catch(() => false))) {
+          numberLabel = this.page.locator('label').filter({ hasText: /Номер приказа/i }).last()
+        }
+        if (await numberLabel.isVisible().catch(() => false)) {
+          const numInput = numberLabel.locator('..').locator('input').first()
+          if (await numInput.isVisible().catch(() => false)) {
+            await numInput.fill(orderNumberOrEmployeeName)
+            await this.page.keyboard.press('Enter').catch(() => {})
+            await this.page
+              .waitForResponse(
+                (r) => r.url().includes('/api/orders') && r.request().method() === 'GET' && r.ok(),
+                { timeout: 15_000 }
+              )
+              .catch(() => {})
+            // debounce filterOrderNumber (300ms) + list render
+            await this.page.waitForTimeout(500)
+          }
+        }
+      }
+    }
+
+    const row = this.page
+      .locator('tr')
+      .filter({ hasText: orderNumberOrEmployeeName })
+      .first()
+    await expect(row).toBeVisible({ timeout: 20_000 })
+
+    const editBtn = row.getByRole('button', { name: /Редактировать DOCX/i })
+    await expect(editBtn).toBeVisible({ timeout: 10_000 })
+
+    const popupPromise = this.page.waitForEvent('popup', { timeout: 60_000 })
+    await editBtn.click()
+    const popup = await popupPromise
+    // Attach config wait immediately to avoid race with early GET
+    const configPromise = popup.waitForResponse(
+      (r) =>
+        r.url().includes('/onlyoffice/config') &&
+        r.url().includes('/orders/') &&
+        !r.url().includes('/drafts/') &&
+        r.request().method() === 'GET' &&
+        r.ok(),
+      { timeout: 60_000 }
+    )
+    await popup.waitForLoadState('domcontentloaded')
+    await popup.waitForURL(/\/orders\/\d+\/edit-docx/, { timeout: 60_000 })
+    await configPromise
     return popup
   }
 }

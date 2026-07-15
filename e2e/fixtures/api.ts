@@ -310,7 +310,9 @@ async function apiCreateOrder(
   }
 
   const resp = await request.post(`${API_BASE}/api/orders`, { data: orderData })
-  expect([200, 201]).toContain(resp.status())
+  if (![200, 201].includes(resp.status())) {
+    throw new Error(`createOrder failed: ${resp.status()} ${await resp.text()}`)
+  }
   return resp.json()
 }
 

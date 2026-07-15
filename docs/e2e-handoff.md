@@ -25,9 +25,10 @@
 | CI | `.github/workflows/e2e-smoke.yml` — setup+smoke; pytest отдельно `test-backend.yml` |
 | Docs | `e2e/AGENTS.md`, `docs/testing-guide.md` |
 
-### 1.2 Покрытие (порядок величины на merge)
+### 1.2 Покрытие (порядок величины)
 
-~**64** test bodies, ~**22** `.spec.ts` (+ setup):
+~**71** test bodies, ~**26** `.spec.ts` (+ setup).  
+На merge PR #4 было ~64 bodies / ~22 specs; **+4 P0 specs / ~+7 bodies** (2026-07-16): import, hire/dismissal OO, edit-docx, group-drafts OO.
 
 | Project | Содержание (кратко) |
 |---------|---------------------|
@@ -35,7 +36,7 @@
 | **auth** | valid login + bad password |
 | **api** | catalog, errors, timesheet, vacation balance/periods smoke, order-type letter |
 | **smoke** | nav, structure, employees CRUD, orders list shell, timesheet open, vacations happy |
-| **ui** | structure lifecycle, employees lifecycle, vacations/plan/add-days, absences, timesheet deeper, **order OnlyOffice draft→save** |
+| **ui** | structure lifecycle, employees lifecycle, vacations/plan/add-days, absences, timesheet deeper, **order OnlyOffice** (create, hire/dismissal, edit-docx, group-drafts), **import employees** |
 
 ### 1.3 OnlyOffice order (важный сценарий)
 
@@ -64,14 +65,14 @@ API: seed employee
 
 Приоритеты из разведки после merge (не блокеры main, а «защититься дальше»).
 
-### P0 — высокий смысл для контроля процесса
+### P0 — высокий смысл для контроля процесса — **сделано 2026-07-16**
 
-| # | Долг | Зачем |
-|---|------|--------|
-| 1 | **Приказ hire / dismissal** через UI + OO (сейчас soft dismiss только API) | «Уволить» = order flow |
-| 2 | **Редактирование существующего** приказа `/orders/:id/edit-docx` | есть только draft create path |
-| 3 | **Group unpaid / weekend** (group-drafts) | массовые приказы |
-| 4 | **Import employees** UI (excel preview/confirm) | modal есть, e2e 0 |
+| # | Долг | Файл / статус |
+|---|------|----------------|
+| 1 | **Приказ hire / dismissal** через UI + OO | ✅ `e2e/ui/order-hire-dismissal-oo.spec.ts` |
+| 2 | **Редактирование существующего** приказа `/orders/:id/edit-docx` | ✅ `e2e/ui/order-edit-docx.spec.ts` |
+| 3 | **Group unpaid / weekend** (group-drafts) | ✅ `e2e/ui/group-drafts-oo.spec.ts` |
+| 4 | **Import employees** UI (excel preview/confirm) | ✅ `e2e/ui/import-employees.spec.ts` |
 
 ### P1 — важные экраны без e2e
 
@@ -191,9 +192,11 @@ e2e/
   fixtures/api.ts           # apiOps
   fixtures/auth.ts
   fixtures/index.ts
+  helpers/onlyoffice-editor.ts  # shared OO editor helpers
   pages/                    # POM (Employees, Orders, Vacations, Layout, …)
   smoke/*.spec.ts
-  ui/*.spec.ts              # + order-onlyoffice-create.spec.ts
+  ui/*.spec.ts              # order-onlyoffice-create, order-hire-dismissal-oo,
+                            # order-edit-docx, group-drafts-oo, import-employees, …
   api/*.spec.ts
 playwright.config.ts
 .github/workflows/e2e-smoke.yml
@@ -245,11 +248,11 @@ git worktree remove C:\Users\user\VibeCoding\hrms-e2e
 
 ## 8. Следующий шаг (для агента / человека)
 
-1. Локально прогнать `npm run test:e2e:smoke` (+ ui по желанию).  
-2. Вручную пройти 1–2 критических UI-потока (сотрудники, приказ+OO).  
-3. **После подтверждения** — брать backlog **P0** (hire/dismissal OO, edit order, import, group).  
+1. **P0 закрыт** (2026-07-16): hire/dismissal OO, edit-docx, group-drafts OO, import.  
+2. Дальше — **P1**: settings users/holidays, vacation recall/postpone/extension, notifications, templates, other order types.  
+3. Локально: `npm run test:e2e:smoke` (+ `test:e2e:ui` при OO-сценариях).  
 4. Не смешивать с backend pytest/xdist — они уже отдельно на main.
 
 ---
 
-*Handoff: e2e rewrite complete on main; further coverage on demand.*
+*Handoff: e2e rewrite + P0 coverage on main; next = P1 on demand.*

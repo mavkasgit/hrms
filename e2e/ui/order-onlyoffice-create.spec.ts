@@ -1,5 +1,9 @@
 import { test, expect } from '../fixtures/index'
 import { OrdersPage } from '../pages/OrdersPage'
+import {
+  dismissOnlyOfficeDialogs,
+  saveDraftOrderFromEditor,
+} from '../helpers/onlyoffice-editor'
 
 /**
  * UI: создать приказ для конкретного сотрудника → редактор OnlyOffice (draft)
@@ -73,72 +77,10 @@ test.describe('Orders OnlyOffice create @ui', () => {
       { timeout: 60_000 }
     )
 
-    const saveBtn = editor.getByRole('button', { name: 'Сохранить приказ' })
-    await expect(saveBtn).toBeVisible({ timeout: 90_000 })
+    // Warm-up dismiss (same sequence as before helper extraction)
+    await dismissOnlyOfficeDialogs(editor)
 
-    // Dismiss OnlyOffice onboarding / co-edit name dialogs inside iframe(s)
-    async function dismissOnlyOfficeDialogs() {
-      for (const frame of editor.frames()) {
-        const ok = frame.getByRole('button', { name: /^OK$/i })
-        if (await ok.isVisible().catch(() => false)) {
-          await ok.click().catch(() => {})
-        }
-        const otmena = frame.getByRole('button', { name: /отмена/i })
-        // prefer OK on name prompt
-        const nameOk = frame.locator('button').filter({ hasText: /^OK$/i }).first()
-        if (await nameOk.isVisible().catch(() => false)) {
-          await nameOk.click().catch(() => {})
-        }
-      }
-      // Top-level OK if any
-      const topOk = editor.getByRole('button', { name: /^OK$/i })
-      if (await topOk.first().isVisible().catch(() => false)) {
-        await topOk.first().click().catch(() => {})
-      }
-    }
-
-    await dismissOnlyOfficeDialogs()
-    await editor.waitForTimeout(1500)
-    await dismissOnlyOfficeDialogs()
-
-    // Commit on opener after successful forceSave + postMessage
-    const commitPromise = page.waitForResponse(
-      (r) =>
-        r.url().includes('/api/orders/drafts/') &&
-        r.url().includes('/commit') &&
-        r.request().method() === 'POST',
-      { timeout: 120_000 }
-    )
-
-    // Retry save: forcesave may 502 while Document Server warms up
-    let forceSaveOk = false
-    for (let attempt = 1; attempt <= 4; attempt++) {
-      await dismissOnlyOfficeDialogs()
-      const forcePromise = editor.waitForResponse(
-        (r) =>
-          r.url().includes('/onlyoffice/forcesave') && r.request().method() === 'POST',
-        { timeout: 45_000 }
-      )
-      await saveBtn.click()
-      const forceResp = await forcePromise.catch(() => null)
-      if (forceResp && forceResp.ok()) {
-        forceSaveOk = true
-        break
-      }
-      // Wait DS / retry
-      await editor.waitForTimeout(2000 * attempt)
-    }
-    expect(forceSaveOk, 'OnlyOffice forcesave should succeed (is DS on :8085?)').toBeTruthy()
-
-    const commitResp = await commitPromise
-    expect(commitResp.ok(), `commit status ${commitResp.status()}`).toBeTruthy()
-    const committed = await commitResp.json()
-    const orderId = committed?.id as number | undefined
-    expect(orderId, 'committed order id').toBeTruthy()
-
-    await editor.waitForEvent('close', { timeout: 30_000 }).catch(() => {
-      /* may already be closed */
-    })
+    const { orderId } = await saveDraftOrderFromEditor(editor, page)
 
     // Verify in registry: reload list, search by number / employee
     await page.goto('/orders')
