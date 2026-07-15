@@ -186,6 +186,7 @@ e2e/
 | `_legacy/ui/unpaid-leaves-and-weekend-calls.spec.ts` | `ui/absences.spec.ts` | **done** |
 | `_legacy/ui/timesheet.spec.ts` | `ui/timesheet.spec.ts` + `smoke/timesheet-open.spec.ts` | **done** |
 | `_legacy/ui/order-type-letter.spec.ts` | `api/order-type-letter.spec.ts` | **done** |
+| (new) order + OnlyOffice | `ui/order-onlyoffice-create.spec.ts` | **done** — employee → draft OO → save → list |
 | `_legacy/api/api-errors.spec.ts` | `api/errors.spec.ts`, `api/employees-errors.spec.ts` | **done** |
 | `_legacy/api/catalog-lifecycle.spec.ts` | `api/catalog.spec.ts` | **done** |
 | `_legacy/api/timesheet-api.spec.ts` | `api/timesheet.spec.ts` | **done** |
