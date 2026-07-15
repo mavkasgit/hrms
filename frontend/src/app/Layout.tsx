@@ -1,10 +1,13 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Navigate, Outlet } from "react-router-dom"
 import { Sidebar } from "@/shared/ui/sidebar"
 import { ToastProvider } from "@/shared/ui/use-toast"
 import { Toaster } from "@/shared/ui/toaster"
-import api, { getUserAccessLevel } from "@/shared/api/axios"
-import { AlertTriangle, AlertCircle, Loader2 } from "lucide-react"
+import api, {
+  getUserAccessLevel,
+  AUTH_ERROR_STORAGE_KEY,
+} from "@/shared/api/axios"
+import { AlertTriangle, AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import {
   Dialog,
@@ -15,7 +18,7 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog"
 import { TelegramLoginModal } from "@/features/auth/telegram/TelegramLoginModal"
-import { fetchTelegramOidcConfig } from "@/shared/api/telegramAuth"
+import { fetchTelegramBotConfig } from "@/shared/api/telegramAuth"
 
 interface UserProfile {
   username: string
@@ -40,6 +43,30 @@ export function Layout() {
   const [setupLoading, setSetupLoading] = useState(false)
   const [setupError, setSetupError] = useState<string | null>(null)
 
+  // Подтверждение на кнопках баннера (двухшаговый клик)
+  const [pendingAction, setPendingAction] = useState<null | "password" | "telegram">(null)
+  const confirmTimeoutRef = useRef<number | null>(null)
+
+  const clearConfirmTimeout = () => {
+    if (confirmTimeoutRef.current !== null) {
+      window.clearTimeout(confirmTimeoutRef.current)
+      confirmTimeoutRef.current = null
+    }
+  }
+
+  const armConfirmation = (action: "password" | "telegram") => {
+    clearConfirmTimeout()
+    setPendingAction(action)
+    confirmTimeoutRef.current = window.setTimeout(() => {
+      setPendingAction(null)
+      confirmTimeoutRef.current = null
+    }, 4000)
+  }
+
+  useEffect(() => {
+    return clearConfirmTimeout
+  }, [])
+
   const fetchProfile = async () => {
     try {
       const response = await api.get("/auth/me")
@@ -54,13 +81,25 @@ export function Layout() {
       fetchProfile()
       
       // Загрузка конфига Telegram
-      fetchTelegramOidcConfig()
+      fetchTelegramBotConfig()
         .then(cfg => setTelegramConfig(cfg))
         .catch(err => console.error("Failed to fetch telegram config", err))
     }
   }, [accessLevel])
 
   if (accessLevel === "no_access") {
+    // Сохраняем причину, если токен был, но доступ «no_access» (битый JWT / нет claim).
+    try {
+      const hadToken = Boolean(localStorage.getItem("token") || localStorage.getItem("ktm2000_token"))
+      if (hadToken) {
+        sessionStorage.setItem(
+          AUTH_ERROR_STORAGE_KEY,
+          "Нет доступа к системе. Войдите снова или обратитесь к администратору."
+        )
+      }
+    } catch {
+      /* ignore */
+    }
     localStorage.removeItem("token")
     localStorage.removeItem("ktm2000_token")
     document.cookie = "ktm2000_token=; path=/; max-age=0"
@@ -71,6 +110,32 @@ export function Layout() {
     profile &&
     profile.invite_code &&
     (!profile.has_telegram || !profile.has_password)
+
+  const handlePasswordBannerClick = () => {
+    if (pendingAction === "password") {
+      // Второй клик — подтверждение, открываем диалог
+      clearConfirmTimeout()
+      setPendingAction(null)
+      setNewPassword("")
+      setConfirmPassword("")
+      setSetupError(null)
+      setSetupPasswordOpen(true)
+    } else {
+      // Первый клик — переводим кнопку в режим подтверждения
+      armConfirmation("password")
+    }
+  }
+
+  const handleTelegramBannerClick = () => {
+    if (pendingAction === "telegram") {
+      // Второй клик — подтверждение, открываем модал
+      clearConfirmTimeout()
+      setPendingAction(null)
+      setLinkTelegramOpen(true)
+    } else {
+      armConfirmation("telegram")
+    }
+  }
 
   const handleSetupPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -104,33 +169,56 @@ export function Layout() {
             <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
-                <p className="text-sm text-amber-800 font-medium">
-                  Вы вошли по временному коду приглашения. Настройте пароль или привяжите Telegram для надежного входа.
-                </p>
+                <div className="text-sm text-amber-800 font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span>Вы вошли по временному коду приглашения.</span>
+                  {profile.has_password ? (
+                    <span className="inline-flex items-center gap-1 text-emerald-700">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Пароль установлен
+                    </span>
+                  ) : (
+                    <span className="font-semibold">Настройте пароль</span>
+                  )}
+                  <span className="text-amber-700/70">или</span>
+                  {profile.has_telegram ? (
+                    <span className="inline-flex items-center gap-1 text-emerald-700">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Telegram привязан
+                    </span>
+                  ) : (
+                    <span className="font-semibold">привяжите Telegram</span>
+                  )}
+                  <span>для надёжного входа.</span>
+                </div>
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 {!profile.has_password && (
                   <Button
                     size="sm"
-                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
-                    onClick={() => {
-                      setNewPassword("")
-                      setConfirmPassword("")
-                      setSetupError(null)
-                      setSetupPasswordOpen(true)
-                    }}
+                    className={
+                      pendingAction === "password"
+                        ? "bg-amber-700 text-white text-xs font-semibold ring-2 ring-amber-500 animate-pulse"
+                        : "bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
+                    }
+                    onClick={handlePasswordBannerClick}
+                    aria-pressed={pendingAction === "password"}
                   >
-                    Установить пароль
+                    {pendingAction === "password" ? "Нажмите ещё раз" : "Установить пароль"}
                   </Button>
                 )}
                 {!profile.has_telegram && (
                   <Button
                     size="sm"
                     variant="outline"
-                    className="border-amber-300 text-amber-800 hover:bg-amber-100/50 text-xs font-semibold"
-                    onClick={() => setLinkTelegramOpen(true)}
+                    className={
+                      pendingAction === "telegram"
+                        ? "border-amber-500 text-amber-900 bg-amber-100 text-xs font-semibold ring-2 ring-amber-500 animate-pulse"
+                        : "border-amber-300 text-amber-800 hover:bg-amber-100/50 text-xs font-semibold"
+                    }
+                    onClick={handleTelegramBannerClick}
+                    aria-pressed={pendingAction === "telegram"}
                   >
-                    Привязать Telegram
+                    {pendingAction === "telegram" ? "Нажмите ещё раз" : "Привязать Telegram"}
                   </Button>
                 )}
               </div>

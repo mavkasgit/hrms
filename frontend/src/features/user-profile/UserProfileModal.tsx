@@ -32,7 +32,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
 import { TelegramLoginModal } from "@/features/auth/telegram/TelegramLoginModal"
-import { fetchTelegramOidcConfig, type TelegramOidcConfig } from "@/shared/api/telegramAuth"
+import { fetchTelegramBotConfig, type TelegramBotConfig } from "@/shared/api/telegramAuth"
 import { TelegramIcon } from "@/shared/ui/icons"
 import { UserAvatar } from "@/shared/ui/user-avatar"
 import { getUserSeed } from "@/shared/lib/avatar"
@@ -55,7 +55,7 @@ export function UserProfileModal({
   const [activeTab, setActiveTab] = useState<TabType>("profile")
   const [copied, setCopied] = useState(false)
   const [tgModalOpen, setTgModalOpen] = useState(false)
-  const [telegramConfig, setTelegramConfig] = useState<TelegramOidcConfig | null>(null)
+  const [telegramConfig, setTelegramConfig] = useState<TelegramBotConfig | null>(null)
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
   const [avatarSaving, setAvatarSaving] = useState(false)
   const [avatarError, setAvatarError] = useState<string | null>(null)
@@ -194,7 +194,7 @@ export function UserProfileModal({
       setConfirmPassword("")
 
       // Загружаем конфигурацию Telegram
-      fetchTelegramOidcConfig()
+      fetchTelegramBotConfig()
         .then((cfg) => setTelegramConfig(cfg))
         .catch((err) => console.error("Не удалось загрузить конфиг Telegram:", err))
 

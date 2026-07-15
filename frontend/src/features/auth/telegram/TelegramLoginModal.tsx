@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { Loader2, Check, X } from "lucide-react"
 import QRCode from "qrcode"
 import api from "@/shared/api/axios"
+import { TelegramIcon } from "@/shared/ui/icons"
 import { Button } from "@/shared/ui/button"
 import {
   Dialog,
@@ -15,14 +16,13 @@ import {
   pollTelegramBotChallenge,
   translateTelegramError,
   type TelegramBotChallenge,
-  type TelegramOidcConfig,
+  type TelegramBotConfig,
 } from "@/shared/api/telegramAuth"
-import { TelegramIcon } from "@/shared/ui/icons"
 
 type TelegramLoginModalProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  config: TelegramOidcConfig | null
+  config: TelegramBotConfig | null
   onSuccess?: (data: any) => void
   inviteCode?: string
   purpose?: "login" | "link"
@@ -37,10 +37,7 @@ export function TelegramLoginModal({
   purpose = "login",
 }: TelegramLoginModalProps) {
   const botEnabled =
-    Boolean(config?.bot_enabled) ||
-    Boolean(config?.bot_username) ||
-    Boolean(config?.dev_qr)
-  const isDevQr = Boolean(config?.dev_qr) && !Boolean(config?.bot_username)
+    Boolean(config?.bot_enabled) || Boolean(config?.bot_username)
 
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -229,7 +226,6 @@ export function TelegramLoginModal({
               challenge={challenge}
               qrDataUrl={qrDataUrl}
               polling={polling}
-              isDevQr={isDevQr}
               onCancel={refreshQr}
             />
 
@@ -283,13 +279,11 @@ function QrPanel({
   challenge,
   qrDataUrl,
   polling,
-  isDevQr,
   onCancel,
 }: {
   challenge: TelegramBotChallenge | null
   qrDataUrl: string | null
   polling: boolean
-  isDevQr: boolean
   onCancel: () => void
 }) {
   if (!challenge) {
@@ -304,17 +298,7 @@ function QrPanel({
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4 text-center">
       <p className="text-xs text-slate-600 leading-relaxed">
-        {isDevQr ? (
-          <>
-            Фейк-режим (TELEGRAM_DEV_FAKE_CONFIRM). Для реального Telegram
-            задайте <code>TELEGRAM_BOT_TOKEN</code> and{" "}
-            <code>TELEGRAM_BOT_USERNAME</code>.
-          </>
-        ) : (
-          <>
-            Отсканируйте QR-код камерой телефона или в приложении Telegram, либо нажмите кнопку ниже для перехода.
-          </>
-        )}
+        Отсканируйте QR-код камерой телефона или в приложении Telegram, либо нажмите кнопку ниже для перехода.
       </p>
       {qrDataUrl ? (
         <img

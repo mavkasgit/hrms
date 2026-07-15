@@ -1,10 +1,14 @@
 import { useState, useEffect } from "react"
 import { Loader2, Bug, LogIn, AlertCircle } from "lucide-react"
-import api, { loginWithPassword, isDevMode } from "@/shared/api/axios"
+import api, {
+  loginWithPassword,
+  isDevMode,
+  consumeAuthErrorForLogin,
+} from "@/shared/api/axios"
 import { TelegramIcon } from "@/shared/ui/icons"
 import {
-  fetchTelegramOidcConfig,
-  type TelegramOidcConfig,
+  fetchTelegramBotConfig,
+  type TelegramBotConfig,
   type TelegramLoginResponse,
 } from "@/shared/api/telegramAuth"
 import { TelegramLoginModal } from "@/features/auth/telegram/TelegramLoginModal"
@@ -23,7 +27,7 @@ export function LoginPage() {
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [telegramConfig, setTelegramConfig] = useState<TelegramOidcConfig | null>(null)
+  const [telegramConfig, setTelegramConfig] = useState<TelegramBotConfig | null>(null)
   const [tgModalOpen, setTgModalOpen] = useState(false)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [inviteCodeInput, setInviteCodeInput] = useState("")
@@ -40,16 +44,17 @@ export function LoginPage() {
   const devMode = isDevMode()
   const botEnabled =
     Boolean(telegramConfig?.bot_enabled) ||
-    Boolean(telegramConfig?.bot_username) ||
-    Boolean(telegramConfig?.dev_qr)
-  const widgetEnabled = Boolean(telegramConfig?.enabled)
-  const telegramEnabled = widgetEnabled || botEnabled
+    Boolean(telegramConfig?.bot_username)
 
   useEffect(() => {
+    // Ошибка после 401-редиректа (сессия / «пользователь удалён» и т.п.)
+    const saved = consumeAuthErrorForLogin()
+    if (saved) setError(saved)
+
     let cancelled = false
     async function loadTelegramConfig() {
       try {
-        const cfg = await fetchTelegramOidcConfig()
+        const cfg = await fetchTelegramBotConfig()
         if (!cancelled) setTelegramConfig(cfg)
       } catch {
         if (!cancelled) setTelegramConfig(null)
@@ -111,10 +116,27 @@ export function LoginPage() {
     setInviteLoading(true)
     setInviteError(null)
     try {
-      const response = await api.post("/auth/invite/login", {
-        invite_code: inviteCodeInput.trim(),
-      }, { skipGlobalToast: true })
+      const response = await api.post(
+        "/auth/invite/login",
+        { invite_code: inviteCodeInput.trim() },
+        { skipGlobalToast: true }
+      )
       localStorage.setItem("token", response.data.access_token)
+      // Проверяем, что сессия реально принимается (soft-delete и т.п.),
+      // до редиректа — иначе пользователь «вылетает» без текста ошибки.
+      try {
+        await api.get("/auth/me", { skipGlobalToast: true })
+      } catch (meErr: any) {
+        localStorage.removeItem("token")
+        const detail =
+          meErr?.response?.data?.detail ||
+          meErr?.message ||
+          "Вход по коду получен, но доступ запрещён"
+        setInviteError(
+          typeof detail === "string" ? detail : "Вход по коду получен, но доступ запрещён"
+        )
+        return
+      }
       window.location.href = "/"
     } catch (err: any) {
       setInviteError(
@@ -201,7 +223,7 @@ export function LoginPage() {
         {/* SSO кнопка скрыта по требованию */}
 
         {/* Telegram: две кнопки */}
-        {telegramEnabled && (
+        {botEnabled && (
           <div className="space-y-2">
             <button
               type="button"

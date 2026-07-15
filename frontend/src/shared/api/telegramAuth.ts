@@ -1,27 +1,15 @@
 /**
- * Telegram Login Widget + OIDC + bot challenge client helper.
- *
- * Primary browser path: official Login Widget callback fields → POST /widget
- * (HMAC verified server-side with bot token). OIDC path only when a real
- * id_token is returned from authorize URL that included the same nonce.
- * Bot deep-link uses poll_secret (sessionStorage) so deep_link alone cannot poll.
+ * Telegram bot deep-link / QR login client helper.
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api"
-const NONCE_STORAGE_KEY = "telegram_oidc_nonce"
 const BOT_POLL_SECRET_PREFIX = "telegram_bot_poll_secret:"
 const BOT_POLL_INTERVAL_MS = 1500
 
-export type TelegramOidcConfig = {
-  enabled: boolean
-  client_id: string
+export type TelegramBotConfig = {
   bot_username: string
-  authorize_url: string
-  scopes: string[]
-  /** Real bot username or dev QR path available */
+  /** Real bot username configured and bot login enabled */
   bot_enabled?: boolean
-  /** QR opens local confirm page (no Telegram bot) */
-  dev_qr?: boolean
 }
 
 export type TelegramLoginResponse = {
@@ -51,57 +39,12 @@ export type TelegramBotChallengeStatus = {
   require_password_setup?: boolean
 }
 
-/** Fields returned by Telegram Login Widget / Telegram.Login.auth (legacy). */
-export type TelegramWidgetAuthData = {
-  id: number
-  first_name?: string
-  last_name?: string
-  username?: string
-  photo_url?: string
-  auth_date: number
-  hash: string
-}
-
-declare global {
-  interface Window {
-    Telegram?: {
-      Login?: {
-        auth: (
-          options: {
-            bot_id: string | number
-            request_access?: boolean
-            lang?: string
-          },
-          callback: (data: Record<string, unknown> | false) => void
-        ) => void
-      }
-    }
-  }
-}
-
-export async function fetchTelegramOidcConfig(): Promise<TelegramOidcConfig> {
-  const response = await fetch(`${API_BASE}/auth/telegram/oidc/config`)
+export async function fetchTelegramBotConfig(): Promise<TelegramBotConfig> {
+  const response = await fetch(`${API_BASE}/auth/telegram/bot/config`)
   if (!response.ok) {
     throw new Error("Не удалось загрузить конфигурацию Telegram")
   }
   return response.json()
-}
-
-export function createTelegramNonce(): string {
-  const nonce =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  sessionStorage.setItem(NONCE_STORAGE_KEY, nonce)
-  return nonce
-}
-
-export function getStoredTelegramNonce(): string | null {
-  return sessionStorage.getItem(NONCE_STORAGE_KEY)
-}
-
-export function clearStoredTelegramNonce(): void {
-  sessionStorage.removeItem(NONCE_STORAGE_KEY)
 }
 
 function storeBotPollSecret(challengeId: string, pollSecret: string): void {
@@ -121,167 +64,7 @@ function storeLoginResponse(data: TelegramLoginResponse): TelegramLoginResponse 
   return data
 }
 
-/** POST id_token + nonce → store HRMS JWT. Only when nonce was in OIDC authorize. */
-export async function loginWithTelegramOidc(
-  idToken: string,
-  nonce: string
-): Promise<TelegramLoginResponse> {
-  const response = await fetch(`${API_BASE}/auth/telegram/oidc`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id_token: idToken, nonce }),
-  })
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}))
-    const detail = typeof data.detail === "string" ? data.detail : "Ошибка входа через Telegram"
-    throw new Error(detail)
-  }
-  const data: TelegramLoginResponse = await response.json()
-  clearStoredTelegramNonce()
-  return storeLoginResponse(data)
-}
 
-/** POST Login Widget fields → HMAC verify on backend → JWT. */
-export async function loginWithTelegramWidget(
-  authData: TelegramWidgetAuthData
-): Promise<TelegramLoginResponse> {
-  const response = await fetch(`${API_BASE}/auth/telegram/widget`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      id: authData.id,
-      first_name: authData.first_name,
-      last_name: authData.last_name,
-      username: authData.username,
-      photo_url: authData.photo_url,
-      auth_date: authData.auth_date,
-      hash: authData.hash,
-    }),
-  })
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}))
-    const detail =
-      typeof data.detail === "string" ? data.detail : "Ошибка входа через Telegram Widget"
-    throw new Error(detail)
-  }
-  const data: TelegramLoginResponse = await response.json()
-  return storeLoginResponse(data)
-}
-
-function parseWidgetAuthData(raw: Record<string, unknown>): TelegramWidgetAuthData | null {
-  const id = raw.id
-  const hash = raw.hash
-  const authDate = raw.auth_date
-  if (id === undefined || id === null || typeof hash !== "string" || !hash) {
-    return null
-  }
-  const numericId = typeof id === "number" ? id : Number(id)
-  if (!Number.isFinite(numericId)) return null
-  const numericAuthDate =
-    typeof authDate === "number" ? authDate : Number(authDate)
-  if (!Number.isFinite(numericAuthDate)) return null
-
-  return {
-    id: numericId,
-    first_name: typeof raw.first_name === "string" ? raw.first_name : undefined,
-    last_name: typeof raw.last_name === "string" ? raw.last_name : undefined,
-    username: typeof raw.username === "string" ? raw.username : undefined,
-    photo_url: typeof raw.photo_url === "string" ? raw.photo_url : undefined,
-    auth_date: numericAuthDate,
-    hash,
-  }
-}
-
-/**
- * Load telegram-widget.js once (official Login Widget).
- * Domain must be allowlisted in BotFather for the bot.
- */
-export function loadTelegramLoginScript(): Promise<void> {
-  const existing = document.querySelector<HTMLScriptElement>(
-    'script[data-telegram-login-js="1"]'
-  )
-  if (existing) {
-    return Promise.resolve()
-  }
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script")
-    script.src = "https://telegram.org/js/telegram-widget.js?22"
-    script.async = true
-    script.dataset.telegramLoginJs = "1"
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error("Не удалось загрузить Telegram Login script"))
-    document.head.appendChild(script)
-  })
-}
-
-/**
- * Start Telegram login.
- * Primary: Login Widget → POST /widget (no fake OIDC nonce).
- * Secondary: if callback returns id_token only, require stored OIDC nonce match path
- *   (do not POST OIDC with a nonce that was never sent to Telegram).
- * Fallback: open oauth.telegram.org with nonce (manual setup).
- */
-export async function startTelegramLogin(config: TelegramOidcConfig): Promise<TelegramLoginResponse> {
-  if (!config.enabled || !config.client_id) {
-    throw new Error("Telegram login не настроен")
-  }
-
-  try {
-    await loadTelegramLoginScript()
-  } catch {
-    // Script optional if host already injected
-  }
-
-  const authFn = window.Telegram?.Login?.auth
-  if (typeof authFn === "function") {
-    const authData = await new Promise<Record<string, unknown>>((resolve, reject) => {
-      authFn(
-        {
-          bot_id: config.client_id,
-          request_access: true,
-        },
-        (data) => {
-          if (!data) {
-            reject(new Error("Вход через Telegram отменён"))
-            return
-          }
-          resolve(data)
-        }
-      )
-    })
-
-    // Prefer verified Login Widget path (hash + id). Never invent OIDC nonce.
-    const widgetData = parseWidgetAuthData(authData)
-    if (widgetData) {
-      return loginWithTelegramWidget(widgetData)
-    }
-
-    // True OIDC id_token only if nonce was previously bound to authorize request.
-    const idToken = authData.id_token
-    const nonce = getStoredTelegramNonce()
-    if (typeof idToken === "string" && idToken && nonce) {
-      return loginWithTelegramOidc(idToken, nonce)
-    }
-
-    throw new Error(
-      "Telegram вернул неожиданный ответ. Ожидаются поля Login Widget (hash) или id_token после OIDC authorize."
-    )
-  }
-
-  // Fallback: open Web Login authorize URL with nonce (for true OIDC clients).
-  const nonce = createTelegramNonce()
-  const params = new URLSearchParams({
-    client_id: config.client_id,
-    scope: (config.scopes || ["openid", "profile"]).join(" "),
-    nonce,
-    origin: window.location.origin,
-  })
-  const url = `${config.authorize_url}?${params.toString()}`
-  window.open(url, "telegram_oauth", "width=550,height=600")
-  throw new Error(
-    "Открыто окно Telegram OAuth. После получения id_token обмен через POST /auth/telegram/oidc с тем же nonce (sessionStorage)."
-  )
-}
 
 // ─── Bot deep-link login ─────────────────────────────────────────────────
 
@@ -490,6 +273,8 @@ export function translateTelegramError(detail: string): string {
       return "Неверный токен авторизации Telegram."
     case "telegram_bot_not_configured":
       return "Интеграция с Telegram-ботом не настроена на сервере."
+    case "telegram_bot_token_invalid":
+      return "Токен Telegram-бота не проходит проверку (Bot API getMe отклонил его). Проверьте токен в настройках: возможно, он отозван, опечатан или не применён через @BotFather."
     case "invite_code_required":
       return "Код приглашения обязателен для входа."
     case "invalid_invite_code":
