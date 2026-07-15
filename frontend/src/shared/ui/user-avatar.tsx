@@ -1,13 +1,14 @@
 import { useMemo } from "react"
 import multiavatar from "@multiavatar/multiavatar/esm"
+import { User } from "lucide-react"
 import { cn } from "@/shared/utils/cn"
 
 type Fit = "cover" | "contain"
 
 type UserAvatarProps = {
-  /** Seed для детерминированной генерации. Приоритет: avatar_seed → telegram_id → username → id. */
+  /** Seed Multiavatar (user.avatar_seed). Без seed — пустая заглушка. */
   seed?: string | number | null
-  /** Имя пользователя — используется для fallback-инициалов. */
+  /** @deprecated Не используется; оставлен для совместимости вызовов. */
   name?: string | null
   /** Размер в пикселях. По умолчанию 32. */
   size?: number
@@ -23,14 +24,10 @@ type UserAvatarProps = {
 }
 
 /**
- * Аватар пользователя.
- *
- * Генерирует уникальный мультяшный SVG-аватар на клиенте по seed
- * (Multiavatar). Один и тот же seed → один и тот же SVG, без хранения
- * картинок. Если seed отсутствует или генерация упала — показывает
- * градиентный круг с инициалами.
+ * Аватар пользователя (Multiavatar по seed).
+ * seed null/пустой → нейтральная «пустая» фото-заглушка.
  */
-export function UserAvatar({ seed, name, size = 32, className, fit = "cover" }: UserAvatarProps) {
+export function UserAvatar({ seed, size = 32, className, fit = "cover" }: UserAvatarProps) {
   const preserveAspectRatio = fit === "contain" ? "xMidYMid meet" : "xMidYMid slice"
   const isRounded = fit === "cover"
 
@@ -48,7 +45,7 @@ export function UserAvatar({ seed, name, size = 32, className, fit = "cover" }: 
   }, [seed])
 
   const dim = `${size}px`
-  const fontSize = Math.max(10, Math.round(size / 2.6))
+  const iconSize = Math.max(12, Math.round(size * 0.5))
 
   if (svg) {
     return (
@@ -70,26 +67,17 @@ export function UserAvatar({ seed, name, size = 32, className, fit = "cover" }: 
     )
   }
 
-  // Fallback с инициалами: первые буквы первых двух слов, uppercase.
-  let initials = "?"
-  if (name) {
-    const parts = name.trim().split(/\s+/)
-    initials =
-      parts.length >= 2
-        ? ((parts[0][0] || "") + (parts[1][0] || "")).toUpperCase()
-        : (parts[0][0] || "?").toUpperCase()
-  }
-
+  // Пустая заглушка: серый круг + силуэт (без привязки к username/инициалам)
   return (
     <div
       className={cn(
-        "inline-flex items-center justify-center rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-semibold shrink-0",
+        "inline-flex items-center justify-center rounded-full bg-muted text-muted-foreground/60 shrink-0 border border-border/60",
         className,
       )}
-      style={{ width: dim, height: dim, fontSize }}
+      style={{ width: dim, height: dim }}
       aria-hidden
     >
-      {initials}
+      <User style={{ width: iconSize, height: iconSize }} strokeWidth={1.75} />
     </div>
   )
 }

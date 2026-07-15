@@ -1,32 +1,24 @@
 /**
  * Утилиты для работы с аватарами пользователей.
  *
- * Multiavatar генерирует уникальный SVG детерминированно по seed-строке.
- * Чтобы аватар был стабильным и уникальным, выбираем seed по приоритету:
- *   1. avatar_seed   — пользователь/админ явно задал (фаза 2)
- *   2. telegram_id   — уникален для привязанных к Telegram
- *   3. username      — уникален, всегда есть
- *   4. id            — крайний fallback для анонимных записей
+ * Multiavatar по seed-строке. Два случая:
+ *   1. create — бэкенд выдаёт случайный avatar_seed
+ *   2. смена в профиле — пользователь выбирает другой seed
+ *
+ * Без avatar_seed (null) — пустая заглушка, без привязки к username/tg.
  */
 
 export type UserLike = {
   avatar_seed?: string | null
-  telegram_id?: number | string | null
-  username?: string | null
-  id?: number | string | null
 }
 
 /**
- * Выбрать seed для Multiavatar по приоритету.
- * Возвращает `string` если нашли, иначе `null` (компонент покажет fallback).
+ * Seed для Multiavatar — только явно сохранённый avatar_seed.
+ * null → UserAvatar покажет пустую заглушку.
  */
 export function getUserSeed(user: UserLike | null | undefined): string | null {
-  if (!user) return null
-  if (user.avatar_seed) return user.avatar_seed
-  if (user.telegram_id != null) return String(user.telegram_id)
-  if (user.username) return user.username
-  if (user.id != null) return String(user.id)
-  return null
+  if (!user?.avatar_seed) return null
+  return user.avatar_seed
 }
 
 /**

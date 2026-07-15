@@ -112,9 +112,10 @@ export function AvatarPickerDialog({
             disabled={isSaving || currentSeed === null}
             onClick={() => onPick(null)}
             className="text-xs"
+            title="Убрать аватар (пустая заглушка)"
           >
             <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-            Авто
+            Сбросить
           </Button>
           <Button
             type="button"
@@ -139,9 +140,9 @@ export function AvatarPickerDialog({
           </Button>
         </div>
 
-        {currentSeed === null && fallbackSeed && (
+        {currentSeed === null && (
           <p className="text-[11px] text-muted-foreground text-center -mt-1">
-            Сейчас используется автогенерация по умолчанию.
+            Аватар не задан — показывается пустая заглушка.
           </p>
         )}
       </DialogContent>
