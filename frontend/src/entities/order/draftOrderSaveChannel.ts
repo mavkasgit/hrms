@@ -3,6 +3,9 @@
 export const DRAFT_ORDER_SAVE_TYPE = "hrms:draft-order-save" as const
 export const DRAFT_ORDER_SAVE_CHANNEL = "hrms-order-draft-save"
 
+/** Ignore duplicate deliveries of the same draft save within this window (ms). */
+const DEDUPE_WINDOW_MS = 5_000
+
 export type DraftOrderSaveMessage = {
   type: typeof DRAFT_ORDER_SAVE_TYPE
   draftId: string
@@ -16,7 +19,13 @@ export function isDraftOrderSaveMessage(data: unknown): data is DraftOrderSaveMe
   return msg.type === DRAFT_ORDER_SAVE_TYPE && typeof msg.draftId === "string" && msg.draftId.length > 0
 }
 
-/** Notify parent via postMessage (if opener) and BroadcastChannel (fallback without opener). */
+/**
+ * Notify parent about draft save.
+ *
+ * Prefer a single transport to avoid double commit:
+ * - opener postMessage when available
+ * - BroadcastChannel only as fallback (no opener / noopener)
+ */
 export function publishDraftOrderSave(message: Omit<DraftOrderSaveMessage, "type"> & { type?: string }) {
   const payload: DraftOrderSaveMessage = {
     type: DRAFT_ORDER_SAVE_TYPE,
@@ -28,8 +37,9 @@ export function publishDraftOrderSave(message: Omit<DraftOrderSaveMessage, "type
   if (window.opener && !window.opener.closed) {
     try {
       window.opener.postMessage(payload, window.location.origin)
+      return
     } catch (err) {
-      console.warn("[draftOrderSaveChannel] postMessage failed", err)
+      console.warn("[draftOrderSaveChannel] postMessage failed, falling back to BroadcastChannel", err)
     }
   }
 
@@ -45,6 +55,7 @@ export function publishDraftOrderSave(message: Omit<DraftOrderSaveMessage, "type
 /**
  * Listen for draft save from editor window.
  * Prefer matching expectedDraftId when provided.
+ * Dedupes identical draftId events (postMessage+BC, HMR double handlers, double-click).
  */
 export function subscribeDraftOrderSave(
   expectedDraftId: string | null | undefined,
@@ -52,10 +63,31 @@ export function subscribeDraftOrderSave(
 ): () => void {
   if (!expectedDraftId) return () => {}
 
+  let lastHandledAt = 0
+  let handling = false
+
   const handlePayload = (data: unknown) => {
     if (!isDraftOrderSaveMessage(data)) return
     if (data.draftId !== expectedDraftId) return
-    handler(data)
+
+    const now = Date.now()
+    if (handling || now - lastHandledAt < DEDUPE_WINDOW_MS) {
+      console.warn(
+        "[draftOrderSaveChannel] ignored duplicate draft save signal",
+        data.draftId,
+      )
+      return
+    }
+    handling = true
+    lastHandledAt = now
+    try {
+      handler(data)
+    } finally {
+      // Keep dedupe window; allow next real save only after DEDUPE_WINDOW_MS
+      window.setTimeout(() => {
+        handling = false
+      }, DEDUPE_WINDOW_MS)
+    }
   }
 
   const onWindowMessage = (event: MessageEvent) => {

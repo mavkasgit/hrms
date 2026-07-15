@@ -15,6 +15,7 @@ import { useAllOrderTypes, useCreateVacationUnpaidGroupOrder, useDeleteOrder, us
 import { useCommitGroupDraft, useCommitOrderDraft, useCreateGroupDraft, useCreateOrderDraft, useDeleteOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
 import { downloadOrderDocx, openOrderPrint, openOrderView } from "@/entities/order/orderActions"
+import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
 import type { Order, VacationUnpaidGroupEmployeeCreate } from "@/entities/order/types"
@@ -241,7 +242,11 @@ export function UnpaidLeavesPage() {
   }
 
   const handleCommitDraft = (openPrint = false, printTarget?: string) => {
-    if (!draftId || !validate() || !unpaidLeaveType || !selectedEmployee) return
+    if (!draftId || commitDraftMutation.isPending) return
+    if (!validate() || !unpaidLeaveType || !selectedEmployee) {
+      failPrintPlaceholder(printTarget, "Не заполнены обязательные поля формы. Проверьте страницу и повторите.")
+      return
+    }
     commitDraftMutation.mutate(
       {
         draftId,
@@ -261,10 +266,20 @@ export function UnpaidLeavesPage() {
         onSuccess: (order) => {
           if (openPrint && order?.id) {
             openOrderPrint(order.id, printTarget || "_blank")
+          } else if (openPrint) {
+            failPrintPlaceholder(printTarget, "Приказ создан, но не получен ID для печати.")
           }
           resetForm()
         },
-      }
+        onError: (err) => {
+          const detail =
+            (err as { response?: { data?: { detail?: string } }; message?: string })?.response?.data
+              ?.detail ||
+            (err as Error)?.message ||
+            "Ошибка создания приказа"
+          failPrintPlaceholder(printTarget, String(detail))
+        },
+      },
     )
   }
 

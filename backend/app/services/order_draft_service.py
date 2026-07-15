@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 import uuid
 from datetime import date, datetime, timezone
@@ -44,6 +45,32 @@ class OrderDraftService:
                 return file_path
         raise HRMSException("Черновик не найден", "draft_not_found", status_code=404)
 
+    def _commit_lock_path(self, draft_id: str) -> Path:
+        self.ensure_drafts_dir()
+        return self._drafts_dir / f"{draft_id}.commit.lock"
+
+    def claim_draft_for_commit(self, draft_id: str) -> Path:
+        """
+        Atomically claim a draft so concurrent /commit cannot create two orders.
+
+        Raises 404 if draft file is missing, 409 if already claimed/committed.
+        """
+        draft_path = self.get_draft_path(draft_id)
+        lock_path = self._commit_lock_path(draft_id)
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(fd, b"1")
+            finally:
+                os.close(fd)
+        except FileExistsError as exc:
+            raise HRMSException(
+                "Этот черновик уже сохраняется или уже был создан как приказ",
+                "draft_already_committed",
+                status_code=409,
+            ) from exc
+        return draft_path
+
     def delete_draft(self, draft_id: str) -> None:
         try:
             draft_path = self.get_draft_path(draft_id)
@@ -58,6 +85,13 @@ class OrderDraftService:
         metadata_path = self.get_metadata_path(draft_id)
         if metadata_path.exists():
             metadata_path.unlink()
+
+        lock_path = self._commit_lock_path(draft_id)
+        if lock_path.exists():
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                pass
 
     def get_metadata_path(self, draft_id: str) -> Path:
         """Get the path to the draft metadata JSON file."""

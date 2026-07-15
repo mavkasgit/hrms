@@ -47,6 +47,7 @@ import { useEmployee } from "@/entities/employee/useEmployees"
 import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
 import { downloadOrderDocx, openOrderEdit, openOrderPrint, openOrderView } from "@/entities/order/orderActions"
+import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { EmployeeSearch } from "@/features/employee-search"
 import { DocumentModal } from "@/features/document-modal/DocumentModal"
@@ -677,7 +678,7 @@ export function OrdersPage() {
   }
 
   const handleGeneralCommitDraft = () => {
-    if (!generalDraftId || !validateGeneralOrder()) return
+    if (!generalDraftId || !validateGeneralOrder() || commitDraftMutation.isPending) return
     commitDraftMutation.mutate(
       { draftId: generalDraftId, order: buildGeneralOrderPayload() },
       {
@@ -770,17 +771,42 @@ export function OrdersPage() {
   }
 
   const handleCommitDraft = (openPrint = false, printTarget?: string) => {
-    if (!draftId || !validate()) return
+    if (!draftId) {
+      failPrintPlaceholder(printTarget, "Черновик не найден. Обновите страницу и повторите.")
+      return
+    }
+    if (commitDraftMutation.isPending) {
+      // First in-flight commit owns the draft; still fail print if this was a print request
+      // only when we never started (duplicate signal after pending already true from non-print).
+      return
+    }
+    if (!validate()) {
+      failPrintPlaceholder(
+        printTarget,
+        "Не заполнены обязательные поля формы приказа. Вернитесь на страницу приказов, проверьте форму и сохраните снова.",
+      )
+      return
+    }
     commitDraftMutation.mutate(
       { draftId, order: buildOrderPayload() },
       {
         onSuccess: (order) => {
           if (openPrint && order?.id) {
             openOrderPrint(order.id, printTarget || "_blank")
+          } else if (openPrint) {
+            failPrintPlaceholder(printTarget, "Приказ создан, но не получен ID для печати.")
           }
           resetForm()
         },
-      }
+        onError: (err) => {
+          const detail =
+            (err as { response?: { data?: { detail?: string } }; message?: string })?.response?.data
+              ?.detail ||
+            (err as Error)?.message ||
+            "Ошибка создания приказа"
+          failPrintPlaceholder(printTarget, String(detail))
+        },
+      },
     )
   }
 

@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from "react"
-import { Alert, AlertDescription } from "@/shared/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
 import type { OnlyOfficeConfig } from "@/entities/order/onlyofficeTypes"
 
 const ONLYOFFICE_SCRIPT_ID = "onlyoffice-api-script"
+/** Если за это время редактор не сообщил onDocumentReady — считаем загрузку проваленной. */
+const EDITOR_READY_TIMEOUT_MS = 20_000
+
+const LOAD_HINT =
+  "Частая причина — блокировщик рекламы (uBlock, AdBlock и т.п.): отключите его для этого сайта или добавьте в исключения, затем обновите страницу. Также проверьте, что Document Server (OnlyOffice) запущен и доступен."
 
 function loadOnlyOfficeScript(url: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -20,7 +25,12 @@ function loadOnlyOfficeScript(url: string): Promise<void> {
     script.src = url
     script.async = true
     script.onload = () => resolve()
-    script.onerror = () => reject(new Error("Не удалось загрузить OnlyOffice API"))
+    script.onerror = () =>
+      reject(
+        new Error(
+          "Не удалось загрузить OnlyOffice API (скрипт api.js). " + LOAD_HINT,
+        ),
+      )
     document.body.appendChild(script)
   })
 }
@@ -30,6 +40,8 @@ interface OrderEditorProps {
   isLoading: boolean
   error: Error | null
   title?: string
+  /** true после onDocumentReady, false при ошибке/ожидании */
+  onReadyChange?: (ready: boolean) => void
 }
 
 function extractUiErrorMessage(error: unknown): string | null {
@@ -41,15 +53,49 @@ function extractUiErrorMessage(error: unknown): string | null {
   return errorObj.response?.data?.detail || errorObj.response?.data?.message || errorObj.message || null
 }
 
-export function OrderEditor({ config, isLoading, error, title }: OrderEditorProps) {
-  const editorInstanceRef = useRef<any>(null)
+type DocsApiEvents = {
+  onDocumentReady?: () => void
+  onError?: (event: { data?: string | number }) => void
+  [key: string]: unknown
+}
+
+export function OrderEditor({ config, isLoading, error, title, onReadyChange }: OrderEditorProps) {
+  const editorInstanceRef = useRef<{ destroyEditor?: () => void } | null>(null)
   const editorIdRef = useRef(`onlyoffice-editor-${Math.random().toString(36).slice(2)}`)
   const [scriptError, setScriptError] = useState<string | null>(null)
+  const [waitingForEditor, setWaitingForEditor] = useState(false)
+  const onReadyChangeRef = useRef(onReadyChange)
+  onReadyChangeRef.current = onReadyChange
 
   useEffect(() => {
     if (!config) return
     let cancelled = false
+    let readyTimer: ReturnType<typeof setTimeout> | undefined
     setScriptError(null)
+    setWaitingForEditor(true)
+    onReadyChangeRef.current?.(false)
+
+    const markReady = () => {
+      if (cancelled) return
+      if (readyTimer) clearTimeout(readyTimer)
+      setWaitingForEditor(false)
+      setScriptError(null)
+      onReadyChangeRef.current?.(true)
+    }
+
+    const markFailed = (message: string) => {
+      if (cancelled) return
+      if (readyTimer) clearTimeout(readyTimer)
+      setWaitingForEditor(false)
+      setScriptError(message)
+      onReadyChangeRef.current?.(false)
+      try {
+        editorInstanceRef.current?.destroyEditor?.()
+      } catch {
+        /* ignore */
+      }
+      editorInstanceRef.current = null
+    }
 
     const serverBase = config.documentServerUrl
     const scriptUrl = `${serverBase.replace(/\/$/, "")}/web-apps/apps/api/documents/api.js`
@@ -58,19 +104,53 @@ export function OrderEditor({ config, isLoading, error, title }: OrderEditorProp
         if (cancelled) return
         const DocsAPI = (window as any).DocsAPI
         if (!DocsAPI) {
-          setScriptError("OnlyOffice API не найден после загрузки скрипта")
+          markFailed("OnlyOffice API не найден после загрузки скрипта. " + LOAD_HINT)
           return
         }
+
+        const prevEvents = ((config as OnlyOfficeConfig & { events?: DocsApiEvents }).events ??
+          {}) as DocsApiEvents
+
+        const editorConfig = {
+          ...config,
+          events: {
+            ...prevEvents,
+            onDocumentReady: () => {
+              prevEvents.onDocumentReady?.()
+              markReady()
+            },
+            onError: (event: { data?: string | number }) => {
+              prevEvents.onError?.(event)
+              const code = event?.data != null ? String(event.data) : "unknown"
+              markFailed(
+                `Ошибка OnlyOffice (код ${code}). Редактор не открылся. ${LOAD_HINT}`,
+              )
+            },
+          },
+        }
+
         editorInstanceRef.current?.destroyEditor?.()
-        editorInstanceRef.current = new DocsAPI.DocEditor(editorIdRef.current, config)
+        editorInstanceRef.current = new DocsAPI.DocEditor(editorIdRef.current, editorConfig)
+
+        readyTimer = setTimeout(() => {
+          markFailed(
+            "Редактор не открылся за 20 секунд. " + LOAD_HINT,
+          )
+        }, EDITOR_READY_TIMEOUT_MS)
       })
       .catch((err) => {
-        if (!cancelled) setScriptError(err instanceof Error ? err.message : "Ошибка загрузки OnlyOffice")
+        markFailed(err instanceof Error ? err.message : "Ошибка загрузки OnlyOffice. " + LOAD_HINT)
       })
 
     return () => {
       cancelled = true
-      editorInstanceRef.current?.destroyEditor?.()
+      if (readyTimer) clearTimeout(readyTimer)
+      onReadyChangeRef.current?.(false)
+      try {
+        editorInstanceRef.current?.destroyEditor?.()
+      } catch {
+        /* ignore */
+      }
       editorInstanceRef.current = null
     }
   }, [config])
@@ -84,19 +164,45 @@ export function OrderEditor({ config, isLoading, error, title }: OrderEditorProp
     )
   }
 
-  const message = scriptError || extractUiErrorMessage(error)
-  if (message) {
+  const apiMessage = extractUiErrorMessage(error)
+  if (apiMessage && !config) {
     return (
       <Alert variant="destructive">
-        <AlertDescription>{message}</AlertDescription>
+        <AlertTitle>Не удалось получить конфиг редактора</AlertTitle>
+        <AlertDescription>{apiMessage}</AlertDescription>
+      </Alert>
+    )
+  }
+
+  if (scriptError) {
+    return (
+      <Alert variant="destructive" className="max-w-2xl">
+        <AlertTitle>Редактор документа не загрузился</AlertTitle>
+        <AlertDescription className="space-y-2">
+          <p>{scriptError}</p>
+        </AlertDescription>
       </Alert>
     )
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
       {title && <h1 className="mb-2 text-xl font-bold">{title}</h1>}
-      <div id={editorIdRef.current} className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-background" />
+      {waitingForEditor && (
+        <div className="pointer-events-none absolute inset-x-0 top-10 z-10 mx-auto max-w-xl px-4">
+          <Alert>
+            <AlertTitle>Загрузка редактора…</AlertTitle>
+            <AlertDescription>
+              Если экран остаётся пустым дольше 20 секунд, отключите блокировщик рекламы для этого
+              сайта и обновите страницу.
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+      <div
+        id={editorIdRef.current}
+        className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-background"
+      />
     </div>
   )
 }

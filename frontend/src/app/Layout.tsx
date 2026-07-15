@@ -1,8 +1,12 @@
 import { useState, useEffect } from "react"
 import { Navigate, Outlet } from "react-router-dom"
 import { Sidebar } from "@/shared/ui/sidebar"
-import { ToastProvider } from "@/shared/ui/use-toast"
+import { ToastProvider, showGlobalToast } from "@/shared/ui/use-toast"
 import { Toaster } from "@/shared/ui/toaster"
+import {
+  documentEditorSaveToastCopy,
+  subscribeDocumentEditorSave,
+} from "@/entities/document/documentEditorSaveChannel"
 import api, {
   getUserAccessLevel,
   AUTH_ERROR_STORAGE_KEY,
@@ -30,6 +34,21 @@ interface UserProfile {
   /** true, пока не заданы и пароль, и Telegram */
   needs_security_setup?: boolean
   invite_code: string | null
+}
+
+/** Toast on parent list page when OnlyOffice editor window reports successful save. */
+function DocumentEditorSaveListener() {
+  useEffect(() => {
+    return subscribeDocumentEditorSave((message) => {
+      const copy = documentEditorSaveToastCopy(message)
+      showGlobalToast({
+        title: copy.title,
+        description: copy.description,
+        variant: "success",
+      })
+    })
+  }, [])
+  return null
 }
 
 export function Layout() {
@@ -141,6 +160,7 @@ export function Layout() {
 
   return (
     <ToastProvider>
+      <DocumentEditorSaveListener />
       <div className="flex min-h-screen bg-background">
         <Sidebar />
         <main className="flex-1 p-6 overflow-auto">

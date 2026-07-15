@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { showGlobalToast } from "@/shared/ui/use-toast"
 import * as api from "./onlyofficeApi"
 import type { GroupOrderCreate, OrderCreate } from "./types"
 
@@ -29,7 +30,7 @@ export function useCommitOrderDraft() {
   return useMutation({
     mutationFn: ({ draftId, order }: { draftId: string; order: OrderCreate }) =>
       api.commitOrderDraft(draftId, order),
-    onSuccess: () => {
+    onSuccess: (order) => {
       queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
       queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
@@ -38,6 +39,15 @@ export function useCommitOrderDraft() {
       queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
       queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
       queryClient.invalidateQueries({ queryKey: ["next-order-number"] })
+      showGlobalToast({
+        title: "Приказ создан",
+        description: order?.order_number
+          ? `№ ${order.order_number}`
+          : order?.id
+            ? `ID: ${order.id}`
+            : undefined,
+        variant: "success",
+      })
     },
   })
 }
@@ -66,11 +76,20 @@ export function useCommitGroupDraft() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (draftId: string) => api.commitGroupDraft(draftId),
-    onSuccess: () => {
+    onSuccess: (order) => {
       queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
       queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
       queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
+      showGlobalToast({
+        title: "Приказ создан",
+        description: order?.order_number
+          ? `№ ${order.order_number}`
+          : order?.id
+            ? `ID: ${order.id}`
+            : undefined,
+        variant: "success",
+      })
     },
   })
 }

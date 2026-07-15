@@ -531,7 +531,8 @@ async def commit_order_draft(
     current_user: str = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
-    order_draft_service.get_draft_path(draft_id)
+    # Atomic claim prevents double-create when UI sends commit twice (postMessage+BC race).
+    order_draft_service.claim_draft_for_commit(draft_id)
     order = await order_service.create_order(db, data.model_copy(update={"draft_id": draft_id}))
     return order_service._serialize_order(order)
 
@@ -595,6 +596,7 @@ async def commit_group_order_draft(
     current_user: str = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
+    order_draft_service.claim_draft_for_commit(draft_id)
 
     order = await order_service.create_group_order_from_draft(
         db=db,

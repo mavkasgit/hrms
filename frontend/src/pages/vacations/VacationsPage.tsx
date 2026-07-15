@@ -58,6 +58,7 @@ import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
 import { openOrderPrint } from "@/entities/order/orderActions"
+import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import type { OrderCreate } from "@/entities/order/types"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { GlobalAuditLog } from "@/features/global-audit-log"
@@ -740,13 +741,19 @@ export function VacationsPage() {
   }
 
   const handleCreateFromDraft = (openPrint = false, printTarget?: string) => {
-    if (!draftId || !validate()) return
+    if (!draftId) return
+    if (!validate()) {
+      failPrintPlaceholder(printTarget, "Не заполнены обязательные поля формы. Проверьте страницу и повторите.")
+      return
+    }
     createMutation.mutate(
       buildVacationPayload({ draft_id: draftId }),
-      { 
+      {
         onSuccess: (vacation) => {
           if (openPrint && vacation?.order_id) {
             openOrderPrint(vacation.order_id, printTarget || "_blank")
+          } else if (openPrint) {
+            failPrintPlaceholder(printTarget, "Отпуск создан, но не получен ID приказа для печати.")
           }
           setSuccessMessage("Отпуск успешно создан!")
           setTimeout(() => setSuccessMessage(null), 5000)
@@ -754,8 +761,10 @@ export function VacationsPage() {
         },
         onError: (error: any) => {
           console.error("[VacationsPage] mutation error:", error)
-        }
-      }
+          const detail = error?.response?.data?.detail || error?.message || "Ошибка создания отпуска"
+          failPrintPlaceholder(printTarget, String(detail))
+        },
+      },
     )
   }
 
