@@ -2,12 +2,12 @@ import { useState } from "react"
 import { useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { useDraftOnlyOfficeConfig } from "@/entities/order/useOnlyOffice"
-import { forceSaveDraft } from "@/entities/order/onlyofficeApi"
+import { forceSaveDraft, fetchDraftSaveStatus } from "@/entities/order/onlyofficeApi"
+import { publishDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
+import { requestAndWaitOnlyOfficeSave } from "@/entities/order/waitForOnlyOfficeSave"
 import { OrderEditor } from "@/features/onlyoffice-editor/OrderEditor"
 import { Button } from "@/shared/ui/button"
 import { openPrintPlaceholderWindow } from "@/shared/utils/print-window"
-
-const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
 export function DraftOrderEditorPage() {
   const { draftId } = useParams<{ draftId: string }>()
@@ -29,19 +29,34 @@ export function DraftOrderEditorPage() {
       })
     }
     try {
-      if (draftId && data?.document.key) {
-        await forceSaveDraft(draftId, data.document.key)
-        await wait(1200)
+      if (!draftId || !data?.document.key) {
+        throw new Error("Документ ещё не готов к сохранению")
       }
-      if (draftId && window.opener) {
-        window.opener.postMessage({ type: "hrms:draft-order-save", draftId, openPrint, printWindowName }, window.location.origin)
+
+      const result = await requestAndWaitOnlyOfficeSave({
+        forceSave: (saveId) => forceSaveDraft(draftId, data.document.key, saveId),
+        getStatus: (saveId) => fetchDraftSaveStatus(draftId, saveId),
+      })
+
+      if (result === "no_changes") {
+        const ok = window.confirm(
+          "В редакторе нет новых изменений. Создать приказ из текущего файла черновика?"
+        )
+        if (!ok) {
+          setIsSaving(false)
+          setIsSaveAndPrint(false)
+          return
+        }
       }
+
+      publishDraftOrderSave({ draftId, openPrint, printWindowName })
       window.setTimeout(() => window.close(), 300)
-    } catch (error) {
-      console.error("[DraftOrderEditorPage] force save failed", error)
+    } catch (err) {
+      console.error("[DraftOrderEditorPage] force save failed", err)
       setIsSaving(false)
       setIsSaveAndPrint(false)
-      alert("Не удалось сохранить документ. Попробуйте нажать Ctrl+S в OnlyOffice и повторить сохранение приказа.")
+      const message = err instanceof Error ? err.message : "Не удалось сохранить документ"
+      alert(`${message}\n\nОкно останется открытым — можно повторить сохранение. При необходимости нажмите Ctrl+S в OnlyOffice.`)
     }
   }
 

@@ -32,3 +32,21 @@ export interface GroupDraftResponse {
   draft_id: string
   edit_url: string
 }
+
+export type OnlyOfficeForceSaveMessage = "save_requested" | "no_changes"
+
+export interface OnlyOfficeForceSaveResponse {
+  message: OnlyOfficeForceSaveMessage
+  save_id: string | null
+  command_error: number | null
+}
+
+export type OnlyOfficeSaveState = "pending" | "persisted" | "failed" | "no_changes" | "unknown"
+
+export interface OnlyOfficeSaveStatusResponse {
+  save_id: string
+  state: OnlyOfficeSaveState
+  oo_status: number | null
+  file_mtime: number | null
+  error: string | null
+}

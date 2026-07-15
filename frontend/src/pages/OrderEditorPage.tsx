@@ -2,13 +2,12 @@ import { useState } from "react"
 import { useLocation, useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { useOrderOnlyOfficeConfig } from "@/entities/order/useOnlyOffice"
-import { forceSaveOrder } from "@/entities/order/onlyofficeApi"
+import { forceSaveOrder, fetchOrderSaveStatus } from "@/entities/order/onlyofficeApi"
+import { requestAndWaitOnlyOfficeSave } from "@/entities/order/waitForOnlyOfficeSave"
 import { openOrderPrint } from "@/entities/order/orderActions"
 import { OrderEditor } from "@/features/onlyoffice-editor/OrderEditor"
 import { Button } from "@/shared/ui/button"
 import { openPrintPlaceholderWindow } from "@/shared/utils/print-window"
-
-const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
 export function OrderEditorPage() {
   const { id } = useParams<{ id: string }>()
@@ -33,19 +32,32 @@ export function OrderEditorPage() {
       })
     }
     try {
-      if (orderId && data?.document.key) {
-        await forceSaveOrder(orderId, data.document.key)
-        await wait(1200)
+      if (!orderId || !data?.document.key) {
+        throw new Error("Документ ещё не готов к сохранению")
       }
+
+      const result = await requestAndWaitOnlyOfficeSave({
+        forceSave: (saveId) => forceSaveOrder(orderId, data.document.key, saveId),
+        getStatus: (saveId) => fetchOrderSaveStatus(orderId, saveId),
+      })
+
+      if (result === "no_changes") {
+        alert("Нет новых изменений в документе.")
+        setIsSaving(false)
+        setIsSaveAndPrint(false)
+        return
+      }
+
       if (openPrint && orderId) {
         openOrderPrint(orderId, printWindowName || "_blank")
       }
       window.setTimeout(() => window.close(), 300)
-    } catch (error) {
-      console.error("[OrderEditorPage] force save failed", error)
+    } catch (err) {
+      console.error("[OrderEditorPage] force save failed", err)
       setIsSaving(false)
       setIsSaveAndPrint(false)
-      alert("Не удалось сохранить документ. Попробуйте нажать Ctrl+S в OnlyOffice и повторить сохранение приказа.")
+      const message = err instanceof Error ? err.message : "Не удалось сохранить документ"
+      alert(`${message}\n\nОкно останется открытым — можно повторить сохранение. При необходимости нажмите Ctrl+S в OnlyOffice.`)
     }
   }
 

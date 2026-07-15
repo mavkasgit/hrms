@@ -56,6 +56,7 @@ import { useUpdateEmployee } from "@/entities/employee/useEmployees"
 import { EmployeeSearch } from "@/features/employee-search"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
+import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
 import { openOrderPrint } from "@/entities/order/orderActions"
 import type { OrderCreate } from "@/entities/order/types"
 import { OrderNumberField } from "@/features/OrderNumberField"
@@ -726,7 +727,7 @@ export function VacationsPage() {
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
         } else {
-          window.open(url, "_blank", "noopener,noreferrer")
+          openDraftEditorWindow(url)
         }
       },
       onError: (err: any) => {
@@ -759,15 +760,9 @@ export function VacationsPage() {
   }
 
   useEffect(() => {
-    const handleDraftSave = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
-      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
+    return subscribeDraftOrderSave(draftId, (message) => {
       handleCreateFromDraft(Boolean(message.openPrint), message.printWindowName)
-    }
-
-    window.addEventListener("message", handleDraftSave)
-    return () => window.removeEventListener("message", handleDraftSave)
+    })
   }, [draftId, selectedEmployee, startDate, endDate, orderDate, orderNumber])
 
   // --- Vacation periods for selected employee ---

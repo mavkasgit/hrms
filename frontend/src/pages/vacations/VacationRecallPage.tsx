@@ -7,6 +7,7 @@ import { DatePicker } from "@/shared/ui/date-picker"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useRecallVacation, useHolidays } from "@/entities/vacation"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
+import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
 import { openOrderPrint } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { VacationSelector } from "@/features/VacationSelector"
@@ -85,7 +86,7 @@ export function VacationRecallPage() {
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
         } else {
-          window.open(url, "_blank", "noopener,noreferrer")
+          openDraftEditorWindow(url)
         }
       },
       onError: () => { editorWindow?.close() },
@@ -121,14 +122,9 @@ export function VacationRecallPage() {
   }
 
   useEffect(() => {
-    const handleDraftSave = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
-      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
+    return subscribeDraftOrderSave(draftId, (message) => {
       handleRecall(Boolean(message.openPrint), message.printWindowName)
-    }
-    window.addEventListener("message", handleDraftSave)
-    return () => window.removeEventListener("message", handleDraftSave)
+    })
   }, [draftId, selectedVacation, recallDate, orderDate, orderNumber])
 
   const isPending = createDraftMutation.isPending || recallMutation.isPending

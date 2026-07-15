@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { EmployeeSearch } from "@/features/employee-search"
 import { useAllOrderTypes, useCreateVacationUnpaidGroupOrder, useDeleteOrder, useOrders } from "@/entities/order/useOrders"
 import { useCommitGroupDraft, useCommitOrderDraft, useCreateGroupDraft, useCreateOrderDraft, useDeleteOrderDraft } from "@/entities/order/useOnlyOffice"
+import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
 import { downloadOrderDocx, openOrderPrint, openOrderView } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
@@ -229,7 +230,7 @@ export function UnpaidLeavesPage() {
           if (editorWindow && !editorWindow.closed) {
             editorWindow.location.href = url
           } else {
-            window.open(url, "_blank", "noopener,noreferrer")
+            openDraftEditorWindow(url)
           }
         },
         onError: () => {
@@ -268,27 +269,15 @@ export function UnpaidLeavesPage() {
   }
 
   useEffect(() => {
-    const handleDraftSave = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
-      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
+    return subscribeDraftOrderSave(draftId, (message) => {
       handleCommitDraft(Boolean(message.openPrint), message.printWindowName)
-    }
-
-    window.addEventListener("message", handleDraftSave)
-    return () => window.removeEventListener("message", handleDraftSave)
+    })
   }, [draftId, selectedEmployee, orderDate, orderNumber, vacationStart, vacationEnd, vacationDays])
 
   useEffect(() => {
-    const handleGroupDraftSave = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string }
-      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== groupDraftId) return
+    return subscribeDraftOrderSave(groupDraftId, () => {
       handleCommitGroupDraft()
-    }
-
-    window.addEventListener("message", handleGroupDraftSave)
-    return () => window.removeEventListener("message", handleGroupDraftSave)
+    })
   }, [groupDraftId])
 
   const handleDeleteOrderConfirm = () => {
@@ -407,7 +396,7 @@ export function UnpaidLeavesPage() {
           if (editorWindow && !editorWindow.closed) {
             editorWindow.location.href = url
           } else {
-            window.open(url, "_blank", "noopener,noreferrer")
+            openDraftEditorWindow(url)
           }
         },
         onError: () => {

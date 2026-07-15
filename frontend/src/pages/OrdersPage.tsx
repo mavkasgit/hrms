@@ -45,6 +45,7 @@ import {
 } from "@/entities/order/useOrders"
 import { useEmployee } from "@/entities/employee/useEmployees"
 import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
+import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
 import { downloadOrderDocx, openOrderEdit, openOrderPrint, openOrderView } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { EmployeeSearch } from "@/features/employee-search"
@@ -666,7 +667,7 @@ export function OrdersPage() {
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
         } else {
-          window.open(url, "_blank", "noopener,noreferrer")
+          openDraftEditorWindow(url)
         }
       },
       onError: () => {
@@ -688,15 +689,9 @@ export function OrdersPage() {
   }
 
   useEffect(() => {
-    const handleGeneralDraftSave = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
-      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== generalDraftId) return
+    return subscribeDraftOrderSave(generalDraftId, () => {
       handleGeneralCommitDraft()
-    }
-
-    window.addEventListener("message", handleGeneralDraftSave)
-    return () => window.removeEventListener("message", handleGeneralDraftSave)
+    })
   }, [generalDraftId, generalOrderDate, generalOrderNumber])
 
   const validate = (): boolean => {
@@ -746,7 +741,7 @@ export function OrdersPage() {
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
         } else {
-          window.open(url, "_blank", "noopener,noreferrer")
+          openDraftEditorWindow(url)
         }
       },
       onError: () => {
@@ -765,7 +760,7 @@ export function OrdersPage() {
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
         } else {
-          window.open(url, "_blank", "noopener,noreferrer")
+          openDraftEditorWindow(url)
         }
       },
       onError: () => {
@@ -790,15 +785,9 @@ export function OrdersPage() {
   }
 
   useEffect(() => {
-    const handleDraftSave = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string; draftId?: string; openPrint?: boolean; printWindowName?: string }
-      if (message.type !== "hrms:draft-order-save" || !message.draftId || message.draftId !== draftId) return
+    return subscribeDraftOrderSave(draftId, (message) => {
       handleCommitDraft(Boolean(message.openPrint), message.printWindowName)
-    }
-
-    window.addEventListener("message", handleDraftSave)
-    return () => window.removeEventListener("message", handleDraftSave)
+    })
   }, [draftId, selectedEmployee, selectedOrderTypeId, orderDate, orderNumber])
 
   const isPending = createMutation.isPending || createDraftMutation.isPending || commitDraftMutation.isPending

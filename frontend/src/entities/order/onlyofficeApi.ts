@@ -1,6 +1,13 @@
 import api from "@/shared/api/axios"
 import type { GroupOrderCreate, Order, OrderCreate } from "./types"
-import type { CommitOrderDraftResponse, GroupDraftResponse, OnlyOfficeConfig, OrderDraftResponse } from "./onlyofficeTypes"
+import type {
+  CommitOrderDraftResponse,
+  GroupDraftResponse,
+  OnlyOfficeConfig,
+  OnlyOfficeForceSaveResponse,
+  OnlyOfficeSaveStatusResponse,
+  OrderDraftResponse,
+} from "./onlyofficeTypes"
 
 export async function fetchOrderOnlyOfficeConfig(orderId: number, mode: "edit" | "view" = "edit") {
   const { data } = await api.get<OnlyOfficeConfig>(`/orders/${orderId}/onlyoffice/config`, {
@@ -9,10 +16,18 @@ export async function fetchOrderOnlyOfficeConfig(orderId: number, mode: "edit" |
   return data
 }
 
-export async function forceSaveOrder(orderId: number, documentKey: string) {
-  const { data } = await api.post<{ message: string }>(`/orders/${orderId}/onlyoffice/forcesave`, {
+export async function forceSaveOrder(orderId: number, documentKey: string, saveId?: string) {
+  const { data } = await api.post<OnlyOfficeForceSaveResponse>(`/orders/${orderId}/onlyoffice/forcesave`, {
     document_key: documentKey,
+    save_id: saveId,
   })
+  return data
+}
+
+export async function fetchOrderSaveStatus(orderId: number, saveId: string) {
+  const { data } = await api.get<OnlyOfficeSaveStatusResponse>(
+    `/orders/${orderId}/onlyoffice/save-status/${saveId}`
+  )
   return data
 }
 
@@ -26,10 +41,18 @@ export async function fetchDraftOnlyOfficeConfig(draftId: string) {
   return data
 }
 
-export async function forceSaveDraft(draftId: string, documentKey: string) {
-  const { data } = await api.post<{ message: string }>(`/orders/drafts/${draftId}/onlyoffice/forcesave`, {
+export async function forceSaveDraft(draftId: string, documentKey: string, saveId?: string) {
+  const { data } = await api.post<OnlyOfficeForceSaveResponse>(`/orders/drafts/${draftId}/onlyoffice/forcesave`, {
     document_key: documentKey,
+    save_id: saveId,
   })
+  return data
+}
+
+export async function fetchDraftSaveStatus(draftId: string, saveId: string) {
+  const { data } = await api.get<OnlyOfficeSaveStatusResponse>(
+    `/orders/drafts/${draftId}/onlyoffice/save-status/${saveId}`
+  )
   return data
 }
 
