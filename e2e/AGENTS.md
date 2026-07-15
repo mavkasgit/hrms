@@ -156,10 +156,31 @@ e2e/
 
 ---
 
-## 9. Ссылки
+## 9. Migration map (legacy → new)
+
+| Legacy | #tests | New target | Status | Notes |
+|--------|-------:|------------|--------|-------|
+| `_legacy/ui/structure-full-lifecycle.spec.ts` | 3 | `ui/structure-lifecycle.spec.ts` | **E3a done** | full edit+delete; smoke keeps create |
+| `_legacy/ui/employees.spec.ts` | 3 | `ui/employees-lifecycle.spec.ts` | **E3a done** | full form + soft + restore UI |
+| `_legacy/ui/vacations.spec.ts` | 3 | `ui/vacations-basic.spec.ts` | **E3a done** | load/rows/expand beyond smoke |
+| `_legacy/ui/vacation-plan-fill.spec.ts` | 1 | `ui/vacation-plan-fill.spec.ts` | **E3a done** | fractions + clear cell |
+| `_legacy/ui/add-vacation-days.spec.ts` | 1 | `ui/add-vacation-days.spec.ts` | **E3a done** | inline edit + API assert |
+| `_legacy/ui/unpaid-leaves-and-weekend-calls.spec.ts` | 7 | `ui/absences.spec.ts` | **E3a done** | unpaid/weekend/sick |
+| `_legacy/ui/timesheet.spec.ts` | 7 | `ui/timesheet.spec.ts` | **E3a done** | tabs/import/history beyond open |
+| `_legacy/ui/order-type-letter.spec.ts` | 2 | `api/order-type-letter.spec.ts` | **E3a done** | API-only (was misfiled as ui) |
+| `_legacy/api/api-errors.spec.ts` | 12 | `api/errors.spec.ts` (+ `employees-errors`) | E3b | slim; not E3a |
+| `_legacy/api/catalog-lifecycle.spec.ts` | 4 | `api/catalog.spec.ts` | E2/E3b | leftovers |
+| `_legacy/api/timesheet-api.spec.ts` | 5 | `api/timesheet.spec.ts` | E3b | not E3a |
+| `_legacy/domain/vacation-periods-generation.spec.ts` | 10 | `api/vacation-periods-smoke.spec.ts` | E3b | not E3a |
+| `_legacy/domain/vacation-balance.spec.ts` | 10 | `api/vacation-balance-smoke.spec.ts` | E3b | not E3a |
+
+`_legacy/**` не удалять до E4.
+
+## 10. Ссылки
 
 - План rewrite: `.opencode/plans/2026-07-15-e2e-rewrite.md`
 - Phase E0: `.opencode/plans/E0-e2e-scaffold.md`
 - Phase E1: `.opencode/plans/E1-e2e-auth-fixtures.md`
+- Phase E3: `.opencode/plans/E3-e2e-rewrite-legacy.md`
 - Docs: `docs/testing-guide.md`
 - Root monorepo rules: `AGENTS.md` / `Agents.md`

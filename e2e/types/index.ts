@@ -231,6 +231,10 @@ export interface VacationBalance {
   vacation_type_breakdown: Record<string, number>
 }
 
+/** Aliases used by vacation-invariants and domain-style specs */
+export type VacationPeriodData = VacationPeriod
+export type BalanceData = VacationBalance
+
 // ============================================================================
 // HOLIDAYS
 // ============================================================================
