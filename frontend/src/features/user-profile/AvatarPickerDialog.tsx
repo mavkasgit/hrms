@@ -16,8 +16,6 @@ type AvatarPickerDialogProps = {
   onOpenChange: (open: boolean) => void
   /** Текущий сохранённый avatar_seed (null если не задан). */
   currentSeed: string | null
-  /** Резервный seed, который показывается выделенным, если currentSeed=null. */
-  fallbackSeed: string | null
   /** Callback при выборе превью или сбросе. Принимает новый seed (или null для сброса). */
   onPick: (seed: string | null) => void | Promise<void>
   isSaving?: boolean
@@ -49,7 +47,6 @@ export function AvatarPickerDialog({
   open,
   onOpenChange,
   currentSeed,
-  fallbackSeed,
   onPick,
   isSaving,
 }: AvatarPickerDialogProps) {

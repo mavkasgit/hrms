@@ -667,7 +667,6 @@ export function UserProfileModal({
         open={avatarPickerOpen}
         onOpenChange={setAvatarPickerOpen}
         currentSeed={localUser?.avatar_seed ?? null}
-        fallbackSeed={getUserSeed(localUser)}
         onPick={handleAvatarPick}
         isSaving={avatarSaving}
       />

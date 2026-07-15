@@ -495,7 +495,6 @@ export function UsersPage() {
                     <div className="flex items-center gap-3">
                       <UserAvatar
                         seed={getUserSeed(u)}
-                        name={u.full_name}
                         size={32}
                       />
                       <span>{u.full_name}</span>

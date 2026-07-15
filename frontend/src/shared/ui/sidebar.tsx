@@ -198,7 +198,6 @@ export function Sidebar() {
             >
               <UserAvatar
                 seed={getUserSeed(currentUser)}
-                name={currentUser.full_name}
                 size={32}
                 className="group-hover:scale-105 transition-transform"
               />

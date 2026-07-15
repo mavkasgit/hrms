@@ -8,8 +8,6 @@ type Fit = "cover" | "contain"
 type UserAvatarProps = {
   /** Seed Multiavatar (user.avatar_seed). Без seed — пустая заглушка. */
   seed?: string | number | null
-  /** @deprecated Не используется; оставлен для совместимости вызовов. */
-  name?: string | null
   /** Размер в пикселях. По умолчанию 32. */
   size?: number
   className?: string
