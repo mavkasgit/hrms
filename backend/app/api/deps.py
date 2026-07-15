@@ -4,7 +4,9 @@ from jose import JWTError, jwt
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
+from app.core.constants import SSO_BYPASS_HASH
 from app.core.database import get_db
+from app.core.user_auth import generate_avatar_seed
 from app.models.user import User
 
 class CurrentUser(str):
@@ -81,20 +83,37 @@ async def get_current_user(
 
     expected_role = "admin" if hrms_access_level == "admin" else "viewer"
 
-    # Check if the user exists in the local HRMS database
-    result = await db.execute(select(User).where(User.username == username, User.is_deleted == False))
+    # Сначала активный пользователь. Soft-deleted + новый с тем же username
+    # (как shisha_m id=3 deleted / id=4 active) — старый код брал .first() по username
+    # без фильтра и блокировал вход «Пользователь удален».
+    result = await db.execute(
+        select(User).where(User.username == username, User.is_deleted == False)
+    )
     user = result.scalars().first()
-    
+
     if not user:
-        # Just-In-Time provisioning (автоматически создаем запись пользователя в БД HRMS при первом входе SSO)
+        deleted = await db.execute(
+            select(User).where(User.username == username, User.is_deleted == True)
+        )
+        if deleted.scalars().first() is not None:
+            # Нет активного, но есть удалённый — и только тогда soft-delete lockout.
+            # Если есть и deleted, и active, сюда не попадём (active уже найден выше).
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Пользователь удален из системы",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Just-In-Time provisioning (SSO: первый вход без локальной записи)
         jwt_full_name = payload.get("full_name") or username
-        
+
         user = User(
             username=username,
             full_name=jwt_full_name,
             role=expected_role,
-            password_hash="sso_bypass_hash",
-            is_deleted=False
+            password_hash=SSO_BYPASS_HASH,
+            avatar_seed=generate_avatar_seed(),
+            is_deleted=False,
         )
         db.add(user)
         try:
@@ -102,8 +121,9 @@ async def get_current_user(
             await db.refresh(user)
         except Exception:
             await db.rollback()
-            # Попробуем прочитать еще раз на случай состояния гонки (race condition)
-            result = await db.execute(select(User).where(User.username == username, User.is_deleted == False))
+            result = await db.execute(
+                select(User).where(User.username == username, User.is_deleted == False)
+            )
             user = result.scalars().first()
             if not user:
                 raise HTTPException(
@@ -120,7 +140,7 @@ async def get_current_user(
                 await db.refresh(user)
             except Exception:
                 await db.rollback()
-        
+
     return CurrentUser(username, role=user.role, full_name=user.full_name)
 
 

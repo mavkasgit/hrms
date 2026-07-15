@@ -55,6 +55,26 @@ class Settings(BaseSettings):
 
     ALGORITHM: str = "HS256"
 
+    # Telegram Login (bot deep-link + QR)
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_BOT_USERNAME: str = ""
+    TELEGRAM_ALLOW_JIT: bool = False
+    TELEGRAM_DEFAULT_ROLE: str = "viewer"
+    TELEGRAM_BOT_CHALLENGE_TTL_SECONDS: int = 300
+    TELEGRAM_AUTH_DATE_MAX_AGE_SECONDS: int = 600
+    TELEGRAM_WEBHOOK_SECRET: str = ""  # X-Telegram-Bot-Api-Secret-Token expected value
+    # Dev local: pull /start via getUpdates (no public webhook / tunnel needed).
+    # Requires TELEGRAM_BOT_TOKEN + TELEGRAM_BOT_USERNAME. Real Telegram app confirms.
+    TELEGRAM_UPDATES_POLLING: bool = True
+    # Public URL of HRMS app — used for "Open HRMS" inline button in bot reply.
+    # Defaults to the Vite dev origin; override per env for staging/prod.
+    TELEGRAM_PUBLIC_APP_URL: str = "http://localhost:5173"
+    # When True, bot sends a friendly confirmation message + inline "Open HRMS"
+    # button right after /start <token>. Disable for silent test mode.
+    TELEGRAM_BOT_REPLY_ENABLED: bool = True
+    # Public telegram auth endpoints rate limit (widget + bot challenge create/poll)
+    TELEGRAM_RATE_LIMIT_REQUESTS: int = 30
+    TELEGRAM_RATE_LIMIT_WINDOW_SECONDS: int = 60
     model_config = {"env_file": _env_file, "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

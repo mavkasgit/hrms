@@ -40,8 +40,10 @@ from app.api.statement_types import router as statement_types_router
 from app.api.contract_history import router as contract_history_router
 from app.api.users import router as users_router
 from app.api.auth import router as auth_router
+from app.api.telegram_auth import router as telegram_auth_router
 from app.api.work_schedules import router as work_schedules_router
 from app.api.timesheet import router as timesheet_router
+from app.api.admin_settings import router as admin_settings_router
 
 
 # Ссылка на фоновую задачу планировщика (чтобы GC не удалил ее)
@@ -86,7 +88,14 @@ app.add_middleware(
 async def check_write_access_middleware(request: Request, call_next):
     if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
         path = request.url.path
-        if path.startswith("/api") and path != "/api/health" and not path.endswith("/onlyoffice/callback"):
+        is_exempt = (
+            path == "/api/health"
+            or path.endswith("/onlyoffice/callback")
+            or path == "/api/users/me/setup-password"
+            or path == "/api/auth/telegram/bot/challenge"
+            or path == "/api/auth/telegram/link"
+        )
+        if path.startswith("/api") and not is_exempt:
             auth_header = request.headers.get("Authorization")
             if auth_header and auth_header.startswith("Bearer "):
                 token = auth_header[7:]
@@ -156,8 +165,10 @@ app.include_router(statement_types_router, prefix="/api")
 app.include_router(contract_history_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
+app.include_router(telegram_auth_router, prefix="/api")
 app.include_router(work_schedules_router, prefix="/api")
 app.include_router(timesheet_router, prefix="/api")
+app.include_router(admin_settings_router, prefix="/api")
 
 
 

@@ -69,3 +69,24 @@ async def test_create_user_api_role_and_validation(async_client):
     # Удаление
     response_delete = await async_client.delete(f"/api/users/{user_id}", headers=_get_auth_headers())
     assert response_delete.status_code == 204
+
+    # Попытка запроса от имени удаленного пользователя (должно возвращать 401)
+    from app.services.auth_token import create_access_token
+    token = create_access_token(username=username, role="admin", full_name="Deleted User")
+    response_me = await async_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response_me.status_code == 401
+    assert response_me.json()["detail"] == "Пользователь удален из системы"
+
+
+async def test_admin_user_protection(async_client):
+    """Тест защиты встроенного администратора: не выводится в списке и нельзя удалить."""
+    # Проверка, что 'admin' нет в списке пользователей
+    response_list = await async_client.get("/api/users", headers=_get_auth_headers())
+    assert response_list.status_code == 200
+    usernames = [u["username"] for u in response_list.json()]
+    assert "admin" not in usernames
+
+    # Попытка удалить admin (id=1)
+    response_delete = await async_client.delete("/api/users/1", headers=_get_auth_headers())
+    assert response_delete.status_code == 400
+    assert response_delete.json()["detail"] == "Нельзя удалить встроенного администратора"

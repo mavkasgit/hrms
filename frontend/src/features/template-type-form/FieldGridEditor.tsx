@@ -9,7 +9,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select"
-import { PlaceholderAutocomplete, type PlaceholderOption } from "./PlaceholderAutocomplete"
+import { PlaceholderAutocomplete } from "./PlaceholderAutocomplete"
+import type { TemplateVariable } from "@/entities/order/types"
 
 export interface FieldSchemaItem {
   key: string
@@ -23,28 +24,9 @@ export interface FieldSchemaItem {
 interface FieldGridEditorProps {
   fields: FieldSchemaItem[]
   onChange: (fields: FieldSchemaItem[]) => void
-  templateVariables: PlaceholderOption[]
+  templateVariables: TemplateVariable[]
   readOnly?: boolean
 }
-
-// Плейсхолдеры которые заполняются автоматически — не показываем в палитре
-const AUTO_FILLED_PLACEHOLDERS = new Set([
-  "full_name", "short_name", "last_name", "first_name", "middle_name",
-  "full_name_upper", "full_name_title", "full_name_last_caps",
-  "last_name_upper", "initials_before", "last_name_then_initials", "initials",
-  "position", "position_cap", "department", "tab_number",
-  "hire_date", "contract_start", "oznak", "oznak_gender",
-  "doc_number", "doc_date", "doc_title",
-  "order_number", "order_date", "order_type_name", "order_type_code", "order_type_lower",
-  "hire_order_date",
-  "notification_type_name", "notification_type_code",
-  "statement_type_name", "statement_type_code",
-  "trial_end_months", "contract_end_years", "new_contract_years",
-  "old_contract_start", "old_contract_end",
-  "employees_block_start", "employees_block_end",
-  "applications_block_start", "applications_block_end",
-  "index", "notes",
-])
 
 /**
  * Визуальный редактор полей (плоский список).

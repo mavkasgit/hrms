@@ -10,6 +10,7 @@ import {
 import { Input } from "@/shared/ui/input"
 
 export interface PlaceholderOption {
+  key?: string
   name: string
   displayName: string
   description: string

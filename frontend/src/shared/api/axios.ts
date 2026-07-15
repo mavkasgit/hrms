@@ -100,11 +100,52 @@ export async function pingKtm(): Promise<boolean> {
   }
 }
 
-export function logout(): void {
+/** sessionStorage key: сообщение об ошибке auth, показывается на /login после редиректа. */
+export const AUTH_ERROR_STORAGE_KEY = "hrms_auth_error"
+
+export function setAuthErrorForLogin(message: string): void {
+  const text = (message || "").trim()
+  if (!text) return
+  try {
+    sessionStorage.setItem(AUTH_ERROR_STORAGE_KEY, text)
+  } catch {
+    /* private mode / quota */
+  }
+}
+
+/** Прочитать и снять сохранённую ошибку (один раз). */
+export function consumeAuthErrorForLogin(): string | null {
+  try {
+    const text = sessionStorage.getItem(AUTH_ERROR_STORAGE_KEY)
+    if (text) sessionStorage.removeItem(AUTH_ERROR_STORAGE_KEY)
+    return text
+  } catch {
+    return null
+  }
+}
+
+function clearAuthTokens(): void {
   localStorage.removeItem("token")
   localStorage.removeItem("ktm2000_token")
   document.cookie = "ktm2000_token=; path=/; max-age=0"
+}
+
+export function logout(): void {
+  clearAuthTokens()
   window.location.href = "/login"
+}
+
+/**
+ * Редирект на login с сохранением причины (для 401 «удалён», expired и т.п.).
+ * Не глотаем detail бэкенда — пользователь должен его увидеть.
+ */
+export function redirectToLoginWithError(message: string): void {
+  clearAuthTokens()
+  setAuthErrorForLogin(message)
+  const isLoginPage = window.location.pathname === "/login"
+  if (!isLoginPage) {
+    window.location.href = "/login"
+  }
 }
 
 /** Запасной вход по логину/паролю через /api/auth/login. */
@@ -169,6 +210,18 @@ function formatErrorMessage(data: any, fallbackMessage: string): string {
   return fallbackMessage
 }
 
+/** Эндпоинты, где 401 = «неверный пароль/код», а не «сессия умерла». */
+function isCredentialLoginUrl(url: string | undefined): boolean {
+  if (!url) return false
+  return (
+    url.includes("/auth/login") ||
+    url.includes("/auth/invite/login") ||
+    url.includes("/auth/telegram/widget") ||
+    // poll challenge: 401 = bad poll_secret, не logout
+    url.includes("/auth/telegram/bot/challenge")
+  )
+}
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -178,18 +231,26 @@ api.interceptors.response.use(
     }
 
     console.error("[API Error]", error.response?.status, error.response?.data || error.message)
-    
-    // 401 Unauthorized всегда обрабатываем перенаправлением
+
+    // 401: редирект на login С текстом ошибки (не глотать detail).
+    // /auth/me и прочие защищённые URL — тоже (раньше /auth/* молча игнорировали 401).
     if (error.response?.status === 401) {
-      localStorage.removeItem("token")
-      localStorage.removeItem("ktm2000_token")
-      document.cookie = "ktm2000_token=; path=/; max-age=0"
-      showGlobalToast({
-        title: "Сессия истекла",
-        description: "Необходимо войти заново для продолжения работы.",
-        variant: "destructive",
-      })
-      window.location.href = "/login"
+      const url = error.config?.url as string | undefined
+      const isLoginPage = window.location.pathname === "/login"
+      const skipRedirect = isCredentialLoginUrl(url) || isLoginPage
+
+      if (!skipRedirect) {
+        const detail = formatErrorMessage(
+          error.response?.data,
+          "Сессия недействительна. Войдите снова."
+        )
+        showGlobalToast({
+          title: "Ошибка входа",
+          description: detail,
+          variant: "destructive",
+        })
+        redirectToLoginWithError(detail)
+      }
       return Promise.reject(error)
     }
 
