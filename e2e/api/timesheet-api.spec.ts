@@ -2,7 +2,8 @@ import { test, expect, request as pwRequest } from "../fixtures"
 import path from "path"
 import fs from "fs"
 
-const SAMPLE_XLSX = path.resolve(__dirname, "../fixtures/timesheet-sample.xlsx")
+// path relative to repo root (avoid import.meta.url / __dirname under Playwright loader)
+const SAMPLE_XLSX = path.resolve(process.cwd(), "e2e/fixtures/timesheet-sample.xlsx")
 
 test.describe("Timesheet API", () => {
   test.setTimeout(30_000)

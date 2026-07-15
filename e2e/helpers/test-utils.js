@@ -3,11 +3,19 @@
  * Централизованные функции, используемые across all test files
  */
 /**
- * Генератор уникального идентификатора
- * Использует timestamp + random suffix для уникальности в рамках тестового прогона
+ * Префикс worker'а для изоляции данных при multi-worker (PW_WORKERS>1).
+ * parallelIndex — из test.info().parallelIndex (только внутри test/fixture context).
  */
-export function uid() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+export function workerPrefix(parallelIndex = 0) {
+    return `w${parallelIndex}-`;
+}
+/**
+ * Генератор уникального идентификатора
+ * Использует timestamp + random suffix для уникальности в рамках тестового прогона.
+ * Опциональный prefix (например workerPrefix) — для data isolation между workers.
+ */
+export function uid(prefix = '') {
+    return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }
 /**
  * Генератор уникальных тестовых данных сотрудника

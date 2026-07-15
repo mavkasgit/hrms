@@ -27,10 +27,11 @@ Object.entries(envVars).forEach(([k, v]) => {
 });
 export default defineConfig({
     testDir: './e2e',
+    testIgnore: ['**/*.js', '**/*.js.map'],
     fullyParallel: true,
     forbidOnly: !!process.env.CI,
     retries: 1,
-    workers: 1,
+    workers: process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 1,
     reporter: 'list',
     timeout: 60000,
     use: {

@@ -29,6 +29,41 @@ npm run test:e2e:api
 npm run test:e2e:smoke
 ```
 
+### Параллельный прогон (opt-in)
+
+По умолчанию Playwright работает в serial-режиме (`workers: 1`).  
+Multi-worker включается через `PW_WORKERS`; при `workers>1` нужен managed browser (shared CDP несовместим).
+
+```bash
+# serial (default)
+npm run test:e2e:smoke
+
+# opt-in parallel (managed browser only)
+cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:smoke
+```
+
+Имена сущностей, создаваемых через `apiOps`, получают префикс `w{N}-` (worker index) для изоляции данных на shared app DB.
+
+## Backend (pytest)
+
+Требования: Postgres dev (`localhost:5435`, контейнер `hrms-postgres`), права CREATEDB.
+Изоляция: ephemeral DB `hrms_test_*` на модуль + TRUNCATE на тест (`backend/tests/conftest.py`).
+Параллель: `pytest-xdist` + `--dist=loadfile` (файл целиком на одном worker).
+
+```bash
+# через npm (ждёт postgres, как db:wait)
+npm run test:pytest          # serial -q
+npm run test:pytest:fast     # -n auto --dist=loadfile
+npm run test:pytest:lf       # --lf
+
+# вручную из backend/
+cd backend
+python -m pytest -q
+python -m pytest -n auto --dist=loadfile -q
+python -m pytest -n 2 --dist=loadfile -q
+python -m pytest -q --durations=20
+```
+
 ## Интеграция с Chrome DevTools (CDP)
 
 Для отладки тестов в реальном браузере через CDP:

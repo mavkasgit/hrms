@@ -9,7 +9,7 @@ import type {
   VacationPeriod,
   VacationBalance,
 } from '../types'
-import { uid } from '../helpers/test-utils'
+import { uid, workerPrefix } from '../helpers/test-utils'
 
 // =============================================================================
 // CONSTANTS
@@ -401,6 +401,10 @@ type CommonFixtures = {
 
 export const test = base.extend<CommonFixtures>({
   apiOps: async ({ request }, use) => {
+    // Worker tag for data isolation when PW_WORKERS>1 (parallelIndex is fixture-scoped)
+    const tag = workerPrefix(test.info().parallelIndex)
+    const scopedUid = () => uid(tag)
+
     const resources: CreatedResources = {
       orders: [],
       vacations: [],
@@ -410,7 +414,7 @@ export const test = base.extend<CommonFixtures>({
     }
 
     const apiOps: ApiOperations = {
-      uid,
+      uid: scopedUid,
 
       // Departments
       createDepartment: async (name: string, overrides?: Record<string, unknown>) => {
@@ -448,7 +452,7 @@ export const test = base.extend<CommonFixtures>({
           employeeOverrides = overrides
         } else {
           const autoOverrides = deptIdOrOverrides
-          const autoUid = uid()
+          const autoUid = scopedUid()
           const dept = await apiCreateDepartment(request, `Fixture-Dept-${autoUid}`)
           const pos = await apiCreatePosition(request, `Fixture-Pos-${autoUid}`)
           resources.departments.push(dept.id)
@@ -458,7 +462,11 @@ export const test = base.extend<CommonFixtures>({
           employeeOverrides = autoOverrides
         }
 
-        const emp = await apiCreateEmployee(request, deptId, posId, employeeOverrides)
+        // Default name includes worker tag; explicit name in overrides wins
+        const emp = await apiCreateEmployee(request, deptId, posId, {
+          name: `Сотрудник-${scopedUid()}`,
+          ...employeeOverrides,
+        })
         resources.employees.push(emp.id)
         return emp
       },

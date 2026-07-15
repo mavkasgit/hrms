@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 from pydantic import ValidationError
 from httpx import AsyncClient, ASGITransport
 from app.main import app
@@ -7,8 +8,10 @@ from app.schemas.user import UserCreate, UserUpdate
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 
-@pytest.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def async_client():
+    # Uses app.core.database (dev DB). dispose_app_engine_between_modules
+    # in conftest keeps the pool valid across module event loops / xdist.
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 

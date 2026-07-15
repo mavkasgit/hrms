@@ -1,5 +1,18 @@
+"""Pytest fixtures for backend tests.
+
+Isolation strategy (xdist-ready):
+- module-scoped DB: each test module gets `hrms_test_{ts}_{module}_{uuid8}`
+- function-scoped TRUNCATE after every test (not savepoint/hybrid)
+- with pytest-xdist prefer `--dist=loadfile` so all tests of a module
+  stay on one worker (compatible with module-scoped engine/session loop)
+
+Session-scoped stale cleanup runs per xdist worker; DROP failures are
+swallowed so concurrent workers never kill the whole suite.
+"""
+
 from __future__ import annotations
 
+import logging
 import os
 import re
 import uuid
@@ -23,11 +36,16 @@ from app.models.position import Position
 from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5435/hrms_test"
 TEST_DATABASE_PREFIX = "hrms_test_"
 STALE_TEST_DATABASE_TTL_HOURS = int(os.getenv("HRMS_TEST_DB_STALE_TTL_HOURS", "24"))
 CLEANUP_LEGACY_TEST_DATABASES = os.getenv("HRMS_TEST_DB_CLEANUP_LEGACY", "0") == "1"
 TEST_DATABASE_TIMESTAMP_FORMAT = "%Y%m%d%H%M%S"
+# Optional xdist worker token makes log/db names easier to correlate under -n.
+# uuid8 remains the uniqueness guarantee across parallel module fixtures.
+_XDIST_WORKER = os.getenv("PYTEST_XDIST_WORKER", "")
 TEST_DATABASE_PATTERN = re.compile(
     r"^hrms_test_(?P<created_at>\d{14})_(?P<module>[a-z0-9_]+)_[0-9a-f]{8}$"
 )
@@ -52,7 +70,11 @@ def _normalize_name_fragment(value: str, *, max_len: int = 20) -> str:
 def _build_test_database_name(module_name: str) -> str:
     created_at = datetime.now(timezone.utc).strftime(TEST_DATABASE_TIMESTAMP_FORMAT)
     module_token = _normalize_name_fragment(module_name)
-    return f"{TEST_DATABASE_PREFIX}{created_at}_{module_token}_{uuid.uuid4().hex[:8]}"
+    unique = uuid.uuid4().hex[:8]
+    if _XDIST_WORKER:
+        worker_token = _normalize_name_fragment(_XDIST_WORKER, max_len=8)
+        return f"{TEST_DATABASE_PREFIX}{created_at}_{module_token}_{worker_token}_{unique}"
+    return f"{TEST_DATABASE_PREFIX}{created_at}_{module_token}_{unique}"
 
 
 def _parse_database_created_at(db_name: str) -> datetime | None:
@@ -62,8 +84,24 @@ def _parse_database_created_at(db_name: str) -> datetime | None:
     return datetime.strptime(match.group("created_at"), TEST_DATABASE_TIMESTAMP_FORMAT).replace(tzinfo=timezone.utc)
 
 
+async def _safe_drop_database(conn, db_name: str) -> None:
+    """DROP test DB without failing the suite (xdist races / open connections)."""
+    try:
+        activity_result = await conn.execute(
+            text("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = :db_name"),
+            {"db_name": db_name},
+        )
+        if int(activity_result.scalar_one()) > 0:
+            # Still try FORCE; if another worker holds it, except path below handles it.
+            pass
+        await conn.execute(text(f"DROP DATABASE IF EXISTS {_quote_ident(db_name)} WITH (FORCE)"))
+    except Exception as exc:  # noqa: BLE001 — cleanup must never abort the suite
+        logger.warning("Skip DROP DATABASE %s: %s", db_name, exc)
+
+
 @pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
 async def cleanup_stale_test_databases() -> AsyncIterator[None]:
+    """Drop stale hrms_test_* DBs. Safe under pytest-xdist (per-worker, best-effort)."""
     base_url = make_url(DEFAULT_TEST_DATABASE_URL)
     admin_url = base_url.set(database="postgres")
     cutoff = datetime.now(timezone.utc) - timedelta(hours=max(STALE_TEST_DATABASE_TTL_HOURS, 1))
@@ -74,35 +112,61 @@ async def cleanup_stale_test_databases() -> AsyncIterator[None]:
         poolclass=NullPool,
     )
 
-    async with admin_engine.connect() as conn:
-        db_rows = await conn.execute(
-            text("SELECT datname FROM pg_database WHERE datname LIKE :prefix"),
-            {"prefix": f"{TEST_DATABASE_PREFIX}%"},
-        )
-        db_names = [row[0] for row in db_rows.fetchall()]
-
-        for db_name in db_names:
-            created_at = _parse_database_created_at(db_name)
-            if created_at is None and not CLEANUP_LEGACY_TEST_DATABASES:
-                continue
-            if created_at is not None and created_at >= cutoff:
-                continue
-
-            activity_result = await conn.execute(
-                text("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = :db_name"),
-                {"db_name": db_name},
+    try:
+        async with admin_engine.connect() as conn:
+            db_rows = await conn.execute(
+                text("SELECT datname FROM pg_database WHERE datname LIKE :prefix"),
+                {"prefix": f"{TEST_DATABASE_PREFIX}%"},
             )
-            if int(activity_result.scalar_one()) > 0:
-                continue
+            db_names = [row[0] for row in db_rows.fetchall()]
 
-            await conn.execute(text(f"DROP DATABASE IF EXISTS {_quote_ident(db_name)} WITH (FORCE)"))
+            for db_name in db_names:
+                created_at = _parse_database_created_at(db_name)
+                if created_at is None and not CLEANUP_LEGACY_TEST_DATABASES:
+                    continue
+                if created_at is not None and created_at >= cutoff:
+                    continue
 
-    await admin_engine.dispose()
+                activity_result = await conn.execute(
+                    text("SELECT COUNT(*) FROM pg_stat_activity WHERE datname = :db_name"),
+                    {"db_name": db_name},
+                )
+                if int(activity_result.scalar_one()) > 0:
+                    continue
+
+                await _safe_drop_database(conn, db_name)
+    except Exception as exc:  # noqa: BLE001 — session cleanup must not fail collection
+        logger.warning("Stale test DB cleanup skipped: %s", exc)
+    finally:
+        await admin_engine.dispose()
     yield
+
+
+@pytest_asyncio.fixture(scope="module", loop_scope="module", autouse=True)
+async def dispose_app_engine_between_modules() -> AsyncIterator[None]:
+    """Reset app-global engine pool around each module's event loop.
+
+    pytest-asyncio module-scoped loops close between modules; under xdist a
+    worker runs many modules, and pooled connections bound to a closed loop
+    break API tests that hit `app.core.database.engine` (e.g. test_users).
+    """
+
+    async def _dispose() -> None:
+        try:
+            from app.core import database as app_database
+
+            await app_database.engine.dispose()
+        except Exception as exc:  # noqa: BLE001 — must not fail setup/teardown
+            logger.warning("dispose app engine skipped: %s", exc)
+
+    await _dispose()
+    yield
+    await _dispose()
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def test_database_url(request) -> AsyncIterator[str]:
+    """Create a unique per-module database; tear down best-effort after the module."""
     base_url = make_url(DEFAULT_TEST_DATABASE_URL)
     db_name = _build_test_database_name(request.module.__name__.split(".")[-1])
     test_url = base_url.set(database=db_name)
@@ -115,7 +179,7 @@ async def test_database_url(request) -> AsyncIterator[str]:
     )
 
     async with admin_engine.connect() as conn:
-        await conn.execute(text(f"DROP DATABASE IF EXISTS {_quote_ident(db_name)} WITH (FORCE)"))
+        await _safe_drop_database(conn, db_name)
         await conn.execute(text(f"CREATE DATABASE {_quote_ident(db_name)}"))
 
     await admin_engine.dispose()
@@ -128,9 +192,11 @@ async def test_database_url(request) -> AsyncIterator[str]:
             isolation_level="AUTOCOMMIT",
             poolclass=NullPool,
         )
-        async with admin_engine.connect() as conn:
-            await conn.execute(text(f"DROP DATABASE IF EXISTS {_quote_ident(db_name)} WITH (FORCE)"))
-        await admin_engine.dispose()
+        try:
+            async with admin_engine.connect() as conn:
+                await _safe_drop_database(conn, db_name)
+        finally:
+            await admin_engine.dispose()
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")

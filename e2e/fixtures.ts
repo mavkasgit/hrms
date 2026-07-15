@@ -77,6 +77,12 @@ export const test = baseTest.extend<{
   page: Page;
 }>({
   connectedBrowser: async ({}, use) => {
+    const workers = Number(process.env.PW_WORKERS || 1);
+    if (workers > 1 && BROWSER_MODE === 'cdp') {
+      throw new Error(
+        'PW_WORKERS>1 несовместим с E2E_BROWSER_MODE=cdp; set E2E_BROWSER_MODE=managed'
+      );
+    }
     const browser = BROWSER_MODE === 'cdp'
       ? await getCdpBrowser()
       : await getManagedBrowser();
