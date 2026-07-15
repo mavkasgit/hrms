@@ -55,6 +55,11 @@ cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:ui
 
 Изоляция данных: `apiOps.uid()` → prefix `w{N}-` (`workerPrefix(parallelIndex)`), сущности `e2e-…`.
 
+## E2E handoff
+
+Статус rewrite, backlog и команды: **[docs/e2e-handoff.md](./e2e-handoff.md)**.  
+Канон написания тестов: **[e2e/AGENTS.md](../e2e/AGENTS.md)**.
+
 ## Backend (pytest)
 
 ### Postgres для pytest

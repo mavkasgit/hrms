@@ -1,7 +1,7 @@
 # e2e/AGENTS.md — канон E2E HRMS
 
-**Ветка:** `feat/e2e-rewrite` (post-cutover E4)  
-**План:** [`.opencode/plans/2026-07-15-e2e-rewrite.md`](../.opencode/plans/2026-07-15-e2e-rewrite.md)
+**Ветка:** `main` (rewrite влит PR #4, 2026-07-15)  
+**Handoff (что сделано / backlog / как гонять):** [`docs/e2e-handoff.md`](../docs/e2e-handoff.md)
 
 ---
 
