@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from datetime import datetime
@@ -10,6 +11,8 @@ from jose import JWTError, jwt
 
 from app.core.config import settings
 from app.core.exceptions import HRMSException
+
+logger = logging.getLogger(__name__)
 
 
 class OnlyOfficeService:
@@ -85,8 +88,15 @@ class OnlyOfficeService:
         except JWTError:
             return False
 
-    async def force_save(self, document_key: str) -> None:
-        payload = {"c": "forcesave", "key": document_key}
+    async def force_save(self, document_key: str, userdata: str | None = None) -> int | None:
+        """Send forcesave to OnlyOffice CommandService.
+
+        Returns command error code: 0/None on success, 4 when document has no changes.
+        Raises HRMSException on other errors or transport failure.
+        """
+        payload: dict[str, Any] = {"c": "forcesave", "key": document_key}
+        if userdata:
+            payload["userdata"] = userdata
         token = jwt.encode(payload, settings.ONLYOFFICE_JWT_SECRET, algorithm="HS256")
         body = {**payload, "token": token}
         last_error: Exception | None = None
@@ -102,15 +112,21 @@ class OnlyOfficeService:
                 last_error = exc
                 continue
 
-            if result.get("error") == 4:
-                return
-            if result.get("error") not in (0, None):
+            error = result.get("error")
+            if error == 4:
+                logger.warning(
+                    "OnlyOffice forcesave: no changes (error=4) key=%s userdata=%s",
+                    document_key,
+                    userdata,
+                )
+                return 4
+            if error not in (0, None):
                 raise HRMSException(
-                    f"OnlyOffice не принял команду сохранения: error={result.get('error')}",
+                    f"OnlyOffice не принял команду сохранения: error={error}",
                     "onlyoffice_forcesave_failed",
                     status_code=502,
                 )
-            return
+            return error  # 0 or None
 
         raise HRMSException(
             f"Не удалось отправить команду сохранения в OnlyOffice: {last_error}",

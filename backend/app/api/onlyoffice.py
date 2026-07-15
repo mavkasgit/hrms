@@ -23,6 +23,7 @@ from app.core.paths import storage_path, storage_root
 from app.schemas.order import GroupOrderCreate, OrderCreate
 from app.services.order_document_service import get_template_path
 from app.services.onlyoffice_service import onlyoffice_service
+from app.services.onlyoffice_save_tracker import onlyoffice_save_tracker
 from app.services.order_draft_service import order_draft_service
 from app.services.order_service import order_service
 from app.services.docx_renderer import load_template_or_create_blank, render_docx_placeholders, build_basic_doc_replacements
@@ -40,6 +41,7 @@ DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingm
 
 class OnlyOfficeForceSaveRequest(BaseModel):
     document_key: str
+    save_id: str | None = None
 
 
 from app.api.deps import get_current_user as _get_current_user_stub, get_current_user_or_onlyoffice
@@ -165,6 +167,44 @@ def _assert_valid_callback_token(request: Request, body: dict[str, Any]) -> None
         raise HRMSException("Невалидный JWT OnlyOffice", "invalid_onlyoffice_jwt", status_code=403)
 
 
+def _extract_callback_userdata(body: dict[str, Any]) -> str | None:
+    """userdata from forcesave CommandService is echoed on callback (top-level)."""
+    userdata = body.get("userdata")
+    if userdata is None or userdata == "":
+        return None
+    return str(userdata)
+
+
+async def _run_forcesave(
+    document_key: str,
+    save_id: str | None,
+    doc_type: str,
+    doc_id: str | int,
+) -> dict[str, Any]:
+    """Register attempt (optional), call CommandService, map error codes to response."""
+    if save_id:
+        await onlyoffice_save_tracker.register(save_id, doc_type, doc_id)
+    try:
+        command_error = await onlyoffice_service.force_save(document_key, userdata=save_id)
+    except HRMSException:
+        if save_id:
+            await onlyoffice_save_tracker.mark_failed(save_id, "onlyoffice_forcesave_failed")
+        raise
+    if command_error == 4:
+        if save_id:
+            await onlyoffice_save_tracker.mark_no_changes(save_id)
+        return {
+            "message": "no_changes",
+            "save_id": save_id,
+            "command_error": 4,
+        }
+    return {
+        "message": "save_requested",
+        "save_id": save_id,
+        "command_error": None,
+    }
+
+
 def _file_response(file_path: Path) -> FileResponse:
     return FileResponse(
         str(file_path),
@@ -230,7 +270,14 @@ async def order_onlyoffice_callback(
         return JSONResponse(content={"error": 0})
     body = await request.json()
     status = body.get("status")
-    logger.info("[order callback] order_id=%s status=%s url=%s", order_id, status, body.get("url"))
+    userdata = _extract_callback_userdata(body)
+    logger.info(
+        "[order callback] order_id=%s status=%s url=%s userdata=%s",
+        order_id,
+        status,
+        body.get("url"),
+        userdata,
+    )
 
     try:
         _assert_valid_callback_token(request, body)
@@ -238,20 +285,39 @@ async def order_onlyoffice_callback(
         logger.warning("[order callback] invalid token for order_id=%s: %s", order_id, exc.detail)
         return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
 
-    if status in (2, 6) and body.get("url"):
+    if status in (2, 3, 6) and body.get("url"):
         try:
             order = await order_service.get_by_id(db, order_id)
             if order and order.file_path:
                 file_path = storage_path(order.file_path, "ORDERS_PATH")
                 await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
+                file_mtime = int(file_path.stat().st_mtime) if file_path.exists() else None
+                if userdata:
+                    await onlyoffice_save_tracker.mark_persisted(userdata, oo_status=status, file_mtime=file_mtime)
                 logger.info("[order callback] saved successfully order_id=%s", order_id)
             else:
                 logger.warning("[order callback] order or file_path missing order_id=%s", order_id)
+                if userdata:
+                    await onlyoffice_save_tracker.mark_failed(
+                        userdata, "order_or_file_path_missing", oo_status=status
+                    )
         except Exception as exc:
             logger.error("[order callback] failed to save order_id=%s: %s", order_id, exc, exc_info=True)
+            if userdata:
+                await onlyoffice_save_tracker.mark_failed(userdata, str(exc), oo_status=status)
             return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
+    elif status in (2, 3, 6):
+        # No download URL — especially status 3: mark attempt failed when tracked
+        if userdata and status == 3:
+            await onlyoffice_save_tracker.mark_failed(
+                userdata, "forcesave_callback_status_3_no_url", oo_status=3
+            )
     elif status == 7:
         logger.warning("[order callback] force save error for order_id=%s", order_id)
+        if userdata:
+            await onlyoffice_save_tracker.mark_failed(
+                userdata, "forcesave_callback_status_7", oo_status=7
+            )
 
     return {"error": 0}
 
@@ -265,8 +331,19 @@ async def order_onlyoffice_forcesave(
     _ensure_onlyoffice_enabled()
     if not data.document_key.startswith(f"order-{order_id}-"):
         raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
-    await onlyoffice_service.force_save(data.document_key)
-    return {"message": "save_requested"}
+    return await _run_forcesave(data.document_key, data.save_id, "order", order_id)
+
+
+@router.get("/orders/{order_id}/onlyoffice/save-status/{save_id}")
+async def order_onlyoffice_save_status(
+    order_id: int,
+    save_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    await order_service.get_by_id(db, order_id)
+    return await onlyoffice_save_tracker.get(save_id)
 
 
 @router.post("/orders/drafts")
@@ -378,10 +455,47 @@ async def draft_onlyoffice_callback(
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})
     body = await request.json()
-    _assert_valid_callback_token(request, body)
+    status = body.get("status")
+    userdata = _extract_callback_userdata(body)
+    logger.info(
+        "[draft callback] draft_id=%s status=%s url=%s userdata=%s",
+        draft_id,
+        status,
+        body.get("url"),
+        userdata,
+    )
 
-    if body.get("status") in (2, 6) and body.get("url"):
-        await onlyoffice_service.download_and_replace(str(body["url"]), order_draft_service.get_draft_path(draft_id))
+    try:
+        _assert_valid_callback_token(request, body)
+    except HRMSException as exc:
+        logger.warning("[draft callback] invalid token for draft_id=%s: %s", draft_id, exc.detail)
+        return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
+
+    if status in (2, 3, 6) and body.get("url"):
+        try:
+            file_path = order_draft_service.get_draft_path(draft_id)
+            await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
+            file_mtime = int(file_path.stat().st_mtime) if file_path.exists() else None
+            if userdata:
+                await onlyoffice_save_tracker.mark_persisted(userdata, oo_status=status, file_mtime=file_mtime)
+            logger.info("[draft callback] saved successfully draft_id=%s", draft_id)
+        except Exception as exc:
+            logger.error("[draft callback] failed to save draft_id=%s: %s", draft_id, exc, exc_info=True)
+            if userdata:
+                await onlyoffice_save_tracker.mark_failed(userdata, str(exc), oo_status=status)
+            return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
+    elif status in (2, 3, 6):
+        if userdata and status == 3:
+            await onlyoffice_save_tracker.mark_failed(
+                userdata, "forcesave_callback_status_3_no_url", oo_status=3
+            )
+    elif status == 7:
+        logger.warning("[draft callback] force save error for draft_id=%s", draft_id)
+        if userdata:
+            await onlyoffice_save_tracker.mark_failed(
+                userdata, "forcesave_callback_status_7", oo_status=7
+            )
+
     return {"error": 0}
 
 
@@ -395,8 +509,18 @@ async def draft_onlyoffice_forcesave(
     order_draft_service.get_draft_path(draft_id)
     if not data.document_key.startswith(f"draft-{draft_id}-"):
         raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
-    await onlyoffice_service.force_save(data.document_key)
-    return {"message": "save_requested"}
+    return await _run_forcesave(data.document_key, data.save_id, "draft", draft_id)
+
+
+@router.get("/orders/drafts/{draft_id}/onlyoffice/save-status/{save_id}")
+async def draft_onlyoffice_save_status(
+    draft_id: str,
+    save_id: str,
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    order_draft_service.get_draft_path(draft_id)
+    return await onlyoffice_save_tracker.get(save_id)
 
 
 @router.post("/orders/drafts/{draft_id}/commit")
