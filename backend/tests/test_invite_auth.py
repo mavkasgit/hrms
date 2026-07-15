@@ -65,9 +65,12 @@ async def test_invite_login_flow(db_session: AsyncSession, async_client: AsyncCl
     assert me_data["username"] == "invite_test_user"
     assert me_data["has_telegram"] is False
     assert me_data["has_password"] is False
+    assert me_data["password_changed_at"] is None
+    assert me_data["needs_security_setup"] is True
     assert me_data["invite_code"] == "987654"
 
-    # 5. Установка пароля должна сбрасывать invite_code
+    # 5. Установка пароля НЕ должна сбрасывать invite_code, пока нет Telegram
+    # (баннер онбординга остаётся, пока не выполнены оба пункта)
     setup_resp = await async_client.post(
         "/api/users/me/setup-password",
         json={"password": "new_secure_password"},
@@ -75,21 +78,42 @@ async def test_invite_login_flow(db_session: AsyncSession, async_client: AsyncCl
     )
     assert setup_resp.status_code == 200
 
-    # Проверяем в БД, что invite_code сбросился и пароль изменился
     await db_session.refresh(user)
-    assert user.invite_code is None
+    assert user.invite_code == "987654"
     assert user.password_hash != "sso_bypass_hash"
+    assert user.password_changed_at is not None
 
-    # Проверяем /auth/me теперь
     me_resp = await async_client.get("/api/auth/me", headers=headers)
     assert me_resp.status_code == 200
     me_data = me_resp.json()
     assert me_data["has_password"] is True
+    assert me_data["has_telegram"] is False
+    assert me_data["password_changed_at"] is not None
+    assert me_data["needs_security_setup"] is True  # Telegram ещё не привязан
+    assert me_data["invite_code"] == "987654"
+
+    # 6. После привязки Telegram (при уже заданном пароле) invite_code сбрасывается
+    from app.repositories.user_repository import UserRepository
+
+    repo = UserRepository()
+    await repo.link_telegram(db_session, user, telegram_id=77770001)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    assert user.telegram_id == 77770001
+    assert user.invite_code is None
+
+    me_resp = await async_client.get("/api/auth/me", headers=headers)
+    assert me_resp.status_code == 200
+    me_data = me_resp.json()
+    assert me_data["has_password"] is True
+    assert me_data["has_telegram"] is True
+    assert me_data["needs_security_setup"] is False
     assert me_data["invite_code"] is None
 
 
-async def test_link_telegram_resets_invite_code(db_session: AsyncSession, create_employee):
-    # Тест: UserRepository.link_telegram сбрасывает invite_code в None
+async def test_link_telegram_keeps_invite_until_password(db_session: AsyncSession, create_employee):
+    # link_telegram без пароля оставляет invite_code (онбординг не завершён)
     employee = await create_employee()
     user = User(
         username="tg_link_test_user",
@@ -107,5 +131,20 @@ async def test_link_telegram_resets_invite_code(db_session: AsyncSession, create
     await repo.link_telegram(db_session, user, telegram_id=88888888)
     await db_session.commit()
 
-    assert user.invite_code is None
     assert user.telegram_id == 88888888
+    assert user.invite_code == "123456"
+
+    # После установки пароля invite сбрасывается
+    import bcrypt
+    from datetime import datetime, timezone
+
+    user.password_hash = bcrypt.hashpw(b"secret", bcrypt.gensalt()).decode("utf-8")
+    user.password_changed_at = datetime.now(timezone.utc)
+    from app.core.user_auth import clear_invite_if_fully_activated
+
+    clear_invite_if_fully_activated(user)
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    assert user.invite_code is None

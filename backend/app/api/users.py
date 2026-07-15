@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 import bcrypt
@@ -8,10 +10,15 @@ from sqlalchemy.sql import func
 
 from app.core.constants import SSO_BYPASS_HASH
 from app.core.database import get_db
+from app.core.user_auth import clear_invite_if_fully_activated, generate_avatar_seed
 from app.models.user import User
 from app.models.employee import Employee
 from app.schemas.user import UserCreate, UserUpdate, UserOut, UserPasswordSetup
 from app.api.deps import get_current_user, CurrentUser
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -102,9 +109,10 @@ async def create_user(
         full_name = emp.name
         
     # Хэшируем пароль, если передан; иначе — только SSO-вход
+    has_local_password = bool(payload.password)
     password_hash = (
         bcrypt.hashpw(payload.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-        if payload.password
+        if has_local_password
         else SSO_BYPASS_HASH
     )
 
@@ -126,10 +134,12 @@ async def create_user(
         role=payload.role or "admin",
         employee_id=payload.employee_id,
         password_hash=password_hash,
+        password_changed_at=_utcnow() if has_local_password else None,
         telegram_id=telegram_id,
         telegram_username=payload.telegram_username,
         phone=phone,
         invite_code=invite_code,
+        avatar_seed=generate_avatar_seed(),
         is_deleted=False
     )
     
@@ -205,12 +215,12 @@ async def update_user(
             if tg_id != user.telegram_id:
                 await _ensure_telegram_id_free(db, tg_id, exclude_user_id=user.id)
             user.telegram_id = tg_id
-            user.invite_code = None
+            clear_invite_if_fully_activated(user)
 
     if "invite_code" in fields_set:
         user.invite_code = payload.invite_code
-        if user.telegram_id is not None:
-            user.invite_code = None
+        # Нельзя выдать инвайт уже полностью активированному аккаунту
+        clear_invite_if_fully_activated(user)
 
     if "telegram_username" in fields_set:
         user.telegram_username = payload.telegram_username
@@ -230,6 +240,7 @@ async def update_user(
         user.password_hash = bcrypt.hashpw(
             payload.password.encode("utf-8"), bcrypt.gensalt()
         ).decode("utf-8")
+        user.password_changed_at = _utcnow()
         
     await db.commit()
     
@@ -333,17 +344,18 @@ async def setup_my_password(
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     
     # Хешируем пароль
-    import bcrypt
     password_hash = bcrypt.hashpw(payload.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     db_user.password_hash = password_hash
-    db_user.invite_code = None
+    db_user.password_changed_at = _utcnow()
+    # invite_code сбрасываем только после пароля И Telegram (баннер онбординга)
+    clear_invite_if_fully_activated(db_user)
     db.add(db_user)
     await db.commit()
     return {"status": "ok"}
 
 
 class AvatarSeedUpdate(BaseModel):
-    """Payload для PATCH /users/me/avatar. NULL = сбросить на автогенерацию."""
+    """Payload для PATCH /users/me/avatar. NULL = сбросить (пустая заглушка на UI)."""
     avatar_seed: str | None = Field(None, max_length=64)
 
 
@@ -353,7 +365,7 @@ async def update_my_avatar(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Установить или сбросить свой avatar_seed (Multiavatar)."""
+    """Установить или сбросить avatar_seed (NULL → пустая заглушка)."""
     result = await db.execute(
         select(User).where(User.username == current_user.username, User.is_deleted == False)
     )

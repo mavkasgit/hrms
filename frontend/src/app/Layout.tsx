@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Navigate, Outlet } from "react-router-dom"
 import { Sidebar } from "@/shared/ui/sidebar"
 import { ToastProvider } from "@/shared/ui/use-toast"
@@ -26,6 +26,9 @@ interface UserProfile {
   full_name: string
   has_telegram: boolean
   has_password: boolean
+  password_changed_at?: string | null
+  /** true, пока не заданы и пароль, и Telegram */
+  needs_security_setup?: boolean
   invite_code: string | null
 }
 
@@ -43,30 +46,6 @@ export function Layout() {
   const [setupLoading, setSetupLoading] = useState(false)
   const [setupError, setSetupError] = useState<string | null>(null)
 
-  // Подтверждение на кнопках баннера (двухшаговый клик)
-  const [pendingAction, setPendingAction] = useState<null | "password" | "telegram">(null)
-  const confirmTimeoutRef = useRef<number | null>(null)
-
-  const clearConfirmTimeout = () => {
-    if (confirmTimeoutRef.current !== null) {
-      window.clearTimeout(confirmTimeoutRef.current)
-      confirmTimeoutRef.current = null
-    }
-  }
-
-  const armConfirmation = (action: "password" | "telegram") => {
-    clearConfirmTimeout()
-    setPendingAction(action)
-    confirmTimeoutRef.current = window.setTimeout(() => {
-      setPendingAction(null)
-      confirmTimeoutRef.current = null
-    }, 4000)
-  }
-
-  useEffect(() => {
-    return clearConfirmTimeout
-  }, [])
-
   const fetchProfile = async () => {
     try {
       const response = await api.get("/auth/me")
@@ -79,12 +58,23 @@ export function Layout() {
   useEffect(() => {
     if (accessLevel !== "no_access") {
       fetchProfile()
-      
+
       // Загрузка конфига Telegram
       fetchTelegramBotConfig()
         .then(cfg => setTelegramConfig(cfg))
         .catch(err => console.error("Failed to fetch telegram config", err))
     }
+  }, [accessLevel])
+
+  // Синхронизация баннера после смены пароля / TG в профиле (Sidebar → UserProfileModal)
+  useEffect(() => {
+    const onProfileUpdated = () => {
+      if (accessLevel !== "no_access") {
+        void fetchProfile()
+      }
+    }
+    window.addEventListener("hrms:profile-updated", onProfileUpdated)
+    return () => window.removeEventListener("hrms:profile-updated", onProfileUpdated)
   }, [accessLevel])
 
   if (accessLevel === "no_access") {
@@ -106,35 +96,23 @@ export function Layout() {
     return <Navigate to="/login" replace />
   }
 
-  const showSecurityBanner =
+  // Баннер, пока не выполнены ОБА пункта: пароль и Telegram.
+  // Не завязан на invite_code (он мог уже сброситься) — только на фактический статус.
+  const showSecurityBanner = Boolean(
     profile &&
-    profile.invite_code &&
-    (!profile.has_telegram || !profile.has_password)
+      (profile.needs_security_setup ??
+        (!profile.has_telegram || !profile.has_password))
+  )
 
   const handlePasswordBannerClick = () => {
-    if (pendingAction === "password") {
-      // Второй клик — подтверждение, открываем диалог
-      clearConfirmTimeout()
-      setPendingAction(null)
-      setNewPassword("")
-      setConfirmPassword("")
-      setSetupError(null)
-      setSetupPasswordOpen(true)
-    } else {
-      // Первый клик — переводим кнопку в режим подтверждения
-      armConfirmation("password")
-    }
+    setNewPassword("")
+    setConfirmPassword("")
+    setSetupError(null)
+    setSetupPasswordOpen(true)
   }
 
   const handleTelegramBannerClick = () => {
-    if (pendingAction === "telegram") {
-      // Второй клик — подтверждение, открываем модал
-      clearConfirmTimeout()
-      setPendingAction(null)
-      setLinkTelegramOpen(true)
-    } else {
-      armConfirmation("telegram")
-    }
+    setLinkTelegramOpen(true)
   }
 
   const handleSetupPasswordSubmit = async (e: React.FormEvent) => {
@@ -153,6 +131,7 @@ export function Layout() {
       await api.post("/users/me/setup-password", { password: newPassword })
       setSetupPasswordOpen(false)
       await fetchProfile()
+      window.dispatchEvent(new Event("hrms:profile-updated"))
     } catch (err: any) {
       setSetupError(err.response?.data?.detail || err.message || "Не удалось сохранить пароль")
     } finally {
@@ -170,7 +149,11 @@ export function Layout() {
               <div className="flex items-center gap-3">
                 <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
                 <div className="text-sm text-amber-800 font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span>Вы вошли по временному коду приглашения.</span>
+                  <span>
+                    {profile.invite_code
+                      ? "Вы вошли по временному коду приглашения."
+                      : "Завершите настройку аккаунта."}
+                  </span>
                   {profile.has_password ? (
                     <span className="inline-flex items-center gap-1 text-emerald-700">
                       <CheckCircle2 className="h-4 w-4" />
@@ -179,7 +162,7 @@ export function Layout() {
                   ) : (
                     <span className="font-semibold">Настройте пароль</span>
                   )}
-                  <span className="text-amber-700/70">или</span>
+                  <span className="text-amber-700/70">и</span>
                   {profile.has_telegram ? (
                     <span className="inline-flex items-center gap-1 text-emerald-700">
                       <CheckCircle2 className="h-4 w-4" />
@@ -195,30 +178,20 @@ export function Layout() {
                 {!profile.has_password && (
                   <Button
                     size="sm"
-                    className={
-                      pendingAction === "password"
-                        ? "bg-amber-700 text-white text-xs font-semibold ring-2 ring-amber-500 animate-pulse"
-                        : "bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
-                    }
+                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
                     onClick={handlePasswordBannerClick}
-                    aria-pressed={pendingAction === "password"}
                   >
-                    {pendingAction === "password" ? "Нажмите ещё раз" : "Установить пароль"}
+                    Установить пароль
                   </Button>
                 )}
                 {!profile.has_telegram && (
                   <Button
                     size="sm"
                     variant="outline"
-                    className={
-                      pendingAction === "telegram"
-                        ? "border-amber-500 text-amber-900 bg-amber-100 text-xs font-semibold ring-2 ring-amber-500 animate-pulse"
-                        : "border-amber-300 text-amber-800 hover:bg-amber-100/50 text-xs font-semibold"
-                    }
+                    className="border-amber-300 text-amber-800 hover:bg-amber-100/50 text-xs font-semibold"
                     onClick={handleTelegramBannerClick}
-                    aria-pressed={pendingAction === "telegram"}
                   >
-                    {pendingAction === "telegram" ? "Нажмите ещё раз" : "Привязать Telegram"}
+                    Привязать Telegram
                   </Button>
                 )}
               </div>
@@ -321,6 +294,7 @@ export function Layout() {
         purpose="link"
         onSuccess={async () => {
           await fetchProfile()
+          window.dispatchEvent(new Event("hrms:profile-updated"))
         }}
       />
     </ToastProvider>

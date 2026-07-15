@@ -44,7 +44,7 @@ class UserUpdate(BaseModel):
     # Опциональный пароль для резервного входа без SSO.
     # Если не передан — текущий пароль не изменяется.
     password: str | None = Field(None, min_length=4, max_length=128)
-    # NULL = сбросить на автогенерацию по telegram_id/username.
+    # NULL = сбросить seed (фронт: legacy fallback). Новый seed — через picker.
     avatar_seed: str | None = Field(None, max_length=64)
 
 

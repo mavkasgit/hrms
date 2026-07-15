@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.constants import SSO_BYPASS_HASH
 from app.core.database import get_db
+from app.core.user_auth import generate_avatar_seed
 from app.models.user import User
 
 class CurrentUser(str):
@@ -111,6 +112,7 @@ async def get_current_user(
             full_name=jwt_full_name,
             role=expected_role,
             password_hash=SSO_BYPASS_HASH,
+            avatar_seed=generate_avatar_seed(),
             is_deleted=False,
         )
         db.add(user)

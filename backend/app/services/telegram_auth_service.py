@@ -512,7 +512,10 @@ class TelegramAuthService:
                 user.telegram_id = telegram_id
                 if getattr(challenge, "telegram_username", None):
                     user.telegram_username = challenge.telegram_username
-                user.invite_code = None
+                # invite_code сбрасываем только после пароля И Telegram
+                from app.core.user_auth import clear_invite_if_fully_activated
+
+                clear_invite_if_fully_activated(user)
                 self.db.add(user)
 
                 claimed = await self.challenges.try_consume_confirmed(self.db, cid)

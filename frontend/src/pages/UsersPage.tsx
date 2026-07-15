@@ -439,22 +439,6 @@ export function UsersPage() {
         </div>
       </div>
 
-      {/* Информационный Alert */}
-      <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-800 dark:text-amber-300 flex gap-3">
-        <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <p className="font-medium">Важная информация по сквозной авторизации (SSO)</p>
-          <p className="text-muted-foreground text-xs leading-relaxed">
-            Пользователи авторизуются через единый ключ JWT от KTM-2000. Для успешного входа:
-          </p>
-          <ul className="list-disc list-inside text-xs text-muted-foreground pl-1 space-y-1">
-            <li>Логин в списке ниже должен <strong>в точности совпадать</strong> с логином пользователя в KTM-2000.</li>
-            <li>Для входа через Telegram укажите <strong>Telegram ID</strong> (при выключенном JIT без привязки вход запрещён).</li>
-            <li>Роль HRMS задаётся в колонке «Роль» (admin / viewer).</li>
-          </ul>
-        </div>
-      </div>
-
       {/* Панель поиска */}
       <div className="flex gap-3 max-w-md">
         <div className="relative flex-1">

@@ -48,6 +48,8 @@ class User(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
+    # Когда пользователь последний раз задал/сменил локальный пароль (NULL = пароль не задан).
+    password_changed_at = Column(DateTime(timezone=True), nullable=True)
     role = Column(String(50), nullable=False, default=UserRole.VIEWER.value)
     full_name = Column(String(255), nullable=False)
 
@@ -59,8 +61,8 @@ class User(Base):
     telegram_username = Column(String(100), nullable=True)
     phone = Column(String(32), nullable=True, index=True)
     phone_verified_at = Column(DateTime(timezone=True), nullable=True)
-    # Multiavatar seed (явный выбор пользователя/админа). NULL → автогенерация
-    # по telegram_id → username → id. До 64 ASCII-символов (8 hex = 4 байта).
+    # Multiavatar seed: случайный при создании, далее — только явная смена в профиле.
+    # NULL → на фронте пустая заглушка. До 64 ASCII (8 hex).
     avatar_seed = Column(String(64), nullable=True)
     invite_code = Column(String(64), unique=True, nullable=True, index=True)
 

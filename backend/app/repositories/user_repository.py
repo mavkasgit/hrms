@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import SSO_BYPASS_HASH
+from app.core.user_auth import generate_avatar_seed
 from app.models.user import User
 
 
@@ -40,9 +41,12 @@ class UserRepository:
         telegram_username: str | None = None,
         phone: str | None = None,
     ) -> User:
+        from app.core.user_auth import clear_invite_if_fully_activated
+
         user.telegram_id = telegram_id
         user.telegram_username = telegram_username
-        user.invite_code = None
+        # invite_code сбрасываем только после пароля И Telegram
+        clear_invite_if_fully_activated(user)
         if phone is not None:
             user.phone = phone
         db.add(user)
@@ -83,6 +87,7 @@ class UserRepository:
             telegram_id=telegram_id,
             telegram_username=telegram_username,
             phone=phone,
+            avatar_seed=generate_avatar_seed(),
             is_deleted=False,
         )
         db.add(user)

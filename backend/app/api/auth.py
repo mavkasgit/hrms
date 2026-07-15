@@ -133,14 +133,21 @@ async def get_me(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Пользователь не найден",
         )
+    has_password = (
+        user.password_hash is not None and user.password_hash != SSO_BYPASS_HASH
+    )
+    has_telegram = user.telegram_id is not None
     return {
         "username": user.username,
         "role": user.role,
         "full_name": user.full_name,
-        "has_telegram": user.telegram_id is not None,
+        "has_telegram": has_telegram,
         "telegram_id": user.telegram_id,
         "telegram_username": user.telegram_username,
-        "has_password": user.password_hash is not None and user.password_hash != SSO_BYPASS_HASH,
+        "has_password": has_password,
+        "password_changed_at": user.password_changed_at.isoformat() if user.password_changed_at else None,
+        # Баннер онбординга: пока не выполнены оба пункта (не зависит от invite_code)
+        "needs_security_setup": (not has_password) or (not has_telegram),
         "invite_code": user.invite_code,
         "avatar_seed": user.avatar_seed,
     }

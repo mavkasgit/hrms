@@ -37,6 +37,7 @@ import { TelegramIcon } from "@/shared/ui/icons"
 import { UserAvatar } from "@/shared/ui/user-avatar"
 import { getUserSeed } from "@/shared/lib/avatar"
 import { AvatarPickerDialog } from "@/features/user-profile/AvatarPickerDialog"
+import { formatDateTime } from "@/shared/utils/date"
 type UserProfileModalProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -72,7 +73,9 @@ export function UserProfileModal({
     try {
       const res = await api.get("/auth/me")
       setLocalUser(res.data)
-      onUpdateProfile() // уведомляем родительский компонент
+      onUpdateProfile() // уведомляем родительский компонент (Sidebar)
+      // Layout слушает это для баннера «пароль + Telegram»
+      window.dispatchEvent(new Event("hrms:profile-updated"))
     } catch (err) {
       console.error("Не удалось обновить профиль пользователя:", err)
     }
@@ -488,13 +491,38 @@ export function UserProfileModal({
                     <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
                       <Lock className="h-4 w-4" />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-foreground">
-                        {localUser.has_password ? "Смена пароля" : "Установка пароля доступа"}
-                      </h3>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-semibold text-foreground">
+                          {localUser.has_password ? "Смена пароля" : "Установка пароля доступа"}
+                        </h3>
+                        {localUser.has_password ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-600 dark:text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">
+                            <ShieldCheck className="h-3 w-3" />
+                            Пароль задан
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                            <ShieldAlert className="h-3 w-3" />
+                            Пароль не задан
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         Локальный пароль для резервного входа в кадровое приложение
                       </p>
+                      {localUser.has_password && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {localUser.password_changed_at
+                            ? <>Последняя смена: <span className="font-medium text-foreground/80">{formatDateTime(localUser.password_changed_at, false)}</span></>
+                            : "Дата последней смены неизвестна (пароль был задан до учёта дат)"}
+                        </p>
+                      )}
+                      {!localUser.has_password && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Пароль ещё не устанавливался — задайте его ниже
+                        </p>
+                      )}
                     </div>
                   </div>
 
