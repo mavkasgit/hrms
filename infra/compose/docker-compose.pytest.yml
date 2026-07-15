@@ -1,0 +1,22 @@
+# Dedicated Postgres for backend pytest (host port 5436 by default).
+# Does not replace docker-compose.test.yml (full e2e stack) or dev Postgres (:5435).
+name: hrms-pytest-db
+
+services:
+  postgres-pytest:
+    image: postgres:15-alpine
+    container_name: hrms-postgres-pytest
+    ports:
+      - "${PYTEST_POSTGRES_PORT:-5436}:5432"
+    environment:
+      POSTGRES_USER: hrms_user
+      POSTGRES_PASSWORD: hrms_pass
+      POSTGRES_DB: hrms_test
+    # tmpfs speeds up ephemeral test DBs on Linux; Docker Desktop on Windows may ignore it.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hrms_user -d hrms_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

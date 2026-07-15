@@ -42,7 +42,14 @@ from app.models.vacation_period import VacationPeriod
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5435/hrms_test"
+# Admin/template URL for CREATE DATABASE. Override for dedicated pytest Postgres
+# (e.g. docker-compose.pytest.yml on :5436 or GitHub Actions service on :5432).
+# Default stays :5435 (dev Postgres) for backward compatibility.
+DEFAULT_TEST_DATABASE_URL = (
+    os.getenv("HRMS_TEST_DATABASE_URL")
+    or os.getenv("TEST_DATABASE_URL")
+    or "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5435/hrms_test"
+)
 TEST_DATABASE_PREFIX = "hrms_test_"
 STALE_TEST_DATABASE_TTL_HOURS = int(os.getenv("HRMS_TEST_DB_STALE_TTL_HOURS", "24"))
 CLEANUP_LEGACY_TEST_DATABASES = os.getenv("HRMS_TEST_DB_CLEANUP_LEGACY", "0") == "1"

@@ -46,7 +46,33 @@ cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:smoke
 
 ## Backend (pytest)
 
-Требования: Postgres dev (`localhost:5435`, контейнер `hrms-postgres`), права CREATEDB.
+### Postgres для pytest
+
+Рекомендуемый путь — **dedicated** Postgres (не dev app DB):
+
+| Что | Значение |
+|-----|----------|
+| Compose | `infra/compose/docker-compose.pytest.yml` (project `hrms-pytest-db`) |
+| Контейнер | `hrms-postgres-pytest` |
+| Host port | **5436** (`PYTEST_POSTGRES_PORT`, default) |
+| User / pass / DB | `hrms_user` / `hrms_pass` / `hrms_test` |
+| Env override | `HRMS_TEST_DATABASE_URL` (или `TEST_DATABASE_URL`) |
+
+```bash
+npm run test:db:up      # docker compose up -d
+npm run test:db:wait    # pg_isready в контейнере
+npm run test:db:down    # остановить dedicated DB
+```
+
+npm-скрипты `test:pytest*` сами поднимают DB, ждут готовности и выставляют
+`HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5436/hrms_test`.
+
+Fallback без dedicated compose: default URL в conftest — `localhost:5435`
+(dev Postgres `hrms-postgres`), если env не задан. Права **CREATEDB** обязательны
+(роль `POSTGRES_USER` в compose их имеет).
+
+### Изоляция
+
 Изоляция (`backend/tests/conftest.py`):
 - ephemeral DB `hrms_test_*` на **модуль**;
 - per-test cleanup через **`HRMS_TEST_ISOLATION`**:
@@ -59,15 +85,15 @@ cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:smoke
 Параллель: `pytest-xdist` + `--dist=loadfile` (файл целиком на одном worker).
 
 ```bash
-# через npm (ждёт postgres, как db:wait)
+# через npm (dedicated DB :5436)
 npm run test:pytest          # serial -q
 npm run test:pytest:fast     # -n auto --dist=loadfile
 npm run test:pytest:lf       # --lf
 
-# вручную из backend/
+# вручную из backend/ (нужен URL)
 cd backend
-python -m pytest -q
-python -m pytest -n auto --dist=loadfile -q
+cross-env HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5436/hrms_test python -m pytest -q
+cross-env HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5436/hrms_test python -m pytest -n auto --dist=loadfile -q
 python -m pytest -n 2 --dist=loadfile -q
 python -m pytest -q --durations=20
 
@@ -79,6 +105,13 @@ cross-env HRMS_TEST_ISOLATION=truncate python -m pytest tests/test_db_isolation.
 # Windows PowerShell:
 # $env:HRMS_TEST_ISOLATION='truncate'; python -m pytest tests/test_db_isolation.py -q
 ```
+
+### CI (GitHub Actions)
+
+Workflow [`.github/workflows/test-backend.yml`](../.github/workflows/test-backend.yml):
+- service `postgres:15` на `:5432`;
+- `HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_test`;
+- `python -m pytest -n auto --dist=loadfile -q` в `backend/`.
 
 ## Интеграция с Chrome DevTools (CDP)
 
