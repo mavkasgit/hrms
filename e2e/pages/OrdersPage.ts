@@ -40,8 +40,7 @@ export class OrdersPage {
 
   async goto() {
     await this.page.goto('/orders')
-    await this.page.waitForLoadState('networkidle')
-    await expect(this.pageTitle).toBeVisible({ timeout: 10000 })
+    await expect(this.pageTitle).toBeVisible({ timeout: 15000 })
   }
 
   private async waitForOrderListRefresh(trigger: () => Promise<void>) {

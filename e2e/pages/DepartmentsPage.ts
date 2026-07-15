@@ -16,9 +16,11 @@ export class DepartmentsPage {
   constructor(page: Page) {
     this.page = page
     this.pageTitle = page.getByRole('heading', { name: /структура/i, level: 1 })
-    this.addDepartmentButton = page.getByRole('button', { name: /добавить подразделение/i })
-    this.positionsTab = page.getByRole('tab', { name: /должности/i })
-    this.tagsTab = page.getByRole('tab', { name: /теги/i })
+    // Real UI label is "Подразделение" (Plus icon), dialog title is "Добавить подразделение"
+    this.addDepartmentButton = page.getByRole('button', { name: /^Подразделение$/ })
+    // Custom TabsTrigger = plain button (no role=tab)
+    this.positionsTab = page.getByRole('button', { name: /^Должности$/ })
+    this.tagsTab = page.getByRole('heading', { name: /^Теги$/ })
   }
 
   /**

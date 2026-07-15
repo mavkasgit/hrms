@@ -80,11 +80,17 @@
 **Путь login:** реальная форма на `/login` (placeholder «Введите логин/пароль» → «Войти»).  
 Если form fail и видна dev-кнопка «Войти как Admin» — setup делает fallback (см. `setup/auth.setup.ts`).
 
-**API request auth:** Playwright `request` не видит localStorage → `fixtures/api.ts` читает token из storageState (`getAdminTokenFromStorage`) и создаёт context с `Authorization: Bearer …`.
+**API request auth:** Playwright `request` не видит localStorage → `fixtures/api.ts` читает token из storageState (`getAdminTokenFromStorage`) и создаёт context с `Authorization: Bearer …`.  
+Для raw HTTP вне apiOps: `helpers/api-request.ts` → `createAuthenticatedRequest(playwright)`.
 
 **Импорты:**
 - New suite: `import { test, expect } from '../fixtures/index'` (apiOps, без JWT page hack)
 - Legacy: `import { test, expect } from '../../fixtures'` → `e2e/fixtures.ts` (page+JWT)
+
+**P0 smoke/api (new tree):**
+- smoke: `e2e/smoke/*.spec.ts` (titles contain `@smoke`)
+- api: `e2e/api/*.spec.ts` (titles contain `@api`)
+- UI dismiss «Уволить» → flow приказа, не soft-dismiss; soft cycle — `apiOps.dismiss/restore`
 
 ---
 

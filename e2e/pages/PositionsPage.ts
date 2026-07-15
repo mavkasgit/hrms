@@ -44,15 +44,16 @@ export class PositionsPage {
   // ============================================================================
 
   async switchToPositionsTab() {
-    const tab = this.tabs.getByRole('tab', { name: /должности/i })
+    // Custom TabsTrigger is a plain <button>, not role=tab
+    const tab = this.page.getByRole('button', { name: /^Должности$/ })
     await tab.click()
-    await expect(tab).toHaveAttribute('aria-selected', 'true')
+    await expect(this.page.getByText(/Должности —/i)).toBeVisible()
   }
 
   async switchToDepartmentsTab() {
-    const tab = this.tabs.getByRole('tab', { name: /подразделения/i })
+    const tab = this.page.getByRole('button', { name: /^Подразделения$/ })
     await tab.click()
-    await expect(tab).toHaveAttribute('aria-selected', 'true')
+    await expect(this.page.getByText(/Структура подразделений/i)).toBeVisible()
   }
 
   // ============================================================================
