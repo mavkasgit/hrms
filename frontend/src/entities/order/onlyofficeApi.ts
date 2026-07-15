@@ -17,16 +17,21 @@ export async function fetchOrderOnlyOfficeConfig(orderId: number, mode: "edit" |
 }
 
 export async function forceSaveOrder(orderId: number, documentKey: string, saveId?: string) {
-  const { data } = await api.post<OnlyOfficeForceSaveResponse>(`/orders/${orderId}/onlyoffice/forcesave`, {
-    document_key: documentKey,
-    save_id: saveId,
-  })
+  const { data } = await api.post<OnlyOfficeForceSaveResponse>(
+    `/orders/${orderId}/onlyoffice/forcesave`,
+    {
+      document_key: documentKey,
+      save_id: saveId,
+    },
+    { skipGlobalToast: true }
+  )
   return data
 }
 
 export async function fetchOrderSaveStatus(orderId: number, saveId: string) {
   const { data } = await api.get<OnlyOfficeSaveStatusResponse>(
-    `/orders/${orderId}/onlyoffice/save-status/${saveId}`
+    `/orders/${orderId}/onlyoffice/save-status/${saveId}`,
+    { skipGlobalToast: true }
   )
   return data
 }
@@ -42,16 +47,21 @@ export async function fetchDraftOnlyOfficeConfig(draftId: string) {
 }
 
 export async function forceSaveDraft(draftId: string, documentKey: string, saveId?: string) {
-  const { data } = await api.post<OnlyOfficeForceSaveResponse>(`/orders/drafts/${draftId}/onlyoffice/forcesave`, {
-    document_key: documentKey,
-    save_id: saveId,
-  })
+  const { data } = await api.post<OnlyOfficeForceSaveResponse>(
+    `/orders/drafts/${draftId}/onlyoffice/forcesave`,
+    {
+      document_key: documentKey,
+      save_id: saveId,
+    },
+    { skipGlobalToast: true }
+  )
   return data
 }
 
 export async function fetchDraftSaveStatus(draftId: string, saveId: string) {
   const { data } = await api.get<OnlyOfficeSaveStatusResponse>(
-    `/orders/drafts/${draftId}/onlyoffice/save-status/${saveId}`
+    `/orders/drafts/${draftId}/onlyoffice/save-status/${saveId}`,
+    { skipGlobalToast: true }
   )
   return data
 }

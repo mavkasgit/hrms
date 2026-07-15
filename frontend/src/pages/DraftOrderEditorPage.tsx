@@ -56,7 +56,9 @@ export function DraftOrderEditorPage() {
       setIsSaving(false)
       setIsSaveAndPrint(false)
       const message = err instanceof Error ? err.message : "Не удалось сохранить документ"
-      alert(`${message}\n\nОкно останется открытым — можно повторить сохранение. При необходимости нажмите Ctrl+S в OnlyOffice.`)
+      alert(
+        `${message}\n\nОкно останется открытым — можно повторить сохранение.\nПри необходимости нажмите Ctrl+S в OnlyOffice, затем снова «Сохранить приказ».`
+      )
     }
   }
 
