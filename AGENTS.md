@@ -1,5 +1,14 @@
 # agents.md — Инструкции для ИИ-агентов
 
+## Workspace harness
+
+Этот репозиторий — часть multi-project workspace **VibeCoding**.
+Общая карта, порты и cross-project правила: [`../_harness/AGENTS.md`](../_harness/AGENTS.md)
+и [`../_harness/memory/structure.md`](../_harness/memory/structure.md).
+Локальные правила **этого** файла главнее harness при конфликте.
+
+---
+
 Этот файл содержит правила и контекст для ИИ-агентов, работающих с проектом HRMS.
 
 ---
