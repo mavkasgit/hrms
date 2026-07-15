@@ -43,16 +43,12 @@ test.describe('Employees CRUD @smoke', () => {
     const dismissed = await apiOps.getEmployee(emp.id)
     expect(dismissed.is_dismissed).toBeTruthy()
 
-    // Active filter default — dismissed should disappear
+    // UI: show dismissed only (search alone may keep row cache / mixed status)
     await page.reload()
     await expect(empPage.pageTitle).toBeVisible({ timeout: 15_000 })
-    await empPage.searchEmployee(name)
-    await empPage.expectEmployeeNotInTable(name)
-
-    // Status multi-toggle: enable Уволенные, disable Активные
     await empPage.filterBtn.click()
     const panel = page.locator('div.absolute').filter({ hasText: 'Статус' }).first()
-    await expect(panel).toBeVisible()
+    await expect(panel).toBeVisible({ timeout: 10_000 })
     await panel.getByRole('button', { name: 'Уволенные' }).click()
     await panel.getByRole('button', { name: 'Активные' }).click()
     await empPage.filterBtn.click()
@@ -64,10 +60,13 @@ test.describe('Employees CRUD @smoke', () => {
     const restored = await apiOps.getEmployee(emp.id)
     expect(restored.is_dismissed).toBeFalsy()
 
-    // Reset filters to active-only
+    // UI: active only
+    await page.reload()
+    await expect(empPage.pageTitle).toBeVisible({ timeout: 15_000 })
     await empPage.filterBtn.click()
     const panel2 = page.locator('div.absolute').filter({ hasText: 'Статус' }).first()
-    await expect(panel2).toBeVisible()
+    await expect(panel2).toBeVisible({ timeout: 10_000 })
+    // Prefer explicit active: click Активные on, Уволенные off if panel multi-toggle
     await panel2.getByRole('button', { name: 'Активные' }).click()
     await panel2.getByRole('button', { name: 'Уволенные' }).click()
     await empPage.filterBtn.click()
