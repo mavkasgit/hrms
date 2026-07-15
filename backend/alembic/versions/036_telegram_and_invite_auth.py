@@ -110,8 +110,26 @@ def upgrade() -> None:
     op.create_index(op.f('ix_work_schedule_entries_id'), 'work_schedule_entries', ['id'], unique=False)
     op.create_index(op.f('ix_work_schedules_id'), 'work_schedules', ['id'], unique=False)
 
+    # 9. Таблица system_settings (key-value для админских настроек: токен бота и т.п.)
+    op.create_table(
+        "system_settings",
+        sa.Column("key", sa.String(length=100), primary_key=True, nullable=False),
+        sa.Column("value", sa.Text(), nullable=True),
+        sa.Column("description", sa.String(length=500), nullable=True),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column("updated_by", sa.String(length=100), nullable=True),
+    )
+
 
 def downgrade() -> None:
+    # 9. Удаляем таблицу system_settings
+    op.drop_table("system_settings")
+
     # 8. Удаляем индексы на timesheet и work_schedules таблицы
     op.drop_index(op.f('ix_work_schedules_id'), table_name='work_schedules')
     op.drop_index(op.f('ix_work_schedule_entries_id'), table_name='work_schedule_entries')
