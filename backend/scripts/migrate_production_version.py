@@ -99,8 +99,8 @@ async def main(dry_run: bool = False) -> None:
             print(f"[OK] Already at '{HEAD_REVISION}'. Nothing to do.")
             return
 
-        # Already a new-format revision (e.g., "015")?
-        if current_version in OLD_TO_NEW.values():
+        # Already a new-format revision (e.g., "015", "035")?
+        if current_version in OLD_TO_NEW.values() or (len(current_version) == 3 and current_version.isdigit()):
             print(f"[OK] Already using new revision format ('{current_version}'). Nothing to do.")
             return
 

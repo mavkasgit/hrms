@@ -48,16 +48,16 @@ export function TransferHistoryModal({ open, onOpenChange, transfers, onSave, em
 
   // Load transfer orders from API
   const { data: transferOrders, refetch: refetchTransferOrders } = useOrders(
-    employeeId ? { employee_id: employeeId, order_type_code: "transfer", per_page: 100 } : null
+    employeeId ? { page: 1, employee_id: employeeId, order_type_code: "transfer", per_page: 100 } : null
   )
 
   // Convert transfer orders to EmployeeTransfer format
   const autoTransfers: EmployeeTransfer[] = (transferOrders?.items || []).map(order => ({
     date: order.order_date,
     order_number: order.order_number,
-    old_position_id: order.extra_fields?.old_position_id || null,
-    new_position_id: order.extra_fields?.new_position || null,
-    reason: order.extra_fields?.reason || "",
+    old_position_id: typeof order.extra_fields?.old_position_id === "number" ? order.extra_fields.old_position_id : null,
+    new_position_id: typeof order.extra_fields?.new_position === "number" ? order.extra_fields.new_position : null,
+    reason: order.extra_fields?.reason != null ? String(order.extra_fields.reason) : "",
     _orderId: order.id,
     _auto: true,
   }))

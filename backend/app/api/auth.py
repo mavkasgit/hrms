@@ -1,17 +1,15 @@
-import time
-from datetime import timedelta
-
 from fastapi import APIRouter, Depends, HTTPException, status
-from jose import jwt
 import bcrypt
 from pydantic import BaseModel
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.constants import SSO_BYPASS_HASH
 from app.core.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user, CurrentUser
+from app.services.auth_token import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -29,18 +27,8 @@ class LoginResponse(BaseModel):
     full_name: str
 
 
-def _create_token(username: str, role: str, full_name: str) -> str:
-    """Создать JWT-токен с hrms_access_level."""
-    expire = time.time() + settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-    payload = {
-        "sub": username,
-        "username": username,
-        "full_name": full_name,
-        "hrms_access_level": role,
-        "exp": int(expire),
-    }
-    secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
-    return jwt.encode(payload, secret_key, algorithm=settings.ALGORITHM)
+class InviteLoginRequest(BaseModel):
+    invite_code: str
 
 
 def _verify_password(plain: str, hashed: str) -> bool:
@@ -83,7 +71,40 @@ async def login(
             detail="Неверный логин или пароль",
         )
 
-    token = _create_token(
+    token = create_access_token(
+        username=user.username,
+        role=user.role,
+        full_name=user.full_name or user.username,
+    )
+
+    return LoginResponse(
+        access_token=token,
+        username=user.username,
+        role=user.role,
+        full_name=user.full_name or user.username,
+    )
+
+
+@router.post("/invite/login", response_model=LoginResponse)
+async def invite_login(
+    payload: InviteLoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> LoginResponse:
+    """
+    Вход по одноразовому инвайт-коду.
+    """
+    result = await db.execute(
+        select(User).where(User.invite_code == payload.invite_code, User.is_deleted == False)
+    )
+    user = result.scalars().first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Код приглашения недействителен. Убедитесь, что код введен верно, или что аккаунт не был активирован ранее (в этом случае войдите с помощью пароля или Telegram).",
+        )
+
+    token = create_access_token(
         username=user.username,
         role=user.role,
         full_name=user.full_name or user.username,
@@ -100,10 +121,33 @@ async def login(
 @router.get("/me")
 async def get_me(
     current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Получить информацию о текущем авторизованном пользователе."""
+    result = await db.execute(
+        select(User).where(User.username == current_user.username, User.is_deleted == False)
+    )
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден",
+        )
+    has_password = (
+        user.password_hash is not None and user.password_hash != SSO_BYPASS_HASH
+    )
+    has_telegram = user.telegram_id is not None
     return {
-        "username": current_user.username,
-        "role": current_user.role,
-        "full_name": current_user.full_name,
+        "username": user.username,
+        "role": user.role,
+        "full_name": user.full_name,
+        "has_telegram": has_telegram,
+        "telegram_id": user.telegram_id,
+        "telegram_username": user.telegram_username,
+        "has_password": has_password,
+        "password_changed_at": user.password_changed_at.isoformat() if user.password_changed_at else None,
+        # Баннер онбординга: пока не выполнены оба пункта (не зависит от invite_code)
+        "needs_security_setup": (not has_password) or (not has_telegram),
+        "invite_code": user.invite_code,
+        "avatar_seed": user.avatar_seed,
     }

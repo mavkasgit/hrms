@@ -79,14 +79,34 @@ htmlcov/
 *.bak
 *.tmp
 
+# Local Excel dumps (repo root only — backend/app/*template*.xlsx remain tracked)
+/*.xlsx
+/*.xls
+/*.xlsm
+/*.xlsb
+/*.ods
+
 # AI tools
 .agents/
 .codegraph/
 .qwen/
 .qoder/
+.opencode/
+.slim/
+
+# MCP tool descriptors (local Cursor cache: codegraph, supabase, …)
+mcps/
+
+# Local terminal session dumps (Cursor / IDE)
+terminals/
+
+# AI tools data
+brain/
+agent-tools/
 
 # Backend data
 backend/data/
+storage/
 
 # Git worktrees
 .worktrees/

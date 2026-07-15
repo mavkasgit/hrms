@@ -4,7 +4,9 @@ import type { TemplateVariable } from "@/entities/order/types"
 
 const makeVars = (items: { name: string; category: string }[]): TemplateVariable[] =>
   items.map(({ name, category }) => ({
+    key: name.replace(/^\{|\}$/g, ""),
     name,
+    displayName: name,
     category,
     description: `desc for ${name}`,
   }))
