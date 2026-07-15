@@ -87,6 +87,8 @@ jobs:
 
       - name: Alembic migrate
         working-directory: backend
+        env:
+          PYTHONPATH: .
         run: |
           # Safe on empty DB (no alembic_version yet)
           python scripts/migrate_production_version.py
@@ -94,13 +96,17 @@ jobs:
 
       - name: Seed admin user
         working-directory: backend
+        env:
+          PYTHONPATH: .
         # password_hash is SSO placeholder; DEV_BYPASS_AUTH accepts password "dev"
         run: python scripts/create_user.py admin "CI Admin"
 
       - name: Start backend (uvicorn)
         working-directory: backend
+        env:
+          PYTHONPATH: .
         run: |
-          nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 \
+          nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 \
             > /tmp/hrms-backend.log 2>&1 &
           echo $! > /tmp/hrms-backend.pid
           for i in $(seq 1 45); do
