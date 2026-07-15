@@ -2,18 +2,31 @@ import pytest
 import pytest_asyncio
 from pydantic import ValidationError
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
 from app.main import app
 from app.schemas.user import UserCreate, UserUpdate
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 
-@pytest_asyncio.fixture(scope="module", loop_scope="module")
-async def async_client():
-    # Uses app.core.database (dev DB). dispose_app_engine_between_modules
-    # in conftest keeps the pool valid across module event loops / xdist.
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
+@pytest_asyncio.fixture
+async def async_client(db_session: AsyncSession):
+    """ASGI client bound to isolated test db_session (not .env.dev :5435)."""
+
+    async def override_get_db():
+        try:
+            yield db_session
+        finally:
+            await db_session.commit()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
 
 
 def _get_auth_headers():
@@ -81,15 +94,30 @@ async def test_create_user_api_role_and_validation(async_client):
     assert response_me.json()["detail"] == "Пользователь удален из системы"
 
 
-async def test_admin_user_protection(async_client):
+async def test_admin_user_protection(async_client, db_session: AsyncSession):
     """Тест защиты встроенного администратора: не выводится в списке и нельзя удалить."""
+    from app.models.user import User
+
+    admin = User(
+        username="admin",
+        full_name="Administrator",
+        role="admin",
+        password_hash="x",
+        is_deleted=False,
+    )
+    db_session.add(admin)
+    await db_session.commit()
+    await db_session.refresh(admin)
+
     # Проверка, что 'admin' нет в списке пользователей
     response_list = await async_client.get("/api/users", headers=_get_auth_headers())
     assert response_list.status_code == 200
     usernames = [u["username"] for u in response_list.json()]
     assert "admin" not in usernames
 
-    # Попытка удалить admin (id=1)
-    response_delete = await async_client.delete("/api/users/1", headers=_get_auth_headers())
+    # Попытка удалить admin
+    response_delete = await async_client.delete(
+        f"/api/users/{admin.id}", headers=_get_auth_headers()
+    )
     assert response_delete.status_code == 400
     assert response_delete.json()["detail"] == "Нельзя удалить встроенного администратора"

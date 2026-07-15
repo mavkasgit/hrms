@@ -34,5 +34,13 @@ jobs:
         run: pip install -r requirements.txt
       - name: pytest xdist
         env:
+          # App Settings load repo .env.dev (DATABASE_URL :5435). Override for GHA
+          # service Postgres on :5432 so API tests that hit the real app connect.
+          ENV_FILE: /dev/null
+          DATABASE_URL: postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_test
+          DATABASE_URL_LOCAL: postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_test
           HRMS_TEST_DATABASE_URL: postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_test
+          # Templates live under backend/data/ (gitignored) — docx content tests
+          # must tolerate missing template fallback in CI.
+          ONLYOFFICE_ENABLED: "false"
         run: python -m pytest -n auto --dist=loadfile -q
