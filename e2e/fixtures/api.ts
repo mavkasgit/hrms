@@ -1,0 +1,606 @@
+/**
+ * apiOps fixture for e2e rewrite (and shared by legacy via fixtures/index).
+ *
+ * Cleanup policy (mandatory):
+ * - Every create is tracked; fixture teardown DELETEs in reverse FK order.
+ * - Default entity names use prefix `e2e-` + uid (worker-aware when multi-worker).
+ * - Create without track = bug — always go through apiOps.create*.
+ * - No full DB wipe between tests.
+ */
+import {
+  test as base,
+  expect,
+  type APIRequestContext,
+  type PlaywrightTestArgs,
+  type PlaywrightWorkerArgs,
+} from '@playwright/test'
+import type {
+  Employee,
+  Department,
+  Position,
+  Vacation,
+  Order,
+  OrderTypeRecord,
+  VacationPeriod,
+  VacationBalance,
+} from '../types'
+import { uid, workerPrefix } from '../helpers/test-utils'
+import { getAdminTokenFromStorage } from './auth'
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
+
+export const API_BASE = process.env.E2E_API_URL
+  ? process.env.E2E_API_URL.replace(/\/api$/, '')
+  : 'http://127.0.0.1:8000'
+
+// =============================================================================
+// RESOURCE TRACKERS
+// =============================================================================
+
+type CreatedResources = {
+  orders: number[]
+  vacations: number[]
+  employees: number[]
+  positions: number[]
+  departments: number[]
+}
+
+// =============================================================================
+// LOW-LEVEL API HELPERS
+// =============================================================================
+
+async function apiCreateDepartment(
+  request: APIRequestContext,
+  name: string,
+  overrides: Record<string, unknown> = {}
+): Promise<Department> {
+  const resp = await request.post(`${API_BASE}/api/departments`, {
+    data: { name, sort_order: 0, ...overrides },
+  })
+  expect([200, 201]).toContain(resp.status())
+  return resp.json()
+}
+
+async function apiDeleteDepartment(request: APIRequestContext, id: number): Promise<void> {
+  const resp = await request.delete(`${API_BASE}/api/departments/${id}`)
+  expect([200, 204]).toContain(resp.status())
+}
+
+async function apiCreatePosition(
+  request: APIRequestContext,
+  name: string,
+  overrides: Record<string, unknown> = {}
+): Promise<Position> {
+  const resp = await request.post(`${API_BASE}/api/positions`, {
+    data: { name, sort_order: 0, ...overrides },
+  })
+  expect([200, 201]).toContain(resp.status())
+  return resp.json()
+}
+
+async function apiDeletePosition(request: APIRequestContext, id: number): Promise<void> {
+  const resp = await request.delete(`${API_BASE}/api/positions/${id}`)
+  expect([200, 204]).toContain(resp.status())
+}
+
+async function apiCreateEmployee(
+  request: APIRequestContext,
+  departmentId: number,
+  positionId: number,
+  overrides: Record<string, unknown> = {}
+): Promise<Employee> {
+  const u = uid()
+  const empData = {
+    name: `e2e-emp-${u}`,
+    gender: 'М',
+    birth_date: '1990-05-15',
+    tab_number: Math.floor(100000 + Math.random() * 900000),
+    department_id: departmentId,
+    position_id: positionId,
+    hire_date: '2024-01-15',
+    contract_start: '2024-01-15',
+    contract_end: '2025-01-14',
+    citizenship: true,
+    residency: true,
+    rate: 25.5,
+    payment_form: 'Повременная',
+    ...overrides,
+  }
+
+  const resp = await request.post(`${API_BASE}/api/employees`, { data: empData })
+  expect([200, 201]).toContain(resp.status())
+  return resp.json()
+}
+
+async function apiGetEmployee(request: APIRequestContext, id: number): Promise<Employee> {
+  const resp = await request.get(`${API_BASE}/api/employees/${id}`)
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiUpdateEmployee(
+  request: APIRequestContext,
+  id: number,
+  data: Record<string, unknown>
+): Promise<Employee> {
+  const resp = await request.put(`${API_BASE}/api/employees/${id}`, { data })
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiDismissEmployee(request: APIRequestContext, id: number): Promise<Employee> {
+  const resp = await request.post(`${API_BASE}/api/employees/${id}/dismiss`)
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiRestoreEmployee(request: APIRequestContext, id: number): Promise<Employee> {
+  const resp = await request.post(`${API_BASE}/api/employees/${id}/restore`)
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiSearchEmployees(request: APIRequestContext, query: string): Promise<Employee[]> {
+  const resp = await request.get(`${API_BASE}/api/employees`, {
+    params: { q: query, per_page: 100 },
+  })
+  expect(resp.status()).toBe(200)
+  const data = await resp.json()
+  return data.items || []
+}
+
+async function apiDeleteEmployee(request: APIRequestContext, id: number): Promise<void> {
+  // Сначала удаляем связанные планы отпусков
+  const plansResp = await request.get(`${API_BASE}/api/vacation-plans?employee_id=${id}`)
+  if (plansResp.status() === 200) {
+    const plans = await plansResp.json()
+    for (const plan of plans) {
+      await request.delete(`${API_BASE}/api/vacation-plans/${plan.id}`)
+    }
+  }
+
+  const resp = await request.delete(`${API_BASE}/api/employees/${id}?hard=true&confirm=true`)
+  expect([200, 204]).toContain(resp.status())
+}
+
+async function apiCreateVacation(
+  request: APIRequestContext,
+  employeeId: number,
+  overrides: Record<string, unknown> = {}
+): Promise<Vacation> {
+  const vacData = {
+    employee_id: employeeId,
+    start_date: '2024-06-01',
+    end_date: '2024-06-14',
+    vacation_type: 'Трудовой',
+    order_date: '2024-05-25',
+    ...overrides,
+  }
+
+  const resp = await request.post(`${API_BASE}/api/vacations`, { data: vacData })
+  expect([200, 201]).toContain(resp.status())
+  return resp.json()
+}
+
+async function apiDeleteVacation(request: APIRequestContext, id: number): Promise<void> {
+  const resp = await request.delete(`${API_BASE}/api/vacations/${id}`)
+  expect([200, 204]).toContain(resp.status())
+}
+
+async function apiGetVacationBalance(
+  request: APIRequestContext,
+  employeeId: number
+): Promise<VacationBalance> {
+  const resp = await request.get(`${API_BASE}/api/vacations/balance`, {
+    params: { employee_id: employeeId },
+  })
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiGetVacationPeriods(
+  request: APIRequestContext,
+  employeeId: number
+): Promise<VacationPeriod[]> {
+  const resp = await request.get(`${API_BASE}/api/vacation-periods`, {
+    params: { employee_id: employeeId },
+  })
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiGetPeriodBalance(
+  request: APIRequestContext,
+  periodId: number
+): Promise<VacationPeriod> {
+  const resp = await request.get(`${API_BASE}/api/vacation-periods/${periodId}/balance`)
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiClosePeriod(request: APIRequestContext, periodId: number): Promise<VacationPeriod> {
+  const resp = await request.post(`${API_BASE}/api/vacation-periods/${periodId}/close`)
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiPartialClosePeriod(
+  request: APIRequestContext,
+  periodId: number,
+  remainingDays: number
+): Promise<VacationPeriod> {
+  const resp = await request.post(`${API_BASE}/api/vacation-periods/${periodId}/partial-close`, {
+    data: { remaining_days: remainingDays },
+  })
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiAdjustPeriod(
+  request: APIRequestContext,
+  periodId: number,
+  additionalDays: number
+): Promise<VacationPeriod> {
+  const resp = await request.post(`${API_BASE}/api/vacation-periods/${periodId}/adjust`, {
+    data: { additional_days: additionalDays },
+  })
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiGetOrderTypes(request: APIRequestContext): Promise<OrderTypeRecord[]> {
+  const resp = await request.get(`${API_BASE}/api/order-types`)
+  expect(resp.status()).toBe(200)
+  const data = await resp.json()
+  return data.items || []
+}
+
+async function apiGetOrderTypeId(
+  request: APIRequestContext,
+  params: { code?: string; name?: string; visibleOnly?: boolean }
+): Promise<number> {
+  const types = await apiGetOrderTypes(request)
+  const found = types.find((item) => {
+    if (params.visibleOnly && !item.show_in_orders_page) {
+      return false
+    }
+    if (params.code) {
+      return item.code === params.code
+    }
+    if (params.name) {
+      return item.name === params.name
+    }
+    return false
+  })
+  expect(found, `Order type not found: ${params.code ?? params.name}`).toBeTruthy()
+  return found!.id
+}
+
+async function apiCreateOrder(
+  request: APIRequestContext,
+  employeeId: number,
+  data: {
+    order_type_id?: number
+    order_type_code?: string
+    order_type_name?: string
+    order_date: string
+    order_number?: string
+    extra_fields?: Record<string, unknown>
+  }
+): Promise<Order> {
+  let orderTypeId = data.order_type_id
+  if (!orderTypeId) {
+    orderTypeId = await apiGetOrderTypeId(request, {
+      code: data.order_type_code,
+      name: data.order_type_name,
+      visibleOnly: true,
+    })
+  }
+
+  const orderData = {
+    employee_id: employeeId,
+    order_type_id: orderTypeId,
+    order_date: data.order_date,
+    order_number: data.order_number,
+    extra_fields: data.extra_fields || {},
+  }
+
+  const resp = await request.post(`${API_BASE}/api/orders`, { data: orderData })
+  expect([200, 201]).toContain(resp.status())
+  return resp.json()
+}
+
+async function apiDeleteOrder(request: APIRequestContext, id: number): Promise<void> {
+  const resp = await request.delete(`${API_BASE}/api/orders/${id}?hard=true&confirm=true`)
+  expect([200, 204]).toContain(resp.status())
+}
+
+async function apiGetOrders(
+  request: APIRequestContext,
+  filters: Record<string, unknown> = {}
+): Promise<Order[]> {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    params.append(key, String(value))
+  }
+  const resp = await request.get(`${API_BASE}/api/orders/all?${params.toString()}`)
+  expect(resp.status()).toBe(200)
+  const data = await resp.json()
+  return data.items || []
+}
+
+// =============================================================================
+// FIXTURE TYPES
+// =============================================================================
+
+export type ApiOperations = {
+  uid: () => string
+  // Departments
+  createDepartment: (name: string, overrides?: Record<string, unknown>) => Promise<Department>
+  deleteDepartment: (id: number) => Promise<void>
+  // Positions
+  createPosition: (name: string, overrides?: Record<string, unknown>) => Promise<Position>
+  deletePosition: (id: number) => Promise<void>
+  // Employees
+  createEmployee: (
+    deptIdOrOverrides: number | Record<string, unknown>,
+    posIdOrOverrides?: number | Record<string, unknown>,
+    overrides?: Record<string, unknown>
+  ) => Promise<Employee>
+  getEmployee: (id: number) => Promise<Employee>
+  updateEmployee: (id: number, data: Record<string, unknown>) => Promise<Employee>
+  dismissEmployee: (id: number) => Promise<Employee>
+  restoreEmployee: (id: number) => Promise<Employee>
+  searchEmployees: (query: string) => Promise<Employee[]>
+  deleteEmployee: (id: number) => Promise<void>
+  // Vacations
+  createVacation: (empId: number, overrides?: Record<string, unknown>) => Promise<Vacation>
+  deleteVacation: (id: number) => Promise<void>
+  getVacationBalance: (empId: number) => Promise<VacationBalance>
+  getVacationPeriods: (empId: number) => Promise<VacationPeriod[]>
+  getBalance: (empId: number) => Promise<VacationBalance>
+  getPeriods: (empId: number) => Promise<VacationPeriod[]>
+  getPeriodBalance: (periodId: number) => Promise<VacationPeriod>
+  closePeriod: (periodId: number) => Promise<VacationPeriod>
+  partialClosePeriod: (periodId: number, remainingDays: number) => Promise<VacationPeriod>
+  adjustPeriod: (periodId: number, additionalDays: number) => Promise<VacationPeriod>
+  // Orders
+  getOrderTypes: () => Promise<OrderTypeRecord[]>
+  getOrderTypeId: (params: {
+    code?: string
+    name?: string
+    visibleOnly?: boolean
+  }) => Promise<number>
+  createOrder: (
+    empId: number,
+    data: {
+      order_type_id?: number
+      order_type_code?: string
+      order_type_name?: string
+      order_date: string
+      order_number?: string
+      extra_fields?: Record<string, unknown>
+    }
+  ) => Promise<Order>
+  deleteOrder: (id: number) => Promise<void>
+  getOrders: (filters?: Record<string, unknown>) => Promise<Order[]>
+  // Cleanup
+  cleanup: () => Promise<void>
+  cleanupEmployee: (id: number) => Promise<void>
+}
+
+type ApiFixtures = {
+  apiOps: ApiOperations
+}
+
+// =============================================================================
+// FIXTURE IMPLEMENTATION
+// =============================================================================
+
+/**
+ * Resolve APIRequestContext with Bearer token.
+ * Prefer storageState token (new suite after setup); fall back to project request
+ * (legacy extraHTTPHeaders JWT).
+ */
+async function resolveApiRequest(
+  request: APIRequestContext,
+  playwright: PlaywrightWorkerArgs['playwright']
+): Promise<{ request: APIRequestContext; dispose: () => Promise<void> }> {
+  const token = getAdminTokenFromStorage()
+  if (!token) {
+    return { request, dispose: async () => {} }
+  }
+  const ctx = await playwright.request.newContext({
+    extraHTTPHeaders: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+  return {
+    request: ctx,
+    dispose: async () => {
+      await ctx.dispose()
+    },
+  }
+}
+
+export const test = base.extend<ApiFixtures>({
+  apiOps: async (
+    { request, playwright }: PlaywrightTestArgs & PlaywrightWorkerArgs,
+    use
+  ) => {
+    const tag = workerPrefix(test.info().parallelIndex)
+    const scopedUid = () => uid(tag)
+
+    const { request: apiRequest, dispose } = await resolveApiRequest(request, playwright)
+
+    const resources: CreatedResources = {
+      orders: [],
+      vacations: [],
+      employees: [],
+      positions: [],
+      departments: [],
+    }
+
+    const apiOps: ApiOperations = {
+      uid: scopedUid,
+
+      createDepartment: async (name: string, overrides?: Record<string, unknown>) => {
+        const dept = await apiCreateDepartment(apiRequest, name, overrides)
+        resources.departments.push(dept.id)
+        return dept
+      },
+      deleteDepartment: async (id: number) => {
+        await apiDeleteDepartment(apiRequest, id)
+      },
+
+      createPosition: async (name: string, overrides?: Record<string, unknown>) => {
+        const pos = await apiCreatePosition(apiRequest, name, overrides)
+        resources.positions.push(pos.id)
+        return pos
+      },
+      deletePosition: async (id: number) => {
+        await apiDeletePosition(apiRequest, id)
+      },
+
+      createEmployee: async (
+        deptIdOrOverrides: number | Record<string, unknown>,
+        posIdOrOverrides?: number | Record<string, unknown>,
+        overrides?: Record<string, unknown>
+      ) => {
+        let deptId: number
+        let posId: number
+        let employeeOverrides: Record<string, unknown> | undefined
+
+        if (typeof deptIdOrOverrides === 'number') {
+          deptId = deptIdOrOverrides
+          posId = posIdOrOverrides as number
+          employeeOverrides = overrides
+        } else {
+          const autoOverrides = deptIdOrOverrides
+          const autoUid = scopedUid()
+          // Auto-seed deps with e2e- prefix + track for teardown
+          const dept = await apiCreateDepartment(apiRequest, `e2e-dept-${autoUid}`)
+          const pos = await apiCreatePosition(apiRequest, `e2e-pos-${autoUid}`)
+          resources.departments.push(dept.id)
+          resources.positions.push(pos.id)
+          deptId = dept.id
+          posId = pos.id
+          employeeOverrides = autoOverrides
+        }
+
+        const emp = await apiCreateEmployee(apiRequest, deptId, posId, {
+          name: `e2e-emp-${scopedUid()}`,
+          ...employeeOverrides,
+        })
+        resources.employees.push(emp.id)
+        return emp
+      },
+      getEmployee: async (id: number) => apiGetEmployee(apiRequest, id),
+      updateEmployee: async (id: number, data: Record<string, unknown>) =>
+        apiUpdateEmployee(apiRequest, id, data),
+      dismissEmployee: async (id: number) => apiDismissEmployee(apiRequest, id),
+      restoreEmployee: async (id: number) => apiRestoreEmployee(apiRequest, id),
+      searchEmployees: async (query: string) => apiSearchEmployees(apiRequest, query),
+      deleteEmployee: async (id: number) => {
+        await apiDeleteEmployee(apiRequest, id)
+      },
+
+      createVacation: async (empId: number, overrides?: Record<string, unknown>) => {
+        const vac = await apiCreateVacation(apiRequest, empId, overrides)
+        resources.vacations.push(vac.id)
+        return vac
+      },
+      deleteVacation: async (id: number) => {
+        await apiDeleteVacation(apiRequest, id)
+      },
+      getVacationBalance: async (empId: number) => apiGetVacationBalance(apiRequest, empId),
+      getVacationPeriods: async (empId: number) => apiGetVacationPeriods(apiRequest, empId),
+      getBalance: async (empId: number) => apiGetVacationBalance(apiRequest, empId),
+      getPeriods: async (empId: number) => apiGetVacationPeriods(apiRequest, empId),
+      getPeriodBalance: async (periodId: number) => apiGetPeriodBalance(apiRequest, periodId),
+      closePeriod: async (periodId: number) => apiClosePeriod(apiRequest, periodId),
+      partialClosePeriod: async (periodId: number, remainingDays: number) =>
+        apiPartialClosePeriod(apiRequest, periodId, remainingDays),
+      adjustPeriod: async (periodId: number, additionalDays: number) =>
+        apiAdjustPeriod(apiRequest, periodId, additionalDays),
+
+      getOrderTypes: async () => apiGetOrderTypes(apiRequest),
+      getOrderTypeId: async (params: { code?: string; name?: string; visibleOnly?: boolean }) =>
+        apiGetOrderTypeId(apiRequest, params),
+      createOrder: async (
+        empId: number,
+        data: {
+          order_type_id?: number
+          order_type_code?: string
+          order_type_name?: string
+          order_date: string
+          order_number?: string
+          extra_fields?: Record<string, unknown>
+        }
+      ) => {
+        const order = await apiCreateOrder(apiRequest, empId, data)
+        resources.orders.push(order.id)
+        return order
+      },
+      deleteOrder: async (id: number) => apiDeleteOrder(apiRequest, id),
+      getOrders: async (filters?: Record<string, unknown>) => apiGetOrders(apiRequest, filters),
+
+      // Explicit cleanup (also runs automatically after each test)
+      cleanup: async () => {
+        // orders → vacations → employees → positions → departments
+        for (const orderId of [...resources.orders].reverse()) {
+          await apiDeleteOrder(apiRequest, orderId).catch(() => {})
+        }
+        resources.orders = []
+
+        for (const vacId of [...resources.vacations].reverse()) {
+          await apiDeleteVacation(apiRequest, vacId).catch(() => {})
+        }
+        resources.vacations = []
+
+        for (const empId of [...resources.employees].reverse()) {
+          await apiDeleteEmployee(apiRequest, empId).catch(() => {})
+        }
+        resources.employees = []
+
+        for (const posId of [...resources.positions].reverse()) {
+          await apiDeletePosition(apiRequest, posId).catch(() => {})
+        }
+        resources.positions = []
+
+        for (const deptId of [...resources.departments].reverse()) {
+          await apiDeleteDepartment(apiRequest, deptId).catch(() => {})
+        }
+        resources.departments = []
+      },
+      cleanupEmployee: async (id: number) => {
+        await apiDeleteEmployee(apiRequest, id).catch(() => {})
+      },
+    }
+
+    await use(apiOps)
+
+    // Auto teardown: reverse FK order (orders → vacations → employees → pos → dept)
+    for (const orderId of [...resources.orders].reverse()) {
+      await apiDeleteOrder(apiRequest, orderId).catch(() => {})
+    }
+    for (const vacId of [...resources.vacations].reverse()) {
+      await apiDeleteVacation(apiRequest, vacId).catch(() => {})
+    }
+    for (const empId of [...resources.employees].reverse()) {
+      await apiDeleteEmployee(apiRequest, empId).catch(() => {})
+    }
+    for (const posId of [...resources.positions].reverse()) {
+      await apiDeletePosition(apiRequest, posId).catch(() => {})
+    }
+    for (const deptId of [...resources.departments].reverse()) {
+      await apiDeleteDepartment(apiRequest, deptId).catch(() => {})
+    }
+
+    await dispose()
+  },
+})
+
+export { expect } from '@playwright/test'

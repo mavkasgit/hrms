@@ -62,44 +62,57 @@
 
 | Режим | Статус | Описание |
 |-------|--------|----------|
-| **storageState** (setup project → `.auth/*.json`) | **target (E1+)** | Реальный login, shared state для smoke/ui/api |
-| Hardcoded JWT в `playwright.config` `extraHTTPHeaders` | **DEPRECATED** | Только для project `legacy` до cutover; не копировать в new tests |
+| **storageState** | **active (E1)** | `setup/auth.setup.ts` → `e2e/.auth/admin.json`; projects `api` / `smoke` / `ui` зависят от `setup` и грузят storage |
+| **auth project** | **active** | `auth/login.spec.ts` — success + bad password; **без** storageState |
+| Hardcoded JWT в `extraHTTPHeaders` | **legacy only** | Только project `legacy` в `playwright.config.ts`; new suite **не** использует global JWT |
 
-Project `auth` гоняет login/invite **без** preloaded storage.
+### Credentials (dev)
+
+| Переменная | Default | Назначение |
+|------------|---------|------------|
+| `E2E_ADMIN_USERNAME` | `admin` | Логин для setup/auth |
+| `E2E_ADMIN_PASSWORD` | `dev` | Пароль; бэкенд `DEV_BYPASS_AUTH=True` принимает `"dev"` |
+| `E2E_BASE_URL` | `http://localhost:5173` | Frontend |
+| `E2E_API_URL` | `http://localhost:8000/api` | API base |
+
+Шаблон: `e2e/.env.example`. Локально: `e2e/.env`.
+
+**Путь login:** реальная форма на `/login` (placeholder «Введите логин/пароль» → «Войти»).  
+Если form fail и видна dev-кнопка «Войти как Admin» — setup делает fallback (см. `setup/auth.setup.ts`).
+
+**API request auth:** Playwright `request` не видит localStorage → `fixtures/api.ts` читает token из storageState (`getAdminTokenFromStorage`) и создаёт context с `Authorization: Bearer …`.
+
+**Импорты:**
+- New suite: `import { test, expect } from '../fixtures/index'` (apiOps, без JWT page hack)
+- Legacy: `import { test, expect } from '../../fixtures'` → `e2e/fixtures.ts` (page+JWT)
 
 ---
 
 ## 6. Команды npm
 
 ```bash
-# Всё (все projects; пустые new — 0 tests)
+# Всё (все projects)
 npm run test:e2e
 
 # Legacy regression (текущие перенесённые specs)
 npm run test:e2e:legacy
 npm run test:e2e:regression   # alias → legacy на время rewrite
 
-# New layers (пока могут быть 0 tests)
-npm run test:e2e:smoke        # setup + smoke
+# New layers
+npm run test:e2e:smoke        # setup + smoke (depends: setup)
 npm run test:e2e:api          # setup + api
 npm run test:e2e:ui           # setup + ui
-npm run test:e2e:auth
+npm run test:e2e:auth         # auth only (no storage)
 
 # Список без запуска
 npx playwright test --list
 npx playwright test --project=legacy --list
+npx playwright test --project=setup --list
+npx playwright test --project=auth --list
 ```
 
-Окружение: `npm run docker:test:up` (или DEV `npm run dev`).  
+Окружение: `npm run docker:test:up` (или DEV `npm run dev` — нужны frontend **и** backend для login).  
 Base URL: `E2E_BASE_URL` (default `http://localhost:5173`).
-
-Бывший smoke из 3 файлов → теперь в `_legacy/`; гонять через `test:e2e:legacy` или path:
-
-```bash
-npx playwright test --project=legacy e2e/_legacy/ui/structure-full-lifecycle.spec.ts e2e/_legacy/ui/employees.spec.ts e2e/_legacy/domain/vacation-periods-generation.spec.ts
-```
-
----
 
 ## 7. Workers / parallel
 
@@ -114,12 +127,18 @@ npx playwright test --project=legacy e2e/_legacy/ui/structure-full-lifecycle.spe
 ```text
 e2e/
   AGENTS.md           # этот канон
-  setup/              # *.setup.ts → storageState
-  auth/               # login/invite specs
+  .env.example        # E2E_* template
+  .auth/              # gitignored storageState (admin.json)
+  setup/              # auth.setup.ts → storageState
+  auth/               # login.spec.ts (no storage)
   api/                # @api specs (new)
   smoke/              # optional colocated smoke specs
   ui/                 # @ui specs (new)
-  fixtures/           # shared fixtures (legacy + new)
+  fixtures/
+    index.ts          # new suite: test + apiOps
+    api.ts            # tracked create/delete, e2e- prefix
+    auth.ts           # storage paths + credentials
+  fixtures.ts         # LEGACY only: page + JWT localStorage
   pages/              # POM
   helpers/
   types/
@@ -135,5 +154,6 @@ e2e/
 
 - План rewrite: `.opencode/plans/2026-07-15-e2e-rewrite.md`
 - Phase E0: `.opencode/plans/E0-e2e-scaffold.md`
+- Phase E1: `.opencode/plans/E1-e2e-auth-fixtures.md`
 - Docs: `docs/testing-guide.md`
 - Root monorepo rules: `AGENTS.md` / `Agents.md`

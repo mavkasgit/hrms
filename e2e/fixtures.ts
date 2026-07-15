@@ -1,3 +1,9 @@
+/**
+ * LEGACY fixtures entry — only for e2e/_legacy/** specs.
+ * Provides page with hardcoded JWT in localStorage + apiOps from fixtures/index.
+ *
+ * New suite: import { test, expect } from './fixtures/index' (storageState, no JWT page hack).
+ */
 import { test as baseTest } from './fixtures/index';
 import { chromium, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import fs from 'fs';
