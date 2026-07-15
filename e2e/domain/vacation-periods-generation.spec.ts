@@ -101,10 +101,13 @@ test.describe('Генерация отпускных периодов', () => {
       })
 
       if (currentPeriod) {
+        // Backend начисляет 2 дн/мес за ПОЛНЫЕ месяцы с period_start (anniversary),
+        // без +1 «текущего» месяца, если день периода ещё не наступил / ровно anniversary.
         const periodStart = new Date(currentPeriod.period_start)
         let monthsPassed = (now.getFullYear() - periodStart.getFullYear()) * 12
           + (now.getMonth() - periodStart.getMonth())
-        if (now.getDate() > 1) monthsPassed += 1
+        if (now.getDate() < periodStart.getDate()) monthsPassed -= 1
+        if (monthsPassed < 0) monthsPassed = 0
 
         const expectedAccrued = Math.round(24 / 12 * monthsPassed)
         console.log(`[T4] Текущий период: год ${currentPeriod.year_number}, period_start=${currentPeriod.period_start}, monthsPassed=${monthsPassed}, expectedAccrued=${expectedAccrued}, actual_total=${currentPeriod.total_days}`)

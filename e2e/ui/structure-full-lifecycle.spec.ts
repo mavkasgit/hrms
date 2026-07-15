@@ -1,4 +1,5 @@
-import { test, expect, type Locator, type Page } from '@playwright/test'
+import { test, expect } from '../fixtures'
+import type { Locator, Page } from '@playwright/test'
 
 const uniqueSuffix = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
 

@@ -9,18 +9,39 @@ import {
   dateField,
   fillGridInput,
 } from '../helpers/employee-helpers'
+import { workerPrefix } from '../helpers/test-utils'
 
 const EMPLOYEE_CLEANUP_RE = /^(Тест-Сотрудник-|Цикл-Тест-)/
 const DEPARTMENT_CLEANUP_RE = /^(Тест-Отдел-|Цикл-Отдел-)/
 const POSITION_CLEANUP_RE = /^(Тест-Должность-|Цикл-Должность-)/
 
-async function cleanupEmployeesArtifacts(request: APIRequestContext) {
+/** UID с worker-тегом — изоляция данных при PW_WORKERS>1 */
+function scopedUid(): string {
+  return uid(workerPrefix(test.info().parallelIndex))
+}
+
+function scopedEmployeeData() {
+  const base = makeEmployeeData()
+  const u = scopedUid()
+  return {
+    ...base,
+    name: `Тест-Сотрудник-${u}`,
+    position: `Тест-Должность-${u}`,
+    department: `Тест-Отдел-${u}`,
+    personal_number: `ЛН-${u.toUpperCase()}`,
+    insurance_number: `СН-${u.toUpperCase()}`,
+  }
+}
+
+/** Cleanup только артефактов текущего worker'а (не трогаем параллельные тесты) */
+async function cleanupEmployeesArtifacts(request: APIRequestContext, workerTag: string) {
   const employeesResp = await request.get('/api/employees', { params: { per_page: 1000 } })
   const employeesData = await employeesResp.json()
   const employees = employeesData.items || []
 
   for (const employee of employees) {
     if (!EMPLOYEE_CLEANUP_RE.test(employee.name)) continue
+    if (!employee.name.includes(workerTag)) continue
     await request.delete(`/api/employees/${employee.id}`, {
       params: { hard: true, confirm: true },
     }).catch(() => {})
@@ -30,6 +51,7 @@ async function cleanupEmployeesArtifacts(request: APIRequestContext) {
   const positions = await positionsResp.json()
   for (const position of positions) {
     if (!POSITION_CLEANUP_RE.test(position.name)) continue
+    if (!position.name.includes(workerTag)) continue
     await request.delete(`/api/positions/${position.id}`).catch(() => {})
   }
 
@@ -37,6 +59,7 @@ async function cleanupEmployeesArtifacts(request: APIRequestContext) {
   const departments = await departmentsResp.json()
   for (const department of departments) {
     if (!DEPARTMENT_CLEANUP_RE.test(department.name)) continue
+    if (!department.name.includes(workerTag)) continue
     await request.delete(`/api/departments/${department.id}`).catch(() => {})
   }
 }
@@ -44,12 +67,13 @@ async function cleanupEmployeesArtifacts(request: APIRequestContext) {
 test.describe('Сотрудники UI', () => {
   test.setTimeout(45000)
 
-  test.afterEach(async ({ request }) => {
-    await cleanupEmployeesArtifacts(request)
+  test.afterEach(async ({ request }, testInfo) => {
+    const tag = workerPrefix(testInfo.parallelIndex)
+    await cleanupEmployeesArtifacts(request, tag)
   })
 
   test('создание сотрудника с заполнением всех полей', async ({ page }) => {
-    const emp = makeEmployeeData()
+    const emp = scopedEmployeeData()
     console.log(`[TEST] Сотрудник: ${emp.name} | должность: ${emp.position} | отдел: ${emp.department}`)
 
     await page.goto('/employees')
@@ -128,7 +152,7 @@ test.describe('Сотрудники UI', () => {
   })
 
   test('создание → восстановление → удаление', async ({ page, apiOps }) => {
-    const u = uid()
+    const u = scopedUid()
     const empName = `Цикл-Тест-${u}`
     const empPosition = `Цикл-Должность-${u}`
     const empDepartment = `Цикл-Отдел-${u}`
@@ -182,9 +206,11 @@ test.describe('Сотрудники UI', () => {
     await page.waitForLoadState('networkidle')
     await expect(page.locator('table tbody').getByText(empName)).not.toBeVisible({ timeout: 5000 })
 
-    // Показываем уволенных
+    // Показываем только уволенных (multi-toggle: нужен dismissed ON + active OFF,
+    // иначе status=undefined → API default active и уволенные не видны)
     await page.getByRole('button', { name: 'Фильтры' }).click()
-    await page.getByText('Уволен').click()
+    await page.getByRole('button', { name: 'Уволенные' }).click()
+    await page.getByRole('button', { name: 'Активные' }).click()
     await expect(page.locator('table tbody').getByText(empName)).toBeVisible({ timeout: 5000 })
 
     // Восстанавливаем
@@ -194,9 +220,10 @@ test.describe('Сотрудники UI', () => {
     await dismissedDialog.getByRole('button', { name: /восстановить/i }).click()
     await expect(dismissedDialog).not.toBeVisible({ timeout: 5000 })
 
-    // Проверяем что снова в активных
+    // Проверяем что снова в активных (только active)
     await page.getByRole('button', { name: 'Фильтры' }).click()
-    await page.getByText('Активные').click()
+    await page.getByRole('button', { name: 'Активные' }).click()
+    await page.getByRole('button', { name: 'Уволенные' }).click()
     await expect(page.locator('table tbody').getByText(empName)).toBeVisible({ timeout: 5000 })
 
     // Мягкое удаление
