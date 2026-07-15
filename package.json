@@ -45,13 +45,11 @@
     "_test:pytest:fast": "cd backend && python -m pytest -n auto --dist=loadfile -q",
     "_test:pytest:lf": "cd backend && python -m pytest --lf -q",
     "test:e2e": "npx playwright test",
-    "test:e2e:legacy": "npx playwright test --project=legacy",
     "test:e2e:smoke": "npx playwright test --project=setup --project=smoke",
     "test:e2e:api": "npx playwright test --project=setup --project=api",
     "test:e2e:ui": "npx playwright test --project=setup --project=ui",
     "test:e2e:auth": "npx playwright test --project=auth",
-    "test:e2e:regression": "npx playwright test --project=legacy",
-    "test:e2e:smoke:legacy": "npx playwright test --project=legacy e2e/_legacy/ui/structure-full-lifecycle.spec.ts e2e/_legacy/ui/employees.spec.ts e2e/_legacy/domain/vacation-periods-generation.spec.ts"
+    "test:e2e:regression": "npx playwright test --project=setup --project=smoke --project=ui --project=api --project=auth"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

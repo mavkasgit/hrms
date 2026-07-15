@@ -2,18 +2,18 @@
 
 ## Обзор тестов
 
-В проекте **HRMS** — E2E на **Playwright**. Идёт **rewrite** на ветке `feat/e2e-rewrite`.
+В проекте **HRMS** — E2E на **Playwright**. Один канонический suite (E4 cutover: legacy удалён).
 
 **Канон:** [`e2e/AGENTS.md`](../e2e/AGENTS.md) (слои, cleanup, selectors, auth, npm-скрипты).
 
 | Набор | Где | Команда |
 |-------|-----|---------|
-| **Legacy** (временный) | `e2e/_legacy/{ui,api,domain}/` | `npm run test:e2e:legacy` / `test:e2e:regression` |
-| **New smoke / api / ui** | projects + tags `@smoke` / `@api` / `@ui` | `npm run test:e2e:smoke` · `test:e2e:api` · `test:e2e:ui` |
+| **Smoke** | tag `@smoke` | `npm run test:e2e:smoke` |
+| **API** | `e2e/api/` + tag `@api` | `npm run test:e2e:api` |
+| **UI** | tag `@ui` | `npm run test:e2e:ui` |
 | **Auth** | `e2e/auth/` | `npm run test:e2e:auth` |
+| **Regression** | setup + smoke + ui + api + auth | `npm run test:e2e:regression` |
 | **Все projects** | — | `npm run test:e2e` |
-
-Пока new-слои пустые — scripts ок (0 tests). Старый smoke из 3 файлов: `npm run test:e2e:smoke:legacy`.
 
 ## Cleanup policy (кратко)
 
@@ -22,34 +22,31 @@
 ## Запуск тестов
 
 ```bash
-# 1. Тестовое окружение
+# 1. Тестовое окружение (или DEV: npm run dev)
 npm run docker:test:up
 
-# 2. Legacy regression (текущий рабочий набор)
-npm run test:e2e:legacy
-
-# New layers (skeleton; 0 tests until E1+)
+# 2. Слои
 npm run test:e2e:smoke
 npm run test:e2e:api
 npm run test:e2e:ui
 npm run test:e2e:auth
+npm run test:e2e:regression
 
 # Список без запуска
 npx playwright test --list
-npx playwright test --project=legacy --list
 ```
 
-### Параллельный прогон (opt-in, после rewrite)
+### Параллельный прогон (opt-in)
 
 По умолчанию Playwright: `workers: 1`, `fullyParallel: false`.  
-Multi-worker — через `PW_WORKERS` **после** стабильного rewrite; при `workers>1` нужен managed browser (shared CDP несовместим).
+Multi-worker — через `PW_WORKERS` после стабильного rewrite (E6).
 
 ```bash
 # serial (default)
-npm run test:e2e:legacy
+npm run test:e2e:smoke
 
-# opt-in parallel (managed browser only; не default на rewrite)
-cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:legacy
+# opt-in parallel (не default)
+cross-env PW_WORKERS=2 npm run test:e2e:api
 ```
 
 Имена сущностей через `apiOps` могут получать worker-prefix `w{N}-` при multi-worker.
@@ -110,7 +107,7 @@ python -m pytest -q --durations=20
 # dual-mode smoke (изоляция)
 # default savepoint
 python -m pytest tests/test_db_isolation.py -q
-# legacy truncate
+# truncate mode
 cross-env HRMS_TEST_ISOLATION=truncate python -m pytest tests/test_db_isolation.py -q
 # Windows PowerShell:
 # $env:HRMS_TEST_ISOLATION='truncate'; python -m pytest tests/test_db_isolation.py -q
@@ -123,15 +120,7 @@ Workflow [`.github/workflows/test-backend.yml`](../.github/workflows/test-backen
 - `HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_test`;
 - `python -m pytest -n auto --dist=loadfile -q` в `backend/`.
 
-## Интеграция с Chrome DevTools (CDP)
+## Auth для E2E
 
-Для отладки тестов в реальном браузере через CDP:
-1. Запустите Chrome с удаленным отладчиком:
-   ```bash
-   chrome.exe --remote-debugging-port=9222
-   ```
-2. Запустите тесты с переменной окружения:
-   ```bash
-   cross-env E2E_BROWSER_MODE=cdp npm run test:e2e:regression
-   ```
-   Конфигурация `playwright.config.ts` подключится к порту 9222 и выполнит сценарии на открытой странице.
+Auth — через **storageState** (`setup/auth.setup.ts` → `e2e/.auth/admin.json`).  
+Project `auth` гоняет login без preloaded session. Hardcoded JWT удалён (E4).

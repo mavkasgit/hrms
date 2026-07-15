@@ -186,32 +186,25 @@ npm run prod:tunnel:up
 
 ### Тестовые сьюты
 
-| Команда                    | Охват                              | Файлы                                                                     |
-| -------------------------- | ---------------------------------- | ------------------------------------------------------------------------- |
-| `npm run test:e2e:smoke`   | Smoke-тесты (быстрая проверка)     | `structure-full-lifecycle`, `employees`, `vacation-periods-generation`     |
-| `npm run test:e2e:ui`      | Все UI-тесты                       | `e2e/ui/*.spec.ts`                                                        |
-| `npm run test:e2e:api`     | API-тесты                          | `e2e/api/*.spec.ts`                                                       |
-| `npm run test:e2e:domain`  | Доменные/интеграционные тесты      | `e2e/domain/*.spec.ts`                                                    |
-| `npm run test:e2e:regression` | Все тесты (полная регрессия)    | `e2e/**/*.spec.ts`                                                        |
+Канон: [`e2e/AGENTS.md`](e2e/AGENTS.md). Один suite (legacy удалён).
 
-### Список тестов
+| Команда                    | Охват                              | Файлы / match                                                            |
+| -------------------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| `npm run test:e2e:smoke`   | Smoke (tag `@smoke`)               | `e2e/smoke/*.spec.ts` + tagged specs                                     |
+| `npm run test:e2e:ui`      | UI (tag `@ui`)                     | `e2e/ui/*.spec.ts`                                                       |
+| `npm run test:e2e:api`     | API (tag `@api`)                   | `e2e/api/*.spec.ts`                                                      |
+| `npm run test:e2e:auth`    | Auth (без storageState)            | `e2e/auth/*.spec.ts`                                                     |
+| `npm run test:e2e:regression` | Полная регрессия                | setup + smoke + ui + api + auth                                          |
 
-**UI-тесты** (`e2e/ui/`):
-- `structure-full-lifecycle.spec.ts` — полный жизненный цикл оргструктуры
-- `employees.spec.ts` — управление сотрудниками
-- `vacations.spec.ts` — управление отпусками
-- `vacation-plan-fill.spec.ts` — заполнение плана отпусков
-- `add-vacation-days.spec.ts` — добавление дней отпуска
-- `unpaid-leaves-and-weekend-calls.spec.ts` — отпуск за свой счёт, вызовы в выходные
-- `order-type-letter.spec.ts` — приказы типа «письмо»
+### Список тестов (кратко)
 
-**API-тесты** (`e2e/api/`):
-- `api-errors.spec.ts` — обработка ошибок API
-- `catalog-lifecycle.spec.ts` — жизненный цикл каталога
+**Smoke** (`e2e/smoke/`): nav, structure, employees-crud, orders-list, timesheet-open, vacations-happy.
 
-**Domain-тесты** (`e2e/domain/`):
-- `vacation-periods-generation.spec.ts` — генерация периодов отпусков
-- `vacation-balance.spec.ts` — расчёт баланса отпуска
+**UI** (`e2e/ui/`): structure-lifecycle, employees-lifecycle, vacations-basic, vacation-plan-fill, add-vacation-days, absences, timesheet.
+
+**API** (`e2e/api/`): catalog, errors, employees-errors, order-type-letter, timesheet, vacation-periods-smoke, vacation-balance-smoke.
+
+**Auth** (`e2e/auth/`): login.
 
 ---
 

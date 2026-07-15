@@ -1,5 +1,5 @@
 /**
- * apiOps fixture for e2e rewrite (and shared by legacy via fixtures/index).
+ * apiOps fixture for the e2e suite.
  *
  * Cleanup policy (mandatory):
  * - Every create is tracked; fixture teardown DELETEs in reverse FK order.
@@ -400,9 +400,8 @@ type ApiFixtures = {
 // =============================================================================
 
 /**
- * Resolve APIRequestContext with Bearer token.
- * Prefer storageState token (new suite after setup); fall back to project request
- * (legacy extraHTTPHeaders JWT).
+ * Resolve APIRequestContext with Bearer token from storageState (after setup).
+ * Falls back to the project `request` fixture if token file is missing.
  */
 async function resolveApiRequest(
   request: APIRequestContext,

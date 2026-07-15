@@ -1,6 +1,6 @@
 # e2e/AGENTS.md — канон E2E HRMS
 
-**Ветка rewrite:** `feat/e2e-rewrite`  
+**Ветка:** `feat/e2e-rewrite` (post-cutover E4)  
 **План:** [`.opencode/plans/2026-07-15-e2e-rewrite.md`](../.opencode/plans/2026-07-15-e2e-rewrite.md)
 
 ---
@@ -9,9 +9,9 @@
 
 Этот каталог — **единственный** source of truth для Playwright E2E.
 
-- **Новые** тесты пишутся в `api/`, `smoke/`, `ui/`, `auth/`, `setup/` по слоям ниже.
-- **Старые** specs живут в `_legacy/**` до cutover (не расширять, только чинить импорты/flake при блокере).
+- Тесты пишутся в `api/`, `smoke/`, `ui/`, `auth/`, `setup/` по слоям ниже.
 - Source of truth — **TypeScript** (`.ts`). Скомпилированные `.js` twins **запрещены**.
+- Legacy suite (`_legacy/**`) **удалён** (E4 cutover).
 
 ---
 
@@ -24,9 +24,8 @@
 | **smoke** | `smoke` + tag `@smoke` | `**/*.spec.ts` с `@smoke` | критичный happy-path UI/API, быстрый gate | глубокие edge-cases, тяжёлые матрицы |
 | **ui** | `ui` + tag `@ui` | `**/*.spec.ts` с `@ui` | пользовательские сценарии, POM, формы | «сырой» HTTP без UI-смысла; balance math |
 | **auth** | `auth` | `auth/**/*.spec.ts` | login / invite / logout **без** готового storageState | зависимость от admin storage из setup |
-| **legacy** | `legacy` | `_legacy/**/*.spec.ts` | временный regression; JWT header (DEPRECATED) | новые сценарии; копипаст в new tree |
 
-**Правило импортов (new tree):** specs → fixtures/helpers/pages; pages не импортируют specs; fixtures не импортируют specs.
+**Правило импортов:** specs → fixtures/helpers/pages; pages не импортируют specs; fixtures не импортируют specs.
 
 ---
 
@@ -49,7 +48,7 @@
 2. `getByTestId('e2e-…')` — только если role/label нестабильны; testid добавлять точечно во frontend
 3. CSS / class — **крайний** случай, с комментарием почему
 
-**Запрещено в новых specs:**
+**Запрещено в specs:**
 
 - `page.waitForTimeout(...)` (фиксированные sleep)
 - `waitForLoadState('networkidle')` как основной sync (flake)
@@ -62,9 +61,10 @@
 
 | Режим | Статус | Описание |
 |-------|--------|----------|
-| **storageState** | **active (E1)** | `setup/auth.setup.ts` → `e2e/.auth/admin.json`; projects `api` / `smoke` / `ui` зависят от `setup` и грузят storage |
+| **storageState** | **active** | `setup/auth.setup.ts` → `e2e/.auth/admin.json`; projects `api` / `smoke` / `ui` зависят от `setup` и грузят storage |
 | **auth project** | **active** | `auth/login.spec.ts` — success + bad password; **без** storageState |
-| Hardcoded JWT в `extraHTTPHeaders` | **legacy only** | Только project `legacy` в `playwright.config.ts`; new suite **не** использует global JWT |
+
+Hardcoded JWT / `extraHTTPHeaders` Authorization — **удалены** (E4).
 
 ### Credentials (dev)
 
@@ -83,11 +83,9 @@
 **API request auth:** Playwright `request` не видит localStorage → `fixtures/api.ts` читает token из storageState (`getAdminTokenFromStorage`) и создаёт context с `Authorization: Bearer …`.  
 Для raw HTTP вне apiOps: `helpers/api-request.ts` → `createAuthenticatedRequest(playwright)`.
 
-**Импорты:**
-- New suite: `import { test, expect } from '../fixtures/index'` (apiOps, без JWT page hack)
-- Legacy: `import { test, expect } from '../../fixtures'` → `e2e/fixtures.ts` (page+JWT)
+**Импорт:** `import { test, expect } from '../fixtures/index'` (apiOps + storageState).
 
-**P0 smoke/api (new tree):**
+**P0 smoke/api:**
 - smoke: `e2e/smoke/*.spec.ts` (titles contain `@smoke`)
 - api: `e2e/api/*.spec.ts` (titles contain `@api`)
 - UI dismiss «Уволить» → flow приказа, не soft-dismiss; soft cycle — `apiOps.dismiss/restore`
@@ -100,19 +98,15 @@
 # Всё (все projects)
 npm run test:e2e
 
-# Legacy regression (текущие перенесённые specs)
-npm run test:e2e:legacy
-npm run test:e2e:regression   # alias → legacy на время rewrite
-
-# New layers
-npm run test:e2e:smoke        # setup + smoke (depends: setup)
+# Слои
+npm run test:e2e:smoke        # setup + smoke
 npm run test:e2e:api          # setup + api
 npm run test:e2e:ui           # setup + ui
 npm run test:e2e:auth         # auth only (no storage)
+npm run test:e2e:regression   # setup + smoke + ui + api + auth
 
 # Список без запуска
 npx playwright test --list
-npx playwright test --project=legacy --list
 npx playwright test --project=setup --list
 npx playwright test --project=auth --list
 ```
@@ -123,8 +117,8 @@ Base URL: `E2E_BASE_URL` (default `http://localhost:5173`).
 ## 7. Workers / parallel
 
 - **Default:** `workers: 1` (`PW_WORKERS` не задан).
-- `fullyParallel: false` на ветке rewrite — стабильность важнее скорости.
-- Multi-worker (`PW_WORKERS=N`) — **после** green rewrite (не MVP). При `workers>1` нужен managed browser; shared CDP несовместим.
+- `fullyParallel: false` — стабильность важнее скорости.
+- Multi-worker (`PW_WORKERS=N`) — **после** green rewrite (E6). При `workers>1` нужен managed browser; shared CDP несовместим.
 
 ---
 
@@ -137,50 +131,41 @@ e2e/
   .auth/              # gitignored storageState (admin.json)
   setup/              # auth.setup.ts → storageState
   auth/               # login.spec.ts (no storage)
-  api/                # @api specs (new)
-  smoke/              # optional colocated smoke specs
-  ui/                 # @ui specs (new)
+  api/                # @api specs
+  smoke/              # @smoke specs
+  ui/                 # @ui specs
   fixtures/
-    index.ts          # new suite: test + apiOps
+    index.ts          # suite entry: test + apiOps
     api.ts            # tracked create/delete, e2e- prefix
     auth.ts           # storage paths + credentials
-  fixtures.ts         # LEGACY only: page + JWT localStorage
-  pages/              # POM
+  pages/              # POM (used by smoke/ui)
   helpers/
   types/
-  _legacy/            # old ui|api|domain specs (temporary)
-    ui/
-    api/
-    domain/
 ```
 
 ---
 
-## 9. Migration map (legacy → new)
+## 9. Migration map (legacy → new) — E4 deleted
 
-| Legacy | #tests | New target | Status | Notes |
-|--------|-------:|------------|--------|-------|
-| `_legacy/ui/structure-full-lifecycle.spec.ts` | 3 | `ui/structure-lifecycle.spec.ts` | **E3a done** | full edit+delete; smoke keeps create |
-| `_legacy/ui/employees.spec.ts` | 3 | `ui/employees-lifecycle.spec.ts` | **E3a done** | full form + soft + restore UI |
-| `_legacy/ui/vacations.spec.ts` | 3 | `ui/vacations-basic.spec.ts` | **E3a done** | load/rows/expand beyond smoke |
-| `_legacy/ui/vacation-plan-fill.spec.ts` | 1 | `ui/vacation-plan-fill.spec.ts` | **E3a done** | fractions + clear cell |
-| `_legacy/ui/add-vacation-days.spec.ts` | 1 | `ui/add-vacation-days.spec.ts` | **E3a done** | inline edit + API assert |
-| `_legacy/ui/unpaid-leaves-and-weekend-calls.spec.ts` | 7 | `ui/absences.spec.ts` | **E3a done** | unpaid/weekend/sick |
-| `_legacy/ui/timesheet.spec.ts` | 7 | `ui/timesheet.spec.ts` | **E3a done** | tabs/import/history beyond open |
-| `_legacy/ui/order-type-letter.spec.ts` | 2 | `api/order-type-letter.spec.ts` | **E3a done** | API-only (was misfiled as ui) |
-| `_legacy/api/api-errors.spec.ts` | 12 | `api/errors.spec.ts` (+ `employees-errors`) | E3b | slim; not E3a |
-| `_legacy/api/catalog-lifecycle.spec.ts` | 4 | `api/catalog.spec.ts` | E2/E3b | leftovers |
-| `_legacy/api/timesheet-api.spec.ts` | 5 | `api/timesheet.spec.ts` | E3b | not E3a |
-| `_legacy/domain/vacation-periods-generation.spec.ts` | 10 | `api/vacation-periods-smoke.spec.ts` | E3b | not E3a |
-| `_legacy/domain/vacation-balance.spec.ts` | 10 | `api/vacation-balance-smoke.spec.ts` | E3b | not E3a |
-
-`_legacy/**` не удалять до E4.
+| Legacy (deleted) | New path | Status |
+|------------------|----------|--------|
+| `_legacy/ui/structure-full-lifecycle.spec.ts` | `ui/structure-lifecycle.spec.ts` + `smoke/structure.spec.ts` | **done** |
+| `_legacy/ui/employees.spec.ts` | `ui/employees-lifecycle.spec.ts` + `smoke/employees-crud.spec.ts` | **done** |
+| `_legacy/ui/vacations.spec.ts` | `ui/vacations-basic.spec.ts` + `smoke/vacations-happy.spec.ts` | **done** |
+| `_legacy/ui/vacation-plan-fill.spec.ts` | `ui/vacation-plan-fill.spec.ts` | **done** |
+| `_legacy/ui/add-vacation-days.spec.ts` | `ui/add-vacation-days.spec.ts` | **done** |
+| `_legacy/ui/unpaid-leaves-and-weekend-calls.spec.ts` | `ui/absences.spec.ts` | **done** |
+| `_legacy/ui/timesheet.spec.ts` | `ui/timesheet.spec.ts` + `smoke/timesheet-open.spec.ts` | **done** |
+| `_legacy/ui/order-type-letter.spec.ts` | `api/order-type-letter.spec.ts` | **done** |
+| `_legacy/api/api-errors.spec.ts` | `api/errors.spec.ts`, `api/employees-errors.spec.ts` | **done** |
+| `_legacy/api/catalog-lifecycle.spec.ts` | `api/catalog.spec.ts` | **done** |
+| `_legacy/api/timesheet-api.spec.ts` | `api/timesheet.spec.ts` | **done** |
+| `_legacy/domain/vacation-periods-generation.spec.ts` | `api/vacation-periods-smoke.spec.ts` | **done** |
+| `_legacy/domain/vacation-balance.spec.ts` | `api/vacation-balance-smoke.spec.ts` | **done** |
 
 ## 10. Ссылки
 
 - План rewrite: `.opencode/plans/2026-07-15-e2e-rewrite.md`
-- Phase E0: `.opencode/plans/E0-e2e-scaffold.md`
-- Phase E1: `.opencode/plans/E1-e2e-auth-fixtures.md`
-- Phase E3: `.opencode/plans/E3-e2e-rewrite-legacy.md`
+- Phase E4: `.opencode/plans/E4-e2e-cutover.md`
 - Docs: `docs/testing-guide.md`
 - Root monorepo rules: `AGENTS.md` / `Agents.md`

@@ -37,4 +37,4 @@
    - Валидация входных данных через Pydantic-схемы.
 3. **E2E-тесты**:
    - Использование **Page Object Model** (POM) в `e2e/pages/`.
-   - Импорт `{ test, expect }` напрямую из `@playwright/test` или из `e2e/fixtures.ts` для поддержки CDP.
+   - Импорт `{ test, expect }` из `e2e/fixtures/index` (apiOps + storageState). Канон: `e2e/AGENTS.md`.

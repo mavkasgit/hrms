@@ -24,22 +24,17 @@ Object.entries(envVars).forEach(([k, v]) => {
   if (process.env[k] === undefined || process.env[k] === '') process.env[k] = v;
 });
 
-/** Legacy-only JWT for project `legacy` until cutover. Not used by new suite. */
-const LEGACY_JWT =
-  'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJmdWxsX25hbWUiOiJBZG1pbiBVc2VyIiwiaHJtc19hY2Nlc3NfbGV2ZWwiOiJhZG1pbiIsImV4cCI6MTgxMzI0NzMyMX0.7gSWP1iMB07uX-LCo0mHk7QsMGz5h214dJWjLVchcbQ';
-
 const ADMIN_STORAGE = 'e2e/.auth/admin.json';
 
 /**
- * E2E rewrite (feat/e2e-rewrite).
- * Projects: setup → api/smoke/ui (storageState); auth clean; legacy JWT-scoped.
+ * E2E suite (post-cutover): setup → api/smoke/ui (storageState); auth clean.
+ * No legacy project / hardcoded JWT.
  */
 export default defineConfig({
   testDir: './e2e',
   testIgnore: ['**/*.js', '**/*.js.map'],
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  // Empty new projects during rewrite must not fail --list / empty runs
   passWithNoTests: true,
   retries: 1,
   workers: process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 1,
@@ -50,7 +45,6 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    // No global Authorization JWT — scoped to project `legacy` only.
   },
   projects: [
     {
@@ -71,7 +65,7 @@ export default defineConfig({
       name: 'api',
       dependencies: ['setup'],
       testMatch: /\/api\/.*\.spec\.ts/,
-      testIgnore: ['**/_legacy/**', '**/*.js', '**/*.js.map'],
+      testIgnore: ['**/*.js', '**/*.js.map'],
       use: {
         ...devices['Desktop Chrome'],
         storageState: ADMIN_STORAGE,
@@ -81,7 +75,7 @@ export default defineConfig({
       name: 'smoke',
       dependencies: ['setup'],
       grep: /@smoke/,
-      testIgnore: ['**/_legacy/**', '**/*.js', '**/*.js.map'],
+      testIgnore: ['**/*.js', '**/*.js.map'],
       use: {
         ...devices['Desktop Chrome'],
         storageState: ADMIN_STORAGE,
@@ -91,21 +85,10 @@ export default defineConfig({
       name: 'ui',
       dependencies: ['setup'],
       grep: /@ui/,
-      testIgnore: ['**/_legacy/**', '**/*.js', '**/*.js.map'],
+      testIgnore: ['**/*.js', '**/*.js.map'],
       use: {
         ...devices['Desktop Chrome'],
         storageState: ADMIN_STORAGE,
-      },
-    },
-    {
-      name: 'legacy',
-      // No dependency on setup — uses own JWT fixture + project header
-      testMatch: /_legacy\/.*\.spec\.ts/,
-      use: {
-        ...devices['Desktop Chrome'],
-        extraHTTPHeaders: {
-          Authorization: LEGACY_JWT,
-        },
       },
     },
   ],

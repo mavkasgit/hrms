@@ -115,10 +115,10 @@ npm run dev       # Запуск DEV (DB + backend + frontend)
 
 ```bash
 npm run test:e2e:smoke       # Smoke-тесты (быстрая проверка)
-npm run test:e2e:ui          # Все UI-тесты
+npm run test:e2e:ui          # UI-тесты
 npm run test:e2e:api         # API-тесты
-npm run test:e2e:domain      # Доменные тесты
-npm run test:e2e:regression  # Полная регрессия
+npm run test:e2e:auth        # Auth (login, без storage)
+npm run test:e2e:regression  # Полная регрессия (smoke+ui+api+auth)
 ```
 
 **Перед запуском e2e-тестов** убедись, что:

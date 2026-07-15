@@ -25,10 +25,10 @@ Object.entries(envVars).forEach(([k, v]) => {
     if (process.env[k] === undefined || process.env[k] === '')
         process.env[k] = v;
 });
+const ADMIN_STORAGE = 'e2e/.auth/admin.json';
 /**
- * E2E rewrite (feat/e2e-rewrite).
- * Sync with playwright.config.ts — prefer .ts when both exist.
- * JWT extraHTTPHeaders — DEPRECATED, only for legacy until E1 storageState.
+ * E2E suite (post-cutover). Prefer playwright.config.ts when both exist.
+ * Sync with playwright.config.ts — no legacy project / JWT.
  */
 export default defineConfig({
     testDir: './e2e',
@@ -45,44 +45,50 @@ export default defineConfig({
         trace: 'on-first-retry',
         screenshot: 'only-on-failure',
         video: 'retain-on-failure',
-        // DEPRECATED (E1): hardcoded JWT for legacy project only.
-        extraHTTPHeaders: {
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInVzZXJuYW1lIjoiYWRtaW4iLCJmdWxsX25hbWUiOiJBZG1pbiBVc2VyIiwiaHJtc19hY2Nlc3NfbGV2ZWwiOiJhZG1pbiIsImV4cCI6MTgxMzI0NzMyMX0.7gSWP1iMB07uX-LCo0mHk7QsMGz5h214dJWjLVchcbQ',
-        },
     },
     projects: [
-        {
-            name: 'legacy',
-            testMatch: /_legacy\/.*\.spec\.ts/,
-            use: { ...devices['Desktop Chrome'] },
-        },
         {
             name: 'setup',
             testMatch: /setup\/.*\.setup\.ts/,
             use: { ...devices['Desktop Chrome'] },
         },
         {
+            name: 'auth',
+            testMatch: /auth\/.*\.spec\.ts/,
+            use: {
+                ...devices['Desktop Chrome'],
+                storageState: { cookies: [], origins: [] },
+            },
+        },
+        {
             name: 'api',
+            dependencies: ['setup'],
             testMatch: /\/api\/.*\.spec\.ts/,
-            testIgnore: ['**/_legacy/**', '**/*.js', '**/*.js.map'],
-            use: { ...devices['Desktop Chrome'] },
+            testIgnore: ['**/*.js', '**/*.js.map'],
+            use: {
+                ...devices['Desktop Chrome'],
+                storageState: ADMIN_STORAGE,
+            },
         },
         {
             name: 'smoke',
+            dependencies: ['setup'],
             grep: /@smoke/,
-            testIgnore: ['**/_legacy/**', '**/*.js', '**/*.js.map'],
-            use: { ...devices['Desktop Chrome'] },
+            testIgnore: ['**/*.js', '**/*.js.map'],
+            use: {
+                ...devices['Desktop Chrome'],
+                storageState: ADMIN_STORAGE,
+            },
         },
         {
             name: 'ui',
+            dependencies: ['setup'],
             grep: /@ui/,
-            testIgnore: ['**/_legacy/**', '**/*.js', '**/*.js.map'],
-            use: { ...devices['Desktop Chrome'] },
-        },
-        {
-            name: 'auth',
-            testMatch: /auth\/.*\.spec\.ts/,
-            use: { ...devices['Desktop Chrome'] },
+            testIgnore: ['**/*.js', '**/*.js.map'],
+            use: {
+                ...devices['Desktop Chrome'],
+                storageState: ADMIN_STORAGE,
+            },
         },
     ],
     webServer: {
