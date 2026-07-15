@@ -423,7 +423,7 @@ export function UsersPage() {
               Пользователи кадровой системы
             </h1>
             <p className="text-sm text-muted-foreground">
-              Управление учетными записями, имеющими доступ к кадровой системе через сквозную авторизацию (SSO).
+              Управление учетными записями HRMS: вход по логину/паролю, Telegram или invite.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -715,7 +715,7 @@ export function UsersPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить пользователя?</AlertDialogTitle>
             <AlertDialogDescription>
-              Пользователь <strong>{userToDelete?.username}</strong> ({userToDelete?.full_name}) больше не сможет авторизоваться в кадровой системе HRMS через SSO. Вы можете добавить его повторно в любой момент.
+              Пользователь <strong>{userToDelete?.username}</strong> ({userToDelete?.full_name}) больше не сможет войти в HRMS (логин/пароль, Telegram или invite). Вы можете добавить его повторно в любой момент.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

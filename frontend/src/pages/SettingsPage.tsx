@@ -93,7 +93,7 @@ export function SettingsPage() {
                 <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </h3>
               <p className="text-sm text-muted-foreground mb-3">
-                Управление пользователями кадровой системы для сквозной авторизации (SSO). Добавление, редактирование и привязка к сотрудникам.
+                Управление пользователями HRMS: логин/пароль, Telegram и invite. Добавление, редактирование и привязка к сотрудникам.
               </p>
             </div>
           </div>
