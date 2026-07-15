@@ -115,10 +115,32 @@ cross-env HRMS_TEST_ISOLATION=truncate python -m pytest tests/test_db_isolation.
 
 ### CI (GitHub Actions)
 
+#### Backend pytest
+
 Workflow [`.github/workflows/test-backend.yml`](../.github/workflows/test-backend.yml):
 - service `postgres:15` на `:5432`;
 - `HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_test`;
 - `python -m pytest -n auto --dist=loadfile -q` в `backend/`.
+
+#### E2E smoke (Playwright)
+
+Workflow [`.github/workflows/e2e-smoke.yml`](../.github/workflows/e2e-smoke.yml):
+
+| | |
+|--|--|
+| **Triggers** | `workflow_dispatch`, `pull_request`, `push` → `main` / `master` / `feat/e2e-rewrite` |
+| **Command** | `npx playwright test --project=setup --project=smoke` (`workers: 1`) |
+| **Stack** | GHA `postgres:15` → alembic migrate → seed `admin` → uvicorn `:8000` → Playwright `webServer` (Vite `:5173`) |
+| **Credentials** | `E2E_ADMIN_USERNAME=admin` / `E2E_ADMIN_PASSWORD=dev` + `DEV_BYPASS_AUTH=true` |
+| **PR policy** | **best-effort** (`continue-on-error: true` on `pull_request`) — flaky full stack must not block merge until green is proven on GHA |
+| **Manual** | Actions → **e2e-smoke** → **Run workflow** (hard-fail for debugging) |
+| **Artifacts** | on failure: `playwright-report/` + `test-results/` (7 days) |
+
+**CI knobs** (`playwright.config.ts`): `forbidOnly`, `retries: 2` (CI), `workers: 1`, `reuseExistingServer: !CI`, HTML reporter in CI.
+
+**Not in CI yet:** multi-browser matrix, full `ui`/`api`/`regression`, OnlyOffice.
+
+**GHA green status:** workflow logic is sound for this monorepo; **end-to-end green on GitHub Actions is not verified** from this change alone (workflow_dispatch-first until a successful Actions run).
 
 ## Auth для E2E
 

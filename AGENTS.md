@@ -125,6 +125,10 @@ npm run test:e2e:regression  # Полная регрессия (smoke+ui+api+aut
 1. TEST-окружение поднято (`npm run docker:test:up`).
 2. Или DEV-окружение работает (`npm run dev`).
 
+**CI:** workflow [`.github/workflows/e2e-smoke.yml`](.github/workflows/e2e-smoke.yml) — setup+smoke на GHA  
+(postgres + uvicorn + Vite). PR path best-effort; manual via `workflow_dispatch`.  
+См. `docs/testing-guide.md` (секция «E2E smoke»).
+
 ### Миграции БД
 
 ```bash

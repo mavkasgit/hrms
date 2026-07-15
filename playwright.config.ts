@@ -36,9 +36,12 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   passWithNoTests: true,
-  retries: 1,
+  // CI: extra retry for infra flake; local: one retry is enough
+  retries: process.env.CI ? 2 : 1,
   workers: process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 1,
-  reporter: 'list',
+  reporter: process.env.CI
+    ? [['list'], ['html', { open: 'never' }]]
+    : 'list',
   timeout: 60000,
   use: {
     baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173',
@@ -95,7 +98,8 @@ export default defineConfig({
   webServer: {
     command: 'npm run frontend',
     url: 'http://localhost:5173',
-    timeout: 60000,
-    reuseExistingServer: true,
+    timeout: 120_000,
+    // Local: reuse running Vite. CI: always start a fresh webServer.
+    reuseExistingServer: !process.env.CI,
   },
 });

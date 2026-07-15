@@ -119,6 +119,15 @@ Base URL: `E2E_BASE_URL` (default `http://localhost:5173`).
 - **Default:** `workers: 1` (`PW_WORKERS` не задан).
 - `fullyParallel: false` — стабильность важнее скорости.
 - Multi-worker (`PW_WORKERS=N`) — **после** green rewrite (E6). При `workers>1` нужен managed browser; shared CDP несовместим.
+- **CI:** `retries: 2`, HTML reporter, `reuseExistingServer: false` (см. `playwright.config.ts`).
+
+### CI e2e-smoke
+
+Workflow: [`.github/workflows/e2e-smoke.yml`](../.github/workflows/e2e-smoke.yml)  
+Команда: `npx playwright test --project=setup --project=smoke`  
+Стек: postgres service + migrate + seed admin + uvicorn + Vite (webServer).  
+PR path — **best-effort** (`continue-on-error`); для intentional run — `workflow_dispatch`.  
+Подробности: `docs/testing-guide.md` → «E2E smoke (Playwright)».
 
 ---
 
