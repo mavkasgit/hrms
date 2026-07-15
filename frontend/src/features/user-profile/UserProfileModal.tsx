@@ -269,20 +269,24 @@ export function UserProfileModal({
           {/* Левое боковое меню (Навигация) */}
           <div className="w-full md:w-[220px] bg-muted/30 border-r border-border p-4 flex flex-col gap-1 shrink-0">
             <div className="flex flex-col items-center gap-2 px-3 py-4 border-b border-border/60 mb-3">
-              <div className="relative group">
+              {/*
+                Hover-круг чуть больше аватара: padding даёт равный выступ
+                со всех сторон (p-2 = 8px), кнопка absolute inset-0 на обёртке.
+              */}
+              <div className="relative group inline-flex items-center justify-center p-2">
                 <UserAvatar
                   seed={getUserSeed(localUser)}
                   size={80}
-                  className="shadow-md"
+                  className="shadow-md relative z-0"
                 />
                 <button
                   type="button"
                   onClick={() => setAvatarPickerOpen(true)}
-                  className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute inset-0 z-10 flex items-center justify-center rounded-full bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Изменить аватар"
                   aria-label="Изменить аватар"
                 >
-                  <Pencil className="h-6 w-6 text-white" />
+                  <Pencil className="h-6 w-6 text-white drop-shadow-sm" />
                 </button>
               </div>
               <div className="w-full text-center">
