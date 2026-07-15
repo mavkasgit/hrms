@@ -115,15 +115,19 @@ npm run dev       # Запуск DEV (DB + backend + frontend)
 
 ```bash
 npm run test:e2e:smoke       # Smoke-тесты (быстрая проверка)
-npm run test:e2e:ui          # Все UI-тесты
+npm run test:e2e:ui          # UI-тесты
 npm run test:e2e:api         # API-тесты
-npm run test:e2e:domain      # Доменные тесты
-npm run test:e2e:regression  # Полная регрессия
+npm run test:e2e:auth        # Auth (login, без storage)
+npm run test:e2e:regression  # Полная регрессия (smoke+ui+api+auth)
 ```
 
 **Перед запуском e2e-тестов** убедись, что:
 1. TEST-окружение поднято (`npm run docker:test:up`).
 2. Или DEV-окружение работает (`npm run dev`).
+
+**CI:** workflow [`.github/workflows/e2e-smoke.yml`](.github/workflows/e2e-smoke.yml) — setup+smoke на GHA  
+(postgres + uvicorn + Vite). PR path best-effort; manual via `workflow_dispatch`.  
+См. `docs/testing-guide.md` (секция «E2E smoke»).
 
 ### Миграции БД
 

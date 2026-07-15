@@ -31,7 +31,8 @@ export class VacationsPage {
     this.pageTitle = page.getByRole('heading', { name: 'Трудовой отпуск' })
     this.table = page.locator('table')
     this.rows = page.locator('tbody tr')
-    this.searchInput = page.getByPlaceholder(/поиск по имени|поиск/i)
+    // List filter (not the form EmployeeSearch «Поиск по ФИО...»)
+    this.searchInput = page.getByPlaceholder(/поиск по фио или таб/i)
     this.createForm = page.locator('form').first()
     this.auditLogBtn = page.getByRole('button', { name: /журнал/i })
     this.calendarBtn = page.getByRole('button', { name: /календарь/i })
@@ -50,9 +51,8 @@ export class VacationsPage {
 
   async goto() {
     await this.page.goto('/vacations')
-    await this.page.waitForLoadState('networkidle')
-    await expect(this.pageTitle).toBeVisible({ timeout: 10000 })
-    await expect(this.table).toBeVisible({ timeout: 10000 })
+    await expect(this.pageTitle).toBeVisible({ timeout: 15000 })
+    await expect(this.table).toBeVisible({ timeout: 15000 })
   }
 
   private async waitForVacationListRefresh(trigger: () => Promise<void>) {

@@ -29,8 +29,7 @@ export class EmployeesPage {
 
   async goto() {
     await this.page.goto('/employees')
-    await this.page.waitForLoadState('networkidle')
-    await expect(this.pageTitle).toBeVisible({ timeout: 10000 })
+    await expect(this.pageTitle).toBeVisible({ timeout: 15000 })
   }
 
   private async waitForEmployeesRefresh(trigger: () => Promise<void>) {
@@ -62,15 +61,34 @@ export class EmployeesPage {
   }
 
   async filterByStatus(status: EmployeeStatus) {
+    // Panel labels from EmployeesPage.tsx (multi-toggle: active / dismissed)
     const statusLabels: Record<EmployeeStatus, string> = {
       active: 'Активные',
-      dismissed: 'Уволен',
+      dismissed: 'Уволенные',
       all: 'Все',
       deleted: 'Удалённые',
     }
     await this.filterBtn.click()
+    const panel = this.page.locator('.absolute').filter({ hasText: 'Статус' })
+    await expect(panel).toBeVisible({ timeout: 5000 })
+
+    if (status === 'all') {
+      // Ensure both toggles on if present
+      for (const label of ['Активные', 'Уволенные'] as const) {
+        const btn = panel.getByRole('button', { name: label })
+        // best-effort: click if not already selected (green/red bg classes vary)
+        await this.waitForEmployeesRefresh(async () => {
+          await btn.click()
+        }).catch(async () => {
+          await btn.click()
+        })
+      }
+      return
+    }
+
+    const label = statusLabels[status]
     await this.waitForEmployeesRefresh(async () => {
-      await this.page.getByText(statusLabels[status]).click()
+      await panel.getByRole('button', { name: label }).click()
     })
   }
 

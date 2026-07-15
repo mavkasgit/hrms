@@ -1,137 +1,107 @@
-import { test, expect } from '../fixtures'
+import { test, expect } from '../fixtures/index'
 
 /**
- * Тест заполнения плана отпусков с дробными значениями
- * Использует фикстуры с автоматической очисткой
+ * Vacation plan grid: fractional values and clear cell.
+ * Legacy: vacation-plan-fill.spec.ts
+ *
+ * Row layout: dept | tags | name | Jan..Dec  → month cells start at td index 3.
+ * Edit opens input with data-testid vacation-cell-input-{empId}-{monthNum}.
  */
-test.describe('План отпусков - дробные значения', () => {
-  test.setTimeout(30000)
+test.describe('Vacation plan fill @ui', () => {
+  test.setTimeout(60_000)
 
-  test('запись дробного значения и значения меньше 1', async ({ page, request, apiOps }) => {
-    const waitForPlanMutation = () => page.waitForResponse((resp) => {
-      const method = resp.request().method()
-      return resp.url().includes('/api/vacation-plans')
-        && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
-        && resp.status() >= 200
-        && resp.status() < 500
-    })
+  test('@ui vacation-plan: write fractional values and clear cell', async ({
+    page,
+    apiOps,
+  }) => {
+    const waitForPlanMutation = () =>
+      page.waitForResponse((resp) => {
+        const method = resp.request().method()
+        return (
+          resp.url().includes('/api/vacation-plans') &&
+          ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) &&
+          resp.status() >= 200 &&
+          resp.status() < 500
+        )
+      })
 
     const u = apiOps.uid()
     const testYear = new Date().getFullYear()
 
-    // ========== 0. СОЗДАЁМ СОТРУДНИКА ==========
-    console.log('[TEST] === ЭТАП 0: Создание сотрудника ===')
-    
-    const dept = await apiOps.createDepartment(`Отпуск-Отдел-${u}`)
-    const pos = await apiOps.createPosition(`Отпуск-Должность-${u}`)
+    const dept = await apiOps.createDepartment(`e2e-dept-plan-${u}`)
+    const pos = await apiOps.createPosition(`e2e-pos-plan-${u}`)
     const emp = await apiOps.createEmployee(dept.id, pos.id, {
-      name: `Тест-Сотрудник-${u}`,
+      name: `e2e-emp-plan-${u}`,
     })
-    const empId = emp.id
-    console.log(`[TEST] ✅ Сотрудник создан (id=${empId})`)
 
-    // ========== 1. ПЕРЕХОДИМ НА СТРАНИЦУ КАЛЕНДАРЯ ОТПУСКОВ ==========
-    console.log('[TEST] === ЭТАП 1: Переход на страницу календаря ===')
-    
     await page.goto('/vacation-calendar')
-    await expect(page.getByRole('heading', { name: /календарь/i })).toBeVisible({ timeout: 15000 })
-    
-    // Выбираем год
+    await expect(page.getByRole('heading', { name: /календарь/i })).toBeVisible({
+      timeout: 15_000,
+    })
+
     const yearTrigger = page.locator('[role="combobox"]').first()
     await yearTrigger.click()
     const yearOption = page.getByRole('option', { name: String(testYear) })
-    await expect(yearOption).toBeVisible({ timeout: 5000 })
+    await expect(yearOption).toBeVisible({ timeout: 5_000 })
     await yearOption.click()
-    console.log(`[TEST] Год выбран: ${testYear}`)
-    
-    // Ждём загрузки таблицы
+
     const table = page.locator('table')
-    await expect(table).toBeVisible({ timeout: 15000 })
-    
-    // Ищем сотрудника в таблице
+    await expect(table).toBeVisible({ timeout: 15_000 })
+
     const employeeRow = page.locator('tbody tr').filter({ hasText: emp.name }).first()
-    await expect(employeeRow).toBeVisible({ timeout: 10000 })
-    console.log(`[TEST] Найден сотрудник в таблице`)
-    
-    // ========== 2. ЯНВАРЬ - дробное 0.5 ==========
-    console.log('[TEST] === ЭТАП 2: Записываем 0.5 в Январь ===')
-    const cellJan = employeeRow.locator('td').nth(2)
-    await cellJan.click()
-    
-    const inputJan = cellJan.locator('input').first()
-    await expect(inputJan).toBeVisible({ timeout: 5000 })
-    await inputJan.fill('0.5')
-    const janMutation = waitForPlanMutation()
-    await inputJan.press('Enter')
-    await janMutation
+    await expect(employeeRow).toBeVisible({ timeout: 10_000 })
 
-    await expect(inputJan).not.toBeVisible({ timeout: 5000 })
-    await expect(cellJan).toContainText('0.5', { timeout: 5000 })
-    
-    const cellValueJan = await cellJan.textContent()
-    console.log(`[TEST] Январь: "${cellValueJan}"`)
-    expect(cellValueJan).toContain('0.5')
+    const openMonthCell = async (monthNum: number) => {
+      // dept(0) + tags(1) + name(2) + months start at 3 → month 1 = index 3
+      const cell = employeeRow.locator('td').nth(2 + monthNum)
+      await cell.locator('button').click()
+      const input = page.getByTestId(`vacation-cell-input-${emp.id}-${monthNum}`)
+      await expect(input).toBeVisible({ timeout: 5_000 })
+      return { cell, input }
+    }
 
-    // ========== 3. ФЕВРАЛЬ - значение 0.33 ==========
-    console.log('[TEST] === ЭТАП 3: Записываем 0.33 в Февраль ===')
-    const cellFeb = employeeRow.locator('td').nth(3)
-    await cellFeb.click()
-    
-    const inputFeb = cellFeb.locator('input').first()
-    await expect(inputFeb).toBeVisible({ timeout: 5000 })
-    await inputFeb.fill('0.33')
-    const febMutation = waitForPlanMutation()
-    await inputFeb.press('Enter')
-    await febMutation
+    // January — 0.5
+    {
+      const { cell, input } = await openMonthCell(1)
+      await input.fill('0.5')
+      const mutation = waitForPlanMutation()
+      await input.press('Enter')
+      await mutation
+      await expect(input).not.toBeVisible({ timeout: 5_000 })
+      await expect(cell).toContainText('0.5', { timeout: 5_000 })
+    }
 
-    await expect(inputFeb).not.toBeVisible({ timeout: 5000 })
-    await expect(cellFeb).toContainText('0.33', { timeout: 5000 })
-    
-    const cellValueFeb = await cellFeb.textContent()
-    console.log(`[TEST] Февраль: "${cellValueFeb}"`)
-    expect(cellValueFeb).toContain('0.33')
+    // February — 0.33
+    {
+      const { cell, input } = await openMonthCell(2)
+      await input.fill('0.33')
+      const mutation = waitForPlanMutation()
+      await input.press('Enter')
+      await mutation
+      await expect(input).not.toBeVisible({ timeout: 5_000 })
+      await expect(cell).toContainText('0.33', { timeout: 5_000 })
+    }
 
-    // ========== 4. МАРТ - дробь 1/3 ==========
-    console.log('[TEST] === ЭТАП 4: Записываем 1/3 в Март ===')
-    const cellMar = employeeRow.locator('td').nth(4)
-    await cellMar.click()
-    
-    const inputMar = cellMar.locator('input').first()
-    await expect(inputMar).toBeVisible({ timeout: 5000 })
-    await inputMar.fill('1/3')
-    const marMutation = waitForPlanMutation()
-    await inputMar.press('Enter')
-    await marMutation
+    // March — 1/3
+    {
+      const { cell, input } = await openMonthCell(3)
+      await input.fill('1/3')
+      const mutation = waitForPlanMutation()
+      await input.press('Enter')
+      await mutation
+      await expect(input).not.toBeVisible({ timeout: 5_000 })
+      await expect(cell).toContainText('1/3', { timeout: 5_000 })
+    }
 
-    await expect(inputMar).not.toBeVisible({ timeout: 5000 })
-    await expect(cellMar).toContainText('1/3', { timeout: 5000 })
-    
-    const cellValueMar = await cellMar.textContent()
-    console.log(`[TEST] Март: "${cellValueMar}"`)
-    expect(cellValueMar).toContain('1/3')
-
-    // ========== 5. ОЧИСТКА ЯЧЕЙКИ (Del) ==========
-    console.log('[TEST] === ЭТАП 5: Очищаем ячейку January (Del) ===')
-    const cellToClear = employeeRow.locator('td').nth(2) // Январь
-    await cellToClear.click()
-    
-    const inputClear = cellToClear.locator('input').first()
-    await expect(inputClear).toBeVisible({ timeout: 5000 })
-    
-    // Очищаем значение - выделяем весь текст и удаляем
-    await inputClear.clear()
-    const clearMutation = waitForPlanMutation()
-    await inputClear.press('Enter')
-    await clearMutation
-
-    await expect(inputClear).not.toBeVisible({ timeout: 5000 })
-    await expect(cellToClear).toHaveText(/^[\s—]*$/, { timeout: 5000 })
-    
-    // Проверяем что ячейка пустая или содержит прочерк
-    const clearedValue = await cellToClear.textContent()
-    console.log(`[TEST] Очищенная ячейка: "${clearedValue}"`)
-    expect(clearedValue).toMatch(/^[\s—]*$/)
-
-    console.log('✓ Все тесты пройдены!')
+    // Clear January
+    {
+      const { cell, input } = await openMonthCell(1)
+      await input.clear()
+      const mutation = waitForPlanMutation()
+      await input.press('Enter')
+      await mutation
+      await expect(input).not.toBeVisible({ timeout: 5_000 })
+      await expect(cell).toHaveText(/^[\s—]*$/, { timeout: 5_000 })
+    }
   })
 })
