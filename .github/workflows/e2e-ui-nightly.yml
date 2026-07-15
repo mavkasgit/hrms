@@ -1,0 +1,168 @@
+# e2e-ui-nightly — full Playwright UI suite + OnlyOffice Document Server
+#
+# Not a PR gate (heavy / flaky risk). Use for overnight coverage of @ui + OO.
+# Manual: Actions → e2e-ui-nightly → Run workflow
+name: e2e-ui-nightly
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:15 UTC daily
+    - cron: "15 3 * * *"
+
+concurrency:
+  group: e2e-ui-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui-onlyoffice:
+    name: Playwright UI + OnlyOffice
+    runs-on: ubuntu-latest
+    # OO cold start + full ui suite
+    timeout-minutes: 120
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: hrms_user
+          POSTGRES_PASSWORD: hrms_pass
+          POSTGRES_DB: hrms_dev
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U hrms_user -d hrms_dev"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_dev
+      DEV_BYPASS_AUTH: "true"
+      ENV: dev
+      SECRET_KEY: ci-e2e-secret-not-for-prod
+      # OnlyOffice — Document Server container below
+      ONLYOFFICE_ENABLED: "true"
+      ONLYOFFICE_JWT_SECRET: ci-onlyoffice-jwt-secret
+      ONLYOFFICE_PUBLIC_URL: http://localhost:8085
+      ONLYOFFICE_INTERNAL_URL: http://localhost:8085
+      # OO (docker) → backend (job host). host-gateway alias set on container.
+      BACKEND_INTERNAL_CALLBACK_URL: http://host.docker.internal:8000
+      APP_PUBLIC_URL: http://host.docker.internal:8000
+      VITE_AUTH_MODE: dev
+      CI: "true"
+      E2E_BASE_URL: http://localhost:5173
+      E2E_API_URL: http://localhost:8000/api
+      E2E_ADMIN_USERNAME: admin
+      E2E_ADMIN_PASSWORD: dev
+      # Serial workers for OO stability (P2 multi-worker is local opt-in)
+      E2E_BROWSER_MODE: managed
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install root + frontend deps
+        run: |
+          npm ci
+          npm ci --prefix frontend
+
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+
+      - name: Start OnlyOffice Document Server
+        run: |
+          docker run -d --name hrms-onlyoffice-ci \
+            --add-host=host.docker.internal:host-gateway \
+            -p 8085:80 \
+            -e JWT_ENABLED=true \
+            -e JWT_SECRET="${ONLYOFFICE_JWT_SECRET}" \
+            onlyoffice/documentserver:9.4.0
+          echo "Waiting for OnlyOffice on :8085 ..."
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:8085/healthcheck >/dev/null \
+              || curl -sf http://127.0.0.1:8085/ >/dev/null; then
+              echo "OnlyOffice ready (attempt $i)"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "OnlyOffice failed to become ready"
+          docker logs hrms-onlyoffice-ci 2>&1 | tail -n 80 || true
+          exit 1
+
+      - name: Alembic migrate
+        working-directory: backend
+        env:
+          PYTHONPATH: .
+        run: |
+          python scripts/migrate_production_version.py
+          python -m alembic upgrade head
+
+      - name: Seed admin user
+        working-directory: backend
+        env:
+          PYTHONPATH: .
+        run: python scripts/create_user.py admin "CI Admin"
+
+      - name: Start backend (uvicorn)
+        working-directory: backend
+        env:
+          PYTHONPATH: .
+        run: |
+          nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 \
+            > /tmp/hrms-backend.log 2>&1 &
+          echo $! > /tmp/hrms-backend.pid
+          for i in $(seq 1 45); do
+            if curl -sf http://127.0.0.1:8000/api/health >/dev/null; then
+              echo "Backend healthy (attempt $i)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend failed to become healthy"
+          cat /tmp/hrms-backend.log || true
+          exit 1
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: e2e setup + smoke + ui
+        # workers: 1 (no PW_WORKERS). Frontend via playwright webServer.
+        run: npx playwright test --project=setup --project=smoke --project=ui
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "===== /tmp/hrms-backend.log ====="
+          cat /tmp/hrms-backend.log || true
+          echo "===== onlyoffice logs (tail) ====="
+          docker logs hrms-onlyoffice-ci 2>&1 | tail -n 120 || true
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-e2e-ui-nightly
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Stop OnlyOffice
+        if: always()
+        run: docker rm -f hrms-onlyoffice-ci || true

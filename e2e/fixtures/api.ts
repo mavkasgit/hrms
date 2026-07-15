@@ -41,11 +41,29 @@ export const API_BASE = process.env.E2E_API_URL
 
 type CreatedResources = {
   notifications: number[]
+  users: number[]
+  tags: number[]
   orders: number[]
   vacations: number[]
   employees: number[]
   positions: number[]
   departments: number[]
+}
+
+export type TagRecord = {
+  id: number
+  name: string
+  category?: string | null
+  color?: string | null
+  sort_order?: number
+}
+
+export type UserRecord = {
+  id: number
+  username: string
+  full_name?: string | null
+  role?: string
+  employee_id?: number | null
 }
 
 // =============================================================================
@@ -368,6 +386,109 @@ async function apiGetNotifications(
   const data = await resp.json()
   return data.items || []
 }
+
+async function apiListDepartments(request: APIRequestContext): Promise<Department[]> {
+  const resp = await request.get(`${API_BASE}/api/departments`)
+  expect(resp.status()).toBe(200)
+  const data = await resp.json()
+  return Array.isArray(data) ? data : data.items || data.nodes || []
+}
+
+async function apiListPositions(request: APIRequestContext): Promise<Position[]> {
+  const resp = await request.get(`${API_BASE}/api/positions`)
+  expect(resp.status()).toBe(200)
+  const data = await resp.json()
+  return Array.isArray(data) ? data : data.items || []
+}
+
+async function apiCreateTag(
+  request: APIRequestContext,
+  name: string,
+  overrides: Record<string, unknown> = {}
+): Promise<TagRecord> {
+  const resp = await request.post(`${API_BASE}/api/tags`, {
+    data: { name, sort_order: 0, ...overrides },
+  })
+  expect([200, 201]).toContain(resp.status())
+  return resp.json()
+}
+
+async function apiDeleteTag(request: APIRequestContext, id: number): Promise<void> {
+  const resp = await request.delete(`${API_BASE}/api/tags/${id}`)
+  expect([200, 204]).toContain(resp.status())
+}
+
+async function apiListTags(request: APIRequestContext): Promise<TagRecord[]> {
+  const resp = await request.get(`${API_BASE}/api/tags`)
+  expect(resp.status()).toBe(200)
+  const data = await resp.json()
+  return Array.isArray(data) ? data : data.items || []
+}
+
+async function apiCreateUser(
+  request: APIRequestContext,
+  data: {
+    username: string
+    full_name?: string
+    employee_id?: number
+    role?: string
+    password?: string
+  }
+): Promise<UserRecord> {
+  const resp = await request.post(`${API_BASE}/api/users`, {
+    data: {
+      role: 'viewer',
+      full_name: data.full_name || data.username,
+      ...data,
+    },
+  })
+  if (![200, 201].includes(resp.status())) {
+    const body = await resp.text().catch(() => '')
+    throw new Error(`createUser failed: ${resp.status()} ${body}`)
+  }
+  return resp.json()
+}
+
+async function apiDeleteUser(request: APIRequestContext, id: number): Promise<void> {
+  const resp = await request.delete(`${API_BASE}/api/users/${id}`)
+  expect([200, 204]).toContain(resp.status())
+}
+
+async function apiGenerateInvite(
+  request: APIRequestContext,
+  userId: number
+): Promise<{ invite_code: string }> {
+  const resp = await request.post(`${API_BASE}/api/users/${userId}/generate-invite`)
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiCreateGroupDraft(
+  request: APIRequestContext,
+  payload: Record<string, unknown>
+): Promise<{ draft_id: string; edit_url: string }> {
+  const resp = await request.post(`${API_BASE}/api/orders/group-drafts`, {
+    data: payload,
+  })
+  if (![200, 201].includes(resp.status())) {
+    const body = await resp.text().catch(() => '')
+    throw new Error(`createGroupDraft failed: ${resp.status()} ${body}`)
+  }
+  return resp.json()
+}
+
+async function apiCommitGroupDraft(
+  request: APIRequestContext,
+  draftId: string
+): Promise<unknown> {
+  const resp = await request.post(`${API_BASE}/api/orders/group-drafts/${draftId}/commit`)
+  if (![200, 201].includes(resp.status())) {
+    const body = await resp.text().catch(() => '')
+    throw new Error(`commitGroupDraft failed: ${resp.status()} ${body}`)
+  }
+  return resp.json().catch(() => ({}))
+}
+
 // =============================================================================
 // FIXTURE TYPES
 // =============================================================================
@@ -438,6 +559,32 @@ export type ApiOperations = {
   ) => Promise<Array<{ id: number; number?: string | null; employee_id?: number | null; title?: string }>>
   trackNotification: (id: number) => void
   deleteNotification: (id: number) => Promise<void>
+  // Tags
+  createTag: (name: string, overrides?: Record<string, unknown>) => Promise<TagRecord>
+  deleteTag: (id: number) => Promise<void>
+  listTags: () => Promise<TagRecord[]>
+  trackTag: (id: number) => void
+  // Users
+  createUser: (data: {
+    username: string
+    full_name?: string
+    employee_id?: number
+    role?: string
+    password?: string
+  }) => Promise<UserRecord>
+  deleteUser: (id: number) => Promise<void>
+  generateInvite: (userId: number) => Promise<{ invite_code: string }>
+  trackUser: (id: number) => void
+  // Structure list / track (UI-created entities)
+  listDepartments: () => Promise<Department[]>
+  listPositions: () => Promise<Position[]>
+  trackDepartment: (id: number) => void
+  trackPosition: (id: number) => void
+  // Group drafts (OO path — commit creates orders; track orders separately)
+  createGroupDraft: (
+    payload: Record<string, unknown>
+  ) => Promise<{ draft_id: string; edit_url: string }>
+  commitGroupDraft: (draftId: string) => Promise<unknown>
   // Cleanup
   cleanup: () => Promise<void>
   cleanupEmployee: (id: number) => Promise<void>
@@ -488,6 +635,8 @@ export const test = base.extend<ApiFixtures>({
 
     const resources: CreatedResources = {
       notifications: [],
+      users: [],
+      tags: [],
       orders: [],
       vacations: [],
       employees: [],
@@ -610,34 +759,77 @@ export const test = base.extend<ApiFixtures>({
         resources.notifications = resources.notifications.filter((x) => x !== id)
       },
 
+      createTag: async (name: string, overrides?: Record<string, unknown>) => {
+        const tag = await apiCreateTag(apiRequest, name, overrides)
+        resources.tags.push(tag.id)
+        return tag
+      },
+      deleteTag: async (id: number) => {
+        await apiDeleteTag(apiRequest, id)
+        resources.tags = resources.tags.filter((x) => x !== id)
+      },
+      listTags: async () => apiListTags(apiRequest),
+      trackTag: (id: number) => {
+        if (!resources.tags.includes(id)) resources.tags.push(id)
+      },
+
+      createUser: async (data) => {
+        const user = await apiCreateUser(apiRequest, data)
+        resources.users.push(user.id)
+        return user
+      },
+      deleteUser: async (id: number) => {
+        await apiDeleteUser(apiRequest, id)
+        resources.users = resources.users.filter((x) => x !== id)
+      },
+      generateInvite: async (userId: number) => apiGenerateInvite(apiRequest, userId),
+      trackUser: (id: number) => {
+        if (!resources.users.includes(id)) resources.users.push(id)
+      },
+
+      listDepartments: async () => apiListDepartments(apiRequest),
+      listPositions: async () => apiListPositions(apiRequest),
+      trackDepartment: (id: number) => {
+        if (!resources.departments.includes(id)) resources.departments.push(id)
+      },
+      trackPosition: (id: number) => {
+        if (!resources.positions.includes(id)) resources.positions.push(id)
+      },
+
+      createGroupDraft: async (payload) => apiCreateGroupDraft(apiRequest, payload),
+      commitGroupDraft: async (draftId) => apiCommitGroupDraft(apiRequest, draftId),
+
       // Explicit cleanup (also runs automatically after each test)
       cleanup: async () => {
-        // notifications → orders → vacations → employees → positions → departments
+        // users → notifications → tags → orders → vacations → employees → positions → departments
+        for (const userId of [...resources.users].reverse()) {
+          await apiDeleteUser(apiRequest, userId).catch(() => {})
+        }
+        resources.users = []
         for (const notifId of [...resources.notifications].reverse()) {
           await apiDeleteNotification(apiRequest, notifId).catch(() => {})
         }
         resources.notifications = []
-
+        for (const tagId of [...resources.tags].reverse()) {
+          await apiDeleteTag(apiRequest, tagId).catch(() => {})
+        }
+        resources.tags = []
         for (const orderId of [...resources.orders].reverse()) {
           await apiDeleteOrder(apiRequest, orderId).catch(() => {})
         }
         resources.orders = []
-
         for (const vacId of [...resources.vacations].reverse()) {
           await apiDeleteVacation(apiRequest, vacId).catch(() => {})
         }
         resources.vacations = []
-
         for (const empId of [...resources.employees].reverse()) {
           await apiDeleteEmployee(apiRequest, empId).catch(() => {})
         }
         resources.employees = []
-
         for (const posId of [...resources.positions].reverse()) {
           await apiDeletePosition(apiRequest, posId).catch(() => {})
         }
         resources.positions = []
-
         for (const deptId of [...resources.departments].reverse()) {
           await apiDeleteDepartment(apiRequest, deptId).catch(() => {})
         }
@@ -650,9 +842,15 @@ export const test = base.extend<ApiFixtures>({
 
     await use(apiOps)
 
-    // Auto teardown: reverse FK order (notifications → orders → vacations → employees → pos → dept)
+    // Auto teardown: reverse FK order
+    for (const userId of [...resources.users].reverse()) {
+      await apiDeleteUser(apiRequest, userId).catch(() => {})
+    }
     for (const notifId of [...resources.notifications].reverse()) {
       await apiDeleteNotification(apiRequest, notifId).catch(() => {})
+    }
+    for (const tagId of [...resources.tags].reverse()) {
+      await apiDeleteTag(apiRequest, tagId).catch(() => {})
     }
     for (const orderId of [...resources.orders].reverse()) {
       await apiDeleteOrder(apiRequest, orderId).catch(() => {})

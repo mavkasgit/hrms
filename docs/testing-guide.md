@@ -48,12 +48,14 @@ Multi-worker — **opt-in** через `PW_WORKERS` + **`E2E_BROWSER_MODE=manage
 npm run test:e2e:ui
 npm run test:e2e:smoke
 
-# parallel opt-in (local only)
-cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:smoke
-cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:ui
+# parallel opt-in (local; file-level, workers: 2)
+npm run test:e2e:smoke:parallel
+npm run test:e2e:ui:parallel
+# optional: test-level parallel (PW_FULLY_PARALLEL=1) — riskier for OnlyOffice popups
 ```
 
-Изоляция данных: `apiOps.uid()` → prefix `w{N}-` (`workerPrefix(parallelIndex)`), сущности `e2e-…`.
+Изоляция данных: `apiOps.uid()` → prefix `w{N}-` (`workerPrefix(parallelIndex)`), сущности `e2e-…`.  
+Default multi-worker: **parallel by file** (`fullyParallel: false`); tests inside a file stay serial.
 
 ## E2E handoff
 
@@ -147,9 +149,22 @@ Workflow [`.github/workflows/e2e-smoke.yml`](../.github/workflows/e2e-smoke.yml)
 
 **CI knobs** (`playwright.config.ts`): `forbidOnly`, `retries: 2` (CI), `workers: 1`, `reuseExistingServer: !CI`, HTML reporter in CI.
 
-**Not in CI yet:** multi-browser matrix, full `ui`/`api`/`regression`, OnlyOffice.
+#### E2E UI nightly + OnlyOffice
 
-**GHA green status:** workflow logic is sound for this monorepo; **end-to-end green on GitHub Actions is not verified** from this change alone (workflow_dispatch-first until a successful Actions run).
+Workflow [`.github/workflows/e2e-ui-nightly.yml`](../.github/workflows/e2e-ui-nightly.yml):
+
+| | |
+|--|--|
+| **Triggers** | `schedule` (daily 03:15 UTC), `workflow_dispatch` |
+| **Command** | `npx playwright test --project=setup --project=smoke --project=ui` (`workers: 1`) |
+| **Stack** | postgres service + OnlyOffice Document Server docker `:8085` + uvicorn + Vite |
+| **OO env** | `ONLYOFFICE_ENABLED=true`, JWT secret shared with container, `host.docker.internal` callbacks |
+| **Not a PR gate** | heavy; use for overnight / intentional full UI+OO coverage |
+| **Artifacts** | on failure: report + test-results (14 days) |
+
+**Not in CI yet:** multi-browser matrix, full `api`/`regression` on every PR, multi-worker on GHA.
+
+**GHA green status:** smoke is best-effort on PR; nightly UI+OO needs a successful `workflow_dispatch` run to confirm GHA OO networking.
 
 ## Auth для E2E
 

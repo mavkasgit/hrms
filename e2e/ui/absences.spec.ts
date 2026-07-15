@@ -1,20 +1,15 @@
 import { test, expect } from '../fixtures/index'
+import { AbsencesPage } from '../pages/AbsencesPage'
 
 /**
  * Absences UI: unpaid leaves, weekend calls, sick leaves.
- * Legacy: unpaid-leaves-and-weekend-calls.spec.ts (7 intents).
  */
 test.describe('Absences @ui', () => {
   test.setTimeout(60_000)
 
   test('@ui absences: sidebar links under Отсутствия', async ({ page }) => {
-    await page.goto('/')
-    await page.getByRole('button', { name: 'Отсутствия' }).click()
-
-    await expect(page.getByRole('link', { name: 'Трудовой отпуск' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Отпуск за свой счет' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Вызовы в выходные дни' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Больничные' })).toBeVisible()
+    const abs = new AbsencesPage(page)
+    await abs.openSidebarLinks()
   })
 
   test('@ui absences: /unpaid-leaves filters order_type_code=vacation_unpaid', async ({
@@ -27,10 +22,8 @@ test.describe('Absences @ui', () => {
         request.url().includes('order_type_code=vacation_unpaid')
     )
 
-    await page.goto('/unpaid-leaves')
-    await expect(
-      page.getByRole('heading', { name: 'Отпуск за свой счет', exact: true })
-    ).toBeVisible({ timeout: 15_000 })
+    const abs = new AbsencesPage(page)
+    await abs.gotoUnpaidLeaves()
     await requestPromise
   })
 
@@ -44,18 +37,14 @@ test.describe('Absences @ui', () => {
         request.url().includes('order_type_code=weekend_call')
     )
 
-    await page.goto('/weekend-calls')
-    await expect(
-      page.getByRole('heading', { name: 'Вызовы в выходные дни' })
-    ).toBeVisible({ timeout: 15_000 })
+    const abs = new AbsencesPage(page)
+    await abs.gotoWeekendCalls()
     await requestPromise
   })
 
   test('@ui absences: /sick-leaves page renders', async ({ page }) => {
-    await page.goto('/sick-leaves')
-    await expect(page.getByRole('heading', { name: 'Больничные листы' })).toBeVisible({
-      timeout: 15_000,
-    })
+    const abs = new AbsencesPage(page)
+    await abs.gotoSickLeaves()
   })
 
   test('@ui absences: unpaid leaves page shows order actions', async ({ page, apiOps }) => {
@@ -75,10 +64,9 @@ test.describe('Absences @ui', () => {
       },
     })
 
-    await page.goto('/unpaid-leaves')
-    await expect(page.getByTitle('Просмотр DOCX').first()).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTitle('Скачать приказ').first()).toBeVisible()
-    await expect(page.getByTitle('Удалить приказ').first()).toBeVisible()
+    const abs = new AbsencesPage(page)
+    await abs.gotoUnpaidLeaves()
+    await abs.expectOrderRowActions()
   })
 
   test('@ui absences: unpaid totals for selected period', async ({ page, apiOps }) => {
@@ -109,27 +97,20 @@ test.describe('Absences @ui', () => {
       },
     })
 
-    await page.goto('/unpaid-leaves')
+    const abs = new AbsencesPage(page)
+    await abs.gotoUnpaidLeaves()
 
-    await page.locator('[data-testid="unpaid-period-from"] input').fill('01.04.2026')
-    await page.locator('[data-testid="unpaid-period-to"] input').fill('12.04.2026')
+    await abs.setUnpaidPeriod('01.04.2026', '12.04.2026')
 
-    await expect(page.getByTestId('unpaid-total-orders')).toHaveText(
-      'Всего отпусков за период: 2'
-    )
-    await expect(page.getByTestId('unpaid-total-days')).toHaveText('Всего дней отпуска: 6')
+    await expect(abs.unpaidTotalOrders()).toHaveText('Всего отпусков за период: 2')
+    await expect(abs.unpaidTotalDays()).toHaveText('Всего дней отпуска: 6')
     await expect(page.getByRole('cell', { name: employee.name }).first()).toBeVisible()
 
-    await page.locator('[data-testid="unpaid-period-to"] input').fill('07.04.2026')
+    await abs.setUnpaidPeriod('01.04.2026', '07.04.2026')
 
-    await expect(page.getByTestId('unpaid-total-orders')).toHaveText(
-      'Всего отпусков за период: 1'
-    )
-    await expect(page.getByTestId('unpaid-total-days')).toHaveText('Всего дней отпуска: 3')
-
-    await expect(page.getByTitle('Просмотр DOCX').first()).toBeVisible()
-    await expect(page.getByTitle('Скачать приказ').first()).toBeVisible()
-    await expect(page.getByTitle('Удалить приказ').first()).toBeVisible()
+    await expect(abs.unpaidTotalOrders()).toHaveText('Всего отпусков за период: 1')
+    await expect(abs.unpaidTotalDays()).toHaveText('Всего дней отпуска: 3')
+    await abs.expectOrderRowActions()
   })
 
   test('@ui absences: weekend-call totals for selected period', async ({ page, apiOps }) => {
@@ -152,26 +133,19 @@ test.describe('Absences @ui', () => {
       extra_fields: { call_date_start: '2026-04-10', call_date_end: '2026-04-12' },
     })
 
-    await page.goto('/weekend-calls')
+    const abs = new AbsencesPage(page)
+    await abs.gotoWeekendCalls()
 
-    await page.locator('[data-testid="weekend-period-from"] input').fill('01.04.2026')
-    await page.locator('[data-testid="weekend-period-to"] input').fill('12.04.2026')
+    await abs.setWeekendPeriod('01.04.2026', '12.04.2026')
 
-    await expect(page.getByTestId('weekend-total-calls')).toHaveText(
-      'Всего вызовов за период: 2'
-    )
-    await expect(page.getByTestId('weekend-total-days')).toHaveText('Всего дней вызова: 4')
+    await expect(abs.weekendTotalCalls()).toHaveText('Всего вызовов за период: 2')
+    await expect(abs.weekendTotalDays()).toHaveText('Всего дней вызова: 4')
     await expect(page.getByRole('cell', { name: employee.name }).first()).toBeVisible()
 
-    await page.locator('[data-testid="weekend-period-to"] input').fill('04.04.2026')
+    await abs.setWeekendPeriod('01.04.2026', '04.04.2026')
 
-    await expect(page.getByTestId('weekend-total-calls')).toHaveText(
-      'Всего вызовов за период: 1'
-    )
-    await expect(page.getByTestId('weekend-total-days')).toHaveText('Всего дней вызова: 1')
-
-    await expect(page.getByTitle('Просмотр DOCX').first()).toBeVisible()
-    await expect(page.getByTitle('Скачать приказ').first()).toBeVisible()
-    await expect(page.getByTitle('Удалить приказ').first()).toBeVisible()
+    await expect(abs.weekendTotalCalls()).toHaveText('Всего вызовов за период: 1')
+    await expect(abs.weekendTotalDays()).toHaveText('Всего дней вызова: 1')
+    await abs.expectOrderRowActions()
   })
 })

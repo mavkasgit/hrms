@@ -1,6 +1,6 @@
 import { Page, Locator, expect } from '@playwright/test'
-import type { EmployeeFormData, EmployeeStatus, Gender, PaymentForm } from '../types'
-import { uid, comboboxCreate, dateField, fillGridInput } from '../helpers/employee-helpers'
+import type { EmployeeFormData } from '../types'
+import { comboboxCreate, dateField, fillGridInput } from '../helpers/employee-helpers'
 
 /**
  * Page Object для страницы сотрудников
@@ -54,92 +54,10 @@ export class EmployeesPage {
     })
   }
 
-  async clearSearch() {
-    await this.waitForEmployeesRefresh(async () => {
-      await this.searchInput.clear()
-    })
-  }
-
-  async filterByStatus(status: EmployeeStatus) {
-    // Panel labels from EmployeesPage.tsx (multi-toggle: active / dismissed)
-    const statusLabels: Record<EmployeeStatus, string> = {
-      active: 'Активные',
-      dismissed: 'Уволенные',
-      all: 'Все',
-      deleted: 'Удалённые',
-    }
-    await this.filterBtn.click()
-    const panel = this.page.locator('.absolute').filter({ hasText: 'Статус' })
-    await expect(panel).toBeVisible({ timeout: 5000 })
-
-    if (status === 'all') {
-      // Ensure both toggles on if present
-      for (const label of ['Активные', 'Уволенные'] as const) {
-        const btn = panel.getByRole('button', { name: label })
-        // best-effort: click if not already selected (green/red bg classes vary)
-        await this.waitForEmployeesRefresh(async () => {
-          await btn.click()
-        }).catch(async () => {
-          await btn.click()
-        })
-      }
-      return
-    }
-
-    const label = statusLabels[status]
-    await this.waitForEmployeesRefresh(async () => {
-      await panel.getByRole('button', { name: label }).click()
-    })
-  }
-
-  async filterByGender(gender: Gender) {
-    const genderBtn = this.page.getByRole('button', { name: gender === 'М' ? /мужчины/i : /женщины/i })
-    await this.waitForEmployeesRefresh(async () => {
-      await genderBtn.click()
-    })
-  }
-
-  async clearFilters() {
-    await this.waitForEmployeesRefresh(async () => {
-      await this.page.getByRole('button', { name: /очистить/i }).click()
-    })
-  }
-
-  async sortBy(column: string, direction: 'asc' | 'desc' = 'asc') {
-    const header = this.page.locator('thead th').filter({ hasText: new RegExp(column, 'i') })
-    await this.waitForEmployeesRefresh(async () => {
-      await header.click()
-      if (direction === 'desc') {
-        await header.click()
-      }
-    })
-  }
-
-  // ============================================================================
-  // РАБОТА С ТАБЛИЦЕЙ
-  // ============================================================================
-
-  async getEmployeeCount(): Promise<number> {
-    return this.rows.count()
-  }
-
   async getEmployeeRow(name: string): Promise<Locator> {
     const row = this.rows.filter({ hasText: name })
     await expect(row.first()).toBeVisible({ timeout: 5000 })
     return row.first()
-  }
-
-  async getEmployeeNameByRow(row: Locator): Promise<string> {
-    const nameCell = row.locator('td').nth(1)
-    const text = await nameCell.textContent()
-    return text?.trim() || ''
-  }
-
-  async getEmployeeTabNumber(name: string): Promise<number | null> {
-    const row = await this.getEmployeeRow(name)
-    const tabCell = row.locator('td').nth(0)
-    const text = await tabCell.textContent()
-    return text ? parseInt(text.trim(), 10) : null
   }
 
   // ============================================================================
@@ -149,11 +67,6 @@ export class EmployeesPage {
   async clickAdd() {
     await this.addBtn.click()
     await expect(this.dialog).toBeVisible({ timeout: 5000 })
-  }
-
-  async closeForm() {
-    await this.page.keyboard.press('Escape')
-    await expect(this.dialog).not.toBeVisible({ timeout: 5000 })
   }
 
   async fillForm(data: EmployeeFormData) {
@@ -266,20 +179,6 @@ export class EmployeesPage {
     await expect(this.dialog).toBeVisible({ timeout: 5000 })
   }
 
-  async dismissEmployee(name: string) {
-    await this.openEmployee(name)
-    const dismissBtn = this.dialog.getByRole('button', { name: /уволить/i })
-    await expect(dismissBtn).toBeVisible({ timeout: 5000 })
-    await dismissBtn.click()
-
-    // Подтверждение в AlertDialog
-    const dismissDialog = this.page.getByRole('alertdialog')
-    await expect(dismissDialog).toBeVisible()
-    await dismissDialog.getByRole('button', { name: /уволить/i }).click()
-    await expect(dismissDialog).not.toBeVisible({ timeout: 5000 })
-    await expect(this.dialog).not.toBeVisible({ timeout: 5000 })
-  }
-
   async restoreEmployee(name: string) {
     await this.openEmployee(name)
     const restoreBtn = this.dialog.getByRole('button', { name: /восстановить/i })
@@ -288,47 +187,12 @@ export class EmployeesPage {
     await expect(this.dialog).not.toBeVisible({ timeout: 5000 })
   }
 
-  async deleteEmployeePermanently(name: string) {
-    await this.openEmployee(name)
-    const deleteBtn = this.dialog.getByRole('button', { name: /удалить навсегда/i })
-    await expect(deleteBtn).toBeVisible({ timeout: 5000 })
-    await deleteBtn.click()
-
-    // Подтверждение
-    const confirmDialog = this.page.getByRole('alertdialog')
-    await expect(confirmDialog).toBeVisible()
-    await confirmDialog.getByRole('button', { name: /удалить/i }).click()
-    await expect(confirmDialog).not.toBeVisible({ timeout: 5000 })
-    await expect(this.dialog).not.toBeVisible({ timeout: 5000 })
-  }
-
-  // ============================================================================
-  // ПРОВЕРКИ
-  // ============================================================================
-
-  async expectEmployeeVisible(name: string) {
-    await expect(this.page.getByText(name)).toBeVisible({ timeout: 5000 })
-  }
-
-  async expectEmployeeNotVisible(name: string) {
-    await expect(this.page.getByText(name)).not.toBeVisible({ timeout: 3000 })
-  }
-
   async expectEmployeeInTable(name: string) {
     await expect(this.rows.filter({ hasText: name }).first()).toBeVisible({ timeout: 5000 })
   }
 
   async expectEmployeeNotInTable(name: string) {
     await expect(this.rows.filter({ hasText: name })).not.toBeVisible({ timeout: 3000 })
-  }
-
-  // ============================================================================
-  // ЖУРНАЛ И ИМПОРТ
-  // ============================================================================
-
-  async openAuditLog() {
-    await this.page.getByRole('button', { name: /журнал/i }).click()
-    await expect(this.page.getByRole('dialog')).toBeVisible({ timeout: 5000 })
   }
 
   async openImportModal() {

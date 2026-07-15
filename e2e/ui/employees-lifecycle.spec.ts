@@ -102,52 +102,23 @@ test.describe('Employees lifecycle @ui', () => {
     }
   })
 
-  test('@ui employees: create → dismiss → restore UI → soft delete', async ({
+  test('@ui employees: dismiss → restore UI → soft delete', async ({
     page,
     apiOps,
     playwright,
   }) => {
+    // Seed via API (UI create covered above) — more stable under multi-worker load
     const u = apiOps.uid()
     const name = `e2e-emp-cycle-${u}`
-    const data: EmployeeFormData = {
-      name,
-      gender: 'М',
-      birth_date: '15.05.1990',
-      tab_number: Math.floor(100000 + Math.random() * 900000),
-      position_name: `e2e-pos-cycle-${u}`,
-      department_name: `e2e-dept-cycle-${u}`,
-      citizenship: true,
-      residency: true,
-      hire_date: '15.01.2024',
-      payment_form: 'Повременная',
-      rate: 25.5,
-      contract_start: '15.01.2024',
-      contract_end: '14.01.2025',
-      personal_number: `ЛН-C-${u.toUpperCase()}`.slice(0, 20),
-      insurance_number: `СН-C-${u.toUpperCase()}`.slice(0, 20),
-      passport_number: `AB${Math.floor(1000000 + Math.random() * 9000000)}`,
-    }
+    const emp = await apiOps.createEmployee({ name })
+    const employeeId = emp.id
 
     const { request, dispose } = await createAuthenticatedRequest(playwright)
-    let employeeId: number | undefined
-    let positionId: number | undefined
-    let departmentId: number | undefined
 
     try {
       const empPage = new EmployeesPage(page)
-      await empPage.goto()
-      await empPage.createEmployeeViaUI(data)
 
-      const found = await apiOps.searchEmployees(name)
-      employeeId = found[0]?.id
-      expect(employeeId).toBeTruthy()
-      if (employeeId) {
-        const full = await apiOps.getEmployee(employeeId)
-        departmentId = full.department_id
-        positionId = full.position_id
-      }
-
-      await apiOps.dismissEmployee(employeeId!)
+      await apiOps.dismissEmployee(employeeId)
 
       await empPage.goto()
       await empPage.searchEmployee(name)
@@ -182,13 +153,6 @@ test.describe('Employees lifecycle @ui', () => {
       })
       expect(softResp.status()).toBe(204)
     } finally {
-      if (employeeId) {
-        await request
-          .delete(`/api/employees/${employeeId}?hard=true&confirm=true`)
-          .catch(() => {})
-      }
-      if (positionId) await request.delete(`/api/positions/${positionId}`).catch(() => {})
-      if (departmentId) await request.delete(`/api/departments/${departmentId}`).catch(() => {})
       await dispose()
     }
   })

@@ -1,28 +1,11 @@
 import { test, expect } from '../fixtures/index'
-import type { Locator, Page } from '@playwright/test'
 import { createAuthenticatedRequest } from '../helpers/api-request'
+import { StructurePage } from '../pages/StructurePage'
 
 /**
  * Full structure lifecycle (dept / position / tag): create → edit all fields → delete.
  * Deeper than smoke/structure (create-only).
  */
-const entityRow = (page: Page, name: string): Locator =>
-  page.locator('main').getByText(name, { exact: true }).first()
-
-const setOwnColor = async (dialog: Locator, color: string) => {
-  const colorInput = dialog.locator('input[type="color"]').first()
-  const normalized = color.toLowerCase()
-  await expect(colorInput).toBeVisible()
-  await colorInput.fill(normalized)
-  await expect(colorInput).toHaveValue(normalized)
-}
-
-async function openStructure(page: Page) {
-  await page.goto('/structure')
-  await expect(
-    page.getByRole('heading', { name: /структура/i, level: 1 })
-  ).toBeVisible({ timeout: 15_000 })
-}
 
 test.describe('Structure full lifecycle @ui', () => {
   test.setTimeout(60_000)
@@ -48,13 +31,10 @@ test.describe('Structure full lifecycle @ui', () => {
     const { request, dispose } = await createAuthenticatedRequest(playwright)
 
     try {
-      await openStructure(page)
+      const structure = new StructurePage(page)
+      await structure.goto()
 
-      await page.getByRole('button', { name: 'Подразделение' }).first().click()
-      const createDialog = page.getByRole('dialog', {
-        name: /добавить подразделение/i,
-      })
-      await expect(createDialog).toBeVisible()
+      const createDialog = await structure.openCreateDepartment()
       await createDialog.getByLabel('Название').fill(departmentName)
       await createDialog.getByLabel('Краткое').fill(shortName)
       await createDialog.getByRole('spinbutton').fill(createPriority)
@@ -62,9 +42,9 @@ test.describe('Structure full lifecycle @ui', () => {
       await createDialog.getByRole('button', { name: createColor }).click()
       await createDialog.getByRole('button', { name: 'Создать' }).click()
       await expect(createDialog).not.toBeVisible({ timeout: 10_000 })
-      await expect(entityRow(page, departmentName)).toBeVisible({ timeout: 10_000 })
+      await expect(structure.entityRow(departmentName)).toBeVisible({ timeout: 10_000 })
 
-      await entityRow(page, departmentName).click()
+      await structure.entityRow(departmentName).click()
       const editDialog = page.getByRole('dialog', {
         name: /редактировать подразделение/i,
       })
@@ -76,10 +56,10 @@ test.describe('Structure full lifecycle @ui', () => {
       await editDialog.getByRole('button', { name: editedColor }).click()
       await editDialog.getByRole('button', { name: /сохранить/i }).click()
       await expect(editDialog).not.toBeVisible({ timeout: 10_000 })
-      await expect(entityRow(page, editedDepartmentName)).toBeVisible()
-      await expect(entityRow(page, departmentName)).not.toBeVisible()
+      await expect(structure.entityRow(editedDepartmentName)).toBeVisible()
+      await expect(structure.entityRow(departmentName)).not.toBeVisible()
 
-      await entityRow(page, editedDepartmentName).click()
+      await structure.entityRow(editedDepartmentName).click()
       await expect(editDialog).toBeVisible()
       await expect(editDialog.getByLabel('Название')).toHaveValue(editedDepartmentName)
       await expect(editDialog.getByLabel('Краткое')).toHaveValue(editedShortName)
@@ -93,7 +73,7 @@ test.describe('Structure full lifecycle @ui', () => {
       await confirmDialog.getByRole('button', { name: /удалить/i }).click()
       await expect(confirmDialog).not.toBeVisible()
       await expect(editDialog).not.toBeVisible()
-      await expect(entityRow(page, editedDepartmentName)).not.toBeVisible()
+      await expect(structure.entityRow(editedDepartmentName)).not.toBeVisible()
     } finally {
       // Residual cleanup if UI delete failed mid-test
       const deptsResp = await request.get('/api/departments')
@@ -127,24 +107,19 @@ test.describe('Structure full lifecycle @ui', () => {
     const { request, dispose } = await createAuthenticatedRequest(playwright)
 
     try {
-      await openStructure(page)
-      await page
-        .locator('main')
-        .getByRole('button', { name: 'Должности', exact: true })
-        .first()
-        .click()
+      const structure = new StructurePage(page)
+      await structure.goto()
+      await structure.openPositionsTab()
 
-      await page.getByRole('button', { name: 'Должность' }).first().click()
-      const createDialog = page.getByRole('dialog', { name: /добавить должность/i })
-      await expect(createDialog).toBeVisible()
+      const createDialog = await structure.openCreatePosition()
       await createDialog.getByLabel('Название').fill(positionName)
       await createDialog.getByRole('button', { name: createIcon }).click()
       await createDialog.getByRole('button', { name: createColor }).click()
       await createDialog.getByRole('button', { name: 'Создать' }).click()
       await expect(createDialog).not.toBeVisible({ timeout: 10_000 })
-      await expect(entityRow(page, positionName)).toBeVisible({ timeout: 10_000 })
+      await expect(structure.entityRow(positionName)).toBeVisible({ timeout: 10_000 })
 
-      await entityRow(page, positionName).click()
+      await structure.entityRow(positionName).click()
       const editDialog = page.getByRole('dialog', {
         name: /редактировать должность/i,
       })
@@ -154,10 +129,10 @@ test.describe('Structure full lifecycle @ui', () => {
       await editDialog.getByRole('button', { name: editedColor }).click()
       await editDialog.getByRole('button', { name: /сохранить/i }).click()
       await expect(editDialog).not.toBeVisible({ timeout: 10_000 })
-      await expect(entityRow(page, editedPositionName)).toBeVisible()
-      await expect(entityRow(page, positionName)).not.toBeVisible()
+      await expect(structure.entityRow(editedPositionName)).toBeVisible()
+      await expect(structure.entityRow(positionName)).not.toBeVisible()
 
-      await entityRow(page, editedPositionName).click()
+      await structure.entityRow(editedPositionName).click()
       await expect(editDialog).toBeVisible()
       await expect(editDialog.getByLabel('Название')).toHaveValue(editedPositionName)
       await expect(editDialog.getByText(editedIcon, { exact: true })).toBeVisible()
@@ -169,7 +144,7 @@ test.describe('Structure full lifecycle @ui', () => {
       await confirmDialog.getByRole('button', { name: /удалить/i }).click()
       await expect(confirmDialog).not.toBeVisible()
       await expect(editDialog).not.toBeVisible()
-      await expect(entityRow(page, editedPositionName)).not.toBeVisible()
+      await expect(structure.entityRow(editedPositionName)).not.toBeVisible()
     } finally {
       const posResp = await request.get('/api/positions')
       if (posResp.ok()) {
@@ -200,7 +175,8 @@ test.describe('Structure full lifecycle @ui', () => {
     const { request, dispose } = await createAuthenticatedRequest(playwright)
 
     try {
-      await openStructure(page)
+      const structure = new StructurePage(page)
+      await structure.goto()
       await expect(
         page.locator('main').getByRole('button', { name: 'Добавить', exact: true }).first()
       ).toBeVisible()
@@ -214,26 +190,26 @@ test.describe('Structure full lifecycle @ui', () => {
       await expect(createDialog).toBeVisible()
       await createDialog.getByLabel('Название').fill(tagName)
       await createDialog.getByLabel('Категория').fill(category)
-      await setOwnColor(createDialog, createColor)
+      await structure.setOwnColor(createDialog, createColor)
       await createDialog.getByRole('button', { name: 'Создать' }).click()
       await expect(createDialog).not.toBeVisible({ timeout: 10_000 })
-      await expect(entityRow(page, tagName)).toBeVisible({ timeout: 10_000 })
+      await expect(structure.entityRow(tagName)).toBeVisible({ timeout: 10_000 })
 
-      await entityRow(page, tagName).click()
+      await structure.entityRow(tagName).click()
       const editDialog = page.getByRole('dialog', { name: /редактировать тег/i })
       await expect(editDialog).toBeVisible()
       await editDialog.getByLabel('Название').fill(editedTagName)
       await editDialog.getByLabel('Категория').fill(editedCategory)
-      await setOwnColor(editDialog, editedColor)
+      await structure.setOwnColor(editDialog, editedColor)
       await expect(editDialog.locator('input[type="color"]').first()).toHaveValue(
         editedColor.toLowerCase()
       )
       await editDialog.getByRole('button', { name: /сохранить/i }).click()
       await expect(editDialog).not.toBeVisible({ timeout: 10_000 })
-      await expect(entityRow(page, editedTagName)).toBeVisible()
-      await expect(entityRow(page, tagName)).not.toBeVisible()
+      await expect(structure.entityRow(editedTagName)).toBeVisible()
+      await expect(structure.entityRow(tagName)).not.toBeVisible()
 
-      await entityRow(page, editedTagName).click()
+      await structure.entityRow(editedTagName).click()
       await expect(editDialog).toBeVisible()
       await expect(editDialog.getByLabel('Название')).toHaveValue(editedTagName)
       await expect(editDialog.getByLabel('Категория')).toHaveValue(editedCategory)
@@ -247,7 +223,7 @@ test.describe('Structure full lifecycle @ui', () => {
       await confirmDialog.getByRole('button', { name: /удалить/i }).click()
       await expect(confirmDialog).not.toBeVisible()
       await expect(editDialog).not.toBeVisible()
-      await expect(entityRow(page, editedTagName)).not.toBeVisible()
+      await expect(structure.entityRow(editedTagName)).not.toBeVisible()
     } finally {
       const tagsResp = await request.get('/api/tags')
       if (tagsResp.ok()) {

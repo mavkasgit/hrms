@@ -26,7 +26,7 @@ Object.entries(envVars).forEach(([k, v]) => {
 
 const ADMIN_STORAGE = 'e2e/.auth/admin.json';
 
-/** Opt-in multi-worker: default 1 (serial/stable). CI must stay at 1. */
+/** Opt-in multi-worker: default 1 (serial/stable). CI smoke stays at 1. */
 const WORKERS = process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 1;
 /**
  * Browser mode from e2e/.env:
@@ -34,6 +34,14 @@ const WORKERS = process.env.PW_WORKERS ? Number(process.env.PW_WORKERS) : 1;
  * - cdp — shared Chrome on BROWSER_PORT (single-worker only; not implemented in this suite)
  */
 const BROWSER_MODE = (process.env.E2E_BROWSER_MODE || 'managed').toLowerCase();
+/**
+ * fullyParallel=true runs tests *inside* a file in parallel (riskier for OO/popups).
+ * Default multi-worker: parallel **by file only** (tests in a file stay serial).
+ * Opt-in test-level: PW_FULLY_PARALLEL=1
+ */
+const FULLY_PARALLEL =
+  process.env.PW_FULLY_PARALLEL === '1' ||
+  process.env.PW_FULLY_PARALLEL === 'true';
 
 if (!Number.isFinite(WORKERS) || WORKERS < 1) {
   throw new Error(
@@ -47,7 +55,7 @@ if (WORKERS > 1 && BROWSER_MODE === 'cdp') {
     [
       `E2E: PW_WORKERS=${WORKERS} is incompatible with E2E_BROWSER_MODE=cdp.`,
       'Shared CDP Chrome cannot serve multiple Playwright workers.',
-      'Use: cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:smoke',
+      'Use: cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:ui:parallel',
       'Or leave workers at default 1 for CDP/debug.',
     ].join(' ')
   );
@@ -58,12 +66,12 @@ if (WORKERS > 1 && BROWSER_MODE === 'cdp') {
  * No legacy project / hardcoded JWT.
  *
  * Workers: default 1; opt-in via PW_WORKERS (+ E2E_BROWSER_MODE=managed when >1).
- * fullyParallel only when multi-worker so serial default stays predictable.
+ * fullyParallel: off by default (file-level parallel when workers>1).
  */
 export default defineConfig({
   testDir: './e2e',
   testIgnore: ['**/*.js', '**/*.js.map'],
-  fullyParallel: WORKERS > 1,
+  fullyParallel: FULLY_PARALLEL,
   forbidOnly: !!process.env.CI,
   passWithNoTests: true,
   // CI: extra retry for infra flake; local: one retry is enough

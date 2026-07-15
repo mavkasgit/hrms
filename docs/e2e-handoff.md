@@ -87,19 +87,19 @@ API: seed employee
 
 ### P2 — низкий приоритет / уже pytest
 
-| # | Долг | Комментарий |
-|---|------|-------------|
-| 11 | Backups restore | destructive; backend tests |
-| 12 | Live Telegram QR | external; pytest mocks |
-| 13 | Dashboard deep | shallow optional |
-| 14 | Multi-worker full **ui** suite | smoke@2 ok; ui default serial |
-| 15 | CI full **ui** + OnlyOffice job | тяжело; nightly optional |
+| # | Долг | Статус |
+|---|------|--------|
+| 11 | Backups restore | open — destructive; backend tests |
+| 12 | Live Telegram QR | open — external; pytest mocks |
+| 13 | Dashboard deep | open — shallow optional |
+| 14 | Multi-worker full **ui** suite | ✅ 2026-07-16 — `npm run test:e2e:ui:parallel` (file-level, `PW_WORKERS=2`); default serial |
+| 15 | CI full **ui** + OnlyOffice job | ✅ 2026-07-16 — `.github/workflows/e2e-ui-nightly.yml` (schedule + dispatch) |
 
-### Техдолг оболочки
+### Техдолг оболочки — **сделано 2026-07-16**
 
-- Мёртвые методы POM (`openImportModal`, часть VacationsPage) — либо тест, либо удалить  
-- Structure/timesheet/absences — много inline selectors  
-- `apiOps` без helpers: tags, import, group-drafts, users  
+- POM slim: `EmployeesPage` / `VacationsPage` (мёртвые методы убраны); `openImportModal` в import-spec  
+- Новые POM: `StructurePage`, `TimesheetPage`, `AbsencesPage` (smoke/ui переведены)  
+- `apiOps`: tags, users, group-drafts create/commit, list/track dept/pos  
 
 ---
 
@@ -129,6 +129,10 @@ npm run test:e2e:api
 
 # Клики / контроль процесса
 npm run test:e2e:ui
+
+# Parallel opt-in (file-level, workers: 2)
+npm run test:e2e:ui:parallel
+npm run test:e2e:smoke:parallel
 
 # Login без storage
 npm run test:e2e:auth
@@ -193,14 +197,13 @@ e2e/
   fixtures/auth.ts
   fixtures/index.ts
   helpers/onlyoffice-editor.ts  # shared OO editor helpers
-  pages/                    # POM (Employees, Orders, Vacations, Layout, Users, …)
+  pages/                    # Structure, Timesheet, Absences, Employees, Orders, …
   smoke/*.spec.ts
-  ui/*.spec.ts              # orders OO, import, settings-users/holidays,
-                            # vacation-adjustment-tabs, notifications-statements,
-                            # templates-smoke, order-other-types-oo, …
+  ui/*.spec.ts
   api/*.spec.ts
 playwright.config.ts
 .github/workflows/e2e-smoke.yml
+.github/workflows/e2e-ui-nightly.yml  # full ui + OnlyOffice
 docs/e2e-handoff.md         # этот файл
 docs/testing-guide.md
 ```

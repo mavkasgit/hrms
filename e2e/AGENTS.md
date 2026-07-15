@@ -114,9 +114,10 @@ npm run test:e2e:ui           # setup + ui (клики / контроль про
 npm run test:e2e:auth         # auth only (no storage)
 npm run test:e2e:regression   # setup + smoke + ui + api + auth
 
-# Parallel opt-in (managed browser only; не для CI)
-cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:smoke
-cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:ui
+# Parallel opt-in (managed browser; file-level parallel; CI smoke stays workers:1)
+npm run test:e2e:smoke:parallel   # PW_WORKERS=2
+npm run test:e2e:ui:parallel      # full @ui suite with 2 workers
+# Optional test-level parallel (riskier for OO): PW_FULLY_PARALLEL=1
 
 # Список без запуска
 npx playwright test --list
@@ -132,13 +133,15 @@ Base URL: `E2E_BASE_URL` (default `http://localhost:5173`).
 | Режим | Как | `fullyParallel` | Browser |
 |-------|-----|-----------------|---------|
 | **Serial (default)** | `PW_WORKERS` не задан → `workers: 1` | `false` | managed/headless/headed/cdp |
-| **Opt-in parallel** | `PW_WORKERS=2+` + `E2E_BROWSER_MODE=managed` | `true` | **только** managed/headless/headed |
+| **Opt-in parallel** | `PW_WORKERS=2+` + `E2E_BROWSER_MODE=managed` | `false` (file-level) | **только** managed/headless/headed |
+| **Test-level parallel** | + `PW_FULLY_PARALLEL=1` | `true` | managed; riskier for OO |
 | **CI e2e-smoke** | без `PW_WORKERS` → **workers: 1** | `false` | managed (GHA) |
+| **CI e2e-ui-nightly** | workers: 1 + OnlyOffice DS | `false` | managed (GHA nightly) |
 
 - Multi-worker **opt-in**: data isolation через `apiOps.uid()` → `w{N}-…` (`workerPrefix(parallelIndex)`).
 - Shared admin `storageState` OK (read-heavy + unique `e2e-` names). Отдельные admin-аккаунты **не** нужны.
 - **CDP + multi-worker = fail-fast** в `playwright.config.ts` (`E2E_BROWSER_MODE=cdp` и `PW_WORKERS>1` → throw).
-- **CI:** всегда `workers: 1` (стабильность). Не включать multi-worker в workflow.
+- **CI smoke/PR:** `workers: 1`. Multi-worker — локально (`npm run test:e2e:ui:parallel`).
 - **CI knobs:** `retries: 2`, HTML reporter, `reuseExistingServer: false` (см. `playwright.config.ts`).
 
 ### CI e2e-smoke
@@ -147,7 +150,13 @@ Workflow: [`.github/workflows/e2e-smoke.yml`](../.github/workflows/e2e-smoke.yml
 Команда: `npx playwright test --project=setup --project=smoke` (**workers: 1**, без `PW_WORKERS`)  
 Стек: postgres service + migrate + seed admin + uvicorn + Vite (webServer).  
 PR path — **best-effort** (`continue-on-error`); для intentional run — `workflow_dispatch`.  
-Подробности: `docs/testing-guide.md` → «E2E smoke (Playwright)».
+
+### CI e2e-ui-nightly (OnlyOffice)
+
+Workflow: [`.github/workflows/e2e-ui-nightly.yml`](../.github/workflows/e2e-ui-nightly.yml)  
+Triggers: `schedule` (03:15 UTC) + `workflow_dispatch`.  
+Команда: `setup + smoke + ui` (**workers: 1**), Document Server docker `:8085`.  
+Подробности: `docs/testing-guide.md`.
 
 ---
 
