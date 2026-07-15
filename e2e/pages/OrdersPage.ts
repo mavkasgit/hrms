@@ -149,6 +149,31 @@ export class OrdersPage {
   }
 
   /**
+   * Tab «По основной деятельности» + expand create form if collapsed.
+   */
+  async switchToGeneralTab() {
+    const tab = this.page.getByRole('button', { name: 'По основной деятельности' })
+    await expect(tab).toBeVisible({ timeout: 10_000 })
+    await tab.click()
+    await this.ensureGeneralCreateFormOpen()
+  }
+
+  /**
+   * Ensure general create form is expanded (h2 + number field visible).
+   */
+  async ensureGeneralCreateFormOpen() {
+    const title = this.page.getByRole('heading', {
+      name: /Создать приказ по основной деятельности/,
+    })
+    await expect(title).toBeVisible({ timeout: 10_000 })
+    const numberField = this.page.getByLabel(/номер приказа/i).first()
+    if (!(await numberField.isVisible().catch(() => false))) {
+      await title.click()
+      await expect(numberField).toBeVisible({ timeout: 8_000 })
+    }
+  }
+
+  /**
    * Click create → wait for OnlyOffice draft popup.
    */
   async createOrderOpenEditor(): Promise<Page> {

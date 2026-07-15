@@ -40,6 +40,7 @@ export const API_BASE = process.env.E2E_API_URL
 // =============================================================================
 
 type CreatedResources = {
+  notifications: number[]
   orders: number[]
   vacations: number[]
   employees: number[]
@@ -335,6 +336,38 @@ async function apiGetOrders(
   return data.items || []
 }
 
+
+async function apiGetNotificationTypes(
+  request: APIRequestContext,
+  activeOnly = true
+): Promise<Array<{ id: number; name: string; code: string; is_active?: boolean; field_schema?: Array<{ key: string; required?: boolean; label?: string }> }>> {
+  const resp = await request.get(`${API_BASE}/api/notification-types`, {
+    params: { active_only: activeOnly ? 'true' : 'false' },
+  })
+  expect(resp.status()).toBe(200)
+  const data = await resp.json()
+  return Array.isArray(data) ? data : data.items || []
+}
+
+async function apiDeleteNotification(request: APIRequestContext, id: number): Promise<void> {
+  const resp = await request.delete(`${API_BASE}/api/notifications/${id}`)
+  expect([200, 204]).toContain(resp.status())
+}
+
+async function apiGetNotifications(
+  request: APIRequestContext,
+  filters: Record<string, unknown> = {}
+): Promise<Array<{ id: number; number?: string | null; employee_id?: number | null; title?: string }>> {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null) params.append(key, String(value))
+  }
+  const qs = params.toString()
+  const resp = await request.get(`${API_BASE}/api/notifications${qs ? `?${qs}` : ''}`)
+  expect(resp.status()).toBe(200)
+  const data = await resp.json()
+  return data.items || []
+}
 // =============================================================================
 // FIXTURE TYPES
 // =============================================================================
@@ -390,6 +423,21 @@ export type ApiOperations = {
   ) => Promise<Order>
   deleteOrder: (id: number) => Promise<void>
   getOrders: (filters?: Record<string, unknown>) => Promise<Order[]>
+  // Notifications
+  getNotificationTypes: (activeOnly?: boolean) => Promise<
+    Array<{
+      id: number
+      name: string
+      code: string
+      is_active?: boolean
+      field_schema?: Array<{ key: string; required?: boolean; label?: string }>
+    }>
+  >
+  getNotifications: (
+    filters?: Record<string, unknown>
+  ) => Promise<Array<{ id: number; number?: string | null; employee_id?: number | null; title?: string }>>
+  trackNotification: (id: number) => void
+  deleteNotification: (id: number) => Promise<void>
   // Cleanup
   cleanup: () => Promise<void>
   cleanupEmployee: (id: number) => Promise<void>
@@ -439,6 +487,7 @@ export const test = base.extend<ApiFixtures>({
     const { request: apiRequest, dispose } = await resolveApiRequest(request, playwright)
 
     const resources: CreatedResources = {
+      notifications: [],
       orders: [],
       vacations: [],
       employees: [],
@@ -550,9 +599,25 @@ export const test = base.extend<ApiFixtures>({
       deleteOrder: async (id: number) => apiDeleteOrder(apiRequest, id),
       getOrders: async (filters?: Record<string, unknown>) => apiGetOrders(apiRequest, filters),
 
+      getNotificationTypes: async (activeOnly = true) => apiGetNotificationTypes(apiRequest, activeOnly),
+      getNotifications: async (filters?: Record<string, unknown>) =>
+        apiGetNotifications(apiRequest, filters),
+      trackNotification: (id: number) => {
+        if (!resources.notifications.includes(id)) resources.notifications.push(id)
+      },
+      deleteNotification: async (id: number) => {
+        await apiDeleteNotification(apiRequest, id)
+        resources.notifications = resources.notifications.filter((x) => x !== id)
+      },
+
       // Explicit cleanup (also runs automatically after each test)
       cleanup: async () => {
-        // orders → vacations → employees → positions → departments
+        // notifications → orders → vacations → employees → positions → departments
+        for (const notifId of [...resources.notifications].reverse()) {
+          await apiDeleteNotification(apiRequest, notifId).catch(() => {})
+        }
+        resources.notifications = []
+
         for (const orderId of [...resources.orders].reverse()) {
           await apiDeleteOrder(apiRequest, orderId).catch(() => {})
         }
@@ -585,7 +650,10 @@ export const test = base.extend<ApiFixtures>({
 
     await use(apiOps)
 
-    // Auto teardown: reverse FK order (orders → vacations → employees → pos → dept)
+    // Auto teardown: reverse FK order (notifications → orders → vacations → employees → pos → dept)
+    for (const notifId of [...resources.notifications].reverse()) {
+      await apiDeleteNotification(apiRequest, notifId).catch(() => {})
+    }
     for (const orderId of [...resources.orders].reverse()) {
       await apiDeleteOrder(apiRequest, orderId).catch(() => {})
     }
@@ -607,3 +675,4 @@ export const test = base.extend<ApiFixtures>({
 })
 
 export { expect } from '@playwright/test'
+

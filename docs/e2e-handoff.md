@@ -1,6 +1,6 @@
 # E2E Handoff — HRMS Playwright
 
-**Дата:** 2026-07-15  
+**Дата:** 2026-07-16  
 **Статус:** rewrite **влит в `main`** (PR [#4](https://github.com/mavkasgit/hrms/pull/4), merge `be775de`)  
 **Канон (как писать тесты):** [`e2e/AGENTS.md`](../e2e/AGENTS.md)  
 **Общий testing guide:** [`docs/testing-guide.md`](./testing-guide.md)
@@ -27,8 +27,8 @@
 
 ### 1.2 Покрытие (порядок величины)
 
-~**71** test bodies, ~**26** `.spec.ts` (+ setup).  
-На merge PR #4 было ~64 bodies / ~22 specs; **+4 P0 specs / ~+7 bodies** (2026-07-16): import, hire/dismissal OO, edit-docx, group-drafts OO.
+~**32** `.spec.ts` (+ setup).  
+На merge PR #4 было ~22 specs; **+4 P0** (import, hire/dismissal OO, edit-docx, group-drafts); **+6 P1** (users, holidays, vacation tabs, notifications/statements, templates, other order types) — 2026-07-16.
 
 | Project | Содержание (кратко) |
 |---------|---------------------|
@@ -36,11 +36,11 @@
 | **auth** | valid login + bad password |
 | **api** | catalog, errors, timesheet, vacation balance/periods smoke, order-type letter |
 | **smoke** | nav, structure, employees CRUD, orders list shell, timesheet open, vacations happy |
-| **ui** | structure lifecycle, employees lifecycle, vacations/plan/add-days, absences, timesheet deeper, **order OnlyOffice** (create, hire/dismissal, edit-docx, group-drafts), **import employees** |
+| **ui** | structure/employees lifecycle, vacations/plan/add-days, absences, timesheet deeper, **orders OO** (create, hire/dismissal, edit-docx, group-drafts, other types), **import**, **settings** (users, holidays), **vacation adjustment tabs**, **notifications/statements**, **templates** smoke |
 
 ### 1.3 OnlyOffice order (важный сценарий)
 
-**Есть:** `e2e/ui/order-onlyoffice-create.spec.ts`
+**Есть:** `e2e/ui/order-onlyoffice-create.spec.ts` (+ hire/dismissal, other types, edit-docx, group-drafts)
 
 ```text
 API: seed employee
@@ -74,16 +74,16 @@ API: seed employee
 | 3 | **Group unpaid / weekend** (group-drafts) | ✅ `e2e/ui/group-drafts-oo.spec.ts` |
 | 4 | **Import employees** UI (excel preview/confirm) | ✅ `e2e/ui/import-employees.spec.ts` |
 
-### P1 — важные экраны без e2e
+### P1 — важные экраны — **сделано 2026-07-16**
 
-| # | Долг |
-|---|------|
-| 5 | Settings: **users** (invite/роли) |
-| 6 | Settings: **holidays** |
-| 7 | Vacation **recall / postpone / extension** tabs |
-| 8 | **Notifications / statements** (+ OO при необходимости) |
-| 9 | **Templates** UI (shallow smoke) |
-| 10 | Другие **типы приказов** кроме transfer в OO-сценарии |
+| # | Долг | Файл / статус |
+|---|------|----------------|
+| 5 | Settings: **users** (invite/роли) | ✅ `e2e/ui/settings-users.spec.ts` |
+| 6 | Settings: **holidays** | ✅ `e2e/ui/settings-holidays.spec.ts` |
+| 7 | Vacation **recall / postpone / extension** tabs | ✅ `e2e/ui/vacation-adjustment-tabs.spec.ts` (shallow tabs) |
+| 8 | **Notifications / statements** (+ OO при необходимости) | ✅ `e2e/ui/notifications-statements.spec.ts` |
+| 9 | **Templates** UI (shallow smoke) | ✅ `e2e/ui/templates-smoke.spec.ts` |
+| 10 | Другие **типы приказов** кроме transfer в OO-сценарии | ✅ `e2e/ui/order-other-types-oo.spec.ts` |
 
 ### P2 — низкий приоритет / уже pytest
 
@@ -193,10 +193,11 @@ e2e/
   fixtures/auth.ts
   fixtures/index.ts
   helpers/onlyoffice-editor.ts  # shared OO editor helpers
-  pages/                    # POM (Employees, Orders, Vacations, Layout, …)
+  pages/                    # POM (Employees, Orders, Vacations, Layout, Users, …)
   smoke/*.spec.ts
-  ui/*.spec.ts              # order-onlyoffice-create, order-hire-dismissal-oo,
-                            # order-edit-docx, group-drafts-oo, import-employees, …
+  ui/*.spec.ts              # orders OO, import, settings-users/holidays,
+                            # vacation-adjustment-tabs, notifications-statements,
+                            # templates-smoke, order-other-types-oo, …
   api/*.spec.ts
 playwright.config.ts
 .github/workflows/e2e-smoke.yml
@@ -241,6 +242,8 @@ git worktree remove C:\Users\user\VibeCoding\hrms-e2e
 | + | UI OnlyOffice order create |
 | CI fix | PYTHONPATH seed; dismiss smoke filter |
 | **PR #4** | merged → main |
+| **P0** | hire/dismissal, edit-docx, group-drafts, import (2026-07-16) |
+| **P1** | users, holidays, vacation tabs, notif/statements, templates, other OO types (2026-07-16) |
 
 Планы/отчёты агентов (если есть локально): `.opencode/plans/2026-07-15-e2e-rewrite.md`, scratchpad `scout-e2e-*` — не обязательны для runtime.
 
@@ -248,11 +251,11 @@ git worktree remove C:\Users\user\VibeCoding\hrms-e2e
 
 ## 8. Следующий шаг (для агента / человека)
 
-1. **P0 закрыт** (2026-07-16): hire/dismissal OO, edit-docx, group-drafts OO, import.  
-2. Дальше — **P1**: settings users/holidays, vacation recall/postpone/extension, notifications, templates, other order types.  
+1. **P0 + P1 закрыты** (2026-07-16).  
+2. Дальше — **опционально P2 / техдолг**: backups, live TG QR, dashboard deep, multi-worker ui, CI full ui+OO; POM dead methods; inline selectors; apiOps helpers.  
 3. Локально: `npm run test:e2e:smoke` (+ `test:e2e:ui` при OO-сценариях).  
 4. Не смешивать с backend pytest/xdist — они уже отдельно на main.
 
 ---
 
-*Handoff: e2e rewrite + P0 coverage on main; next = P1 on demand.*
+*Handoff: e2e rewrite + P0/P1 coverage on main; next = P2 / tech debt optional.*
