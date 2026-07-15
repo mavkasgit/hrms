@@ -45,13 +45,27 @@ npm run dev
 ```
 
 Эта команда последовательно делает следующее (благодаря хуку `predev`):
-1. Поднимает контейнеры PostgreSQL и OnlyOffice: `npm run docker:dev:up`.
-2. Ожидает готовности базы данных к подключениям: `npm run db:wait`.
-3. Применяет все Alembic-миграции: `npm run dev:migrate`.
-4. Запускает параллельно (через `concurrently`):
+1. Проверяет, свободны ли dev-порты **8000** (backend) и **5173** (frontend).  
+   Если заняты (часто зомби uvicorn/vite) — в интерактивном терминале предложит **убить process tree** (`taskkill /T` на Windows).  
+   Non-interactive: `npm run dev:kill` или `HRMS_DEV_KILL=1 npm run dev`.
+2. Поднимает контейнеры PostgreSQL и OnlyOffice: `npm run docker:dev:up`.
+3. Ожидает готовности базы данных к подключениям: `npm run db:wait`.
+4. Применяет все Alembic-миграции: `npm run dev:migrate`.
+5. Запускает параллельно (через `concurrently`):
    - Логи контейнеров базы данных
    - Локальный Uvicorn сервер для бэкенда (`npm run dev:backend`)
    - Локальный Vite dev-сервер для фронтенда (`npm run frontend`)
+
+### Порты заняты / WinError 10048
+
+| Команда | Назначение |
+|---------|------------|
+| `npm run dev:ports` | Только проверка (exit 1, если занято) |
+| `npm run dev:kill` | Освободить 8000/5173 (process **tree**, не один PID) |
+| `npm run dev:restart` | kill + полный `dev` |
+| `HRMS_DEV_KILL=1 npm run dev` | auto-kill без вопроса |
+
+> Старый `npx kill-port` на Windows **не** убивал дерево процессов — сироты uvicorn оставались на порту.
 
 ### Адреса сервисов после запуска:
 - **Frontend (React)**: `http://localhost:5173`
