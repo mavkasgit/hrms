@@ -6,6 +6,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
+from app.core.constants import SSO_BYPASS_HASH
 from app.core.database import get_db
 from app.models.user import User
 from app.models.employee import Employee
@@ -104,7 +105,7 @@ async def create_user(
     password_hash = (
         bcrypt.hashpw(payload.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         if payload.password
-        else "sso_bypass_hash"
+        else SSO_BYPASS_HASH
     )
 
     telegram_id = payload.telegram_id

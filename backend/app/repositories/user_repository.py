@@ -3,6 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.constants import SSO_BYPASS_HASH
 from app.models.user import User
 
 
@@ -78,7 +79,7 @@ class UserRepository:
             username=username,
             full_name=full_name,
             role=role,
-            password_hash="sso_bypass_hash",
+            password_hash=SSO_BYPASS_HASH,
             telegram_id=telegram_id,
             telegram_username=telegram_username,
             phone=phone,

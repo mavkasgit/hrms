@@ -1,4 +1,4 @@
-"""Telegram OIDC + widget + bot challenge/webhook/link tests."""
+"""Telegram bot challenge/webhook/link tests."""
 
 import hashlib
 import hmac
@@ -14,9 +14,8 @@ from jose import jwt as jose_jwt
 from app.api.auth import LoginRequest, login
 from app.api.telegram_auth import (
     create_bot_challenge,
-    get_telegram_oidc_config,
+    get_telegram_bot_config,
     poll_bot_challenge,
-    telegram_oidc_login,
     telegram_webhook,
     telegram_widget_login,
 )
@@ -26,7 +25,6 @@ from app.repositories.challenge_repository import ChallengeRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.telegram_auth import (
     TelegramBotChallengeRequest,
-    TelegramOidcLoginRequest,
     TelegramWidgetLoginRequest,
 )
 from app.schemas.user import UserCreate
@@ -34,16 +32,6 @@ from app.services.telegram_auth_service import TelegramAuthService
 
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
-
-
-@pytest.fixture
-def oidc_client_id():
-    original = settings.TELEGRAM_OIDC_CLIENT_ID
-    settings.TELEGRAM_OIDC_CLIENT_ID = "test-tg-client-id"
-    try:
-        yield "test-tg-client-id"
-    finally:
-        settings.TELEGRAM_OIDC_CLIENT_ID = original
 
 
 @pytest.fixture
@@ -86,6 +74,22 @@ def bot_configured():
         settings.TELEGRAM_UPDATES_POLLING = orig_poll
 
 
+@pytest.fixture(autouse=True)
+def _stub_validate_bot_token():
+    """
+    Default: bypass the live /getMe pre-flight so unit tests with a fake token
+    (123456:ABC-DEF_...) can still create challenges. Tests that want to
+    exercise the invalid-token path should re-patch
+    ``app.services.telegram_auth_service.TelegramAuthService.validate_bot_token``
+    to return ``False`` (or AsyncMock returning a coroutine that resolves to False).
+    """
+    with patch(
+        "app.services.telegram_auth_service.TelegramAuthService.validate_bot_token",
+        AsyncMock(return_value=True),
+    ):
+        yield
+
+
 def _sign_widget_payload(bot_token: str, fields: dict) -> dict:
     """Build Telegram Login Widget payload with valid HMAC hash."""
     data = dict(fields)
@@ -96,219 +100,6 @@ def _sign_widget_payload(bot_token: str, fields: dict) -> dict:
         secret_key, data_check_string.encode("utf-8"), hashlib.sha256
     ).hexdigest()
     return data
-
-
-async def test_oidc_config_disabled_when_no_client_id():
-    original = settings.TELEGRAM_OIDC_CLIENT_ID
-    settings.TELEGRAM_OIDC_CLIENT_ID = ""
-    try:
-        cfg = await get_telegram_oidc_config()
-        assert cfg.enabled is False
-        assert cfg.client_id == ""
-        assert cfg.authorize_url == "https://oauth.telegram.org/auth"
-        assert "openid" in cfg.scopes
-    finally:
-        settings.TELEGRAM_OIDC_CLIENT_ID = original
-
-
-async def test_oidc_config_enabled(oidc_client_id):
-    original_bot = settings.TELEGRAM_BOT_USERNAME
-    settings.TELEGRAM_BOT_USERNAME = "hrms_bot"
-    try:
-        cfg = await get_telegram_oidc_config()
-        assert cfg.enabled is True
-        assert cfg.client_id == oidc_client_id
-        assert cfg.bot_username == "hrms_bot"
-    finally:
-        settings.TELEGRAM_BOT_USERNAME = original_bot
-
-
-async def test_oidc_not_configured_returns_503(db_session):
-    original = settings.TELEGRAM_OIDC_CLIENT_ID
-    settings.TELEGRAM_OIDC_CLIENT_ID = ""
-    try:
-        payload = TelegramOidcLoginRequest(id_token="fake", nonce="n1")
-        with pytest.raises(HTTPException) as exc_info:
-            await telegram_oidc_login(payload=payload, db=db_session)
-        assert exc_info.value.status_code == 503
-        assert exc_info.value.detail == "telegram_not_configured"
-    finally:
-        settings.TELEGRAM_OIDC_CLIENT_ID = original
-
-
-async def test_oidc_login_valid_mocked(
-    db_session, oidc_client_id, jit_on
-):
-    """valid mocked claims → 200 LoginResponse with access_token claims."""
-    claims = {
-        "id": 424242,
-        "sub": "424242",
-        "name": "TG Test User",
-        "preferred_username": "tg_test_user",
-        "nonce": "nonce-ok",
-    }
-
-    with patch.object(
-        TelegramAuthService,
-        "verify_oidc_id_token",
-        new=AsyncMock(return_value=claims),
-    ):
-        payload = TelegramOidcLoginRequest(id_token="valid.jwt", nonce="nonce-ok")
-        response = await telegram_oidc_login(payload=payload, db=db_session)
-
-    assert response.username in ("tg_test_user", "tg_424242")
-    assert response.role == settings.TELEGRAM_DEFAULT_ROLE
-    assert response.full_name == "TG Test User"
-    assert response.access_token
-    assert response.token_type == "bearer"
-
-    secret = settings.JWT_SECRET_KEY or settings.SECRET_KEY
-    decoded = jose_jwt.decode(
-        response.access_token,
-        secret,
-        algorithms=[settings.ALGORITHM],
-        options={"verify_exp": False},
-    )
-    assert decoded["sub"] == response.username
-    assert decoded["username"] == response.username
-    assert decoded["full_name"] == "TG Test User"
-    assert decoded["hrms_access_level"] == response.role
-    assert "exp" in decoded
-
-
-async def test_oidc_login_existing_telegram_user(
-    db_session, oidc_client_id, jit_off
-):
-    """Pre-linked telegram_id works even when JIT is off."""
-    repo = UserRepository()
-    user = await repo.create_telegram_user(
-        db_session,
-        telegram_id=777001,
-        username="prelinked_tg",
-        full_name="Pre Linked",
-        role="viewer",
-    )
-    await db_session.commit()
-
-    claims = {
-        "id": 777001,
-        "name": "Pre Linked",
-        "nonce": "n-link",
-    }
-    with patch.object(
-        TelegramAuthService,
-        "verify_oidc_id_token",
-        new=AsyncMock(return_value=claims),
-    ):
-        response = await telegram_oidc_login(
-            payload=TelegramOidcLoginRequest(id_token="t", nonce="n-link"),
-            db=db_session,
-        )
-
-    assert response.username == user.username
-    assert response.access_token
-
-
-async def test_oidc_bad_signature_401(db_session, oidc_client_id):
-    with patch.object(
-        TelegramAuthService,
-        "verify_oidc_id_token",
-        new=AsyncMock(
-            side_effect=HTTPException(status_code=401, detail="telegram_invalid_token")
-        ),
-    ):
-        with pytest.raises(HTTPException) as exc_info:
-            await telegram_oidc_login(
-                payload=TelegramOidcLoginRequest(id_token="bad", nonce="n"),
-                db=db_session,
-            )
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "telegram_invalid_token"
-
-
-async def test_oidc_bad_nonce_401(db_session, oidc_client_id):
-    with patch.object(
-        TelegramAuthService,
-        "verify_oidc_id_token",
-        new=AsyncMock(
-            side_effect=HTTPException(status_code=401, detail="telegram_nonce_mismatch")
-        ),
-    ):
-        with pytest.raises(HTTPException) as exc_info:
-            await telegram_oidc_login(
-                payload=TelegramOidcLoginRequest(id_token="t", nonce="wrong"),
-                db=db_session,
-            )
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "telegram_nonce_mismatch"
-
-
-async def test_oidc_jit_off_unknown_403(db_session, oidc_client_id, jit_off):
-    claims = {
-        "id": 999888777,
-        "name": "Unknown TG",
-        "nonce": "n-jit",
-    }
-    with patch.object(
-        TelegramAuthService,
-        "verify_oidc_id_token",
-        new=AsyncMock(return_value=claims),
-    ):
-        with pytest.raises(HTTPException) as exc_info:
-            await telegram_oidc_login(
-                payload=TelegramOidcLoginRequest(id_token="t", nonce="n-jit"),
-                db=db_session,
-            )
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "telegram_not_allowed"
-
-
-async def test_verify_oidc_nonce_mismatch_real(db_session, oidc_client_id):
-    """Exercise verify_oidc_id_token nonce check with mocked jwt.decode + JWKS."""
-    service = TelegramAuthService(db_session)
-    fake_claims = {
-        "iss": "https://oauth.telegram.org",
-        "aud": oidc_client_id,
-        "exp": 9999999999,
-        "id": 1,
-        "nonce": "expected-nonce",
-    }
-    with (
-        patch.object(
-            TelegramAuthService,
-            "_fetch_jwks",
-            new=AsyncMock(return_value={"keys": []}),
-        ),
-        patch(
-            "app.services.telegram_auth_service.jwt.decode",
-            return_value=fake_claims,
-        ),
-    ):
-        with pytest.raises(HTTPException) as exc_info:
-            await service.verify_oidc_id_token("token", "other-nonce")
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "telegram_nonce_mismatch"
-
-
-async def test_verify_oidc_expired(db_session, oidc_client_id):
-    from jose.exceptions import ExpiredSignatureError
-
-    service = TelegramAuthService(db_session)
-    with (
-        patch.object(
-            TelegramAuthService,
-            "_fetch_jwks",
-            new=AsyncMock(return_value={"keys": []}),
-        ),
-        patch(
-            "app.services.telegram_auth_service.jwt.decode",
-            side_effect=ExpiredSignatureError("expired"),
-        ),
-    ):
-        with pytest.raises(HTTPException) as exc_info:
-            await service.verify_oidc_id_token("token", "n")
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "telegram_expired"
 
 
 async def test_password_login_still_works(db_session, create_employee):
@@ -435,94 +226,37 @@ async def test_bot_challenge_not_configured_503(db_session):
         settings.DEV_BYPASS_AUTH = original_bypass
 
 
-async def test_fake_confirm_only_when_explicitly_enabled(db_session):
-    """TELEGRAM_DEV_FAKE_CONFIRM=false: no bot → 503 (no username fake login)."""
-    original_user = settings.TELEGRAM_BOT_USERNAME
-    original_fake = settings.TELEGRAM_DEV_FAKE_CONFIRM
-    original_env = settings.ENV
+async def test_bot_config_enabled(bot_configured):
+    """/bot/config returns bot_username and bot_enabled when TELEGRAM_BOT_USERNAME is set."""
+    cfg = await get_telegram_bot_config()
+    assert cfg.bot_username == "hrms_test_bot"
+    assert cfg.bot_enabled is True
+
+
+async def test_bot_config_disabled_when_not_configured():
+    """No TELEGRAM_BOT_USERNAME → bot_enabled False (no dev fallback)."""
+    orig_user = settings.TELEGRAM_BOT_USERNAME
     settings.TELEGRAM_BOT_USERNAME = ""
-    settings.TELEGRAM_DEV_FAKE_CONFIRM = False
-    settings.ENV = "development"
+    try:
+        cfg = await get_telegram_bot_config()
+        assert cfg.bot_enabled is False
+        assert cfg.bot_username == ""
+    finally:
+        settings.TELEGRAM_BOT_USERNAME = orig_user
+
+
+async def test_create_challenge_rejects_when_no_bot_configured(db_session):
+    """No bot username + no dev fallback → create_bot_challenge 503."""
+    orig_user = settings.TELEGRAM_BOT_USERNAME
+    settings.TELEGRAM_BOT_USERNAME = ""
     try:
         service = TelegramAuthService(db_session)
         with pytest.raises(HTTPException) as exc_info:
             await service.create_bot_challenge(purpose="login")
         assert exc_info.value.status_code == 503
+        assert exc_info.value.detail == "telegram_not_configured"
     finally:
-        settings.TELEGRAM_BOT_USERNAME = original_user
-        settings.TELEGRAM_DEV_FAKE_CONFIRM = original_fake
-        settings.ENV = original_env
-
-
-async def test_dev_qr_challenge_and_confirm(db_session):
-    """Explicit TELEGRAM_DEV_FAKE_CONFIRM: QR without bot → confirm username → JWT."""
-    original_user = settings.TELEGRAM_BOT_USERNAME
-    original_fake = settings.TELEGRAM_DEV_FAKE_CONFIRM
-    original_env = settings.ENV
-    settings.TELEGRAM_BOT_USERNAME = ""
-    settings.TELEGRAM_DEV_FAKE_CONFIRM = True
-    settings.ENV = "development"
-    try:
-        create_payload = UserCreate(
-            username="dev_qr_user",
-            full_name="Dev QR User",
-            role="admin",
-            password="secret",
-        )
-        await create_user(payload=create_payload, db=db_session, _current_user="admin")
-
-        service = TelegramAuthService(db_session)
-        created = await service.create_bot_challenge(purpose="login")
-        assert "/api/auth/telegram/bot/dev-confirm" in created["deep_link"]
-        assert "token=" in created["deep_link"]
-        assert created["poll_secret"] not in created["deep_link"]
-
-        from urllib.parse import parse_qs, urlparse
-
-        qs = parse_qs(urlparse(created["deep_link"]).query)
-        token = qs["token"][0]
-
-        confirmed = await service.confirm_dev_challenge(
-            token=token, username="dev_qr_user"
-        )
-        assert confirmed["ok"] is True
-        assert confirmed["username"] == "dev_qr_user"
-
-        first = await service.poll_bot_challenge(
-            created["challenge_id"], poll_secret=created["poll_secret"]
-        )
-        assert first["status"] == "confirmed"
-        assert first["access_token"]
-        assert first["username"] == "dev_qr_user"
-
-        second = await service.poll_bot_challenge(
-            created["challenge_id"], poll_secret=created["poll_secret"]
-        )
-        assert second["status"] == "consumed"
-        assert second["access_token"] is None
-    finally:
-        settings.TELEGRAM_BOT_USERNAME = original_user
-        settings.TELEGRAM_DEV_FAKE_CONFIRM = original_fake
-        settings.ENV = original_env
-
-
-async def test_oidc_config_bot_enabled_with_username():
-    original_user = settings.TELEGRAM_BOT_USERNAME
-    original_client = settings.TELEGRAM_OIDC_CLIENT_ID
-    original_fake = settings.TELEGRAM_DEV_FAKE_CONFIRM
-    settings.TELEGRAM_BOT_USERNAME = "my_hrms_bot"
-    settings.TELEGRAM_OIDC_CLIENT_ID = ""
-    settings.TELEGRAM_DEV_FAKE_CONFIRM = False
-    try:
-        cfg = await get_telegram_oidc_config()
-        assert cfg.bot_enabled is True
-        assert cfg.dev_qr is False
-        assert cfg.bot_username == "my_hrms_bot"
-        assert cfg.enabled is False
-    finally:
-        settings.TELEGRAM_BOT_USERNAME = original_user
-        settings.TELEGRAM_OIDC_CLIENT_ID = original_client
-        settings.TELEGRAM_DEV_FAKE_CONFIRM = original_fake
+        settings.TELEGRAM_BOT_USERNAME = orig_user
 
 
 async def test_poll_drains_real_telegram_updates(db_session, jit_on):
@@ -617,6 +351,26 @@ async def test_bot_challenge_create_and_pending_poll(db_session, bot_configured)
     )
     assert status["status"] == "pending"
     assert status["access_token"] is None
+
+
+async def test_create_challenge_fails_when_bot_token_invalid(
+    db_session, bot_configured
+):
+    """Pre-flight /getMe returning False must 503 BEFORE creating a challenge.
+
+    Frontend relies on this 503 + ``telegram_bot_token_invalid`` detail to
+    surface "check your bot settings" before showing a dead QR.
+    """
+    service = TelegramAuthService(db_session)
+    with patch.object(
+        TelegramAuthService,
+        "validate_bot_token",
+        AsyncMock(return_value=False),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await service.create_bot_challenge(purpose="login")
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "telegram_bot_token_invalid"
 
 
 async def test_poll_without_secret_401(db_session, bot_configured):
@@ -970,42 +724,8 @@ async def test_link_via_challenge_with_jit_enabled(db_session, bot_configured, j
     assert user.telegram_username == "jit_proof_tg"
 
 
-async def test_link_via_oidc_id_token(db_session, oidc_client_id, create_employee):
-    employee = await create_employee()
-    await db_session.commit()
-    create_payload = UserCreate(
-        username="oidc_link_user",
-        full_name="OIDC Link",
-        employee_id=employee.id,
-        role="viewer",
-        password="password123",
-    )
-    await create_user(payload=create_payload, db=db_session, _current_user="admin")
-    await db_session.commit()
-
-    service = TelegramAuthService(db_session)
-    user = await service.get_user_by_username("oidc_link_user")
-    assert user is not None
-
-    claims = {
-        "id": 666777,
-        "name": "OIDC Linked",
-        "nonce": "link-nonce",
-    }
-    with patch.object(
-        TelegramAuthService,
-        "verify_oidc_id_token",
-        new=AsyncMock(return_value=claims),
-    ):
-        result = await service.link_to_current_user(
-            user, id_token="fake.jwt", nonce="link-nonce"
-        )
-    assert result["linked"] is True
-    assert result["telegram_id"] == 666777
-
-
 async def test_router_webhook_and_poll_helpers(db_session, bot_configured, jit_on):
-    """Smoke: call route functions directly like Phase 1 OIDC tests."""
+    """Smoke: call route functions directly."""
     from uuid import UUID
 
     created = await create_bot_challenge(
@@ -1060,91 +780,125 @@ async def test_widget_login_replay_prevention(db_session, bot_configured, jit_on
     assert exc_info.value.detail == "telegram_signature_already_used"
 
 
-async def test_dev_confirm_blocked_in_production(db_session):
-    """ENV = 'production' -> dev-confirm returns 404 Not Found."""
-    from app.api.telegram_auth import bot_dev_confirm_page, bot_dev_confirm_submit
-    from fastapi import Request
-    from starlette.datastructures import Headers
-
-    original_env = settings.ENV
-    original_fake = settings.TELEGRAM_DEV_FAKE_CONFIRM
-    settings.ENV = "production"
-    settings.TELEGRAM_DEV_FAKE_CONFIRM = True
-    try:
-        # GET request to dev-confirm should raise 404
-        with pytest.raises(HTTPException) as exc_info_get:
-            await bot_dev_confirm_page(token="some-token")
-        assert exc_info_get.value.status_code == 404
-        assert exc_info_get.value.detail == "not_found"
-
-        # POST request to dev-confirm should raise 404
-        scope = {
-            "type": "http",
-            "headers": Headers({"content-type": "application/json"}).raw,
-        }
-        mock_request = Request(scope)
-        with pytest.raises(HTTPException) as exc_info_post:
-            await bot_dev_confirm_submit(request=mock_request, db=db_session)
-        assert exc_info_post.value.status_code == 404
-        assert exc_info_post.value.detail == "not_found"
-    finally:
-        settings.ENV = original_env
-        settings.TELEGRAM_DEV_FAKE_CONFIRM = original_fake
+# ─── T1 hardening: OIDC 501, unlink last factor, rate limit ───────────────
 
 
-async def test_jwks_rotation_on_unknown_kid(db_session, oidc_client_id):
-    """
-    Test JWKS rotation: cache is cleared and refetched when an unknown kid is encountered,
-    allowing successful validation if the key is present in the updated JWKS.
-    """
-    import app.services.telegram_auth_service as tg_mod
-
-    # Reset JWKS module variables
-    tg_mod._jwks_cache = (time.time(), {"keys": [{"kid": "old-kid"}]})
-    tg_mod._last_jwks_reset_time = 0.0
+async def test_link_with_id_token_returns_501(db_session, create_employee):
+    """OIDC id_token link path is not implemented → 501, never AttributeError."""
+    employee = await create_employee()
+    await db_session.commit()
+    create_payload = UserCreate(
+        username="oidc_link_user",
+        full_name="OIDC Link",
+        employee_id=employee.id,
+        role="viewer",
+        password="password123",
+    )
+    await create_user(payload=create_payload, db=db_session, _current_user="admin")
+    await db_session.commit()
 
     service = TelegramAuthService(db_session)
+    user = await service.get_user_by_username("oidc_link_user")
+    assert user is not None
 
-    id_token = "fake.id.token"
-    nonce = "expected-nonce"
-
-    fake_claims = {
-        "iss": "https://oauth.telegram.org",
-        "aud": oidc_client_id,
-        "exp": int(time.time()) + 3600,
-        "id": 12345,
-        "nonce": nonce,
-    }
-
-    jwks_old = {"keys": [{"kid": "old-kid"}]}
-    jwks_new = {"keys": [{"kid": "new-kid"}]}
-
-    mock_fetch_jwks = AsyncMock(side_effect=[jwks_old, jwks_new])
-
-    with (
-        patch("app.services.telegram_auth_service.jwt.get_unverified_header", return_value={"kid": "new-kid"}),
-        patch.object(TelegramAuthService, "_fetch_jwks", mock_fetch_jwks),
-        patch("app.services.telegram_auth_service.jwt.decode", return_value=fake_claims) as mock_decode,
-    ):
-        claims = await service.verify_oidc_id_token(id_token, nonce)
-        assert claims == fake_claims
-
-        # Verify that _fetch_jwks was called twice (first to get keys, second on retry after clear)
-        assert mock_fetch_jwks.call_count == 2
-        # Verify cache was cleared
-        assert tg_mod._jwks_cache is None
-        # Verify jwt.decode was called with updated JWKS
-        mock_decode.assert_called_once_with(
-            id_token,
-            jwks_new,
-            algorithms=tg_mod.TELEGRAM_OIDC_ALGORITHMS,
-            audience=oidc_client_id,
-            issuer=tg_mod.TELEGRAM_OIDC_ISSUER,
-            options={
-                "verify_aud": True,
-                "verify_iss": True,
-                "verify_exp": True,
-                "require_exp": True,
-            },
+    with pytest.raises(HTTPException) as exc_info:
+        await service.link_to_current_user(
+            user, id_token="fake.oidc.token", nonce="n1"
         )
+    assert exc_info.value.status_code == 501
+    assert exc_info.value.detail == "oidc_link_not_implemented"
+
+
+async def test_unlink_last_auth_factor_blocked(db_session):
+    """User with only sso_bypass_hash cannot unlink Telegram (400)."""
+    from app.core.constants import SSO_BYPASS_HASH
+
+    repo = UserRepository()
+    user = await repo.create_telegram_user(
+        db_session,
+        telegram_id=555001,
+        username="tg_only_user",
+        full_name="TG Only",
+        role="viewer",
+        telegram_username="tg_only",
+    )
+    await db_session.commit()
+    assert user.password_hash == SSO_BYPASS_HASH
+    assert user.telegram_id == 555001
+
+    service = TelegramAuthService(db_session)
+    with pytest.raises(HTTPException) as exc_info:
+        await service.unlink_current_user(user)
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "cannot_unlink_last_auth_factor"
+    assert user.telegram_id == 555001
+
+
+async def test_unlink_with_real_password_ok(db_session, create_employee):
+    """User with real password may unlink Telegram (200-equivalent success)."""
+    employee = await create_employee()
+    await db_session.commit()
+    create_payload = UserCreate(
+        username="pw_unlink_user",
+        full_name="PW Unlink",
+        employee_id=employee.id,
+        role="viewer",
+        password="password123",
+        telegram_id=555002,
+    )
+    await create_user(payload=create_payload, db=db_session, _current_user="admin")
+    await db_session.commit()
+
+    service = TelegramAuthService(db_session)
+    user = await service.get_user_by_username("pw_unlink_user")
+    assert user is not None
+    assert user.telegram_id == 555002
+
+    result = await service.unlink_current_user(user)
+    assert result["linked"] is False
+    assert result["telegram_id"] is None
+    assert user.telegram_id is None
+
+
+async def test_sliding_window_rate_limiter_unit():
+    """Pure limiter: allow N, reject N+1 within window."""
+    from app.core.rate_limit import SlidingWindowRateLimiter
+
+    limiter = SlidingWindowRateLimiter(max_requests=3, window_seconds=60.0)
+    t0 = 1000.0
+    assert limiter.allow("ip1", now=t0) is True
+    assert limiter.allow("ip1", now=t0 + 0.1) is True
+    assert limiter.allow("ip1", now=t0 + 0.2) is True
+    assert limiter.allow("ip1", now=t0 + 0.3) is False
+    # other key independent
+    assert limiter.allow("ip2", now=t0 + 0.3) is True
+    # after window slides, new request allowed
+    assert limiter.allow("ip1", now=t0 + 60.1) is True
+
+
+async def test_enforce_telegram_public_rate_limit_429():
+    """Dependency raises 429 after threshold for same client IP."""
+    from unittest.mock import MagicMock
+
+    from app.api import telegram_auth as tg_api
+
+    tg_api._telegram_public_limiter.reset()
+    original_max = settings.TELEGRAM_RATE_LIMIT_REQUESTS
+    original_window = settings.TELEGRAM_RATE_LIMIT_WINDOW_SECONDS
+    settings.TELEGRAM_RATE_LIMIT_REQUESTS = 2
+    settings.TELEGRAM_RATE_LIMIT_WINDOW_SECONDS = 60
+    try:
+        request = MagicMock()
+        request.client.host = "203.0.113.10"
+        tg_api.enforce_telegram_public_rate_limit(request)
+        tg_api.enforce_telegram_public_rate_limit(request)
+        with pytest.raises(HTTPException) as exc_info:
+            tg_api.enforce_telegram_public_rate_limit(request)
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.detail == "rate_limit_exceeded"
+    finally:
+        settings.TELEGRAM_RATE_LIMIT_REQUESTS = original_max
+        settings.TELEGRAM_RATE_LIMIT_WINDOW_SECONDS = original_window
+        tg_api._telegram_public_limiter.reset()
+
 

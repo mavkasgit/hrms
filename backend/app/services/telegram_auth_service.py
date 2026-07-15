@@ -1,4 +1,4 @@
-"""Telegram authentication service (OIDC + widget + bot challenge/webhook + link)."""
+"""Telegram authentication service (bot challenge/webhook + link)."""
 
 from __future__ import annotations
 
@@ -13,8 +13,6 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from jose import ExpiredSignatureError, JWTError, jwt
-from jose.exceptions import JWTClaimsError
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 import structlog
@@ -22,22 +20,14 @@ import structlog
 _log = structlog.get_logger(__name__)
 
 from app.core.config import settings
+from app.core.constants import SSO_BYPASS_HASH
 from app.models.auth_challenge import AuthLoginChallenge
 from app.models.user import User
 from app.repositories.challenge_repository import ChallengeRepository
 from app.repositories.signature_repository import SignatureRepository
+from app.repositories.system_setting_repository import SystemSettingRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_token import create_access_token
-
-TELEGRAM_OIDC_ISSUER = "https://oauth.telegram.org"
-TELEGRAM_JWKS_URL = "https://oauth.telegram.org/.well-known/jwks.json"
-TELEGRAM_AUTHORIZE_URL = "https://oauth.telegram.org/auth"
-TELEGRAM_OIDC_ALGORITHMS = ["RS256", "ES256", "ES256K", "EdDSA"]
-
-# Module-level JWKS cache: (fetched_at_unix, jwks_dict)
-_jwks_cache: tuple[float, dict[str, Any]] | None = None
-_JWKS_TTL_SECONDS = 3600
-_last_jwks_reset_time: float = 0.0
 
 # getUpdates offset + one-shot deleteWebhook for local polling mode
 _telegram_updates_offset: int | None = None
@@ -54,17 +44,9 @@ class TelegramAuthService:
         self.users = UserRepository()
         self.challenges = ChallengeRepository()
         self.signatures = SignatureRepository()
+        self.settings = SystemSettingRepository()
 
     # ─── config guards ────────────────────────────────────────────────────
-
-    def _require_oidc_configured(self) -> str:
-        client_id = (settings.TELEGRAM_OIDC_CLIENT_ID or "").strip()
-        if not client_id:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="telegram_not_configured",
-            )
-        return client_id
 
     def _require_bot_configured(self) -> str:
         bot_username = (settings.TELEGRAM_BOT_USERNAME or "").strip().lstrip("@")
@@ -76,20 +58,14 @@ class TelegramAuthService:
         return bot_username
 
     @staticmethod
-    def is_dev_qr_enabled() -> bool:
-        """Explicit fake QR (enter HRMS username). OFF by default — not real Telegram."""
-        return bool(settings.TELEGRAM_DEV_FAKE_CONFIRM and settings.ENV == "development")
-
-    @staticmethod
     def is_bot_login_enabled() -> bool:
-        """Real bot QR needs username; fake QR only if TELEGRAM_DEV_FAKE_CONFIRM."""
+        """Real bot QR needs TELEGRAM_BOT_USERNAME set."""
         bot_username = (settings.TELEGRAM_BOT_USERNAME or "").strip().lstrip("@")
-        return bool(bot_username) or TelegramAuthService.is_dev_qr_enabled()
+        return bool(bot_username)
 
-    @staticmethod
-    def is_updates_polling_enabled() -> bool:
+    async def is_updates_polling_enabled(self) -> bool:
         """Pull real Telegram /start via getUpdates (dev-friendly, no public webhook)."""
-        token = (settings.TELEGRAM_BOT_TOKEN or "").strip()
+        token = await self._get_bot_token()
         if not token:
             return False
         return bool(getattr(settings, "TELEGRAM_UPDATES_POLLING", False))
@@ -110,14 +86,45 @@ class TelegramAuthService:
             return "http://localhost:8000"
         return base
 
-    def _require_bot_token(self) -> str:
-        token = (settings.TELEGRAM_BOT_TOKEN or "").strip()
+    async def _get_bot_token(self) -> str:
+        """Бот-токен: сначала system_settings.telegram.bot_token, иначе env TELEGRAM_BOT_TOKEN."""
+        db_value = await self.settings.get_value(self.db, "telegram.bot_token")
+        if db_value is not None and db_value.strip():
+            return db_value.strip()
+        return (settings.TELEGRAM_BOT_TOKEN or "").strip()
+
+    async def _require_bot_token(self) -> str:
+        token = await self._get_bot_token()
         if not token:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="telegram_not_configured",
             )
         return token
+
+    async def validate_bot_token(self) -> bool:
+        """Quick Bot API /getMe check to confirm the configured token is alive.
+
+        Used as a pre-flight guard before issuing a real bot challenge, so a
+        bad token (revoked, typo, not yet applied via @BotFather) surfaces as
+        a clear error before the user sees a dead QR. Returns True on 2xx
+        with ok=true, False on any failure (network, 4xx, 5xx, bad JSON).
+        """
+        token = await self._get_bot_token()
+        if not token:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"https://api.telegram.org/bot{token}/getMe")
+        except Exception as exc:
+            _log.warning("telegram_validate_token_network_error", error=str(exc))
+            return False
+        if resp.status_code != 200:
+            return False
+        try:
+            return bool(resp.json().get("ok"))
+        except ValueError:
+            return False
 
     def _require_webhook_secret(self) -> str:
         secret = (settings.TELEGRAM_WEBHOOK_SECRET or "").strip()
@@ -141,182 +148,6 @@ class TelegramAuthService:
         expected = hashlib.sha256(provided.encode("utf-8")).hexdigest()
         return hmac.compare_digest(expected, stored_hash)
 
-    # ─── OIDC ─────────────────────────────────────────────────────────────
-
-    async def _fetch_jwks(self) -> dict[str, Any]:
-        """Fetch Telegram JWKS with simple module-level TTL cache (~1h)."""
-        global _jwks_cache
-        now = time.time()
-        if _jwks_cache is not None:
-            fetched_at, cached = _jwks_cache
-            if now - fetched_at < _JWKS_TTL_SECONDS:
-                return cached
-
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(TELEGRAM_JWKS_URL)
-                resp.raise_for_status()
-                jwks = resp.json()
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="telegram_invalid_token",
-            ) from exc
-
-        if not isinstance(jwks, dict) or "keys" not in jwks:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="telegram_invalid_token",
-            )
-
-        _jwks_cache = (now, jwks)
-        return jwks
-
-    async def verify_oidc_id_token(self, id_token: str, nonce: str) -> dict[str, Any]:
-        """
-        Verify Telegram OIDC id_token via JWKS.
-
-        Checks: signature, iss, aud, exp, nonce match.
-        Returns decoded claims dict.
-        """
-        client_id = self._require_oidc_configured()
-
-        # Extract kid from token headers to check if it is missing in cached JWKS
-        try:
-            header = jwt.get_unverified_header(id_token)
-            kid = header.get("kid")
-        except Exception:
-            kid = None
-
-        jwks = await self._fetch_jwks()
-
-        keys = jwks.get("keys", [])
-        kid_missing = kid is not None and not any(isinstance(k, dict) and k.get("kid") == kid for k in keys)
-
-        try:
-            try:
-                if kid_missing:
-                    raise JWTError("Missing kid in JWKS cache")
-
-                claims = jwt.decode(
-                    id_token,
-                    jwks,
-                    algorithms=TELEGRAM_OIDC_ALGORITHMS,
-                    audience=client_id,
-                    issuer=TELEGRAM_OIDC_ISSUER,
-                    options={
-                        "verify_aud": True,
-                        "verify_iss": True,
-                        "verify_exp": True,
-                        "require_exp": True,
-                    },
-                )
-            except (ExpiredSignatureError, JWTClaimsError):
-                # Do not retry on expiration/claims errors
-                raise
-            except JWTError as exc:
-                # Signature error or missing kid: force clear cache and refetch with 10s throttling
-                global _jwks_cache, _last_jwks_reset_time
-                now = time.time()
-                if now - _last_jwks_reset_time >= 10.0:
-                    _jwks_cache = None
-                    _last_jwks_reset_time = now
-                    _log.info("Resetting Telegram JWKS cache due to signature error or missing kid", error=str(exc))
-                    jwks = await self._fetch_jwks()
-
-                # Retry validation with new JWKS
-                claims = jwt.decode(
-                    id_token,
-                    jwks,
-                    algorithms=TELEGRAM_OIDC_ALGORITHMS,
-                    audience=client_id,
-                    issuer=TELEGRAM_OIDC_ISSUER,
-                    options={
-                        "verify_aud": True,
-                        "verify_iss": True,
-                        "verify_exp": True,
-                        "require_exp": True,
-                    },
-                )
-        except ExpiredSignatureError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="telegram_expired",
-            ) from exc
-        except JWTClaimsError as exc:
-            message = str(exc).lower()
-            if "expir" in message:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="telegram_expired",
-                ) from exc
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="telegram_invalid_token",
-            ) from exc
-        except JWTError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="telegram_invalid_token",
-            ) from exc
-
-        token_nonce = claims.get("nonce")
-        if token_nonce is None or str(token_nonce) != str(nonce):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="telegram_nonce_mismatch",
-            )
-
-        return claims
-
-    @staticmethod
-    def _extract_identity(claims: dict[str, Any]) -> tuple[int, str, str | None, str | None]:
-        """Return (telegram_id, full_name, preferred_username, phone)."""
-        raw_id = claims.get("id", claims.get("sub"))
-        if raw_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="telegram_invalid_token",
-            )
-        try:
-            telegram_id = int(raw_id)
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="telegram_invalid_token",
-            ) from exc
-
-        full_name = claims.get("name")
-        if not full_name:
-            parts = [
-                p
-                for p in (claims.get("first_name"), claims.get("last_name"))
-                if p
-            ]
-            full_name = " ".join(parts) if parts else f"tg_{telegram_id}"
-
-        preferred = claims.get("preferred_username") or claims.get("username")
-        if preferred is not None:
-            preferred = str(preferred).strip() or None
-
-        phone = claims.get("phone_number")
-        if phone is not None:
-            phone = str(phone).strip() or None
-
-        return telegram_id, str(full_name), preferred, phone
-
-    async def login_with_oidc(self, id_token: str, nonce: str) -> dict:
-        """Verify id_token → resolve/provision user → LoginResponse-compatible dict."""
-        claims = await self.verify_oidc_id_token(id_token, nonce)
-        telegram_id, full_name, preferred_username, phone = self._extract_identity(claims)
-        user = await self.resolve_or_provision_user(
-            telegram_id=telegram_id,
-            full_name=full_name,
-            preferred_username=preferred_username,
-            phone=phone,
-        )
-        return self.issue_login_response(user)
-
     # ─── Login Widget (HMAC) ──────────────────────────────────────────────
 
     async def verify_widget_payload(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -325,7 +156,7 @@ class TelegramAuthService:
 
         See https://core.telegram.org/widgets/login#checking-authorization
         """
-        bot_token = self._require_bot_token()
+        bot_token = await self._require_bot_token()
         check_hash = data.get("hash")
         if not check_hash or not isinstance(check_hash, str):
             raise HTTPException(
@@ -523,14 +354,10 @@ class TelegramAuthService:
         """Create one-time deep-link challenge. purpose=link requires user_id.
 
         Returns poll_secret only here (never in deep_link / webhook).
-
-        Deep link:
-        - real bot: https://t.me/<bot>?start=<token>
-        - dev QR (DEV_BYPASS_AUTH, no bot): local confirm page URL
+        Deep link: https://t.me/<bot>?start=<token>
         """
         bot_username = (settings.TELEGRAM_BOT_USERNAME or "").strip().lstrip("@")
-        dev_qr = self.is_dev_qr_enabled() and not bot_username
-        if not bot_username and not self.is_dev_qr_enabled():
+        if not bot_username:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="telegram_not_configured",
@@ -544,6 +371,15 @@ class TelegramAuthService:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing authentication token",
+            )
+
+        # Pre-flight: a working token is required before we hand the user a QR.
+        # Fail fast with a specific detail so the UI can show "check settings"
+        # before the user ever sees a dead QR.
+        if not await self.validate_bot_token():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="telegram_bot_token_invalid",
             )
 
         ttl = int(settings.TELEGRAM_BOT_CHALLENGE_TTL_SECONDS or 300)
@@ -562,14 +398,7 @@ class TelegramAuthService:
         await self.db.commit()
 
         challenge_id = str(challenge.id)
-        if dev_qr:
-            # QR opens confirm page (same machine / phone on LAN). No Telegram.
-            deep_link = (
-                f"{self._public_api_base()}/api/auth/telegram/bot/dev-confirm"
-                f"?token={token}"
-            )
-        else:
-            deep_link = f"https://t.me/{bot_username}?start={token}"
+        deep_link = f"https://t.me/{bot_username}?start={token}"
         poll_url = f"/api/auth/telegram/bot/challenge/{challenge_id}"
         return {
             "challenge_id": challenge_id,
@@ -577,82 +406,6 @@ class TelegramAuthService:
             "deep_link": deep_link,
             "expires_in": ttl,
             "poll_url": poll_url,
-        }
-
-    async def confirm_dev_challenge(self, *, token: str, username: str) -> dict:
-        """
-        Dev-only: mark pending challenge confirmed as the given HRMS user.
-
-        If user has no telegram_id yet, assigns a stable synthetic id
-        (9_000_000_000 + user.id) so login path matches production resolve.
-        Only when DEV_BYPASS_AUTH=True.
-        """
-        if not self.is_dev_qr_enabled():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="not_found",
-            )
-        token = (token or "").strip()
-        username = (username or "").strip()
-        if not token or not username:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="token_and_username_required",
-            )
-
-        challenge = await self.challenges.get_by_token(self.db, token)
-        if challenge is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="challenge_not_found",
-            )
-        if challenge.status == "expired" or self._is_expired(challenge):
-            if challenge.status != "expired":
-                await self.challenges.mark_expired(self.db, challenge)
-                await self.db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_410_GONE,
-                detail="challenge_expired",
-            )
-        if challenge.status != "pending":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="challenge_not_pending",
-            )
-
-        user = await self.users.get_by_username(self.db, username)
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="user_not_found",
-            )
-
-        telegram_id = user.telegram_id
-        if telegram_id is None:
-            # Synthetic stable id for dev bind-on-confirm (not a real Telegram id).
-            telegram_id = 9_000_000_000 + int(user.id)
-            # Ensure free (another user shouldn't have it)
-            existing = await self.users.get_by_telegram_id(self.db, telegram_id)
-            if existing is not None and existing.id != user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="telegram_already_linked",
-                )
-            await self.users.link_telegram(self.db, user, telegram_id)
-            await self.db.flush()
-
-        await self.challenges.confirm(
-            self.db,
-            challenge,
-            telegram_id=int(telegram_id),
-            telegram_username=user.telegram_username,
-        )
-        await self.db.commit()
-        return {
-            "ok": True,
-            "username": user.username,
-            "telegram_id": int(telegram_id),
-            "message": "Подтверждено. Вернитесь на страницу входа — вход завершится автоматически.",
         }
 
     async def poll_bot_challenge(
@@ -705,7 +458,7 @@ class TelegramAuthService:
 
         if challenge.status == "pending":
             # Local dev: pull real Telegram updates (user pressed Start in TG app).
-            if self.is_updates_polling_enabled():
+            if await self.is_updates_polling_enabled():
                 await self.drain_bot_updates()
                 await self.db.refresh(challenge)
                 if challenge.status == "confirmed":
@@ -825,8 +578,8 @@ class TelegramAuthService:
 
     # ─── webhook + getUpdates (real Telegram) ─────────────────────────────
 
-    @staticmethod
     async def _send_bot_message(
+        self,
         chat_id: int,
         text: str,
         *,
@@ -839,7 +592,7 @@ class TelegramAuthService:
         """
         if not getattr(settings, "TELEGRAM_BOT_REPLY_ENABLED", True):
             return False
-        token = (settings.TELEGRAM_BOT_TOKEN or "").strip()
+        token = await self._get_bot_token()
         if not token:
             return False
         payload: dict[str, Any] = {
@@ -1016,7 +769,7 @@ class TelegramAuthService:
         global _telegram_webhook_cleared_for_polling
         if _telegram_webhook_cleared_for_polling:
             return
-        token = (settings.TELEGRAM_BOT_TOKEN or "").strip()
+        token = await self._get_bot_token()
         if not token:
             return
         try:
@@ -1036,7 +789,7 @@ class TelegramAuthService:
         Used when TELEGRAM_UPDATES_POLLING=true — no public HTTPS tunnel needed.
         """
         global _telegram_updates_offset
-        if not self.is_updates_polling_enabled():
+        if not await self.is_updates_polling_enabled():
             return 0
 
         loop = asyncio.get_running_loop()
@@ -1053,7 +806,7 @@ class TelegramAuthService:
                 return 0
 
             await self.ensure_polling_mode()
-            token = (settings.TELEGRAM_BOT_TOKEN or "").strip()
+            token = await self._get_bot_token()
             params: dict[str, Any] = {"timeout": 0, "limit": 50}
             if _telegram_updates_offset is not None:
                 params["offset"] = _telegram_updates_offset
@@ -1144,13 +897,11 @@ class TelegramAuthService:
             await self.challenges.consume(self.db, challenge)
 
         elif id_token:
-            if not nonce:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="nonce_required",
-                )
-            claims = await self.verify_oidc_id_token(id_token, nonce)
-            telegram_id, telegram_username, _, phone = self._extract_identity(claims)
+            # OIDC Login Widget path not implemented (T1: no dead AttributeError).
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="oidc_link_not_implemented",
+            )
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1178,9 +929,20 @@ class TelegramAuthService:
         return {"telegram_id": user.telegram_id, "linked": True}
 
     async def unlink_current_user(self, user: User) -> dict:
+        # Block unlink when Telegram is the only usable auth factor.
+        if not self._has_usable_password(user):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="cannot_unlink_last_auth_factor",
+            )
         await self.users.unlink_telegram(self.db, user)
         await self.db.commit()
         return {"telegram_id": None, "linked": False}
+
+    @staticmethod
+    def _has_usable_password(user: User) -> bool:
+        pw = (user.password_hash or "").strip()
+        return bool(pw) and pw != SSO_BYPASS_HASH
 
     async def get_user_by_username(self, username: str) -> User | None:
         return await self.users.get_by_username(self.db, username)

@@ -5,6 +5,7 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.constants import SSO_BYPASS_HASH
 from app.core.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user, CurrentUser
@@ -139,7 +140,7 @@ async def get_me(
         "has_telegram": user.telegram_id is not None,
         "telegram_id": user.telegram_id,
         "telegram_username": user.telegram_username,
-        "has_password": user.password_hash is not None and user.password_hash != "sso_bypass_hash",
+        "has_password": user.password_hash is not None and user.password_hash != SSO_BYPASS_HASH,
         "invite_code": user.invite_code,
         "avatar_seed": user.avatar_seed,
     }

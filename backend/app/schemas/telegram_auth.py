@@ -1,4 +1,4 @@
-"""Pydantic schemas for Telegram auth (OIDC + Login Widget + bot/link)."""
+"""Pydantic schemas for Telegram auth (bot/QR deep-link + Widget)."""
 
 from typing import Literal
 from uuid import UUID
@@ -6,38 +6,11 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-class TelegramOidcLoginRequest(BaseModel):
-    """Frontend received id_token via oauth.telegram.org / Web Login with matching nonce."""
+class TelegramBotConfigResponse(BaseModel):
+    """Публичная конфигурация Telegram-бота для страницы логина (без секретов)."""
 
-    id_token: str
-    nonce: str
-
-
-class TelegramOidcCallbackRequest(BaseModel):
-    """Optional: SPA does code exchange on backend (Phase 1 reserved)."""
-
-    code: str
-    code_verifier: str
-    nonce: str
-
-
-class TelegramOidcConfigResponse(BaseModel):
-    enabled: bool
-    client_id: str = ""
     bot_username: str = ""
-    authorize_url: str = "https://oauth.telegram.org/auth"
-    scopes: list[str] = Field(default_factory=lambda: ["openid", "profile"])
-    # Bot/QR login button: real bot username OR dev QR (DEV_BYPASS_AUTH)
     bot_enabled: bool = False
-    # True only when QR opens local confirm page (no real Telegram bot)
-    dev_qr: bool = False
-
-
-class TelegramDevConfirmRequest(BaseModel):
-    """Dev-only: confirm bot challenge as existing HRMS username (no Telegram)."""
-
-    token: str
-    username: str
 
 
 class TelegramWidgetLoginRequest(BaseModel):
