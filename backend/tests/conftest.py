@@ -2,8 +2,12 @@
 
 Isolation strategy (xdist-ready):
 - module-scoped DB: each test module gets `hrms_test_{ts}_{module}_{uuid8}`
-- function-scoped TRUNCATE after every test (not savepoint/hybrid)
-- with pytest-xdist prefer `--dist=loadfile` so all tests of a module
+- function-scoped cleanup after every test:
+  - default ``HRMS_TEST_ISOLATION=savepoint`` — outer transaction + nested
+    savepoints (``join_transaction_mode="create_savepoint"``); fast rollback
+  - ``HRMS_TEST_ISOLATION=truncate`` — TRUNCATE ... CASCADE (legacy / debug)
+  - marker ``@pytest.mark.requires_truncate`` forces TRUNCATE for one test
+- with pytest-xdist prefer ``--dist=loadfile`` so all tests of a module
   stay on one worker (compatible with module-scoped engine/session loop)
 
 Session-scoped stale cleanup runs per xdist worker; DROP failures are
@@ -17,7 +21,7 @@ import os
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import AsyncIterator, Callable
+from typing import AsyncIterator, Callable, Literal
 
 import pytest
 import pytest_asyncio
@@ -49,6 +53,28 @@ _XDIST_WORKER = os.getenv("PYTEST_XDIST_WORKER", "")
 TEST_DATABASE_PATTERN = re.compile(
     r"^hrms_test_(?P<created_at>\d{14})_(?P<module>[a-z0-9_]+)_[0-9a-f]{8}$"
 )
+
+IsolationMode = Literal["savepoint", "truncate"]
+_VALID_ISOLATION_MODES: frozenset[str] = frozenset({"savepoint", "truncate"})
+
+
+def _env_isolation_mode() -> IsolationMode:
+    """Read HRMS_TEST_ISOLATION (default: savepoint). Invalid values fall back with warning."""
+    raw = os.getenv("HRMS_TEST_ISOLATION", "savepoint").strip().lower()
+    if raw not in _VALID_ISOLATION_MODES:
+        logger.warning(
+            "Unknown HRMS_TEST_ISOLATION=%r; expected savepoint|truncate. Using savepoint.",
+            raw,
+        )
+        return "savepoint"
+    return raw  # type: ignore[return-value]
+
+
+def _resolve_isolation_mode(request: pytest.FixtureRequest) -> IsolationMode:
+    """Per-test isolation: marker requires_truncate wins over env default."""
+    if request.node.get_closest_marker("requires_truncate") is not None:
+        return "truncate"
+    return _env_isolation_mode()
 
 
 def _quote_ident(value: str) -> str:
@@ -217,14 +243,69 @@ def db_session_factory(db_engine: AsyncEngine) -> async_sessionmaker[AsyncSessio
 
 
 @pytest_asyncio.fixture(scope="function", loop_scope="module")
-async def db_session(db_session_factory: async_sessionmaker[AsyncSession]) -> AsyncIterator[AsyncSession]:
-    async with db_session_factory() as session:
-        yield session
-        await session.close()
+async def db_session(
+    request: pytest.FixtureRequest,
+    db_engine: AsyncEngine,
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AsyncSession]:
+    """Per-test DB session with dual isolation (savepoint default / truncate).
 
-    async with db_session_factory() as cleanup_session:
-        await cleanup_session.execute(text(_build_truncate_sql()))
-        await cleanup_session.commit()
+    Savepoint path: outer transaction + nested savepoints
+    (``join_transaction_mode="create_savepoint"``). ``session.commit()`` in a
+    test only releases the nested savepoint; outer rollback undoes all writes.
+    Teardown is defensive against PendingRollbackError / closed connections.
+    """
+    mode = _resolve_isolation_mode(request)
+
+    if mode == "truncate":
+        async with db_session_factory() as session:
+            yield session
+            try:
+                await session.close()
+            except Exception as exc:  # noqa: BLE001 — teardown must not abort suite
+                logger.warning("truncate-mode session.close failed: %s", exc)
+
+        try:
+            async with db_session_factory() as cleanup_session:
+                await cleanup_session.execute(text(_build_truncate_sql()))
+                await cleanup_session.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("TRUNCATE cleanup failed: %s", exc)
+        return
+
+    # --- savepoint mode (default) ---
+    conn = await db_engine.connect()
+    transaction = None
+    session: AsyncSession | None = None
+    try:
+        transaction = await conn.begin()
+        session_factory = async_sessionmaker(
+            bind=conn,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            join_transaction_mode="create_savepoint",
+        )
+        session = session_factory()
+        yield session
+    finally:
+        if session is not None:
+            try:
+                await session.rollback()
+            except Exception as exc:  # noqa: BLE001 — PendingRollbackError / closed
+                logger.warning("savepoint session.rollback failed: %s", exc)
+            try:
+                await session.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("savepoint session.close failed: %s", exc)
+        if transaction is not None:
+            try:
+                await transaction.rollback()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("outer transaction.rollback failed: %s", exc)
+        try:
+            await conn.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("savepoint connection.close failed: %s", exc)
 
 
 @pytest.fixture

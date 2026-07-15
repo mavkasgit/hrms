@@ -9,18 +9,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 
-@pytest.fixture(scope="module")
-async def async_client(db_session_factory):
+@pytest.fixture
+async def async_client(db_session: AsyncSession):
+    """ASGI client bound to the same db_session (savepoint-safe).
+
+    A separate connection from db_session_factory cannot see uncommitted
+    outer-transaction data under HRMS_TEST_ISOLATION=savepoint.
+    """
+
     async def override_get_db():
-        async with db_session_factory() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
+        try:
+            yield db_session
+        finally:
+            # Release nested savepoint so later requests see prior writes.
+            await db_session.commit()
 
     from app.core.database import get_db
+
     app.dependency_overrides[get_db] = override_get_db
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:

@@ -47,7 +47,15 @@ cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npm run test:e2e:smoke
 ## Backend (pytest)
 
 Требования: Postgres dev (`localhost:5435`, контейнер `hrms-postgres`), права CREATEDB.
-Изоляция: ephemeral DB `hrms_test_*` на модуль + TRUNCATE на тест (`backend/tests/conftest.py`).
+Изоляция (`backend/tests/conftest.py`):
+- ephemeral DB `hrms_test_*` на **модуль**;
+- per-test cleanup через **`HRMS_TEST_ISOLATION`**:
+  | Значение | Поведение | Когда |
+  |----------|-----------|--------|
+  | `savepoint` (**default**) | outer transaction + nested savepoints; rollback после теста | обычный прогон (быстрее TRUNCATE) |
+  | `truncate` | `TRUNCATE ... CASCADE` после теста | debug / сравнение / тесты с реальной видимостью commit |
+- маркер `@pytest.mark.requires_truncate` — форс TRUNCATE для одного теста, если savepoint недостаточен.
+
 Параллель: `pytest-xdist` + `--dist=loadfile` (файл целиком на одном worker).
 
 ```bash
@@ -62,6 +70,14 @@ python -m pytest -q
 python -m pytest -n auto --dist=loadfile -q
 python -m pytest -n 2 --dist=loadfile -q
 python -m pytest -q --durations=20
+
+# dual-mode smoke (изоляция)
+# default savepoint
+python -m pytest tests/test_db_isolation.py -q
+# legacy truncate
+cross-env HRMS_TEST_ISOLATION=truncate python -m pytest tests/test_db_isolation.py -q
+# Windows PowerShell:
+# $env:HRMS_TEST_ISOLATION='truncate'; python -m pytest tests/test_db_isolation.py -q
 ```
 
 ## Интеграция с Chrome DevTools (CDP)
