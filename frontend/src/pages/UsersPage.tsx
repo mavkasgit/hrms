@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { Users, Plus, Shield, ShieldCheck, UserCheck, Search, Edit2, Trash2, Loader2, ArrowLeft, AlertCircle, Link, Copy, Check, User as UserIcon } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
+import { TelegramIcon } from "@/shared/ui/icons"
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ import { EmployeeSearch } from "@/features/employee-search"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select"
 import { UserAvatar } from "@/shared/ui/user-avatar"
 import { getUserSeed } from "@/shared/lib/avatar"
+import { TelegramBotModal } from "@/features/admin-settings/TelegramBotModal"
 interface User {
   id: number
   username: string
@@ -232,6 +234,9 @@ export function UsersPage() {
   const [userToDelete, setUserToDelete] = useState<User | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Состояние модалки Telegram Bot
+  const [telegramModalOpen, setTelegramModalOpen] = useState(false)
+
   const validateUsername = (val: string) => {
     if (!val.trim()) {
       return "Имя пользователя обязательно"
@@ -421,10 +426,16 @@ export function UsersPage() {
               Управление учетными записями, имеющими доступ к кадровой системе через сквозную авторизацию (SSO).
             </p>
           </div>
-          <Button onClick={openCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            Добавить пользователя
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setTelegramModalOpen(true)}>
+              <TelegramIcon className="mr-2 h-4 w-4" />
+              Telegram Bot
+            </Button>
+            <Button onClick={openCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              Добавить пользователя
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -736,6 +747,12 @@ export function UsersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Telegram Bot: токен хранится в system_settings */}
+      <TelegramBotModal
+        open={telegramModalOpen}
+        onOpenChange={setTelegramModalOpen}
+      />
     </div>
   )
 }
