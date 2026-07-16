@@ -27,10 +27,16 @@ export class LoginPage {
     this.submitButton = page.getByRole('button', { name: 'Войти', exact: true })
     this.errorMessage = page.locator('p.text-red-600')
     this.devAdminButton = page.getByRole('button', { name: 'Войти как Admin' })
-    // TG1 primary or classic SSO — both start the same OIDC authorize flow
+    // OIDC SSO only — never the app-level Telegram bot button
+    // (that label collides when telegram_primary is off)
     this.ssoButton = page.getByRole('button', {
-      name: /Войти через (единый вход|Telegram)/i,
+      name: 'Войти через единый вход',
     })
+  }
+
+  /** OIDC CTA when AUTH_OIDC_TELEGRAM_PRIMARY (app bot hidden). */
+  get ssoTelegramPrimaryButton(): Locator {
+    return this.page.getByRole('button', { name: 'Войти через Telegram' })
   }
 
   async goto() {
@@ -50,17 +56,24 @@ export class LoginPage {
   }
 
   /**
-   * Click primary SSO / Telegram OIDC button.
-   * Prefer exact TG label when present, else «единый вход».
+   * Click OIDC SSO CTA (Authentik authorize).
+   *
+   * Prefer «Войти через единый вход» first: when telegram_primary is off,
+   * LoginPage still shows app-level «Войти через Telegram» (bot modal) —
+   * that must NOT be used for OIDC e2e.
+   * When telegram_primary is on, app bot is hidden and OIDC CTA is the TG label.
    */
   async startOidcSso() {
-    const tg = this.page.getByRole('button', { name: 'Войти через Telegram' })
-    if (await tg.isVisible().catch(() => false)) {
-      await tg.click()
+    const sso = this.page.getByRole('button', {
+      name: 'Войти через единый вход',
+    })
+    if (await sso.isVisible().catch(() => false)) {
+      await sso.click()
       return
     }
+    // TG1 primary: OIDC button only (app bot login hidden)
     await this.page
-      .getByRole('button', { name: 'Войти через единый вход' })
+      .getByRole('button', { name: 'Войти через Telegram' })
       .click()
   }
 
