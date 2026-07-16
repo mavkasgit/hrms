@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
+from app.core.config import settings
 from app.core.constants import SSO_BYPASS_HASH
 from app.core.database import get_db
 from app.core.user_auth import clear_invite_if_fully_activated, generate_avatar_seed
@@ -129,10 +130,16 @@ async def create_user(
     if telegram_id is not None:
         invite_code = None
 
+    # OIDC SoT: role comes from Authentik groups on login — never elevate via local API
+    if settings.AUTH_OIDC_ENABLED:
+        role = "viewer"
+    else:
+        role = payload.role or "admin"
+
     user = User(
         username=payload.username,
         full_name=full_name,
-        role=payload.role or "admin",
+        role=role,
         employee_id=payload.employee_id,
         password_hash=password_hash,
         password_changed_at=_utcnow() if has_local_password else None,
@@ -202,8 +209,18 @@ async def update_user(
     elif payload.full_name:
         user.full_name = payload.full_name
         
-    if payload.role:
-        user.role = payload.role
+    if payload.role is not None:
+        if settings.AUTH_OIDC_ENABLED:
+            if payload.role != user.role:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "detail": "role_managed_by_idp",
+                        "message": "Роль управляется в Authentik",
+                    },
+                )
+        else:
+            user.role = payload.role
 
     # Telegram / phone link (field present in JSON, including null → clear)
     fields_set = payload.model_fields_set

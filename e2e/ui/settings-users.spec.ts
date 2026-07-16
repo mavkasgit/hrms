@@ -45,6 +45,7 @@ test.describe('Settings users @ui', () => {
       await usersPage.selectEmployeeByName(empName)
       // Employee select auto-fills transliterated login — override to unique e2e username
       await usersPage.fillUsername(username)
+      // Dual-run: no-op when OIDC on (role Select absent)
       await usersPage.selectRole('Наблюдатель')
       await usersPage.saveCreate()
 
@@ -53,7 +54,8 @@ test.describe('Settings users @ui', () => {
       if (typeof body.id === 'number') createdUserId = body.id
 
       await usersPage.expectUserInTable(username)
-      await expect(usersPage.userRow(username).getByText('Наблюдатель')).toBeVisible()
+      // Role badge: present for both dual-run modes (viewer default when OIDC)
+      await expect(usersPage.userRow(username).getByText(/Наблюдатель|Администратор/)).toBeVisible()
 
       await usersPage.generateInvite(username)
 

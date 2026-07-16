@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
-import { Users, Plus, Shield, ShieldCheck, UserCheck, Search, Edit2, Trash2, Loader2, ArrowLeft, AlertCircle, Link, Copy, Check, User as UserIcon } from "lucide-react"
+import { Users, Plus, Shield, ShieldCheck, UserCheck, Search, Edit2, Trash2, Loader2, ArrowLeft, AlertCircle, Link, Copy, Check, User as UserIcon, ExternalLink } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { TelegramIcon } from "@/shared/ui/icons"
@@ -30,6 +30,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { UserAvatar } from "@/shared/ui/user-avatar"
 import { getUserSeed } from "@/shared/lib/avatar"
 import { TelegramBotModal } from "@/features/admin-settings/TelegramBotModal"
+import {
+  fetchIdpConfig,
+  fetchIdpUsers,
+  setIdpUserAccess,
+  type IdpConfig,
+  type IdpUser,
+  type IdpAccessLevel,
+} from "@/shared/api/idpAdmin"
+import { fetchOidcConfig } from "@/shared/api/oidcAuth"
 interface User {
   id: number
   username: string
@@ -200,6 +209,15 @@ export function UsersPage() {
   const [loading, setLoading] = useState(true)
   const [generatingInvites, setGeneratingInvites] = useState<Record<number, boolean>>({})
 
+  // OIDC / IdP access section (SSO-D dual-run)
+  const [oidcEnabled, setOidcEnabled] = useState(false)
+  const [idpConfig, setIdpConfig] = useState<IdpConfig | null>(null)
+  const [idpUsers, setIdpUsers] = useState<IdpUser[]>([])
+  const [idpLoading, setIdpLoading] = useState(false)
+  const [idpError, setIdpError] = useState("")
+  const [idpSearch, setIdpSearch] = useState("")
+  const [idpSaving, setIdpSaving] = useState<Record<number, boolean>>({})
+
   const handleGenerateInvite = async (userId: number) => {
     setGeneratingInvites(prev => ({ ...prev, [userId]: true }))
     try {
@@ -275,9 +293,88 @@ export function UsersPage() {
     }
   }
 
+  const loadIdpSection = useCallback(async () => {
+    setIdpError("")
+    try {
+      const oidc = await fetchOidcConfig()
+      const enabled = Boolean(oidc.enabled)
+      setOidcEnabled(enabled)
+      if (!enabled) {
+        setIdpConfig(null)
+        setIdpUsers([])
+        return
+      }
+      setIdpLoading(true)
+      try {
+        const cfg = await fetchIdpConfig()
+        setIdpConfig(cfg)
+        if (cfg.idp_admin_enabled) {
+          const items = await fetchIdpUsers()
+          setIdpUsers(items)
+        } else {
+          setIdpUsers([])
+        }
+      } catch (err) {
+        console.error("IdP config/users failed:", err)
+        setIdpError("Не удалось загрузить данные единого входа")
+        setIdpConfig(null)
+        setIdpUsers([])
+      } finally {
+        setIdpLoading(false)
+      }
+    } catch {
+      setOidcEnabled(false)
+    }
+  }, [])
+
   useEffect(() => {
     loadData()
-  }, [])
+    void loadIdpSection()
+  }, [loadIdpSection])
+
+  const filteredIdpUsers = useMemo(() => {
+    const q = idpSearch.trim().toLowerCase()
+    if (!q) return idpUsers
+    return idpUsers.filter(
+      (u) =>
+        u.username.toLowerCase().includes(q) ||
+        (u.name || "").toLowerCase().includes(q) ||
+        (u.email || "").toLowerCase().includes(q),
+    )
+  }, [idpUsers, idpSearch])
+
+  const handleIdpAccessChange = async (pk: number, level: IdpAccessLevel) => {
+    setIdpSaving((prev) => ({ ...prev, [pk]: true }))
+    setIdpError("")
+    try {
+      const updated = await setIdpUserAccess(pk, level)
+      setIdpUsers((prev) =>
+        prev.map((u) =>
+          u.pk === pk
+            ? {
+                ...u,
+                ...updated,
+                access_level: updated.access_level || level,
+                groups: updated.groups || u.groups,
+              }
+            : u,
+        ),
+      )
+    } catch (err) {
+      console.error(err)
+      setIdpError(formatApiError(err) || "Не удалось изменить доступ")
+    } finally {
+      setIdpSaving((prev) => ({ ...prev, [pk]: false }))
+    }
+  }
+
+  const idpAccessOf = (u: IdpUser): IdpAccessLevel => {
+    const raw = (u.access_level || "").toString()
+    if (raw === "admin" || raw === "viewer" || raw === "none") return raw
+    if (u.groups?.includes("hrms-admin")) return "admin"
+    if (u.groups?.includes("hrms-viewer")) return "viewer"
+    return "none"
+  }
 
   // Фильтрация
   const filteredUsers = useMemo(() => {
@@ -368,7 +465,10 @@ export function UsersPage() {
       username: username.trim(),
       full_name: selectedEmployee.name,
       employee_id: selectedEmployee.id,
-      role: role,
+    }
+    // Dual-run: local role Select only when OIDC is off
+    if (!oidcEnabled) {
+      payload.role = role
     }
 
     try {
@@ -423,7 +523,9 @@ export function UsersPage() {
               Пользователи кадровой системы
             </h1>
             <p className="text-sm text-muted-foreground">
-              Управление учетными записями HRMS: вход по логину/паролю, Telegram или invite.
+              {oidcEnabled
+                ? "Роли — из единого входа (Authentik). Ниже: доступ IdP и локальные связи HRMS."
+                : "Управление учетными записями HRMS: вход по логину/паролю, Telegram или invite."}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -438,6 +540,143 @@ export function UsersPage() {
           </div>
         </div>
       </div>
+
+      {/* Section A — Доступ (единый вход) */}
+      {oidcEnabled && (
+        <div className="space-y-3 border rounded-lg p-4 bg-card">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Shield className="h-5 w-5 text-primary" />
+                Доступ (единый вход)
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Группы Authentik <span className="font-mono text-xs">hrms-admin</span> /{" "}
+                <span className="font-mono text-xs">hrms-viewer</span>. Изменения применяются после нового входа.
+              </p>
+            </div>
+            {idpConfig?.admin_url && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => window.open(idpConfig.admin_url!, "_blank", "noopener,noreferrer")}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Админка Authentik
+              </Button>
+            )}
+          </div>
+
+          {idpError && (
+            <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-md flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{idpError}</span>
+            </div>
+          )}
+
+          {idpLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Загрузка пользователей IdP...
+            </div>
+          ) : !idpConfig?.idp_admin_enabled ? (
+            <div className="p-4 rounded-md border border-amber-500/30 bg-amber-500/10 text-sm space-y-3">
+              <p className="text-foreground">
+                Управление доступом из HRMS отключено: задайте{" "}
+                <span className="font-mono text-xs">AUTHENTIK_API_TOKEN</span> на backend.
+                Пока можно открыть каталог пользователей в Authentik.
+              </p>
+              {idpConfig?.admin_url && (
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => window.open(idpConfig.admin_url!, "_blank", "noopener,noreferrer")}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Открыть Directory (Admin)
+                </Button>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-3 max-w-md">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Поиск IdP: логин, имя, email..."
+                    value={idpSearch}
+                    onChange={(e) => setIdpSearch(e.target.value)}
+                    className="pl-9 bg-background"
+                  />
+                </div>
+              </div>
+              {filteredIdpUsers.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  Пользователи IdP не найдены
+                </p>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-muted/50 border-b text-muted-foreground font-medium">
+                        <th className="px-4 py-2.5 text-left">Логин</th>
+                        <th className="px-4 py-2.5 text-left">Имя</th>
+                        <th className="px-4 py-2.5 text-left">Email</th>
+                        <th className="px-4 py-2.5 text-left">Доступ HRMS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {filteredIdpUsers.map((iu) => {
+                        const level = idpAccessOf(iu)
+                        return (
+                          <tr key={iu.pk} className="hover:bg-muted/20">
+                            <td className="px-4 py-3 font-mono font-medium">{iu.username}</td>
+                            <td className="px-4 py-3">{iu.name || "—"}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{iu.email || "—"}</td>
+                            <td className="px-4 py-3">
+                              <Select
+                                value={level}
+                                onValueChange={(v) =>
+                                  void handleIdpAccessChange(iu.pk, v as IdpAccessLevel)
+                                }
+                                disabled={Boolean(idpSaving[iu.pk])}
+                              >
+                                <SelectTrigger className="w-[200px]" aria-label={`Доступ ${iu.username}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="admin">Администратор</SelectItem>
+                                  <SelectItem value="viewer">Наблюдатель</SelectItem>
+                                  <SelectItem value="none">Нет доступа</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Section B — Пользователи HRMS (локальные связи) */}
+      <div className="space-y-3">
+        {oidcEnabled && (
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold">Пользователи HRMS</h2>
+            <p className="text-sm text-muted-foreground">
+              Локальные учётные записи: привязка к сотруднику, Telegram, invite. Роль задаётся в разделе доступа выше.
+            </p>
+          </div>
+        )}
 
       {/* Панель поиска */}
       <div className="flex gap-3 max-w-md">
@@ -603,6 +842,7 @@ export function UsersPage() {
           </table>
         </div>
       )}
+      </div>
 
       {/* Диалог создания/редактирования */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -650,7 +890,7 @@ export function UsersPage() {
                 <span>Учетные данные</span>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className={`grid gap-4 ${oidcEnabled ? "grid-cols-1" : "grid-cols-2"}`}>
                 {/* Логин */}
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -672,22 +912,29 @@ export function UsersPage() {
                   )}
                 </div>
 
-                {/* Роль в системе */}
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Роль
-                  </label>
-                  <Select value={role} onValueChange={setRole}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Выберите роль" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="viewer">Наблюдатель</SelectItem>
-                      <SelectItem value="admin">Администратор</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {/* Роль: только при OIDC off (dual-run) */}
+                {!oidcEnabled && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Роль
+                    </label>
+                    <Select value={role} onValueChange={setRole}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Выберите роль" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="viewer">Наблюдатель</SelectItem>
+                        <SelectItem value="admin">Администратор</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
+              {oidcEnabled && (
+                <p className="text-xs text-muted-foreground">
+                  Роль управляется в разделе «Доступ (единый вход)» / Authentik.
+                </p>
+              )}
             </div>
 
             <DialogFooter className="pt-2">

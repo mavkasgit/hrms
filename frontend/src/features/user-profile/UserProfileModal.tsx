@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   XCircle,
   History,
+  ExternalLink,
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { ru } from "date-fns/locale"
@@ -52,6 +53,7 @@ import {
   type SessionDto,
   type LoginEventDto,
 } from "@/features/user-profile/api/sessionsApi"
+import { fetchIdpLinks } from "@/shared/api/idpAdmin"
 type UserProfileModalProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -179,6 +181,10 @@ export function UserProfileModal({
   const [revokingId, setRevokingId] = useState<string | null>(null)
   const [revokingOthers, setRevokingOthers] = useState(false)
 
+  // IdP deep-link (SSO-D)
+  const [userSettingsUrl, setUserSettingsUrl] = useState<string | null>(null)
+  const [oidcEnabled, setOidcEnabled] = useState(false)
+
   const loadSessionsAndEvents = useCallback(async () => {
     setSessionsLoading(true)
     setSessionsError(null)
@@ -256,6 +262,17 @@ export function UserProfileModal({
       fetchTelegramBotConfig()
         .then((cfg) => setTelegramConfig(cfg))
         .catch((err) => console.error("Не удалось загрузить конфиг Telegram:", err))
+
+      // Deep-link «Настройки входа» (IdP user UI)
+      fetchIdpLinks()
+        .then((links) => {
+          setOidcEnabled(Boolean(links.oidc_enabled))
+          setUserSettingsUrl(links.user_settings_url || null)
+        })
+        .catch(() => {
+          setOidcEnabled(false)
+          setUserSettingsUrl(null)
+        })
 
       // Загружаем свежие данные о пользователе
       fetchUserData()
@@ -434,8 +451,28 @@ export function UserProfileModal({
                     <div className="bg-muted/40 border border-border/80 rounded-xl px-3.5 py-2 text-sm font-medium text-foreground">
                       {localUser.role === "admin" ? "Администратор" : "Сотрудник (Просмотр)"}
                     </div>
+                    {oidcEnabled && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Роль из единого входа
+                      </p>
+                    )}
                   </div>
                 </div>
+
+                {userSettingsUrl && (
+                  <div className="flex justify-start">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl text-xs gap-1.5"
+                      onClick={() => window.open(userSettingsUrl, "_blank", "noopener,noreferrer")}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Настройки входа
+                    </Button>
+                  </div>
+                )}
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground">Полное имя</label>

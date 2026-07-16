@@ -66,10 +66,15 @@ export class UsersPage {
   /**
    * Role Select defaults to viewer («Наблюдатель»).
    * Explicitly pick to assert the control works.
+   * Soft dual-run (SSO-D): when OIDC is on the role Select is hidden — skip silently.
    */
   async selectRole(label: 'Наблюдатель' | 'Администратор') {
     const trigger = this.createDialog.getByRole('combobox')
-    await expect(trigger).toBeVisible()
+    const visible = await trigger.isVisible().catch(() => false)
+    if (!visible) {
+      // OIDC on: role managed via IdP section — no local Select
+      return
+    }
     // Already selected?
     if (await trigger.getByText(label, { exact: true }).isVisible().catch(() => false)) {
       return

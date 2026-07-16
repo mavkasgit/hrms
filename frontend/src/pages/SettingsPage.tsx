@@ -1,12 +1,20 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { FileText, Cake, ArrowRight, ScrollText, Database, Users } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { GlobalAuditLog } from "@/features/global-audit-log"
+import { fetchOidcConfig } from "@/shared/api/oidcAuth"
 
 export function SettingsPage() {
   const navigate = useNavigate()
   const [auditLogOpen, setAuditLogOpen] = useState(false)
+  const [oidcEnabled, setOidcEnabled] = useState(false)
+
+  useEffect(() => {
+    fetchOidcConfig()
+      .then((cfg) => setOidcEnabled(Boolean(cfg.enabled)))
+      .catch(() => setOidcEnabled(false))
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -89,11 +97,13 @@ export function SettingsPage() {
             </div>
             <div className="flex-1">
               <h3 className="font-semibold mb-1 flex items-center gap-2">
-                Пользователи
+                {oidcEnabled ? "Пользователи и доступ (Authentik)" : "Пользователи"}
                 <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </h3>
               <p className="text-sm text-muted-foreground mb-3">
-                Управление пользователями HRMS: логин/пароль, Telegram и invite. Добавление, редактирование и привязка к сотрудникам.
+                {oidcEnabled
+                  ? "Роли из единого входа (Authentik), связи HRMS: сотрудник, Telegram и invite."
+                  : "Управление пользователями HRMS: логин/пароль, Telegram и invite. Добавление, редактирование и привязка к сотрудникам."}
               </p>
             </div>
           </div>
