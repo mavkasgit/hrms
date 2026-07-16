@@ -24,6 +24,9 @@ const UsersPage = lazy(async () => ({ default: (await import("@/pages/UsersPage"
 const HolidaysPage = lazy(async () => ({ default: (await import("@/pages/HolidaysPage")).HolidaysPage }))
 const BackupsPage = lazy(async () => ({ default: (await import("@/pages/BackupsPage")).BackupsPage }))
 const LoginPage = lazy(async () => ({ default: (await import("@/pages/LoginPage")).LoginPage }))
+const OidcCallbackPage = lazy(async () => ({
+  default: (await import("@/pages/OidcCallbackPage")).OidcCallbackPage,
+}))
 const DevPage = lazy(async () => ({ default: (await import("@/pages/DevPage")).DevPage }))
 const OrderEditorPage = lazy(async () => ({ default: (await import("@/pages/OrderEditorPage")).OrderEditorPage }))
 const DraftOrderEditorPage = lazy(async () => ({ default: (await import("@/pages/DraftOrderEditorPage")).DraftOrderEditorPage }))
@@ -71,6 +74,11 @@ export const router = createBrowserRouter([
   {
     path: "/login",
     element: withSuspense(<LoginPage />),
+  },
+  {
+    // Authentik redirect_uri (public SPA + PKCE) — see infra/authentik/BLUEPRINT.md
+    path: "/auth/callback",
+    element: withSuspense(<OidcCallbackPage />),
   },
   {
     path: "/orders/drafts/:draftId/edit-docx",

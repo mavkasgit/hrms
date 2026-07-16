@@ -130,7 +130,9 @@ function clearAuthTokens(): void {
   document.cookie = "ktm2000_token=; path=/; max-age=0"
 }
 
-/** Server revoke current session (best-effort), then clear tokens and redirect. */
+/** Server revoke current session (best-effort), then clear tokens and redirect.
+ * If OIDC is enabled and backend provides end_session URL — best-effort IdP logout.
+ */
 export async function logout(): Promise<void> {
   try {
     await api.post("/auth/logout", undefined, { skipGlobalToast: true })
@@ -138,6 +140,18 @@ export async function logout(): Promise<void> {
     /* best-effort — always clear local tokens */
   }
   clearAuthTokens()
+
+  // Optional Authentik end_session (dual-run when OIDC off → just /login)
+  try {
+    const { fetchOidcLogoutUrl } = await import("@/shared/api/oidcAuth")
+    const { enabled, logout_url } = await fetchOidcLogoutUrl()
+    if (enabled && logout_url) {
+      window.location.href = logout_url
+      return
+    }
+  } catch {
+    /* ignore — fall through to local login */
+  }
   window.location.href = "/login"
 }
 
@@ -224,7 +238,9 @@ function isCredentialLoginUrl(url: string | undefined): boolean {
     url.includes("/auth/invite/login") ||
     url.includes("/auth/telegram/widget") ||
     // poll challenge: 401 = bad poll_secret, не logout
-    url.includes("/auth/telegram/bot/challenge")
+    url.includes("/auth/telegram/bot/challenge") ||
+    // OIDC code exchange failure — stay on callback, don't loop logout
+    url.includes("/auth/oidc/callback")
   )
 }
 

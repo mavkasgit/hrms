@@ -81,6 +81,22 @@ class Settings(BaseSettings):
     SESSION_LAST_SEEN_THROTTLE_SECONDS: int = 300
     LOGIN_EVENTS_RETENTION_DAYS: int = 90  # default window for list_login_events queries
 
+    # OIDC / Authentik bridge (A3) — dual-run; false = local password/invite/TG only
+    AUTH_OIDC_ENABLED: bool = False
+    AUTH_OIDC_ISSUER: str | None = None  # e.g. http://localhost:9000/application/o/hrms/
+    AUTH_OIDC_CLIENT_ID: str | None = None
+    AUTH_OIDC_CLIENT_SECRET: str | None = None  # empty for public+PKCE
+    AUTH_OIDC_REDIRECT_URI: str | None = None  # e.g. http://localhost:5173/auth/callback
+    AUTH_OIDC_SCOPES: str = "openid profile email hrms_access"
+    # Optional overrides; if empty, derived from issuer / discovery
+    AUTH_OIDC_AUTHORIZATION_URL: str | None = None
+    AUTH_OIDC_TOKEN_URL: str | None = None
+    AUTH_OIDC_JWKS_URL: str | None = None
+    AUTH_OIDC_END_SESSION_URL: str | None = None
+    # Align with TELEGRAM_ALLOW_JIT: no auto-create local User unless true
+    AUTH_OIDC_ALLOW_JIT: bool = False
+    AUTH_OIDC_DEFAULT_ROLE: str = "viewer"
+
     model_config = {"env_file": _env_file, "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

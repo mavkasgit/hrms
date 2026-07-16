@@ -43,6 +43,13 @@ class User(Base):
             unique=True,
             postgresql_where=text("is_deleted = false"),
         ),
+        # Partial unique: soft-deleted rows do not block re-link of Authentik sub
+        Index(
+            "ix_users_authentik_sub_active",
+            "authentik_sub",
+            unique=True,
+            postgresql_where=text("is_deleted = false AND authentik_sub IS NOT NULL"),
+        ),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -65,6 +72,8 @@ class User(Base):
     # NULL → на фронте пустая заглушка. До 64 ASCII (8 hex).
     avatar_seed = Column(String(64), nullable=True)
     invite_code = Column(String(64), unique=True, nullable=True, index=True)
+    # Authentik / OIDC subject (stable UUID from IdP); link for SSO bridge
+    authentik_sub = Column(String(255), nullable=True, index=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

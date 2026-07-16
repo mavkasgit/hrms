@@ -33,6 +33,8 @@ export function formatLoginMethod(method: string | null | undefined): string {
       return "Telegram"
     case "telegram_bot":
       return "Telegram-бот"
+    case "oidc":
+      return "Единый вход"
     default:
       return method || "—"
   }

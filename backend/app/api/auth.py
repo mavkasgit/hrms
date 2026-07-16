@@ -11,8 +11,14 @@ from app.core.constants import SSO_BYPASS_HASH
 from app.core.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user, CurrentUser
+from app.schemas.oidc_auth import (
+    OidcCallbackRequest,
+    OidcConfigResponse,
+    OidcLogoutUrlResponse,
+)
 from app.schemas.session import LoginEventOut, SessionOut
 from app.services import session_service
+from app.services.oidc_auth_service import OidcAuthService
 from app.services.session_service import SessionNotFoundError
 from app.utils.client_ip import get_client_ip
 from app.utils.user_agent import device_label_from_ua
@@ -76,6 +82,57 @@ async def _resolve_user_id(db: AsyncSession, current_user: CurrentUser) -> int:
             detail="Пользователь не найден",
         )
     return user.id
+
+
+# ─── OIDC / Authentik bridge (A3) ─────────────────────────────────────────────
+
+
+@router.get("/oidc/config", response_model=OidcConfigResponse)
+async def oidc_config() -> OidcConfigResponse:
+    """
+    Public OIDC client config for FE (authorize URL + PKCE params).
+    When disabled: ``enabled=false`` and null fields (password/TG login unchanged).
+    """
+    return OidcConfigResponse(**OidcAuthService.public_config())
+
+
+@router.post("/oidc/callback", response_model=LoginResponse)
+async def oidc_callback(
+    payload: OidcCallbackRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> LoginResponse:
+    """
+    Exchange authorization code (+ PKCE verifier), validate id_token via JWKS,
+    link/find local User, issue app JWT via ``complete_login(login_method=oidc)``.
+    """
+    ip, ua = _request_meta(request)
+    service = OidcAuthService(db)
+    result = await service.handle_callback(
+        code=payload.code,
+        code_verifier=payload.code_verifier,
+        redirect_uri=payload.redirect_uri,
+        ip=ip,
+        user_agent=ua,
+    )
+    return LoginResponse(
+        access_token=result["access_token"],
+        token_type=result.get("token_type", "bearer"),
+        username=result["username"],
+        role=result["role"],
+        full_name=result["full_name"],
+    )
+
+
+@router.get("/oidc/logout-url", response_model=OidcLogoutUrlResponse)
+async def oidc_logout_url() -> OidcLogoutUrlResponse:
+    """Authentik end_session URL for FE (optional post-logout redirect to /login)."""
+    if not OidcAuthService.is_enabled():
+        return OidcLogoutUrlResponse(enabled=False, logout_url=None)
+    return OidcLogoutUrlResponse(
+        enabled=True,
+        logout_url=OidcAuthService.logout_url(),
+    )
 
 
 @router.post("/login", response_model=LoginResponse)

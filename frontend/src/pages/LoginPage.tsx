@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Loader2, Bug, LogIn, AlertCircle } from "lucide-react"
+import { Loader2, Bug, LogIn, AlertCircle, Shield } from "lucide-react"
 import api, {
   loginWithPassword,
   isDevMode,
@@ -11,6 +11,11 @@ import {
   type TelegramBotConfig,
   type TelegramLoginResponse,
 } from "@/shared/api/telegramAuth"
+import {
+  fetchOidcConfig,
+  startOidcLogin,
+  type OidcConfig,
+} from "@/shared/api/oidcAuth"
 import { TelegramLoginModal } from "@/features/auth/telegram/TelegramLoginModal"
 import { Button } from "@/shared/ui/button"
 import {
@@ -28,6 +33,8 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [telegramConfig, setTelegramConfig] = useState<TelegramBotConfig | null>(null)
+  const [oidcConfig, setOidcConfig] = useState<OidcConfig | null>(null)
+  const [oidcStarting, setOidcStarting] = useState(false)
   const [tgModalOpen, setTgModalOpen] = useState(false)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [inviteCodeInput, setInviteCodeInput] = useState("")
@@ -45,6 +52,11 @@ export function LoginPage() {
   const botEnabled =
     Boolean(telegramConfig?.bot_enabled) ||
     Boolean(telegramConfig?.bot_username)
+  const oidcEnabled = Boolean(
+    oidcConfig?.enabled &&
+      oidcConfig.authorization_url &&
+      oidcConfig.client_id
+  )
 
   useEffect(() => {
     // Ошибка после 401-редиректа (сессия / «пользователь удалён» и т.п.)
@@ -52,19 +64,38 @@ export function LoginPage() {
     if (saved) setError(saved)
 
     let cancelled = false
-    async function loadTelegramConfig() {
+    async function loadConfigs() {
       try {
         const cfg = await fetchTelegramBotConfig()
         if (!cancelled) setTelegramConfig(cfg)
       } catch {
         if (!cancelled) setTelegramConfig(null)
       }
+      try {
+        const oidc = await fetchOidcConfig()
+        if (!cancelled) setOidcConfig(oidc)
+      } catch {
+        if (!cancelled) setOidcConfig(null)
+      }
     }
-    loadTelegramConfig()
+    loadConfigs()
     return () => {
       cancelled = true
     }
   }, [])
+
+  async function handleOidcLogin() {
+    if (!oidcConfig || !oidcEnabled) return
+    setError(null)
+    setOidcStarting(true)
+    try {
+      await startOidcLogin(oidcConfig)
+      // redirect — no further UI
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Ошибка входа через единый вход")
+      setOidcStarting(false)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -173,9 +204,34 @@ export function LoginPage() {
           <p className="text-slate-500 text-sm">Система управления персоналом</p>
         </div>
 
+        {/* SSO (Authentik) — dual-run when AUTH_OIDC enabled */}
+        {oidcEnabled && (
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => void handleOidcLogin()}
+              disabled={loading || oidcStarting}
+              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
+            >
+              {oidcStarting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Shield className="h-4 w-4" />
+              )}
+              Войти через единый вход
+            </button>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                <div className="w-full border-t border-slate-200" />
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-white px-2 text-slate-400">или</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Форма логин/пароль */}
-
-
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
             <label className="block text-sm font-medium text-slate-700">Логин</label>
@@ -210,7 +266,7 @@ export function LoginPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || oidcStarting}
             className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-700 disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
