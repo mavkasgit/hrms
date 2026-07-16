@@ -35,4 +35,6 @@ from app.models.work_schedule import WorkSchedule, WorkScheduleEntry  # noqa: F4
 from app.models.timesheet import TimesheetImport, TimesheetEntry, TimesheetUnmatchedRow  # noqa: F401, E402
 from app.models.used_signature import UsedTelegramSignature  # noqa: F401, E402
 from app.models.system_setting import SystemSetting  # noqa: F401, E402
+from app.models.user_session import UserSession  # noqa: F401, E402
+from app.models.user_login_event import UserLoginEvent  # noqa: F401, E402
 

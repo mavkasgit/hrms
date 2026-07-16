@@ -27,7 +27,6 @@ from app.repositories.challenge_repository import ChallengeRepository
 from app.repositories.signature_repository import SignatureRepository
 from app.repositories.system_setting_repository import SystemSettingRepository
 from app.repositories.user_repository import UserRepository
-from app.services.auth_token import create_access_token
 
 # getUpdates offset + one-shot deleteWebhook for local polling mode
 _telegram_updates_offset: int | None = None
@@ -236,7 +235,13 @@ class TelegramAuthService:
             "preferred_username": preferred,
         }
 
-    async def login_with_widget(self, data: dict[str, Any]) -> dict:
+    async def login_with_widget(
+        self,
+        data: dict[str, Any],
+        *,
+        ip: str | None = None,
+        user_agent: str | None = None,
+    ) -> dict:
         """Verify Login Widget HMAC → resolve/provision → LoginResponse dict."""
         identity = await self.verify_widget_payload(data)
         user = await self.resolve_or_provision_user(
@@ -245,7 +250,12 @@ class TelegramAuthService:
             preferred_username=identity["preferred_username"],
             phone=None,
         )
-        return self.issue_login_response(user)
+        return await self.issue_login_response(
+            user,
+            ip=ip,
+            user_agent=user_agent,
+            login_method="telegram_widget",
+        )
 
     # ─── identity resolve ─────────────────────────────────────────────────
 
@@ -310,13 +320,24 @@ class TelegramAuthService:
                     return candidate
         return f"tg_{telegram_id}"
 
-    def issue_login_response(self, user: User) -> dict:
-        """create_access_token + LoginResponse-compatible dict."""
+    async def issue_login_response(
+        self,
+        user: User,
+        *,
+        ip: str | None = None,
+        user_agent: str | None = None,
+        login_method: str = "telegram_widget",
+    ) -> dict:
+        """Session + JWT with sid + LoginResponse-compatible dict."""
+        from app.services import session_service
+
         full_name = user.full_name or user.username
-        token = create_access_token(
-            username=user.username,
-            role=user.role,
-            full_name=full_name,
+        token, _session = await session_service.complete_login(
+            self.db,
+            user=user,
+            login_method=login_method,
+            ip=ip,
+            user_agent=user_agent,
         )
         return {
             "access_token": token,
@@ -413,6 +434,8 @@ class TelegramAuthService:
         challenge_id: UUID | str,
         *,
         poll_secret: str | None = None,
+        ip: str | None = None,
+        user_agent: str | None = None,
     ) -> dict:
         """
         Poll challenge status (requires poll_secret from create response).
@@ -522,7 +545,12 @@ class TelegramAuthService:
                 if claimed is None:
                     return self._status_body("consumed")
 
-                login = self.issue_login_response(user)
+                login = await self.issue_login_response(
+                    user,
+                    ip=ip,
+                    user_agent=user_agent,
+                    login_method="telegram_bot",
+                )
                 await self.db.commit()
                 return {
                     "status": "confirmed",
@@ -555,7 +583,12 @@ class TelegramAuthService:
                 # Lost race: another poll already consumed.
                 return self._status_body("consumed")
 
-            login = self.issue_login_response(user)
+            login = await self.issue_login_response(
+                user,
+                ip=ip,
+                user_agent=user_agent,
+                login_method="telegram_bot",
+            )
             await self.db.commit()
             return {
                 "status": "confirmed",

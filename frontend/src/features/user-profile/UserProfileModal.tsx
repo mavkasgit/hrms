@@ -12,8 +12,13 @@ import {
   ShieldAlert,
   Loader2,
   Pencil,
+  CheckCircle2,
+  XCircle,
+  History,
 } from "lucide-react"
-import api from "@/shared/api/axios"
+import { formatDistanceToNow } from "date-fns"
+import { ru } from "date-fns/locale"
+import api, { logout } from "@/shared/api/axios"
 import { Button } from "@/shared/ui/button"
 import {
   Dialog,
@@ -38,6 +43,15 @@ import { UserAvatar } from "@/shared/ui/user-avatar"
 import { getUserSeed } from "@/shared/lib/avatar"
 import { AvatarPickerDialog } from "@/features/user-profile/AvatarPickerDialog"
 import { formatDateTime } from "@/shared/utils/date"
+import {
+  fetchSessions,
+  fetchLoginEvents,
+  revokeSession,
+  revokeOtherSessions,
+  formatLoginMethod,
+  type SessionDto,
+  type LoginEventDto,
+} from "@/features/user-profile/api/sessionsApi"
 type UserProfileModalProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -156,38 +170,78 @@ export function UserProfileModal({
   const [tgSuccess, setTgSuccess] = useState("")
   const [unlinkConfirmOpen, setUnlinkConfirmOpen] = useState(false)
 
-  // Данные о сессии (парсинг userAgent)
-  const [sessionInfo, setSessionInfo] = useState({
-    os: "Неизвестная ОС",
-    browser: "Неизвестный браузер",
-    ip: "127.0.0.1 (локальный)",
-  })
+  // Активные сессии + история входов (API)
+  const [sessions, setSessions] = useState<SessionDto[]>([])
+  const [loginEvents, setLoginEvents] = useState<LoginEventDto[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(false)
+  const [sessionsError, setSessionsError] = useState<string | null>(null)
+  const [eventsError, setEventsError] = useState<string | null>(null)
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [revokingOthers, setRevokingOthers] = useState(false)
+
+  const loadSessionsAndEvents = useCallback(async () => {
+    setSessionsLoading(true)
+    setSessionsError(null)
+    setEventsError(null)
+    try {
+      const [sessionsData, eventsData] = await Promise.all([
+        fetchSessions().catch((err: unknown) => {
+          console.error("Не удалось загрузить сессии:", err)
+          setSessionsError("Не удалось загрузить активные сессии")
+          return [] as SessionDto[]
+        }),
+        fetchLoginEvents(50).catch((err: unknown) => {
+          console.error("Не удалось загрузить историю входов:", err)
+          setEventsError("Не удалось загрузить историю входов")
+          return [] as LoginEventDto[]
+        }),
+      ])
+      setSessions(sessionsData)
+      setLoginEvents(eventsData)
+    } finally {
+      setSessionsLoading(false)
+    }
+  }, [])
+
+  const handleRevokeSession = useCallback(
+    async (session: SessionDto) => {
+      if (revokingId) return
+      setRevokingId(session.id)
+      setSessionsError(null)
+      try {
+        await revokeSession(session.id)
+        if (session.is_current) {
+          await logout()
+          return
+        }
+        await loadSessionsAndEvents()
+      } catch (err) {
+        console.error("Не удалось завершить сеанс:", err)
+        setSessionsError("Не удалось завершить сеанс")
+      } finally {
+        setRevokingId(null)
+      }
+    },
+    [revokingId, loadSessionsAndEvents],
+  )
+
+  const handleRevokeOthers = useCallback(async () => {
+    if (revokingOthers) return
+    setRevokingOthers(true)
+    setSessionsError(null)
+    try {
+      await revokeOtherSessions()
+      await loadSessionsAndEvents()
+    } catch (err) {
+      console.error("Не удалось завершить другие сессии:", err)
+      setSessionsError("Не удалось завершить другие сессии")
+    } finally {
+      setRevokingOthers(false)
+    }
+  }, [revokingOthers, loadSessionsAndEvents])
 
   useEffect(() => {
     if (open) {
-      // Парсим User Agent при открытии модалки
-      const ua = navigator.userAgent
-      let os = "Неизвестная ОС"
-      let browser = "Неизвестный браузер"
-
-      if (ua.indexOf("Win") !== -1) os = "Windows"
-      else if (ua.indexOf("Mac") !== -1) os = "macOS"
-      else if (ua.indexOf("Linux") !== -1) os = "Linux"
-      else if (ua.indexOf("Android") !== -1) os = "Android"
-      else if (ua.indexOf("like Mac") !== -1) os = "iOS"
-
-      if (ua.indexOf("Firefox") !== -1) browser = "Mozilla Firefox"
-      else if (ua.indexOf("SamsungBrowser") !== -1) browser = "Samsung Browser"
-      else if (ua.indexOf("Opera") !== -1 || ua.indexOf("OPR") !== -1) browser = "Opera"
-      else if (ua.indexOf("Edge") !== -1 || ua.indexOf("Edg") !== -1) browser = "Microsoft Edge"
-      else if (ua.indexOf("Chrome") !== -1) browser = "Google Chrome"
-      else if (ua.indexOf("Safari") !== -1) browser = "Apple Safari"
-
-      setSessionInfo({
-        os,
-        browser,
-        ip: "127.0.0.1 (локальный)",
-      })
       // Сброс сообщений
       setPasswordError("")
       setPasswordSuccess("")
@@ -195,6 +249,8 @@ export function UserProfileModal({
       setTgSuccess("")
       setPassword("")
       setConfirmPassword("")
+      setSessionsError(null)
+      setEventsError(null)
 
       // Загружаем конфигурацию Telegram
       fetchTelegramBotConfig()
@@ -203,8 +259,10 @@ export function UserProfileModal({
 
       // Загружаем свежие данные о пользователе
       fetchUserData()
+      // Реальные сессии + история входов
+      void loadSessionsAndEvents()
     }
-  }, [open, fetchUserData])
+  }, [open, fetchUserData, loadSessionsAndEvents])
 
   if (!localUser) return null
 
@@ -593,35 +651,202 @@ export function UserProfileModal({
                 </form>
               </div>
 
-              {/* РАЗДЕЛ 3: АКТИВНЫЕ СЕССИИ */}
-              <div id="sessions-section" className="space-y-4 pt-2 scroll-mt-6">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80 border-b border-border/40 pb-2 mb-4">Активные сессии</h3>
-                <p className="text-xs text-muted-foreground">
-                  Список устройств и браузеров, с которых вы вошли в систему
-                </p>
-
-                <div className="p-4 rounded-2xl border border-border bg-muted/5 flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center text-green-500 shrink-0">
-                    <Laptop className="h-5 w-5" />
+              {/* РАЗДЕЛ 3: АКТИВНЫЕ СЕССИИ + ВХОДЫ */}
+              <div id="sessions-section" className="space-y-6 pt-2 scroll-mt-6">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2 mb-4">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">
+                      Активные сессии
+                    </h3>
+                    {sessions.some((s) => !s.is_current) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={revokingOthers || sessionsLoading}
+                        onClick={() => void handleRevokeOthers()}
+                        className="rounded-xl text-xs h-7 px-2.5"
+                      >
+                        {revokingOthers ? (
+                          <>
+                            <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
+                            Завершение...
+                          </>
+                        ) : (
+                          "Завершить другие сессии"
+                        )}
+                      </Button>
+                    )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-semibold text-foreground truncate">
-                        {sessionInfo.browser} ({sessionInfo.os})
-                      </h4>
-                      <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-green-600 dark:text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                        Текущий сеанс
-                      </span>
+                  <p className="text-xs text-muted-foreground">
+                    Список устройств и браузеров, с которых вы вошли в систему
+                  </p>
+
+                  {sessionsLoading && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Загрузка сессий...
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      IP-адрес: <span className="font-mono text-[11px]">{sessionInfo.ip}</span>
+                  )}
+
+                  {sessionsError && (
+                    <p className="text-xs text-destructive">{sessionsError}</p>
+                  )}
+
+                  {!sessionsLoading && sessions.length === 0 && !sessionsError && (
+                    <p className="text-xs text-muted-foreground py-2">
+                      Нет активных сессий
                     </p>
+                  )}
+
+                  <div className="space-y-2">
+                    {sessions.map((session) => {
+                      const deviceLabel =
+                        session.device_label?.trim() || "Неизвестное устройство"
+                      const ipLabel = session.ip_address?.trim() || "IP неизвестен"
+                      const lastSeenLabel = (() => {
+                        try {
+                          return formatDistanceToNow(new Date(session.last_seen_at), {
+                            addSuffix: true,
+                            locale: ru,
+                          })
+                        } catch {
+                          return formatDateTime(session.last_seen_at, false)
+                        }
+                      })()
+                      return (
+                        <div
+                          key={session.id}
+                          className="p-4 rounded-2xl border border-border bg-muted/5 flex items-start gap-4"
+                        >
+                          <div
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                              session.is_current
+                                ? "bg-green-500/10 text-green-500"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            <Laptop className="h-5 w-5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-sm font-semibold text-foreground truncate">
+                                {deviceLabel}
+                              </h4>
+                              {session.is_current && (
+                                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-green-600 dark:text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                  Текущий сеанс
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              IP:{" "}
+                              <span className="font-mono text-[11px]">{ipLabel}</span>
+                              {" · "}
+                              {formatLoginMethod(session.login_method)}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground/80 mt-0.5">
+                              Активность: {lastSeenLabel}
+                              {" · "}
+                              Вход: {formatDateTime(session.created_at, false)}
+                            </p>
+                          </div>
+                          {!session.is_current && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={revokingId === session.id}
+                              onClick={() => void handleRevokeSession(session)}
+                              className="rounded-xl text-xs shrink-0 h-8"
+                            >
+                              {revokingId === session.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                "Завершить сеанс"
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <div className="text-xs text-muted-foreground/60 bg-muted/10 p-3.5 rounded-xl border border-border/40">
+                    Примечание: при подозрении на несанкционированный доступ завершите
+                    чужие сессии выше или нажмите «Выйти» в боковом меню — сеанс
+                    отзывается на сервере, повторный вход потребует авторизации.
                   </div>
                 </div>
 
-                <div className="text-xs text-muted-foreground/60 bg-muted/10 p-3.5 rounded-xl border border-border/40">
-                  Примечание: Если вы подозреваете несанкционированный доступ, нажмите кнопку «Выйти» в нижнем углу бокового меню, чтобы сбросить все токены сессий и войти заново.
+                {/* История входов */}
+                <div className="space-y-4 border-t border-border/40 pt-5">
+                  <div className="flex items-center gap-2">
+                    <History className="h-3.5 w-3.5 text-muted-foreground" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">
+                      Входы
+                    </h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    История успешных и неудачных попыток входа (до 90 дней)
+                  </p>
+
+                  {eventsError && (
+                    <p className="text-xs text-destructive">{eventsError}</p>
+                  )}
+
+                  {!sessionsLoading && loginEvents.length === 0 && !eventsError && (
+                    <p className="text-xs text-muted-foreground py-2">
+                      Пока нет записей о входах
+                    </p>
+                  )}
+
+                  <div className="space-y-1.5">
+                    {loginEvents.map((event) => (
+                      <div
+                        key={event.id}
+                        className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-border/60 bg-muted/5"
+                      >
+                        <div className="shrink-0 mt-0.5">
+                          {event.success ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-destructive" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold text-foreground">
+                              {event.success
+                                ? "Успешный вход"
+                                : "Неудачная попытка"}
+                            </span>
+                            {event.login_method && (
+                              <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                                {formatLoginMethod(event.login_method)}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                            {event.device_label?.trim() || "Устройство неизвестно"}
+                            {" · "}
+                            <span className="font-mono">
+                              {event.ip_address?.trim() || "IP неизвестен"}
+                            </span>
+                          </p>
+                          {!event.success && event.failure_reason && (
+                            <p className="text-[11px] text-destructive/90 mt-0.5">
+                              {event.failure_reason}
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-muted-foreground shrink-0 whitespace-nowrap">
+                          {formatDateTime(event.created_at, false)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

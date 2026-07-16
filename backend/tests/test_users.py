@@ -46,7 +46,7 @@ def test_user_schema_username_validation():
             UserCreate(username=username, full_name="Иванов Иван", role="viewer")
 
 
-async def test_create_user_api_role_and_validation(async_client):
+async def test_create_user_api_role_and_validation(async_client, db_session: AsyncSession):
     """Тест создания пользователя через API с проверкой валидации и роли."""
     import uuid
     username = f"user_{uuid.uuid4().hex[:8]}"
@@ -86,9 +86,34 @@ async def test_create_user_api_role_and_validation(async_client):
     response_delete = await async_client.delete(f"/api/users/{user_id}", headers=_get_auth_headers())
     assert response_delete.status_code == 204
 
-    # Попытка запроса от имени удаленного пользователя (должно возвращать 401)
+    # Попытка запроса от имени удаленного пользователя (должно возвращать 401).
+    # Нужен JWT с активной session (sid): без sid get_current_user → Session required.
+    from app.services import session_service
     from app.services.auth_token import create_access_token
-    token = create_access_token(username=username, role="admin", full_name="Deleted User")
+    from app.models.user import User as UserModel
+    from sqlalchemy.future import select as sa_select
+
+    ures = await db_session.execute(
+        sa_select(UserModel).where(UserModel.username == username)
+    )
+    deleted_user = ures.scalars().first()
+    assert deleted_user is not None
+    # Soft-deleted: still has row; issue session + token with sid for the deleted user id
+    sess = await session_service.issue_session(
+        db_session,
+        user_id=deleted_user.id,
+        ip="127.0.0.1",
+        user_agent="pytest",
+        login_method="password",
+        ttl_minutes=60,
+    )
+    await db_session.commit()
+    token = create_access_token(
+        username=username,
+        role="admin",
+        full_name="Deleted User",
+        session_id=sess.id,
+    )
     response_me = await async_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response_me.status_code == 401
     assert response_me.json()["detail"] == "Пользователь удален из системы"

@@ -21,6 +21,7 @@ from app.schemas.telegram_auth import (
     TelegramWidgetLoginRequest,
 )
 from app.services.telegram_auth_service import TelegramAuthService
+from app.utils.client_ip import get_client_ip
 
 router = APIRouter(prefix="/auth/telegram", tags=["auth-telegram"])
 
@@ -32,10 +33,9 @@ _telegram_public_limiter = SlidingWindowRateLimiter(
 
 
 def _client_ip(request: Request) -> str:
-    """Best-effort client IP (no X-Forwarded-For pattern elsewhere in project)."""
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
+    """Client IP via shared helper (X-Real-IP / trusted XFF / request.client)."""
+    ip = get_client_ip(request, trusted_proxy_count=settings.TRUSTED_PROXY_COUNT)
+    return ip or "unknown"
 
 
 def enforce_telegram_public_rate_limit(request: Request) -> None:
@@ -74,6 +74,7 @@ async def get_telegram_bot_config() -> TelegramBotConfigResponse:
 )
 async def telegram_widget_login(
     payload: TelegramWidgetLoginRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     """
@@ -84,7 +85,9 @@ async def telegram_widget_login(
     """
     service = TelegramAuthService(db)
     data = payload.model_dump(exclude_none=True)
-    result = await service.login_with_widget(data)
+    ip = get_client_ip(request, trusted_proxy_count=settings.TRUSTED_PROXY_COUNT)
+    ua = request.headers.get("user-agent")
+    result = await service.login_with_widget(data, ip=ip, user_agent=ua)
     return LoginResponse(**result)
 
 
@@ -139,6 +142,7 @@ async def create_bot_challenge(
 )
 async def poll_bot_challenge(
     challenge_id: UUID,
+    request: Request,
     poll_secret: str | None = Query(default=None),
     x_telegram_poll_secret: str | None = Header(
         default=None, alias="X-Telegram-Poll-Secret"
@@ -148,7 +152,11 @@ async def poll_bot_challenge(
     """Poll challenge; requires poll_secret (query or X-Telegram-Poll-Secret)."""
     service = TelegramAuthService(db)
     secret = poll_secret or x_telegram_poll_secret
-    result = await service.poll_bot_challenge(challenge_id, poll_secret=secret)
+    ip = get_client_ip(request, trusted_proxy_count=settings.TRUSTED_PROXY_COUNT)
+    ua = request.headers.get("user-agent")
+    result = await service.poll_bot_challenge(
+        challenge_id, poll_secret=secret, ip=ip, user_agent=ua
+    )
     return TelegramBotChallengeStatus(**result)
 
 

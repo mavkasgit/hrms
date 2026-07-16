@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 import bcrypt
 from pydantic import BaseModel
 from sqlalchemy.future import select
@@ -9,7 +11,11 @@ from app.core.constants import SSO_BYPASS_HASH
 from app.core.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user, CurrentUser
-from app.services.auth_token import create_access_token
+from app.schemas.session import LoginEventOut, SessionOut
+from app.services import session_service
+from app.services.session_service import SessionNotFoundError
+from app.utils.client_ip import get_client_ip
+from app.utils.user_agent import device_label_from_ua
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -43,9 +49,39 @@ def _verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
+def _request_meta(request: Request) -> tuple[str | None, str | None]:
+    """ip + user-agent from request (trusted proxy aware)."""
+    ip = get_client_ip(request, trusted_proxy_count=settings.TRUSTED_PROXY_COUNT)
+    ua = request.headers.get("user-agent")
+    return ip, ua
+
+
+def _login_response(user: User, token: str) -> LoginResponse:
+    return LoginResponse(
+        access_token=token,
+        username=user.username,
+        role=user.role,
+        full_name=user.full_name or user.username,
+    )
+
+
+async def _resolve_user_id(db: AsyncSession, current_user: CurrentUser) -> int:
+    result = await db.execute(
+        select(User).where(User.username == current_user.username, User.is_deleted == False)
+    )
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден",
+        )
+    return user.id
+
+
 @router.post("/login", response_model=LoginResponse)
 async def login(
     payload: LoginRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     """
@@ -54,68 +90,90 @@ async def login(
     В dev-режиме (DEV_BYPASS_AUTH=True на бэкенде) принимает пароль "dev"
     для любого существующего пользователя.
     """
+    ip, ua = _request_meta(request)
     result = await db.execute(
         select(User).where(User.username == payload.username, User.is_deleted == False)
     )
     user = result.scalars().first()
 
     if not user:
+        await session_service.record_failed_login(
+            db,
+            username_attempted=payload.username,
+            reason="invalid_credentials",
+            method="password",
+            ip=ip,
+            user_agent=ua,
+            user_id=None,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный логин или пароль",
         )
 
     if not _verify_password(payload.password, user.password_hash):
+        await session_service.record_failed_login(
+            db,
+            username_attempted=payload.username,
+            reason="invalid_credentials",
+            method="password",
+            ip=ip,
+            user_agent=ua,
+            user_id=user.id,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный логин или пароль",
         )
 
-    token = create_access_token(
-        username=user.username,
-        role=user.role,
-        full_name=user.full_name or user.username,
+    token, _session = await session_service.complete_login(
+        db,
+        user=user,
+        login_method="password",
+        ip=ip,
+        user_agent=ua,
     )
-
-    return LoginResponse(
-        access_token=token,
-        username=user.username,
-        role=user.role,
-        full_name=user.full_name or user.username,
-    )
+    return _login_response(user, token)
 
 
 @router.post("/invite/login", response_model=LoginResponse)
 async def invite_login(
     payload: InviteLoginRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     """
     Вход по одноразовому инвайт-коду.
     """
+    ip, ua = _request_meta(request)
     result = await db.execute(
         select(User).where(User.invite_code == payload.invite_code, User.is_deleted == False)
     )
     user = result.scalars().first()
 
     if not user:
+        await session_service.record_failed_login(
+            db,
+            username_attempted=payload.invite_code,
+            reason="invalid_invite",
+            method="invite",
+            ip=ip,
+            user_agent=ua,
+            user_id=None,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Код приглашения недействителен. Убедитесь, что код введен верно, или что аккаунт не был активирован ранее (в этом случае войдите с помощью пароля или Telegram).",
         )
 
-    token = create_access_token(
-        username=user.username,
-        role=user.role,
-        full_name=user.full_name or user.username,
+    token, _session = await session_service.complete_login(
+        db,
+        user=user,
+        login_method="invite",
+        ip=ip,
+        user_agent=ua,
     )
-
-    return LoginResponse(
-        access_token=token,
-        username=user.username,
-        role=user.role,
-        full_name=user.full_name or user.username,
-    )
+    return _login_response(user, token)
 
 
 @router.get("/me")
@@ -151,3 +209,186 @@ async def get_me(
         "invite_code": user.invite_code,
         "avatar_seed": user.avatar_seed,
     }
+
+
+@router.get("/sessions", response_model=list[SessionOut])
+async def list_my_sessions(
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[SessionOut]:
+    """Список активных (не отозванных, не истёкших) сессий текущего пользователя."""
+    user_id = await _resolve_user_id(db, current_user)
+    sessions = await session_service.list_sessions(db, user_id=user_id)
+    current_sid = current_user.session_id
+    return [
+        SessionOut(
+            id=s.id,
+            device_label=s.device_label,
+            ip_address=s.ip_address,
+            user_agent=s.user_agent,
+            login_method=s.login_method,
+            created_at=s.created_at,
+            last_seen_at=s.last_seen_at,
+            is_current=bool(current_sid and s.id == current_sid),
+        )
+        for s in sessions
+    ]
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_my_session(
+    session_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Отозвать одну сессию (свою)."""
+    user_id = await _resolve_user_id(db, current_user)
+    try:
+        await session_service.revoke_session(
+            db,
+            user_id=user_id,
+            session_id=session_id,
+            reason="user_revoke",
+        )
+    except SessionNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Сессия не найдена",
+        )
+    await session_service.record_login_event(
+        db,
+        event_type="session_revoke",
+        success=True,
+        user_id=user_id,
+        username_attempted=current_user.username,
+        session_id=session_id,
+        details={"reason": "user_revoke", "scope": "one"},
+    )
+
+
+@router.delete("/sessions", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_my_sessions(
+    scope: str = Query(default="others", pattern="^(others|all)$"),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Отозвать сессии: scope=others (default) или all."""
+    user_id = await _resolve_user_id(db, current_user)
+    if scope == "all":
+        await session_service.revoke_all(
+            db, user_id=user_id, reason="user_revoke"
+        )
+    else:
+        await session_service.revoke_others(
+            db,
+            user_id=user_id,
+            current_session_id=current_user.session_id,
+            reason="user_revoke",
+        )
+    await session_service.record_login_event(
+        db,
+        event_type="session_revoke",
+        success=True,
+        user_id=user_id,
+        username_attempted=current_user.username,
+        session_id=current_user.session_id,
+        details={"reason": "user_revoke", "scope": scope},
+    )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Отозвать текущую сессию. Auth required (Bearer).
+
+    Idempotent 204: already-revoked / missing sid still 204 when JWT is valid.
+    Missing or invalid token → 401.
+    """
+    from jose import JWTError, jwt
+
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = auth_header[7:]
+    # Bypass "admin" — nothing to revoke
+    if token == "admin":
+        return
+
+    try:
+        secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
+        payload = jwt.decode(token, secret_key, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    username = payload.get("username") or payload.get("sub")
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    result = await db.execute(
+        select(User).where(User.username == username, User.is_deleted == False)
+    )
+    user = result.scalars().first()
+    sid_raw = payload.get("sid")
+    session_id: UUID | None = None
+    if sid_raw:
+        try:
+            session_id = UUID(str(sid_raw))
+        except (ValueError, TypeError):
+            session_id = None
+
+    if user is not None and session_id is not None:
+        # Soft revoke: ignore missing / already-revoked
+        session = await session_service.session_repo.get_by_id(db, session_id)
+        if session is not None and session.user_id == user.id and session.revoked_at is None:
+            await session_service.session_repo.revoke(db, session_id, "logout")
+        await session_service.record_login_event(
+            db,
+            event_type="logout",
+            success=True,
+            user_id=user.id,
+            username_attempted=username,
+            session_id=session_id,
+            details={"method": "logout"},
+        )
+
+
+@router.get("/login-events", response_model=list[LoginEventOut])
+async def list_my_login_events(
+    limit: int = Query(default=50, ge=1, le=200),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[LoginEventOut]:
+    """История входов текущего пользователя (окно retention из settings)."""
+    user_id = await _resolve_user_id(db, current_user)
+    events = await session_service.list_login_events(db, user_id=user_id, limit=limit)
+    out: list[LoginEventOut] = []
+    for e in events:
+        details = e.details if isinstance(e.details, dict) else {}
+        out.append(
+            LoginEventOut(
+                id=e.id,
+                event_type=e.event_type,
+                success=e.success,
+                ip_address=e.ip_address,
+                device_label=device_label_from_ua(e.user_agent),
+                login_method=details.get("method") if details else None,
+                created_at=e.created_at,
+                failure_reason=details.get("reason") if details else None,
+            )
+        )
+    return out

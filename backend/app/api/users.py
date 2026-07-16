@@ -15,6 +15,7 @@ from app.models.user import User
 from app.models.employee import Employee
 from app.schemas.user import UserCreate, UserUpdate, UserOut, UserPasswordSetup
 from app.api.deps import get_current_user, CurrentUser
+from app.services import session_service
 
 
 def _utcnow() -> datetime:
@@ -243,6 +244,10 @@ async def update_user(
         user.password_changed_at = _utcnow()
         # Симметрия с setup-password: clear invite только при password + TG
         clear_invite_if_fully_activated(user)
+        # Admin/other-user password change: revoke all of that user's sessions.
+        await session_service.revoke_all(
+            db, user_id=user.id, reason="password_change"
+        )
 
     await db.commit()
     
@@ -352,6 +357,18 @@ async def setup_my_password(
     # invite_code сбрасываем только при password + TG (clear_if_fully)
     clear_invite_if_fully_activated(db_user)
     db.add(db_user)
+    # R9: revoke other sessions if current sid known, else all.
+    if current_user.session_id is not None:
+        await session_service.revoke_others(
+            db,
+            user_id=db_user.id,
+            current_session_id=current_user.session_id,
+            reason="password_change",
+        )
+    else:
+        await session_service.revoke_all(
+            db, user_id=db_user.id, reason="password_change"
+        )
     await db.commit()
     return {"status": "ok"}
 

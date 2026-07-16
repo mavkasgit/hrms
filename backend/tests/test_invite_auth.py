@@ -59,6 +59,10 @@ async def test_invite_login_flow(db_session: AsyncSession, async_client: AsyncCl
     data = resp.json()
     assert data["username"] == "invite_test_user"
     assert data["access_token"] is not None
+    # JWT carries session id
+    from jose import jwt as jose_jwt
+    claims = jose_jwt.get_unverified_claims(data["access_token"])
+    assert claims.get("sid")
 
     token = data["access_token"]
     headers = {"Authorization": f"Bearer {token}"}

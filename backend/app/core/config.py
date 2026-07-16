@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     # Public telegram auth endpoints rate limit (widget + bot challenge create/poll)
     TELEGRAM_RATE_LIMIT_REQUESTS: int = 30
     TELEGRAM_RATE_LIMIT_WINDOW_SECONDS: int = 60
+
+    # Sessions / login audit (hybrid JWT + user_sessions)
+    TRUSTED_PROXY_COUNT: int = 1  # env TRUSTED_PROXY_COUNT; XFF peel from the right
+    SESSION_LAST_SEEN_THROTTLE_SECONDS: int = 300
+    LOGIN_EVENTS_RETENTION_DAYS: int = 90  # default window for list_login_events queries
+
     model_config = {"env_file": _env_file, "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

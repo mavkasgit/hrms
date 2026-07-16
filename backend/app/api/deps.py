@@ -1,4 +1,6 @@
 import time
+from uuid import UUID
+
 from fastapi import Depends, HTTPException, Request, status
 from jose import JWTError, jwt
 from sqlalchemy.future import select
@@ -8,13 +10,23 @@ from app.core.constants import SSO_BYPASS_HASH
 from app.core.database import get_db
 from app.core.user_auth import generate_avatar_seed
 from app.models.user import User
+from app.services import session_service
+from app.services.session_service import SessionInactiveError
 
 class CurrentUser(str):
-    def __new__(cls, username: str, role: str | None = None, full_name: str | None = None):
+    def __new__(
+        cls,
+        username: str,
+        role: str | None = None,
+        full_name: str | None = None,
+        session_id: UUID | None = None,
+    ):
         instance = super().__new__(cls, username)
         instance.username = username
         instance.role = role
         instance.full_name = full_name
+        # Optional: set when JWT carries sid and session is active (not for "admin" bypass).
+        instance.session_id = session_id
         return instance
 
 async def get_current_user(
@@ -72,6 +84,32 @@ async def get_current_user(
             detail="Invalid token payload",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Hybrid JWT + server session: claim sid required (legacy tokens → re-login).
+    # Exception: literal bypass token "admin" (handled above).
+    sid_raw = payload.get("sid")
+    if not sid_raw:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        session_id = UUID(str(sid_raw))
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        await session_service.assert_session_active(db, session_id)
+    except SessionInactiveError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session revoked or expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
         
     # Check hrms_access_level from token payload
     hrms_access_level = payload.get("hrms_access_level", "no_access")
@@ -104,7 +142,8 @@ async def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Just-In-Time provisioning (SSO: первый вход без локальной записи)
+        # Just-In-Time provisioning (SSO: первый вход без локальной записи).
+        # Does NOT create a session — sessions only on login issue paths (R14).
         jwt_full_name = payload.get("full_name") or username
 
         user = User(
@@ -141,7 +180,9 @@ async def get_current_user(
             except Exception:
                 await db.rollback()
 
-    return CurrentUser(username, role=user.role, full_name=user.full_name)
+    return CurrentUser(
+        username, role=user.role, full_name=user.full_name, session_id=session_id
+    )
 
 
 async def get_current_user_or_onlyoffice(

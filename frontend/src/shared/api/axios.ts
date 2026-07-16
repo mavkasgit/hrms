@@ -130,7 +130,13 @@ function clearAuthTokens(): void {
   document.cookie = "ktm2000_token=; path=/; max-age=0"
 }
 
-export function logout(): void {
+/** Server revoke current session (best-effort), then clear tokens and redirect. */
+export async function logout(): Promise<void> {
+  try {
+    await api.post("/auth/logout", undefined, { skipGlobalToast: true })
+  } catch {
+    /* best-effort — always clear local tokens */
+  }
   clearAuthTokens()
   window.location.href = "/login"
 }

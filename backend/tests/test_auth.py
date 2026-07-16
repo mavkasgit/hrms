@@ -2,15 +2,38 @@ import pytest
 import bcrypt
 from fastapi import HTTPException
 from sqlalchemy.future import select
+from starlette.requests import Request
 
 from app.api.auth import login, LoginRequest
 from app.api.users import create_user
 from app.schemas.user import UserCreate
 from app.models.user import User
 from app.core.config import settings
+from jose import jwt
 
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
+
+
+def _make_request(
+    *,
+    ip: str = "127.0.0.1",
+    user_agent: str = "pytest-agent",
+) -> Request:
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/api/auth/login",
+        "raw_path": b"/api/auth/login",
+        "query_string": b"",
+        "headers": [(b"user-agent", user_agent.encode("utf-8"))],
+        "client": (ip, 12345),
+        "server": ("test", 80),
+    }
+    return Request(scope)
 
 
 async def test_create_user_hashes_password(db_session, create_employee):
@@ -60,10 +83,14 @@ async def test_login_success_with_password(db_session, create_employee):
         username="login_user",
         password="my_secure_password",
     )
-    response = await login(payload=login_payload, db=db_session)
+    response = await login(payload=login_payload, request=_make_request(), db=db_session)
     assert response.username == "login_user"
     assert response.role == "viewer"
     assert response.access_token is not None
+
+    # JWT must carry sid (session claim)
+    payload = jwt.get_unverified_claims(response.access_token)
+    assert payload.get("sid")
 
 
 async def test_login_failure_with_wrong_password(db_session, create_employee):
@@ -87,7 +114,7 @@ async def test_login_failure_with_wrong_password(db_session, create_employee):
         password="incorrectpassword",
     )
     with pytest.raises(HTTPException) as exc_info:
-        await login(payload=login_payload, db=db_session)
+        await login(payload=login_payload, request=_make_request(), db=db_session)
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Неверный логин или пароль"
 
@@ -116,7 +143,7 @@ async def test_login_dev_bypass(db_session, create_employee):
             username="dev_bypass_user",
             password="dev",
         )
-        response = await login(payload=login_payload, db=db_session)
+        response = await login(payload=login_payload, request=_make_request(), db=db_session)
         assert response.username == "dev_bypass_user"
         assert response.access_token is not None
     finally:

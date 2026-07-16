@@ -26,6 +26,25 @@ export class LayoutPage {
   async openNav(label: string | RegExp) {
     await this.navLink(label).click()
   }
+
+  /** Open UserProfileModal from sidebar footer (avatar / «Настройки профиля»). */
+  async openProfile() {
+    await this.sidebar.getByText('Настройки профиля').click()
+    await expect(
+      this.page.getByRole('heading', {
+        name: 'Настройки профиля и безопасности',
+      }),
+    ).toBeVisible({ timeout: 10_000 })
+  }
+
+  /** Switch profile modal tab to «Активные сессии». */
+  async openProfileSessions() {
+    await this.openProfile()
+    await this.page.getByRole('button', { name: 'Активные сессии' }).click()
+    await expect(
+      this.page.getByRole('heading', { name: 'Активные сессии' }),
+    ).toBeVisible({ timeout: 10_000 })
+  }
 }
 
 /** Main top-level nav items → expected main heading (level 1) after open. */

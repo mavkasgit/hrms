@@ -29,9 +29,32 @@ from app.schemas.telegram_auth import (
 )
 from app.schemas.user import UserCreate
 from app.services.telegram_auth_service import TelegramAuthService
+from starlette.requests import Request
 
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
+
+
+def _make_request(
+    *,
+    path: str = "/api/auth/login",
+    ip: str = "127.0.0.1",
+    user_agent: str = "pytest-agent",
+) -> Request:
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "headers": [(b"user-agent", user_agent.encode("utf-8"))],
+        "client": (ip, 12345),
+        "server": ("test", 80),
+    }
+    return Request(scope)
 
 
 @pytest.fixture
@@ -121,6 +144,7 @@ async def test_password_login_still_works(db_session, create_employee):
             username="tg_phase1_pwd_user",
             password="my_secure_password",
         ),
+        request=_make_request(),
         db=db_session,
     )
     assert response.username == "tg_phase1_pwd_user"
@@ -140,7 +164,11 @@ async def test_widget_login_valid_hmac(db_session, bot_configured, jit_on):
     }
     signed = _sign_widget_payload(settings.TELEGRAM_BOT_TOKEN, fields)
     payload = TelegramWidgetLoginRequest(**signed)
-    response = await telegram_widget_login(payload=payload, db=db_session)
+    response = await telegram_widget_login(
+        payload=payload,
+        request=_make_request(path="/api/auth/telegram/widget"),
+        db=db_session,
+    )
     assert response.access_token
     assert response.username in ("widget_user", "tg_9001001")
     assert response.full_name == "Widget User"
@@ -154,7 +182,11 @@ async def test_widget_login_bad_hash_401(db_session, bot_configured):
         hash="0" * 64,
     )
     with pytest.raises(HTTPException) as exc_info:
-        await telegram_widget_login(payload=payload, db=db_session)
+        await telegram_widget_login(
+            payload=payload,
+            request=_make_request(path="/api/auth/telegram/widget"),
+            db=db_session,
+        )
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "telegram_invalid_token"
 
@@ -167,7 +199,11 @@ async def test_widget_not_configured_503(db_session):
             id=1, auth_date=int(time.time()), hash="ab"
         )
         with pytest.raises(HTTPException) as exc_info:
-            await telegram_widget_login(payload=payload, db=db_session)
+            await telegram_widget_login(
+                payload=payload,
+                request=_make_request(path="/api/auth/telegram/widget"),
+                db=db_session,
+            )
         assert exc_info.value.status_code == 503
     finally:
         settings.TELEGRAM_BOT_TOKEN = original
@@ -750,6 +786,9 @@ async def test_router_webhook_and_poll_helpers(db_session, bot_configured, jit_o
 
     polled = await poll_bot_challenge(
         challenge_id=UUID(created.challenge_id),
+        request=_make_request(
+            path=f"/api/auth/telegram/bot/challenge/{created.challenge_id}"
+        ),
         poll_secret=created.poll_secret,
         db=db_session,
     )
@@ -770,12 +809,20 @@ async def test_widget_login_replay_prevention(db_session, bot_configured, jit_on
     payload = TelegramWidgetLoginRequest(**signed)
 
     # First request should succeed
-    response = await telegram_widget_login(payload=payload, db=db_session)
+    response = await telegram_widget_login(
+        payload=payload,
+        request=_make_request(path="/api/auth/telegram/widget"),
+        db=db_session,
+    )
     assert response.access_token
 
     # Second request with the same payload (same HMAC hash) should be rejected
     with pytest.raises(HTTPException) as exc_info:
-        await telegram_widget_login(payload=payload, db=db_session)
+        await telegram_widget_login(
+            payload=payload,
+            request=_make_request(path="/api/auth/telegram/widget"),
+            db=db_session,
+        )
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "telegram_signature_already_used"
 

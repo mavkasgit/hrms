@@ -94,6 +94,10 @@ async def check_write_access_middleware(request: Request, call_next):
             or path == "/api/users/me/setup-password"
             or path == "/api/auth/telegram/bot/challenge"
             or path == "/api/auth/telegram/link"
+            # Session management: viewers may logout / revoke their sessions
+            or path == "/api/auth/logout"
+            or path == "/api/auth/sessions"
+            or path.startswith("/api/auth/sessions/")
         )
         if path.startswith("/api") and not is_exempt:
             auth_header = request.headers.get("Authorization")
