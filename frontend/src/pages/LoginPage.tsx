@@ -57,6 +57,10 @@ export function LoginPage() {
       oidcConfig.authorization_url &&
       oidcConfig.client_id
   )
+  /** TG1: Authentik Telegram Source is primary SSO path — hide in-app bot login CTA */
+  const telegramPrimary = Boolean(oidcEnabled && oidcConfig?.telegram_primary)
+  /** App-level TG bot deep-link login (dual-run until telegram_primary cutover) */
+  const showAppTelegramLogin = botEnabled && !telegramPrimary
 
   useEffect(() => {
     // Ошибка после 401-редиректа (сессия / «пользователь удалён» и т.п.)
@@ -204,22 +208,33 @@ export function LoginPage() {
           <p className="text-slate-500 text-sm">Система управления персоналом</p>
         </div>
 
-        {/* SSO (Authentik) — dual-run when AUTH_OIDC enabled */}
+        {/* SSO (Authentik) — dual-run when AUTH_OIDC enabled; TG1 primary CTA when telegram_primary */}
         {oidcEnabled && (
           <div className="space-y-3">
             <button
               type="button"
               onClick={() => void handleOidcLogin()}
               disabled={loading || oidcStarting}
-              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
+              className={
+                telegramPrimary
+                  ? "w-full flex items-center justify-center gap-2 bg-[#2AABEE] hover:bg-[#229ED9] disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
+                  : "w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
+              }
             >
               {oidcStarting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
+              ) : telegramPrimary ? (
+                <TelegramIcon className="h-5 w-5" />
               ) : (
                 <Shield className="h-4 w-4" />
               )}
-              Войти через единый вход
+              {telegramPrimary ? "Войти через Telegram" : "Войти через единый вход"}
             </button>
+            {telegramPrimary && (
+              <p className="text-center text-xs text-slate-500">
+                Единый вход для HRMS и KTM-2000
+              </p>
+            )}
             <div className="relative">
               <div className="absolute inset-0 flex items-center" aria-hidden="true">
                 <div className="w-full border-t border-slate-200" />
@@ -274,7 +289,7 @@ export function LoginPage() {
           </button>
         </form>
 
-        {/* Telegram: две кнопки */}
+        {/* Invite when bot config present; app TG bot login dual-run until telegram_primary */}
         {botEnabled && (
           <div className="space-y-2">
             <button
@@ -290,17 +305,19 @@ export function LoginPage() {
               <LogIn className="h-4 w-4" />
               Вход по коду приглашения
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setTgModalOpen(true)
-              }}
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-[#2AABEE] hover:bg-[#229ED9] disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
-            >
-              <TelegramIcon className="h-5 w-5" />
-              Войти через Telegram
-            </button>
+            {showAppTelegramLogin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTgModalOpen(true)
+                }}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 bg-[#2AABEE] hover:bg-[#229ED9] disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
+              >
+                <TelegramIcon className="h-5 w-5" />
+                Войти через Telegram
+              </button>
+            )}
           </div>
         )}
 

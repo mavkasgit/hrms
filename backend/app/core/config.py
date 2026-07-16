@@ -96,6 +96,8 @@ class Settings(BaseSettings):
     # Align with TELEGRAM_ALLOW_JIT: no auto-create local User unless true
     AUTH_OIDC_ALLOW_JIT: bool = False
     AUTH_OIDC_DEFAULT_ROLE: str = "viewer"
+    # TG1: when true + OIDC enabled, FE prefers Telegram SSO (Authentik TG Source) CTA
+    AUTH_OIDC_TELEGRAM_PRIMARY: bool = False
 
     model_config = {"env_file": _env_file, "env_file_encoding": "utf-8", "extra": "ignore"}
 

@@ -18,7 +18,14 @@ from app.utils.user_agent import device_label_from_ua
 # --- string constants (validation / storage; not DB enums) ---
 
 LOGIN_METHODS = frozenset(
-    {"password", "invite", "telegram_widget", "telegram_bot", "oidc"}
+    {
+        "password",
+        "invite",
+        "telegram_widget",
+        "telegram_bot",
+        "oidc",
+        "oidc_telegram",  # OIDC via Authentik Telegram Source (claim telegram_id present)
+    }
 )
 EVENT_TYPES = frozenset({"login_success", "login_failure", "logout", "session_revoke"})
 REVOKE_REASONS = frozenset({"logout", "user_revoke", "password_change", "admin", "expired"})

@@ -43,6 +43,9 @@ class OidcClaims:
     email: str | None
     name: str | None
     hrms_access_level: str | None
+    # TG1: from Authentik Telegram Source property mapping (info.id)
+    telegram_id: int | None = None
+    telegram_username: str | None = None
 
 
 class OidcAuthService:
@@ -101,6 +104,7 @@ class OidcAuthService:
     @classmethod
     def public_config(cls) -> dict[str, Any]:
         """Payload for GET /auth/oidc/config (no secrets)."""
+        telegram_primary = bool(settings.AUTH_OIDC_TELEGRAM_PRIMARY)
         if not cls.is_enabled():
             return {
                 "enabled": False,
@@ -109,6 +113,7 @@ class OidcAuthService:
                 "redirect_uri": None,
                 "scopes": None,
                 "issuer": None,
+                "telegram_primary": False,
             }
         try:
             auth_url = cls.resolve_authorization_url()
@@ -121,6 +126,7 @@ class OidcAuthService:
                 "redirect_uri": settings.AUTH_OIDC_REDIRECT_URI,
                 "scopes": settings.AUTH_OIDC_SCOPES,
                 "issuer": settings.AUTH_OIDC_ISSUER,
+                "telegram_primary": telegram_primary,
             }
         return {
             "enabled": True,
@@ -129,6 +135,7 @@ class OidcAuthService:
             "redirect_uri": settings.AUTH_OIDC_REDIRECT_URI,
             "scopes": settings.AUTH_OIDC_SCOPES,
             "issuer": issuer.rstrip("/"),
+            "telegram_primary": telegram_primary,
         }
 
     @classmethod
@@ -344,27 +351,44 @@ class OidcAuthService:
         if access_level is not None and access_level not in _ACCESS_LEVELS:
             access_level = None
 
+        telegram_id = _extract_telegram_id(claims)
+        telegram_username = _extract_telegram_username(claims)
+
         return OidcClaims(
             sub=sub,
             preferred_username=claims.get("preferred_username") or claims.get("nickname"),
             email=claims.get("email"),
             name=claims.get("name"),
             hrms_access_level=access_level if isinstance(access_level, str) else None,
+            telegram_id=telegram_id,
+            telegram_username=telegram_username,
         )
 
     # ─── user resolve / link ──────────────────────────────────────────────
 
     async def resolve_or_provision_user(self, claims: OidcClaims) -> User:
         """
+        Link order (TG1 T4):
         1. by authentik_sub
-        2. by preferred_username / email as local username
-        3. if AUTH_OIDC_ALLOW_JIT: create
-        4. else 403 oidc_user_not_linked
+        2. by telegram_id claim → link authentik_sub (+ refresh telegram_username)
+        3. by preferred_username / email as local username
+        4. if AUTH_OIDC_ALLOW_JIT: create
+        5. else 403 oidc_user_not_linked
         """
         user = await self.users.get_by_authentik_sub(self.db, claims.sub)
         if user is not None:
+            await self._maybe_sync_telegram_username(user, claims)
             await self._maybe_sync_role(user, claims)
             return user
+
+        # TG1: existing users.telegram_id ↔ Authentik Telegram Source claim
+        if claims.telegram_id is not None:
+            found_tg = await self.users.get_by_telegram_id(self.db, claims.telegram_id)
+            if found_tg is not None:
+                await self.users.link_authentik_sub(self.db, found_tg, claims.sub)
+                await self._maybe_sync_telegram_username(found_tg, claims)
+                await self._maybe_sync_role(found_tg, claims)
+                return found_tg
 
         candidates: list[str] = []
         if claims.preferred_username:
@@ -383,6 +407,7 @@ class OidcAuthService:
             found = await self.users.get_by_username(self.db, name[:100])
             if found is not None:
                 await self.users.link_authentik_sub(self.db, found, claims.sub)
+                await self._maybe_sync_telegram_username(found, claims)
                 await self._maybe_sync_role(found, claims)
                 return found
 
@@ -438,6 +463,19 @@ class OidcAuthService:
             self.db.add(user)
             await self.db.flush()
             await self.db.refresh(user)
+
+    async def _maybe_sync_telegram_username(self, user: User, claims: OidcClaims) -> None:
+        """Refresh telegram_username from IdP claim when present (soft/mutable)."""
+        uname = claims.telegram_username
+        if not uname:
+            return
+        cleaned = uname.lstrip("@").strip()[:100]
+        if not cleaned or user.telegram_username == cleaned:
+            return
+        user.telegram_username = cleaned
+        self.db.add(user)
+        await self.db.flush()
+        await self.db.refresh(user)
 
     # ─── full callback ────────────────────────────────────────────────────
 
@@ -517,10 +555,12 @@ class OidcAuthService:
                 detail="no_access",
             )
 
+        # T6: label sessions as Telegram SSO when claim present
+        login_method = "oidc_telegram" if claims.telegram_id is not None else "oidc"
         token, _session = await session_service.complete_login(
             self.db,
             user=user,
-            login_method="oidc",
+            login_method=login_method,
             ip=ip,
             user_agent=user_agent,
         )
@@ -531,3 +571,66 @@ class OidcAuthService:
             "role": user.role,
             "full_name": user.full_name or user.username,
         }
+
+
+# ─── claim helpers (module-level) ─────────────────────────────────────────────
+
+
+def _coerce_telegram_id(value: Any) -> int | None:
+    """Accept int or numeric string; reject bool / empty / non-numeric."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        s = value.strip()
+        if not s or not s.lstrip("-").isdigit():
+            return None
+        try:
+            n = int(s)
+        except ValueError:
+            return None
+        return n if n > 0 else None
+    # float-like from JSON is unusual; skip
+    return None
+
+
+def _extract_telegram_id(claims: dict[str, Any]) -> int | None:
+    """Parse telegram_id from id_token (top-level or nested attributes).
+
+    Authentik property mapping should emit claim ``telegram_id`` from Source
+    ``info.id``. Also accept ``telegram_user_id`` and nested ``attributes`` /
+    ``telegram`` dicts for flexibility.
+    """
+    for key in ("telegram_id", "telegram_user_id"):
+        tid = _coerce_telegram_id(claims.get(key))
+        if tid is not None:
+            return tid
+
+    for nested_key in ("attributes", "telegram"):
+        nested = claims.get(nested_key)
+        if not isinstance(nested, dict):
+            continue
+        for key in ("telegram_id", "telegram_user_id", "id"):
+            tid = _coerce_telegram_id(nested.get(key))
+            if tid is not None:
+                return tid
+    return None
+
+
+def _extract_telegram_username(claims: dict[str, Any]) -> str | None:
+    """Optional TG @username from claim or nested attributes."""
+    for key in ("telegram_username", "telegram_user"):
+        val = claims.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip().lstrip("@")[:100]
+
+    for nested_key in ("attributes", "telegram"):
+        nested = claims.get(nested_key)
+        if not isinstance(nested, dict):
+            continue
+        for key in ("telegram_username", "username"):
+            val = nested.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip().lstrip("@")[:100]
+    return None

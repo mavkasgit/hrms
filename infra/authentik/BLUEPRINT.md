@@ -267,28 +267,52 @@ Invoke-RestMethod "http://localhost:9000/application/o/hrms/.well-known/openid-c
 
 ---
 
-## 4. Telegram Source (optional later — только документ)
+## 4. Telegram Source — **primary path** (TG1)
 
-**Не** включать в v1 cutover HRMS. Dual-run R5: app-level TG (bot QR / link) остаётся.
+**Статус:** primary interactive TG-login для SSO (не optional «later»).  
+Полный runbook: **[`TELEGRAM.md`](./TELEGRAM.md)**.
+
+App-level bot QR login остаётся в dual-run; при `AUTH_OIDC_TELEGRAM_PRIMARY=true` FE прячет in-app TG login CTA (API не удаляется).
+
+### Поток
+
+```text
+FE «Войти через Telegram» → Authentik authorize
+  → Telegram Source (Widget HMAC) → Authentik session
+  → OIDC code → HRMS bridge → complete_login(oidc_telegram|oidc)
+```
+
+Тот же IdP-session → KTM без повторного TG (A6).
 
 ### Prerequisites
 
 | # | Требование |
 |---|------------|
-| 1 | Authentik на **реальном FQDN** (не bare IP для Telegram domain rules) |
-| 2 | `@BotFather` → bot (можно отдельный IdP-bot ≠ `ktm2000_bot`) |
+| 1 | Authentik на **реальном FQDN** (не bare IP; localhost — через tunnel, см. TELEGRAM.md) |
+| 2 | **Отдельный** IdP-bot предпочтителен (`≠ ktm2000_bot`); shared token — риск domain/webhook |
 | 3 | BotFather `/setdomain` = **точный** FQDN Authentik |
-| 4 | HTTPS public (Telegram Widget / Login) |
+| 4 | HTTPS public (или Cloudflare/ngrok → Authentik) |
+| 5 | OAuth app `hrms` + claim mapping `telegram_id` (Source `info.id`) |
 
-### Admin path (когда готово)
+### Admin path (кратко)
 
 1. **Directory → Federation and Social login → Create → Telegram**  
 2. Bot username + token  
-3. Property mappings: `info` → `id`, `username`, `first_name`, …  
-4. Добавить source на default login flow ([docs](https://docs.goauthentik.io/users-sources/sources/social-logins/telegram/))  
+3. Source на **default-authentication-identification** → Selected sources  
+4. Scope/property mapping: claim **`telegram_id`** (+ optional `telegram_username`)  
+5. HRMS: `AUTH_OIDC_ENABLED=true`, `AUTH_OIDC_TELEGRAM_PRIMARY=true`  
 
-Source логинит **в Authentik**; OIDC apps получают SSO session.  
-HRMS TG **link/unlink** columns и bot challenge — app domain, не переносим в v1.
+### HRMS link order (TG1)
+
+`authentik_sub` → **`telegram_id` claim** → username/email → JIT (if allowed).
+
+Существующие `users.telegram_id` линкуются claim'ом; `authentik_sub` пишется при первом SSO.
+
+### Env keys (дополнение к §5)
+
+```env
+AUTH_OIDC_TELEGRAM_PRIMARY=false  # true = FE primary TG SSO CTA
+```
 
 ---
 
@@ -400,7 +424,8 @@ Base: http://localhost:9000/api/v3/
 | Claim mapping design (`hrms_access` → `hrms_access_level`) | ✅ |
 | Groups `hrms-admin` / `hrms-viewer` | ✅ designed |
 | Bridge choice documented (public PKCE + backend) | ✅ |
-| Telegram Source prerequisites (optional) | ✅ §4 |
+| Telegram Source primary path (TG1) | ✅ §4 + TELEGRAM.md |
+| Claim `telegram_id` + AUTH_OIDC_TELEGRAM_PRIMARY | ✅ §4 / TELEGRAM.md / `.env.example` |
 | `.env.example` AUTH_OIDC_* | ✅ root `.env.example` |
 | Apps created in running Authentik | ⏳ manual after initial-setup / token |
 | Secrets not committed | ✅ |

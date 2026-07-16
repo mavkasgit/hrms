@@ -187,6 +187,7 @@ def oidc_enabled():
         "AUTH_OIDC_TOKEN_URL": settings.AUTH_OIDC_TOKEN_URL,
         "AUTH_OIDC_ALLOW_JIT": settings.AUTH_OIDC_ALLOW_JIT,
         "AUTH_OIDC_DEFAULT_ROLE": settings.AUTH_OIDC_DEFAULT_ROLE,
+        "AUTH_OIDC_TELEGRAM_PRIMARY": settings.AUTH_OIDC_TELEGRAM_PRIMARY,
     }
     settings.AUTH_OIDC_ENABLED = True
     settings.AUTH_OIDC_ISSUER = ISSUER
@@ -198,6 +199,7 @@ def oidc_enabled():
     settings.AUTH_OIDC_TOKEN_URL = "http://localhost:9000/application/o/token/"
     settings.AUTH_OIDC_ALLOW_JIT = False
     settings.AUTH_OIDC_DEFAULT_ROLE = "viewer"
+    settings.AUTH_OIDC_TELEGRAM_PRIMARY = False
     OidcAuthService.clear_jwks_cache()
     try:
         yield
@@ -223,6 +225,8 @@ async def _create_user(
     username: str = "oidc_user",
     role: str = "viewer",
     authentik_sub: str | None = None,
+    telegram_id: int | None = None,
+    telegram_username: str | None = None,
 ) -> User:
     user = User(
         username=username,
@@ -230,6 +234,8 @@ async def _create_user(
         role=role,
         full_name="OIDC Local User",
         authentik_sub=authentik_sub,
+        telegram_id=telegram_id,
+        telegram_username=telegram_username,
     )
     db.add(user)
     await db.flush()
@@ -256,6 +262,14 @@ async def test_oidc_config_enabled(oidc_enabled):
     assert "openid" in (resp.scopes or "")
     assert resp.authorization_url
     assert "authorize" in resp.authorization_url
+    assert resp.telegram_primary is False
+
+
+async def test_oidc_config_telegram_primary(oidc_enabled):
+    settings.AUTH_OIDC_TELEGRAM_PRIMARY = True
+    resp = await oidc_config()
+    assert resp.enabled is True
+    assert resp.telegram_primary is True
 
 
 async def test_oidc_logout_url_enabled(oidc_enabled):
@@ -362,6 +376,82 @@ async def test_oidc_callback_by_authentik_sub(
         )
     assert result.username == "linked_already"
     assert result.access_token
+
+
+async def test_oidc_callback_links_by_telegram_id_claim(
+    oidc_enabled, db_session: AsyncSession
+):
+    """TG1: existing users.telegram_id matched via id_token claim telegram_id."""
+    user = await _create_user(
+        db_session,
+        username="tg_prelinked",
+        role="viewer",
+        telegram_id=424242424,
+        telegram_username="old_tg_name",
+    )
+    id_token = _make_id_token(
+        sub="ak-sub-from-tg",
+        preferred_username="does_not_match_local",
+        email="nope@example.com",
+        hrms_access_level="viewer",
+        extra={
+            "telegram_id": "424242424",  # string as Authentik may emit
+            "telegram_username": "new_tg_name",
+        },
+    )
+    fake = _FakeAsyncClient(
+        token_body={"access_token": "a", "id_token": id_token, "token_type": "Bearer"}
+    )
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        result = await oidc_callback(
+            OidcCallbackRequest(code="c", code_verifier="v"),
+            _make_request(),
+            db_session,
+        )
+
+    assert result.username == "tg_prelinked"
+    assert result.access_token
+
+    await db_session.refresh(user)
+    assert user.authentik_sub == "ak-sub-from-tg"
+    assert user.telegram_id == 424242424
+    assert user.telegram_username == "new_tg_name"
+
+    secret = settings.JWT_SECRET_KEY or settings.SECRET_KEY
+    payload = jose_jwt.decode(result.access_token, secret, algorithms=[settings.ALGORITHM])
+    sid = UUID(payload["sid"])
+    sess = await db_session.get(UserSession, sid)
+    assert sess is not None
+    assert sess.login_method == "oidc_telegram"
+
+
+async def test_oidc_callback_telegram_id_int_claim(
+    oidc_enabled, db_session: AsyncSession
+):
+    """telegram_id as int in JWT is accepted."""
+    user = await _create_user(
+        db_session,
+        username="tg_int_claim",
+        telegram_id=111222333,
+    )
+    id_token = _make_id_token(
+        sub="ak-sub-tg-int",
+        preferred_username="zzz_unknown",
+        email=None,
+        extra={"telegram_id": 111222333},
+    )
+    fake = _FakeAsyncClient(
+        token_body={"access_token": "a", "id_token": id_token, "token_type": "Bearer"}
+    )
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        result = await oidc_callback(
+            OidcCallbackRequest(code="c", code_verifier="v"),
+            _make_request(),
+            db_session,
+        )
+    assert result.username == "tg_int_claim"
+    await db_session.refresh(user)
+    assert user.authentik_sub == "ak-sub-tg-int"
 
 
 # ─── failures ────────────────────────────────────────────────────────────────

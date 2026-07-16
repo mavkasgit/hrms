@@ -16,6 +16,8 @@ export type OidcConfig = {
   redirect_uri: string | null
   scopes: string | null
   issuer: string | null
+  /** TG1: prefer Telegram SSO CTA; hide in-app bot login modal on LoginPage */
+  telegram_primary?: boolean
 }
 
 export type OidcLoginResponse = {
@@ -69,6 +71,7 @@ export async function fetchOidcConfig(): Promise<OidcConfig> {
       redirect_uri: null,
       scopes: null,
       issuer: null,
+      telegram_primary: false,
     }
   }
   return response.json()

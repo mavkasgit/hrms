@@ -40,7 +40,7 @@ class UserSession(Base):
     user_agent = Column(Text, nullable=True)
     # e.g. "Google Chrome (Windows)" — server-side UA parse
     device_label = Column(String(128), nullable=True)
-    # password | invite | telegram_widget | telegram_bot | oidc
+    # password | invite | telegram_widget | telegram_bot | oidc | oidc_telegram
     login_method = Column(String(32), nullable=False)
 
     user = relationship("User", lazy="select")
