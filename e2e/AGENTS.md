@@ -94,10 +94,53 @@ Hardcoded JWT / `extraHTTPHeaders` Authorization — **удалены** (E4).
 
 **Импорт:** `import { test, expect } from '../fixtures/index'` (apiOps + storageState).
 
+**POM login:** `e2e/pages/LoginPage.ts` — password + SSO CTA; используется в `setup/auth.setup.ts`, `auth/login.spec.ts`, `auth/oidc-login.spec.ts`.
+
 **P0 smoke/api:**
 - smoke: `e2e/smoke/*.spec.ts` (titles contain `@smoke`)
 - api: `e2e/api/*.spec.ts` (titles contain `@api`)
 - UI dismiss «Уволить» → flow приказа, не soft-dismiss; soft cycle — `apiOps.dismiss/restore`
+
+### Authentik / OIDC (optional)
+
+| Режим | CI / default | Описание |
+|-------|--------------|----------|
+| **Password dual-run** | **active** | `setup` + `auth/login.spec.ts` — форма логин/пароль; работает при OIDC off **и** on (форма остаётся) |
+| **OIDC e2e** | **opt-in** | `auth/oidc-login.spec.ts` (`@oidc`) — skip без флагов; **не** требует Authentik в GHA smoke |
+
+**Правила:**
+
+1. CI smoke **не** поднимает Authentik и **не** ставит `E2E_OIDC=1`.
+2. `setup/auth.setup.ts` — **только** form password (+ dev «Войти как Admin» fallback). OIDC/TG Widget в setup **запрещены**.
+3. Telegram Login Widget **не** автоматизируется в e2e (хрупко, нужен public FQDN).
+
+**Локальный OIDC:**
+
+1. Поднять IdP: sibling repo `C:\Users\user\VibeCoding\authentik` (compose / docs там).
+2. В HRMS backend: `AUTH_OIDC_ENABLED` (и связанные `AUTH_OIDC_*`, client, issuer); опционально `AUTH_OIDC_TELEGRAM_PRIMARY` → CTA «Войти через Telegram» вместо «Войти через единый вход».
+3. Запуск opt-in suite:
+
+```bash
+# config + SSO button (нужны E2E_OIDC=1 и backend enabled)
+cross-env E2E_OIDC=1 npm run test:e2e:oidc
+
+# + redirect на IdP (localhost:9000 / AUTHENTIK_URL)
+cross-env E2E_OIDC=1 E2E_OIDC_FULL=1 npm run test:e2e:oidc
+
+# + полный login через form Authentik (секреты только в env, не в репо)
+# E2E_AUTHENTIK_USER / E2E_AUTHENTIK_PASSWORD
+cross-env E2E_OIDC=1 E2E_OIDC_FULL=1 npm run test:e2e:oidc
+```
+
+| Переменная | Default | Назначение |
+|------------|---------|------------|
+| `E2E_OIDC` | unset | `1` — включить suite; иначе все `@oidc` → skip |
+| `E2E_OIDC_FULL` | unset | `1` — redirect / full IdP login tests |
+| `E2E_AUTHENTIK_USER` | unset | логин в Authentik (full login only) |
+| `E2E_AUTHENTIK_PASSWORD` | unset | пароль IdP (full login only) |
+| `AUTHENTIK_URL` / `E2E_AUTHENTIK_URL` | `http://localhost:9000` (hint) | host для assert redirect |
+
+Guard внутри spec: `E2E_OIDC=1` **и** `GET {E2E_API_URL}/auth/oidc/config` → `enabled===true`; иначе skip (не fail).
 
 ---
 
@@ -111,7 +154,8 @@ npm run test:e2e
 npm run test:e2e:smoke        # setup + smoke (быстрый gate)
 npm run test:e2e:api          # setup + api (контракты HTTP)
 npm run test:e2e:ui           # setup + ui (клики / контроль процесса)
-npm run test:e2e:auth         # auth only (no storage)
+npm run test:e2e:auth         # auth only (no storage) — password + oidc file (oidc skips w/o E2E_OIDC)
+npm run test:e2e:oidc         # OIDC/Authentik opt-in (sets E2E_OIDC=1; still skips if backend disabled)
 npm run test:e2e:regression   # setup + smoke + ui + api + auth
 
 # Parallel opt-in (managed browser; file-level parallel; CI smoke stays workers:1)
@@ -168,7 +212,7 @@ e2e/
   .env.example        # E2E_* template
   .auth/              # gitignored storageState (admin.json)
   setup/              # auth.setup.ts → storageState
-  auth/               # login.spec.ts (no storage)
+  auth/               # login.spec.ts + oidc-login.spec.ts (no storage)
   api/                # @api specs
   smoke/              # @smoke specs
   ui/                 # @ui specs

@@ -50,6 +50,7 @@
     "test:e2e:api": "npx playwright test --project=setup --project=api",
     "test:e2e:ui": "npx playwright test --project=setup --project=ui",
     "test:e2e:auth": "npx playwright test --project=auth",
+    "test:e2e:oidc": "npx cross-env E2E_OIDC=1 npx playwright test --project=auth e2e/auth/oidc-login.spec.ts",
     "test:e2e:regression": "npx playwright test --project=setup --project=smoke --project=ui --project=api --project=auth",
     "test:e2e:smoke:parallel": "npx cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npx playwright test --project=setup --project=smoke",
     "test:e2e:ui:parallel": "npx cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npx playwright test --project=setup --project=ui"
