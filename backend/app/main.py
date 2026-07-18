@@ -104,7 +104,14 @@ async def check_write_access_middleware(request: Request, call_next):
             auth_header = request.headers.get("Authorization")
             if auth_header and auth_header.startswith("Bearer "):
                 token = auth_header[7:]
-                if token != "admin":
+                # Magic Bearer "admin" is dev-only (DEV_BYPASS_AUTH)
+                if token == "admin":
+                    if not settings.DEV_BYPASS_AUTH:
+                        return JSONResponse(
+                            status_code=401,
+                            content={"detail": "Invalid or expired token"},
+                        )
+                else:
                     try:
                         secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
                         payload = jwt.decode(token, secret_key, algorithms=[settings.ALGORITHM])
@@ -114,7 +121,7 @@ async def check_write_access_middleware(request: Request, call_next):
                                 status_code=401,
                                 content={"detail": "Token has expired"}
                             )
-                        
+
                         hrms_access_level = payload.get("hrms_access_level", "no_access")
                         if hrms_access_level != "admin":
                             return JSONResponse(

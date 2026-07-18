@@ -142,7 +142,7 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     """
-    Запасной вход по логину и паролю (без SSO KTM-2000).
+    Запасной вход по логину и паролю (dual-run escape; SSO is Authentik OIDC).
 
     В dev-режиме (DEV_BYPASS_AUTH=True на бэкенде) принимает пароль "dev"
     для любого существующего пользователя.
@@ -374,8 +374,14 @@ async def logout(
             headers={"WWW-Authenticate": "Bearer"},
         )
     token = auth_header[7:]
-    # Bypass "admin" — nothing to revoke
+    # Magic Bearer "admin" (dev-only) — nothing to revoke
     if token == "admin":
+        if not settings.DEV_BYPASS_AUTH:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         return
 
     try:

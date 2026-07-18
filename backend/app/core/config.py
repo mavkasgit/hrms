@@ -11,12 +11,14 @@ class Settings(BaseSettings):
     DATABASE_URL_LOCAL: str = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_dev"
     ENV: str = "dev"
 
+    # Dev/test: password "dev" + magic Bearer "admin". Must be false in prod.
     DEV_BYPASS_AUTH: bool = True
 
     KTM2000_SYNC_URL: str = "http://localhost:8010/api/integration/sync-employee"
     KTM2000_INTEGRATION_TOKEN: str = "ktm2000-integration-token-default"
 
     SECRET_KEY: str = "dev-secret-key-change-in-prod"
+    # Per-app HS256 key (preferred). Never share with KTM — SSO is Authentik only.
     JWT_SECRET_KEY: str | None = None
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
@@ -83,11 +85,15 @@ class Settings(BaseSettings):
 
     # OIDC / Authentik bridge (A3) — dual-run; false = local password/invite/TG only
     AUTH_OIDC_ENABLED: bool = False
-    AUTH_OIDC_ISSUER: str | None = None  # e.g. http://localhost:9000/application/o/hrms/
+    AUTH_OIDC_ISSUER: str | None = None  # e.g. http://192.168.x.x:9000/application/o/hrms/
     AUTH_OIDC_CLIENT_ID: str | None = None
     AUTH_OIDC_CLIENT_SECRET: str | None = None  # empty for public+PKCE
-    AUTH_OIDC_REDIRECT_URI: str | None = None  # e.g. http://localhost:5173/auth/callback
+    # Hint only — SPA uses window.location.origin (dev :5173 / prod :8081)
+    AUTH_OIDC_REDIRECT_URI: str | None = None
     AUTH_OIDC_SCOPES: str = "openid profile email hrms_access"
+    # Optional extra hosts or full issuers (comma-separated) accepted in id_token.iss
+    # e.g. localhost,127.0.0.1,192.168.100.200
+    AUTH_OIDC_ISSUER_ALIASES: str | None = None
     # Optional overrides; if empty, derived from issuer / discovery
     AUTH_OIDC_AUTHORIZATION_URL: str | None = None
     AUTH_OIDC_TOKEN_URL: str | None = None
@@ -96,6 +102,8 @@ class Settings(BaseSettings):
     # Align with TELEGRAM_ALLOW_JIT: no auto-create local User unless true
     AUTH_OIDC_ALLOW_JIT: bool = False
     AUTH_OIDC_DEFAULT_ROLE: str = "viewer"
+    # App SoT for roles: claim → users.role only when explicitly opted in
+    AUTH_OIDC_SYNC_ROLE_FROM_IDP: bool = False
     # TG1: when true + OIDC enabled, FE prefers Telegram SSO (Authentik TG Source) CTA
     AUTH_OIDC_TELEGRAM_PRIMARY: bool = False
 

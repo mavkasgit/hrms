@@ -49,15 +49,21 @@ async def get_current_user(
         )
         
     token = auth_header[7:]
-    
-    # Bypass for testing and dev tools
+
+    # Magic Bearer "admin" — dev/test only (gated by DEV_BYPASS_AUTH, like password "dev")
     if token == "admin":
+        if not settings.DEV_BYPASS_AUTH:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         result = await db.execute(select(User).where(User.username == "admin", User.is_deleted == False))
         user = result.scalars().first()
         if user:
             return CurrentUser("admin", role=user.role, full_name=user.full_name)
         return CurrentUser("admin", role="admin", full_name="Admin User")
-        
+
     try:
         secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
         payload = jwt.decode(token, secret_key, algorithms=[settings.ALGORITHM])
@@ -170,7 +176,7 @@ async def get_current_user(
                     detail="Не удалось автоматически зарегистрировать пользователя в кадровой системе",
                 )
     else:
-        # Синхронизируем роль, если она изменилась в KTM
+        # Sync role from JWT claim (legacy path when claim present on token)
         if user.role != expected_role:
             user.role = expected_role
             db.add(user)

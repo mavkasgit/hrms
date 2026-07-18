@@ -20,35 +20,9 @@ const api = axios.create({
   },
 })
 
-function getCookie(name: string): string | null {
-  const value = `; ${document.cookie}`
-  const parts = value.split(`; ${name}=`)
-  if (parts.length === 2) {
-    return parts.pop()?.split(";").shift() || null
-  }
-  return null
-}
-
 export function getToken(): string | null {
-  // 1. Try hrms local token
-  let token = localStorage.getItem("token")
-  if (token) return token
-
-  // 2. Try ktm2000 local token (just in case they share localStorage on the same port/host)
-  token = localStorage.getItem("ktm2000_token")
-  if (token) {
-    localStorage.setItem("token", token)
-    return token
-  }
-
-  // 3. Try shared cookie
-  token = getCookie("ktm2000_token")
-  if (token) {
-    localStorage.setItem("token", token)
-    return token
-  }
-
-  return null
+  // HRMS app token only — cross-app SSO is Authentik OIDC (no ktm2000_token fallback)
+  return localStorage.getItem("token")
 }
 
 export function redirectToKtmLogin(): void {
@@ -126,8 +100,6 @@ export function consumeAuthErrorForLogin(): string | null {
 
 function clearAuthTokens(): void {
   localStorage.removeItem("token")
-  localStorage.removeItem("ktm2000_token")
-  document.cookie = "ktm2000_token=; path=/; max-age=0"
 }
 
 /** Server revoke current session (best-effort), then clear tokens and redirect.

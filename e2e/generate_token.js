@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 
-const secret = 'shared-sso-secret-key-12345';
+// Must match HRMS JWT_SECRET_KEY (per-app — not shared with KTM)
+const secret = 'hrms-jwt-dev-secret-change-me';
 const header = {
   alg: 'HS256',
   typ: 'JWT'
