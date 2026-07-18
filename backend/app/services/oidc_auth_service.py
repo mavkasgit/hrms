@@ -72,6 +72,90 @@ class OidcAuthService:
         return issuer if issuer.endswith("/") else issuer + "/"
 
     @classmethod
+    def _alt_issuer_hosts(cls) -> list[str]:
+        """Hostnames that may appear in id_token.iss (LAN IP, localhost, docker)."""
+        from urllib.parse import urlparse
+
+        hosts: list[str] = []
+        seen: set[str] = set()
+
+        def add_host(h: str | None) -> None:
+            if not h:
+                return
+            h = h.strip().lower().split("%")[0]
+            if not h or h in seen:
+                return
+            seen.add(h)
+            hosts.append(h)
+
+        for fixed in ("localhost", "127.0.0.1", "host.docker.internal"):
+            add_host(fixed)
+
+        for raw in (
+            settings.AUTH_OIDC_ISSUER,
+            settings.AUTHENTIK_PUBLIC_URL,
+            settings.AUTHENTIK_API_URL,
+        ):
+            if not raw:
+                continue
+            text = raw.strip()
+            parsed = urlparse(text if "://" in text else f"http://{text}")
+            add_host(parsed.hostname)
+
+        aliases = (settings.AUTH_OIDC_ISSUER_ALIASES or "").strip()
+        for part in aliases.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "://" in part:
+                add_host(urlparse(part).hostname)
+            else:
+                add_host(part.split("/")[0].split(":")[0])
+
+        return hosts
+
+    @classmethod
+    def _issuer_candidates(cls) -> list[str]:
+        """Accept iss from browser host, LAN IP, and Docker host-gateway aliases.
+
+        Authentik sets id_token ``iss`` from the authorize request Host.
+        SPA may open IdP as localhost:9000 or http://<LAN-IP>:9000 — both valid.
+        """
+        from urllib.parse import urlparse, urlunparse
+
+        primary = cls._issuer()
+        bare = primary.rstrip("/")
+        out: list[str] = []
+        seen: set[str] = set()
+
+        def add(value: str) -> None:
+            if value and value not in seen:
+                seen.add(value)
+                out.append(value)
+
+        add(primary)
+        add(bare)
+
+        for base in (primary, bare):
+            parsed = urlparse(base if "://" in base else f"http://{base}")
+            if not parsed.hostname:
+                continue
+            path = parsed.path or ""
+            for host in cls._alt_issuer_hosts():
+                # Keep path/port from issuer; swap hostname only
+                port = parsed.port
+                netloc = f"{host}:{port}" if port else host
+                rebuilt = urlunparse(
+                    (parsed.scheme or "http", netloc, path, "", "", "")
+                )
+                add(rebuilt)
+                add(rebuilt.rstrip("/"))
+                if not rebuilt.endswith("/"):
+                    add(rebuilt + "/")
+
+        return out
+
+    @classmethod
     def resolve_authorization_url(cls) -> str:
         if settings.AUTH_OIDC_AUTHORIZATION_URL:
             return settings.AUTH_OIDC_AUTHORIZATION_URL.rstrip("/")
@@ -264,9 +348,6 @@ class OidcAuthService:
 
     async def validate_id_token(self, id_token: str) -> OidcClaims:
         """Verify signature (JWKS), iss, aud, exp; return normalized claims."""
-        # Authentik per-provider issuer usually has trailing slash; accept both.
-        issuer_with = self._issuer()  # trailing /
-        issuer_bare = issuer_with.rstrip("/")
         client_id = settings.AUTH_OIDC_CLIENT_ID
         if not client_id:
             raise HTTPException(
@@ -313,7 +394,7 @@ class OidcAuthService:
                 detail="invalid_id_token_key",
             ) from exc
 
-        for issuer_candidate in (issuer_with, issuer_bare):
+        for issuer_candidate in self._issuer_candidates():
             try:
                 claims = jwt.decode(
                     id_token,
@@ -445,16 +526,22 @@ class OidcAuthService:
         return f"oidc_{safe}_{int(time.time()) % 100000}"[:100]
 
     def _role_from_claims(self, claims: OidcClaims) -> str:
+        """JIT create role: claim only when SYNC flag on; else AUTH_OIDC_DEFAULT_ROLE."""
+        default = (settings.AUTH_OIDC_DEFAULT_ROLE or "viewer").strip()
+        default = default if default in ("admin", "viewer") else "viewer"
+        if not settings.AUTH_OIDC_SYNC_ROLE_FROM_IDP:
+            return default
         level = claims.hrms_access_level
         if level == "admin":
             return "admin"
         if level == "viewer":
             return "viewer"
-        default = (settings.AUTH_OIDC_DEFAULT_ROLE or "viewer").strip()
-        return default if default in ("admin", "viewer") else "viewer"
+        return default
 
     async def _maybe_sync_role(self, user: User, claims: OidcClaims) -> None:
-        """Sync local role from IdP hrms_access_level when present (admin|viewer)."""
+        """Sync local role from IdP claim only when AUTH_OIDC_SYNC_ROLE_FROM_IDP is true."""
+        if not settings.AUTH_OIDC_SYNC_ROLE_FROM_IDP:
+            return
         level = claims.hrms_access_level
         if level not in ("admin", "viewer"):
             return

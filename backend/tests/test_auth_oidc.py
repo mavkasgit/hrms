@@ -187,6 +187,7 @@ def oidc_enabled():
         "AUTH_OIDC_TOKEN_URL": settings.AUTH_OIDC_TOKEN_URL,
         "AUTH_OIDC_ALLOW_JIT": settings.AUTH_OIDC_ALLOW_JIT,
         "AUTH_OIDC_DEFAULT_ROLE": settings.AUTH_OIDC_DEFAULT_ROLE,
+        "AUTH_OIDC_SYNC_ROLE_FROM_IDP": settings.AUTH_OIDC_SYNC_ROLE_FROM_IDP,
         "AUTH_OIDC_TELEGRAM_PRIMARY": settings.AUTH_OIDC_TELEGRAM_PRIMARY,
     }
     settings.AUTH_OIDC_ENABLED = True
@@ -199,6 +200,7 @@ def oidc_enabled():
     settings.AUTH_OIDC_TOKEN_URL = "http://localhost:9000/application/o/token/"
     settings.AUTH_OIDC_ALLOW_JIT = False
     settings.AUTH_OIDC_DEFAULT_ROLE = "viewer"
+    settings.AUTH_OIDC_SYNC_ROLE_FROM_IDP = False
     settings.AUTH_OIDC_TELEGRAM_PRIMARY = False
     OidcAuthService.clear_jwks_cache()
     try:
@@ -323,7 +325,8 @@ async def test_oidc_callback_links_by_username_and_creates_session(
 
     assert isinstance(result, LoginResponse)
     assert result.username == "oidc_user"
-    assert result.role == "admin"  # synced from claim
+    # App SoT default: claim does not overwrite users.role
+    assert result.role == "viewer"
     assert result.access_token
 
     # App JWT has sid
@@ -331,7 +334,8 @@ async def test_oidc_callback_links_by_username_and_creates_session(
     payload = jose_jwt.decode(result.access_token, secret, algorithms=[settings.ALGORITHM])
     assert payload.get("sid")
     assert payload.get("username") == "oidc_user"
-    assert payload.get("hrms_access_level") == "admin"
+    # JWT hrms_access_level mirrors app users.role (not IdP claim when SYNC off)
+    assert payload.get("hrms_access_level") == "viewer"
     sid = UUID(payload["sid"])
 
     # Session row exists with login_method=oidc
@@ -341,14 +345,50 @@ async def test_oidc_callback_links_by_username_and_creates_session(
     assert sess.login_method == "oidc"
     assert sess.revoked_at is None
 
-    # authentik_sub linked
+    # authentik_sub linked; role preserved (no sync)
     await db_session.refresh(user)
     assert user.authentik_sub == "ak-sub-link-1"
+    assert user.role == "viewer"
 
     # Token exchange used PKCE verifier
     assert fake.posts
     assert fake.posts[0]["data"]["code_verifier"] == "verifier-abc"
     assert fake.posts[0]["data"]["code"] == "auth-code-1"
+
+
+async def test_oidc_callback_syncs_role_when_flag_on(
+    oidc_enabled, db_session: AsyncSession
+):
+    """Opt-in: AUTH_OIDC_SYNC_ROLE_FROM_IDP overwrites users.role from claim."""
+    settings.AUTH_OIDC_SYNC_ROLE_FROM_IDP = True
+    user = await _create_user(db_session, username="oidc_sync_role", role="viewer")
+    id_token = _make_id_token(
+        sub="ak-sub-sync-role",
+        preferred_username="oidc_sync_role",
+        hrms_access_level="admin",
+    )
+    token_body = {
+        "access_token": "idp-access",
+        "id_token": id_token,
+        "token_type": "Bearer",
+    }
+    fake = _FakeAsyncClient(token_body=token_body)
+
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        result = await oidc_callback(
+            OidcCallbackRequest(
+                code="auth-code-sync",
+                code_verifier="verifier-sync",
+                state="state-sync",
+            ),
+            _make_request(),
+            db_session,
+        )
+
+    assert result.username == "oidc_sync_role"
+    assert result.role == "admin"
+    await db_session.refresh(user)
+    assert user.role == "admin"
 
 
 async def test_oidc_callback_by_authentik_sub(
@@ -603,6 +643,40 @@ async def test_oidc_callback_jit_creates_user(
     ).scalar_one()
     assert row.authentik_sub == "ak-jit-sub"
     assert row.password_hash == SSO_BYPASS_HASH
+
+
+async def test_oidc_jit_role_uses_default_when_sync_off(
+    oidc_enabled, db_session: AsyncSession
+):
+    """JIT with SYNC=false ignores claim admin → AUTH_OIDC_DEFAULT_ROLE."""
+    settings.AUTH_OIDC_ALLOW_JIT = True
+    settings.AUTH_OIDC_SYNC_ROLE_FROM_IDP = False
+    settings.AUTH_OIDC_DEFAULT_ROLE = "viewer"
+    id_token = _make_id_token(
+        sub="ak-jit-admin-claim",
+        preferred_username="jit_admin_claim",
+        name="JIT Admin Claim",
+        hrms_access_level="admin",
+    )
+    fake = _FakeAsyncClient(
+        token_body={"access_token": "a", "id_token": id_token, "token_type": "Bearer"}
+    )
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        result = await oidc_callback(
+            OidcCallbackRequest(code="c", code_verifier="v"),
+            _make_request(),
+            db_session,
+        )
+    assert result.username == "jit_admin_claim"
+    assert result.role == "viewer"
+    row = (
+        await db_session.execute(
+            select(User).where(
+                User.username == "jit_admin_claim", User.is_deleted == False
+            )
+        )
+    ).scalar_one()
+    assert row.role == "viewer"
 
 
 # ─── service unit: URL derivation ────────────────────────────────────────────

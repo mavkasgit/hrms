@@ -1,7 +1,8 @@
 /**
  * Project `setup`: real UI login → storageState for smoke/api/ui.
  *
- * Dual-run (password path always):
+ * Dual-run (password path):
+ * - Opens `/login?password=1` (escape hatch when OIDC stub is default).
  * - Form login with E2E_ADMIN_USERNAME / E2E_ADMIN_PASSWORD.
  * - Dev default: admin / dev (backend DEV_BYPASS_AUTH accepts password "dev").
  * - OIDC / Authentik is **not** used here — see e2e/auth/oidc-login.spec.ts

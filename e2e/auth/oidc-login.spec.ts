@@ -109,6 +109,7 @@ test.describe('OIDC / Authentik @auth @oidc', () => {
     const config = await requireOidcEnabled(request)
     const login = new LoginPage(page)
 
+    // Full form path: dual-run SSO CTA + password (not auto-stub)
     await login.goto()
     // Wait for FE to load OIDC config and render CTA
     if (config.telegram_primary) {
@@ -119,7 +120,7 @@ test.describe('OIDC / Authentik @auth @oidc', () => {
       await expect(login.ssoButton).toBeVisible({ timeout: 15_000 })
     }
 
-    // Password dual-run still present
+    // Password dual-run still present on ?password=1
     await expect(login.submitButton).toBeVisible()
   })
 
@@ -131,6 +132,7 @@ test.describe('OIDC / Authentik @auth @oidc', () => {
     await requireOidcEnabled(request)
 
     const login = new LoginPage(page)
+    // Controlled click on full form (prefer over stub auto-redirect)
     await login.goto()
     await expect(login.ssoButton).toBeVisible({ timeout: 15_000 })
 

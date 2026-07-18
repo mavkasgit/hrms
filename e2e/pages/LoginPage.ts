@@ -3,6 +3,9 @@ import { type Page, type Locator, expect } from '@playwright/test'
 /**
  * POM for /login — password dual-run + optional OIDC/SSO CTA.
  *
+ * When OIDC is enabled, default `/login` is SSO stub (auto-redirect).
+ * Password helpers use `/login?password=1` escape hatch.
+ *
  * Labels match frontend LoginPage:
  * - password: placeholders «Введите логин/пароль», button «Войти» (exact)
  * - SSO: «Войти через единый вход» or TG1 «Войти через Telegram»
@@ -39,7 +42,17 @@ export class LoginPage {
     return this.page.getByRole('button', { name: 'Войти через Telegram' })
   }
 
+  /**
+   * Full dual-run form (password + optional SSO).
+   * Prefer this for password/setup/CI — avoids SSO stub auto-redirect.
+   */
   async goto() {
+    await this.page.goto('/login?password=1')
+    await expect(this.heading).toBeVisible({ timeout: 15_000 })
+  }
+
+  /** Default product path: SSO stub when OIDC on (auto startOidcLogin). */
+  async gotoSsoStub() {
     await this.page.goto('/login')
     await expect(this.heading).toBeVisible({ timeout: 15_000 })
   }
@@ -62,6 +75,7 @@ export class LoginPage {
    * LoginPage still shows app-level «Войти через Telegram» (bot modal) —
    * that must NOT be used for OIDC e2e.
    * When telegram_primary is on, app bot is hidden and OIDC CTA is the TG label.
+   * Call after goto() (full form) so SSO button is visible and controllable.
    */
   async startOidcSso() {
     const sso = this.page.getByRole('button', {

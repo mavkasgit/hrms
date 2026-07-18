@@ -2,7 +2,7 @@
  * Auth project — clean browser (no storageState).
  * Login tests must not create users; only use existing admin credentials.
  *
- * Dual-run: password form works whether OIDC is on or off.
+ * Dual-run: password form via `/login?password=1` (works whether OIDC on/off).
  * OIDC / SSO covered in oidc-login.spec.ts (opt-in E2E_OIDC=1).
  */
 import { test, expect } from '@playwright/test'

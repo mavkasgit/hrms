@@ -86,7 +86,8 @@ Hardcoded JWT / `extraHTTPHeaders` Authorization — **удалены** (E4).
 
 Шаблон: `e2e/.env.example`. Локально: `e2e/.env`.
 
-**Путь login:** реальная форма на `/login` (placeholder «Введите логин/пароль» → «Войти»).  
+**Путь login:** password dual-run на `/login?password=1` (placeholder «Введите логин/пароль» → «Войти»).  
+При OIDC on без query `/login` — SSO stub (auto-redirect); e2e setup/password всегда `?password=1`.  
 Если form fail и видна dev-кнопка «Войти как Admin» — setup делает fallback (см. `setup/auth.setup.ts`).
 
 **API request auth:** Playwright `request` не видит localStorage → `fixtures/api.ts` читает token из storageState (`getAdminTokenFromStorage`) и создаёт context с `Authorization: Bearer …`.  
@@ -105,7 +106,7 @@ Hardcoded JWT / `extraHTTPHeaders` Authorization — **удалены** (E4).
 
 | Режим | CI / default | Описание |
 |-------|--------------|----------|
-| **Password dual-run** | **active** | `setup` + `auth/login.spec.ts` — форма логин/пароль; работает при OIDC off **и** on (форма остаётся) |
+| **Password dual-run** | **active** | `setup` + `auth/login.spec.ts` — `/login?password=1`; работает при OIDC off **и** on |
 | **OIDC e2e** | **opt-in** | `auth/oidc-login.spec.ts` (`@oidc`) — skip без флагов; **не** требует Authentik в GHA smoke |
 
 **Правила:**
