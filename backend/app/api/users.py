@@ -130,9 +130,9 @@ async def create_user(
     if telegram_id is not None:
         invite_code = None
 
-    # OIDC SoT: role comes from Authentik groups on login — never elevate via local API
+    # App SoT for roles: payload.role (default viewer). Non-OIDC legacy default remains admin if omitted.
     if settings.AUTH_OIDC_ENABLED:
-        role = "viewer"
+        role = payload.role or "viewer"
     else:
         role = payload.role or "admin"
 
@@ -210,17 +210,8 @@ async def update_user(
         user.full_name = payload.full_name
         
     if payload.role is not None:
-        if settings.AUTH_OIDC_ENABLED:
-            if payload.role != user.role:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail={
-                        "detail": "role_managed_by_idp",
-                        "message": "Роль управляется в Authentik",
-                    },
-                )
-        else:
-            user.role = payload.role
+        # App SoT: admins may change role even when OIDC is enabled
+        user.role = payload.role
 
     # Telegram / phone link (field present in JSON, including null → clear)
     fields_set = payload.model_fields_set

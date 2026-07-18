@@ -61,7 +61,8 @@ def oidc_off():
     settings.AUTH_OIDC_ENABLED = original
 
 
-async def test_update_role_blocked_when_oidc(async_client, db_session: AsyncSession, oidc_on):
+async def test_update_role_allowed_when_oidc(async_client, db_session: AsyncSession, oidc_on):
+    """App SoT: create with explicit admin + PUT role change work under OIDC."""
     import uuid
 
     username = f"idp_role_{uuid.uuid4().hex[:8]}"
@@ -71,24 +72,27 @@ async def test_update_role_blocked_when_oidc(async_client, db_session: AsyncSess
         headers=_auth(),
     )
     assert create.status_code == 201
-    # create ignores role elevation → always viewer under OIDC
-    assert create.json()["role"] == "viewer"
-    user_id = create.json()["id"]
+    body = create.json()
+    assert body["role"] == "admin"
+    assert "authentik_sub" in body
+    assert body["authentik_sub"] is None
+    user_id = body["id"]
 
     resp = await async_client.put(
+        f"/api/users/{user_id}",
+        json={"role": "viewer"},
+        headers=_auth(),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["role"] == "viewer"
+
+    resp_up = await async_client.put(
         f"/api/users/{user_id}",
         json={"role": "admin"},
         headers=_auth(),
     )
-    assert resp.status_code == 400
-    body = resp.json()
-    detail = body.get("detail")
-    # FastAPI wraps dict detail as {"detail": {...}}
-    blob = detail if isinstance(detail, dict) else body
-    text = str(body)
-    assert "role_managed_by_idp" in text
-    if isinstance(blob, dict):
-        assert blob.get("detail") == "role_managed_by_idp" or blob.get("message")
+    assert resp_up.status_code == 200
+    assert resp_up.json()["role"] == "admin"
 
     await async_client.delete(f"/api/users/{user_id}", headers=_auth())
 

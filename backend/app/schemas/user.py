@@ -65,6 +65,7 @@ class UserOut(UserBase):
     phone_verified_at: datetime | None = None
     invite_code: str | None = None
     avatar_seed: str | None = None
+    authentik_sub: str | None = None
 
     class Config:
         from_attributes = True

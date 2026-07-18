@@ -119,6 +119,33 @@ async def test_create_user_api_role_and_validation(async_client, db_session: Asy
     assert response_me.json()["detail"] == "Пользователь удален из системы"
 
 
+async def test_list_users_includes_authentik_sub(async_client, db_session: AsyncSession):
+    """UserOut exposes authentik_sub for external IdP match."""
+    import uuid
+    from app.models.user import User
+
+    username = f"sub_list_{uuid.uuid4().hex[:8]}"
+    user = User(
+        username=username,
+        full_name="Sub List User",
+        role="viewer",
+        password_hash="x",
+        authentik_sub="ak-list-sub-1",
+        is_deleted=False,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    response_list = await async_client.get("/api/users", headers=_get_auth_headers())
+    assert response_list.status_code == 200
+    items = response_list.json()
+    assert all("authentik_sub" in u for u in items)
+    match = next(u for u in items if u["username"] == username)
+    assert match["authentik_sub"] == "ak-list-sub-1"
+
+    await async_client.delete(f"/api/users/{user.id}", headers=_get_auth_headers())
+
+
 async def test_admin_user_protection(async_client, db_session: AsyncSession):
     """Тест защиты встроенного администратора: не выводится в списке и нельзя удалить."""
     from app.models.user import User
