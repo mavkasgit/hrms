@@ -1,12 +1,15 @@
 import { type Page, type Locator, expect } from '@playwright/test'
 
 /**
- * Page Object: /settings/users — список, create dialog, invite, delete.
+ * Page Object: /users
+ * - OIDC off: local users table, create dialog, invite, delete
+ * - OIDC on: IdP-first (Authentik SoT banner + groups panel; no local IAM)
  * Selectors: role/label/text (no e2e-* testids on this page).
  */
 export class UsersPage {
   readonly page: Page
-  readonly heading: Locator
+  readonly headingLocal: Locator
+  readonly headingIdp: Locator
   readonly addButton: Locator
   readonly searchInput: Locator
   readonly createDialog: Locator
@@ -14,9 +17,15 @@ export class UsersPage {
 
   constructor(page: Page) {
     this.page = page
-    this.heading = page.getByRole('heading', {
-      name: 'Пользователи кадровой системы',
+    this.headingLocal = page.getByRole('heading', {
+      name: 'Пользователи',
       level: 1,
+      exact: true,
+    })
+    this.headingIdp = page.getByRole('heading', {
+      name: 'Пользователи и доступ',
+      level: 1,
+      exact: true,
     })
     this.addButton = page.getByRole('button', { name: 'Добавить пользователя' })
     this.searchInput = page.getByPlaceholder(/поиск по логину/i)
@@ -24,9 +33,34 @@ export class UsersPage {
     this.deleteDialog = page.getByRole('alertdialog')
   }
 
+  /**
+   * Wait until mode is resolved (no flash loader).
+   * Local: «Добавить пользователя»; IdP-first: SoT copy about Authentik.
+   */
   async goto() {
-    await this.page.goto('/settings/users')
-    await expect(this.heading).toBeVisible({ timeout: 15_000 })
+    await this.page.goto('/users')
+    const ready = this.addButton.or(
+      this.page.getByText(/каталог учёток ведётся в Authentik/i)
+    )
+    await expect(ready).toBeVisible({ timeout: 15_000 })
+  }
+
+  async expectIdpFirstLayout() {
+    await expect(this.headingIdp).toBeVisible({ timeout: 10_000 })
+    await expect(this.page.getByText(/каталог учёток ведётся в Authentik/i)).toBeVisible()
+    await expect(this.page.getByText(/каталог пользователей — в Authentik/i)).toBeVisible()
+    await expect(this.addButton).toHaveCount(0)
+    await expect(this.page.getByRole('tab', { name: 'Приглашения' })).toHaveCount(0)
+    // Groups panel heading
+    await expect(
+      this.page.getByRole('heading', { name: /доступ к HRMS/i })
+    ).toBeVisible()
+  }
+
+  async expectLocalIamLayout() {
+    await expect(this.headingLocal).toBeVisible({ timeout: 10_000 })
+    await expect(this.addButton).toBeVisible()
+    await expect(this.page.getByRole('tab', { name: 'Приглашения' })).toBeVisible()
   }
 
   /** Row in users table that contains the given username. */
@@ -65,17 +99,11 @@ export class UsersPage {
 
   /**
    * Role Select defaults to viewer («Наблюдатель»).
-   * Explicitly pick to assert the control works.
-   * Soft dual-run (SSO-D): when OIDC is on the role Select is hidden — skip silently.
+   * Local IAM only (OIDC off).
    */
   async selectRole(label: 'Наблюдатель' | 'Администратор') {
     const trigger = this.createDialog.getByRole('combobox')
-    const visible = await trigger.isVisible().catch(() => false)
-    if (!visible) {
-      // OIDC on: role managed via IdP section — no local Select
-      return
-    }
-    // Already selected?
+    await expect(trigger).toBeVisible({ timeout: 5_000 })
     if (await trigger.getByText(label, { exact: true }).isVisible().catch(() => false)) {
       return
     }

@@ -27,19 +27,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/alert-dialog"
-import { TelegramLoginModal } from "@/features/auth/telegram/TelegramLoginModal"
-import { fetchTelegramBotConfig, type TelegramBotConfig } from "@/shared/api/telegramAuth"
-import { TelegramIcon } from "@/shared/ui/icons"
 import { UserAvatar } from "@/shared/ui/user-avatar"
 import { getUserSeed } from "@/shared/lib/avatar"
 import { AvatarPickerDialog } from "@/features/user-profile/AvatarPickerDialog"
@@ -71,8 +58,6 @@ export function UserProfileModal({
 }: UserProfileModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>("profile")
   const [copied, setCopied] = useState(false)
-  const [tgModalOpen, setTgModalOpen] = useState(false)
-  const [telegramConfig, setTelegramConfig] = useState<TelegramBotConfig | null>(null)
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
   const [avatarSaving, setAvatarSaving] = useState(false)
   const [avatarError, setAvatarError] = useState<string | null>(null)
@@ -90,7 +75,6 @@ export function UserProfileModal({
       const res = await api.get("/auth/me")
       setLocalUser(res.data)
       onUpdateProfile() // уведомляем родительский компонент (Sidebar)
-      // Layout слушает это для баннера «пароль + Telegram»
       window.dispatchEvent(new Event("hrms:profile-updated"))
     } catch (err) {
       console.error("Не удалось обновить профиль пользователя:", err)
@@ -165,12 +149,6 @@ export function UserProfileModal({
   const [isSubmittingPassword, setIsSubmittingPassword] = useState(false)
   const [passwordError, setPasswordError] = useState("")
   const [passwordSuccess, setPasswordSuccess] = useState("")
-
-  // Состояния для отвязки Telegram
-  const [isUnlinkingTg, setIsUnlinkingTg] = useState(false)
-  const [tgError, setTgError] = useState("")
-  const [tgSuccess, setTgSuccess] = useState("")
-  const [unlinkConfirmOpen, setUnlinkConfirmOpen] = useState(false)
 
   // Активные сессии + история входов (API)
   const [sessions, setSessions] = useState<SessionDto[]>([])
@@ -248,20 +226,12 @@ export function UserProfileModal({
 
   useEffect(() => {
     if (open) {
-      // Сброс сообщений
       setPasswordError("")
       setPasswordSuccess("")
-      setTgError("")
-      setTgSuccess("")
       setPassword("")
       setConfirmPassword("")
       setSessionsError(null)
       setEventsError(null)
-
-      // Загружаем конфигурацию Telegram
-      fetchTelegramBotConfig()
-        .then((cfg) => setTelegramConfig(cfg))
-        .catch((err) => console.error("Не удалось загрузить конфиг Telegram:", err))
 
       // Deep-link «Настройки входа» (IdP user UI)
       fetchIdpLinks()
@@ -274,9 +244,7 @@ export function UserProfileModal({
           setUserSettingsUrl(null)
         })
 
-      // Загружаем свежие данные о пользователе
       fetchUserData()
-      // Реальные сессии + история входов
       void loadSessionsAndEvents()
     }
   }, [open, fetchUserData, loadSessionsAndEvents])
@@ -317,23 +285,6 @@ export function UserProfileModal({
       setPasswordError(err.response?.data?.detail || "Не удалось сохранить пароль")
     } finally {
       setIsSubmittingPassword(false)
-    }
-  }
-
-  // Отвязка Telegram
-  const handleUnlinkTelegram = async () => {
-    setTgError("")
-    setTgSuccess("")
-    setIsUnlinkingTg(true)
-    try {
-      await api.delete("/auth/telegram/link")
-      setTgSuccess("Telegram успешно отвязан")
-      await fetchUserData()
-    } catch (err: any) {
-      console.error(err)
-      setTgError(err.response?.data?.detail || "Не удалось отвязать Telegram")
-    } finally {
-      setIsUnlinkingTg(false)
     }
   }
 
@@ -481,107 +432,36 @@ export function UserProfileModal({
                   </div>
                 </div>
 
-                {localUser.invite_code && (
-                  <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl flex gap-3">
-                    <ShieldAlert className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-semibold text-yellow-600 dark:text-yellow-500">
-                        Вы вошли по одноразовому инвайт-коду
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Рекомендуем установить пароль и привязать аккаунт Telegram во вкладке «Безопасность», чтобы защитить свой аккаунт.
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* РАЗДЕЛ 2: БЕЗОПАСНОСТЬ */}
               <div id="security-section" className="space-y-6 pt-2 scroll-mt-6">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80 border-b border-border/40 pb-2 mb-4">Безопасность и доступы</h3>
-                
-                {/* Секция Telegram */}
-                <div className="p-4 rounded-2xl border border-border/80 bg-muted/10 space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-[#229ED9]/10 flex items-center justify-center text-[#229ED9] shrink-0 mt-0.5">
-                      <TelegramIcon className="h-5 w-5 fill-current" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-semibold text-foreground">Двухфакторный вход через Telegram</h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Безопасный вход по QR-коду без использования пароля
-                      </p>
 
-                      {/* Детали привязанного аккаунта */}
-                      {localUser.has_telegram && (localUser.telegram_id || localUser.telegram_username) && (
-                        <div className="mt-2.5 text-xs text-muted-foreground/80 flex flex-col gap-1 bg-background/40 border border-border/40 p-2 rounded-xl max-w-[260px]">
-                          {localUser.telegram_username && (
-                            <div className="flex justify-between gap-2">
-                              <span>Юзернейм:</span>
-                              <span className="font-semibold text-foreground">@{localUser.telegram_username}</span>
-                            </div>
-                          )}
-                          {localUser.telegram_id && (
-                            <div className="flex justify-between gap-2">
-                              <span>Telegram ID:</span>
-                              <span className="font-mono font-medium text-foreground">{localUser.telegram_id}</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      {localUser.has_telegram ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-600 dark:text-green-500 bg-green-500/10 px-2.5 py-1 rounded-full">
-                          <ShieldCheck className="h-3.5 w-3.5" />
-                          Привязан
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-yellow-600 dark:text-yellow-500 bg-yellow-500/10 px-2.5 py-1 rounded-full">
-                          <ShieldAlert className="h-3.5 w-3.5" />
-                          Не привязан
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {tgError && <p className="text-xs text-destructive">{tgError}</p>}
-                  {tgSuccess && <p className="text-xs text-green-500">{tgSuccess}</p>}
-
-                  <div className="flex justify-end pt-1">
-                    {localUser.has_telegram ? (
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        disabled={isUnlinkingTg}
-                        onClick={() => setUnlinkConfirmOpen(true)}
-                        className="rounded-xl px-4 text-xs"
-                      >
-                        {isUnlinkingTg ? (
-                          <>
-                            <Loader2 className="h-3 w-3 animate-spin mr-2" />
-                            Отвязка...
-                          </>
-                        ) : (
-                          "Отвязать Telegram"
-                        )}
-                      </Button>
-                    ) : (
+                {oidcEnabled && (
+                  <div className="p-4 rounded-2xl border border-border/80 bg-muted/10 space-y-3">
+                    <h3 className="text-sm font-semibold text-foreground">Единый вход (Authentik)</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Telegram, MFA и способы входа настраиваются только в IdP, не в HRMS.
+                    </p>
+                    {userSettingsUrl && (
                       <Button
                         type="button"
-                        variant="default"
+                        variant="outline"
                         size="sm"
-                        onClick={() => setTgModalOpen(true)}
                         className="rounded-xl px-4 text-xs gap-1.5"
+                        onClick={() =>
+                          window.open(userSettingsUrl, "_blank", "noopener,noreferrer")
+                        }
                       >
-                        <TelegramIcon className="h-3.5 w-3.5 fill-current" />
-                        Привязать Telegram
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Настройки входа в IdP
                       </Button>
                     )}
                   </div>
-                </div>
+                )}
 
-                {/* Секция пароля */}
+                {/* Секция пароля (локальный escape hatch) */}
                 <form onSubmit={handleSavePassword} className="space-y-4 border-t border-border/40 pt-5">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
@@ -890,44 +770,6 @@ export function UserProfileModal({
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Модальное окно привязки Telegram */}
-      <TelegramLoginModal
-        open={tgModalOpen}
-        onOpenChange={setTgModalOpen}
-        config={telegramConfig}
-        purpose="link"
-        onSuccess={async () => {
-          setTgModalOpen(false)
-          setTgSuccess("Telegram успешно привязан!")
-          // Как после setup-password: refresh + hrms:profile-updated для баннера Layout
-          await fetchUserData()
-        }}
-      />
-
-      {/* Подтверждение отвязки Telegram */}
-      <AlertDialog open={unlinkConfirmOpen} onOpenChange={setUnlinkConfirmOpen}>
-        <AlertDialogContent className="rounded-2xl max-w-sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Отвязать Telegram?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Вы больше не сможете использовать двухфакторный вход через этот аккаунт Telegram. Для входа вам потребуется использовать пароль.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-xl">Отмена</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setUnlinkConfirmOpen(false)
-                handleUnlinkTelegram()
-              }}
-              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-xl"
-            >
-              Отвязать
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AvatarPickerDialog
         open={avatarPickerOpen}

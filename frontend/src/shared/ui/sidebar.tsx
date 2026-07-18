@@ -5,7 +5,6 @@ import api, { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
 import { UserProfileModal } from "@/features/user-profile/UserProfileModal"
 import { UserAvatar } from "@/shared/ui/user-avatar"
 import { getUserSeed } from "@/shared/lib/avatar"
-import { TelegramIcon } from "@/shared/ui/icons"
 import {
   ChevronDown,
   ChevronRight,
@@ -50,7 +49,7 @@ const topNavItems = [
   { to: "/vacation-calendar", label: "Календарь отпусков", icon: CalendarDays },
 ]
 
-const bottomNavItems = [
+const bottomNavItemsBase = [
   { to: "/settings", label: "Настройки", icon: Settings },
   ...(import.meta.env.DEV ? [{ to: "/dev", label: "Dev", icon: Wrench }] : []),
 ]
@@ -106,9 +105,18 @@ export function Sidebar() {
 
   return (
     <aside className="w-64 h-screen sticky top-0 bg-card border-r flex flex-col shrink-0">
-      <div className="p-6">
-        <h1 className="text-xl font-bold">HRMS</h1>
-        <p className="text-sm text-muted-foreground">Управление персоналом</p>
+      <div className="p-6 flex items-center gap-3">
+        <img
+          src="/logo.svg"
+          alt="HRMS"
+          className="h-10 w-10 rounded-xl shrink-0"
+          width={40}
+          height={40}
+        />
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold leading-tight">HRMS</h1>
+          <p className="text-sm text-muted-foreground">Управление персоналом</p>
+        </div>
       </div>
 
       <nav className="flex-1 px-3 space-y-1">
@@ -169,7 +177,7 @@ export function Sidebar() {
           )}
         </div>
 
-        {bottomNavItems.map((item) => (
+        {bottomNavItemsBase.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -205,17 +213,8 @@ export function Sidebar() {
                 <div className="font-semibold text-foreground text-sm truncate group-hover:text-primary transition-colors">
                   {currentUser.full_name || "Пользователь"}
                 </div>
-                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground truncate">
-                  <span className="truncate">Настройки профиля</span>
-                  {currentUser.telegram_id != null && (
-                    <span
-                      className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-[#2AABEE] text-white shrink-0"
-                      title={currentUser.telegram_username ? `@${currentUser.telegram_username.replace("@", "")}` : "Telegram привязан"}
-                      aria-label="Telegram привязан"
-                    >
-                      <TelegramIcon className="h-2 w-2 fill-current" />
-                    </span>
-                  )}
+                <div className="text-[10px] text-muted-foreground truncate">
+                  Настройки профиля
                 </div>
               </div>
             </button>

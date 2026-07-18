@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom"
+import { createBrowserRouter, Navigate } from "react-router-dom"
 import { Suspense, lazy } from "react"
 import type { ReactNode } from "react"
 import { Layout } from "./Layout"
@@ -63,8 +63,9 @@ export const router = createBrowserRouter([
       { path: "vacation-calendar", element: withSuspense(<VacationCalendarPage />) },
       { path: "timesheet", element: withSuspense(<TimesheetPage />) },
       { path: "templates", element: withSuspense(<TemplatesPage />) },
+      { path: "users", element: withSuspense(<UsersPage />) },
       { path: "settings", element: withSuspense(<SettingsPage />) },
-      { path: "settings/users", element: withSuspense(<UsersPage />) },
+      { path: "settings/users", element: <Navigate to="/users" replace /> },
       { path: "settings/holidays", element: withSuspense(<HolidaysPage />) },
       { path: "settings/backups", element: withSuspense(<BackupsPage />) },
       { path: "dev", element: withSuspense(<DevPage />) },

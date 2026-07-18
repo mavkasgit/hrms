@@ -89,7 +89,7 @@ export function SettingsPage() {
 
         <div
           className="border rounded-lg p-4 hover:bg-accent/50 transition-colors cursor-pointer"
-          onClick={() => navigate("/settings/users")}
+          onClick={() => navigate("/users")}
         >
           <div className="flex items-start gap-4">
             <div className="p-2 rounded-md bg-primary/10">
@@ -102,8 +102,8 @@ export function SettingsPage() {
               </h3>
               <p className="text-sm text-muted-foreground mb-3">
                 {oidcEnabled
-                  ? "Роли из единого входа (Authentik), связи HRMS: сотрудник, Telegram и invite."
-                  : "Управление пользователями HRMS: логин/пароль, Telegram и invite. Добавление, редактирование и привязка к сотрудникам."}
+                  ? "Доступ и IdP: каталог в Authentik, группы hrms-admin / hrms-viewer. Telegram/MFA — только в IdP."
+                  : "Локальные учётные записи HRMS: логин/пароль и роли (без in-app Telegram/invite)."}
               </p>
             </div>
           </div>
