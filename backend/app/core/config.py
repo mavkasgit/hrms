@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -113,6 +114,30 @@ class Settings(BaseSettings):
     AUTHENTIK_API_URL: str | None = "auto"
     AUTHENTIK_API_TOKEN: str | None = None
     AUTHENTIK_PUBLIC_URL: str | None = "auto"
+
+    @model_validator(mode="after")
+    def resolve_auto_urls(self) -> "Settings":
+        from app.core.host_net import env_lan_ip, detect_lan_ip, resolve_authentik_origin
+        
+        # Разрешение APP_PUBLIC_URL
+        if self.APP_PUBLIC_URL == "auto":
+            ip = env_lan_ip() or detect_lan_ip() or "localhost"
+            port = 8081 if self.ENV == "prod" else (8080 if self.ENV == "test" else 5173)
+            self.APP_PUBLIC_URL = f"http://{ip}:{port}"
+            
+        # Разрешение TELEGRAM_PUBLIC_APP_URL
+        if self.TELEGRAM_PUBLIC_APP_URL == "auto":
+            self.TELEGRAM_PUBLIC_APP_URL = self.APP_PUBLIC_URL
+            
+        # Разрешение AUTH_OIDC_REDIRECT_URI
+        if self.AUTH_OIDC_REDIRECT_URI == "auto":
+            self.AUTH_OIDC_REDIRECT_URI = f"{self.APP_PUBLIC_URL}/auth/callback"
+            
+        # Разрешение AUTHENTIK_PUBLIC_URL
+        if self.AUTHENTIK_PUBLIC_URL == "auto":
+            self.AUTHENTIK_PUBLIC_URL = resolve_authentik_origin(None) or "http://localhost:9000"
+            
+        return self
 
     model_config = {"env_file": _env_file, "env_file_encoding": "utf-8", "extra": "ignore"}
 

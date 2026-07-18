@@ -61,14 +61,14 @@ class OidcAuthService:
     def is_enabled() -> bool:
         return bool(settings.AUTH_OIDC_ENABLED)
 
-    @staticmethod
-    def _issuer() -> str:
+    @classmethod
+    def _issuer(cls) -> str:
         issuer = (settings.AUTH_OIDC_ISSUER or "").strip()
-        if not issuer:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="OIDC issuer not configured",
-            )
+        if not issuer or issuer.lower() == "auto":
+            from app.core.host_net import resolve_authentik_origin
+            origin = resolve_authentik_origin(None) or "http://localhost:9000"
+            client_id = settings.AUTH_OIDC_CLIENT_ID or "hrms"
+            issuer = f"{origin}/application/o/{client_id}/"
         return issuer if issuer.endswith("/") else issuer + "/"
 
     @classmethod
@@ -90,6 +90,11 @@ class OidcAuthService:
 
         for fixed in ("localhost", "127.0.0.1", "host.docker.internal"):
             add_host(fixed)
+
+        from app.core.host_net import env_lan_ip, detect_lan_ip
+        lan = env_lan_ip() or detect_lan_ip()
+        if lan:
+            add_host(lan)
 
         for raw in (
             settings.AUTH_OIDC_ISSUER,
@@ -224,6 +229,16 @@ class OidcAuthService:
 
     @classmethod
     def logout_url(cls, *, id_token_hint: str | None = None, post_logout_redirect_uri: str | None = None) -> str | None:
+        """Build Authentik RP-initiated logout URL.
+
+        Authentik (OIDC cert mode): when the provider has registered post-logout
+        redirect URIs, ``post_logout_redirect_uri`` is only accepted together with
+        a valid ``id_token_hint``. Sending post_logout alone → 400
+        «The request is otherwise malformed».
+
+        Without id_token_hint we return a bare end-session URL (full SSO still ends
+        via invalidation flow + User Logout stage).
+        """
         if not cls.is_enabled():
             return None
         try:
@@ -231,18 +246,26 @@ class OidcAuthService:
         except HTTPException:
             return None
         params: dict[str, str] = {}
-        if id_token_hint:
-            params["id_token_hint"] = id_token_hint
-        if post_logout_redirect_uri:
-            params["post_logout_redirect_uri"] = post_logout_redirect_uri
-        elif settings.AUTH_OIDC_REDIRECT_URI:
-            # Default post-logout to FE /login (origin of redirect_uri)
-            redirect = settings.AUTH_OIDC_REDIRECT_URI
-            # http://localhost:5173/auth/callback → http://localhost:5173/login
-            if "/auth/callback" in redirect:
-                params["post_logout_redirect_uri"] = redirect.replace(
-                    "/auth/callback", "/login"
-                )
+        
+        # Handle FastAPI Query defaults if called directly in unit tests
+        if id_token_hint is not None and not isinstance(id_token_hint, str):
+            id_token_hint = None
+        if post_logout_redirect_uri is not None and not isinstance(post_logout_redirect_uri, str):
+            post_logout_redirect_uri = None
+
+        hint = (id_token_hint or "").strip()
+        if hint:
+            params["id_token_hint"] = hint
+            if post_logout_redirect_uri:
+                params["post_logout_redirect_uri"] = post_logout_redirect_uri
+            elif settings.AUTH_OIDC_REDIRECT_URI:
+                # Default post-logout to FE /login (origin of redirect_uri)
+                redirect = settings.AUTH_OIDC_REDIRECT_URI
+                # http://localhost:5173/auth/callback → http://localhost:5173/login
+                if "/auth/callback" in redirect:
+                    params["post_logout_redirect_uri"] = redirect.replace(
+                        "/auth/callback", "/login"
+                    )
         if params:
             sep = "&" if "?" in base else "?"
             return f"{base}{sep}{urlencode(params)}"
@@ -657,6 +680,8 @@ class OidcAuthService:
             "username": user.username,
             "role": user.role,
             "full_name": user.full_name or user.username,
+            # For Authentik RP-initiated logout (id_token_hint + post_logout_redirect_uri)
+            "id_token": id_token,
         }
 
 
