@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, EmailStr, Field
 import bcrypt
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
@@ -392,6 +394,9 @@ class ProfileUpdate(BaseModel):
     avatar_seed: str | None = Field(None, max_length=64)
     # True → явно сбросить avatar (отличается от «не передавали поле»)
     clear_avatar: bool = False
+    email: EmailStr | None = None
+    locale: Literal["ru", "en"] | None = None
+    theme: Literal["system", "light", "dark"] | None = None
 
 
 async def _load_me_user(db: AsyncSession, username: str) -> User:
@@ -445,22 +450,33 @@ async def update_my_profile(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Обновить display-профиль (имя / аватар). SoT = Authentik при наличии связи."""
+    """Обновить display-профиль (имя / email / locale / theme / аватар). SoT = Authentik."""
     from app.services import unified_profile_service as ups
     from app.services.authentik_admin_service import AuthentikAdminError
 
     user = await _load_me_user(db, current_user.username)
 
-    if payload.full_name is None and not payload.clear_avatar and payload.avatar_seed is None:
-        # allow avatar_seed=None only with clear_avatar
-        if not payload.clear_avatar:
-            # empty body: no-op return current
-            return {
-                "full_name": user.full_name,
-                "avatar_seed": user.avatar_seed,
-            }
+    has_any = (
+        payload.full_name is not None
+        or payload.clear_avatar
+        or payload.avatar_seed is not None
+        or payload.email is not None
+        or payload.locale is not None
+        or payload.theme is not None
+    )
+    if not has_any:
+        return {
+            "full_name": user.full_name,
+            "avatar_seed": user.avatar_seed,
+            "email": None,
+            "locale": user.locale,
+            "theme": user.theme,
+        }
 
     want_name = payload.full_name.strip() if payload.full_name else None
+    want_email = str(payload.email).strip() if payload.email is not None else None
+    want_locale = payload.locale
+    want_theme = payload.theme
     # avatar: clear_avatar → None; avatar_seed set → value; else leave unchanged on IdP
     avatar_arg: object
     if payload.clear_avatar:
@@ -470,12 +486,17 @@ async def update_my_profile(
     else:
         avatar_arg = ...
 
+    email_out: str | None = None
+
     if user.authentik_sub and ups.profile_sync_enabled():
         try:
             remote = await ups.push_profile_by_sub(
                 user.authentik_sub,
                 full_name=want_name,
                 avatar_seed=avatar_arg,
+                email=want_email,
+                locale=want_locale,
+                theme=want_theme,
             )
             if want_name:
                 user.full_name = remote.full_name or want_name
@@ -483,6 +504,11 @@ async def update_my_profile(
                 user.avatar_seed = remote.avatar_seed
             elif remote.full_name:
                 user.full_name = remote.full_name
+            if want_locale is not None:
+                user.locale = remote.locale or want_locale
+            if want_theme is not None:
+                user.theme = remote.theme or want_theme
+            email_out = remote.email or want_email
         except AuthentikAdminError as exc:
             raise HTTPException(
                 status_code=exc.status_code or 502,
@@ -495,8 +521,20 @@ async def update_my_profile(
             user.avatar_seed = None
         elif payload.avatar_seed is not None:
             user.avatar_seed = payload.avatar_seed
+        if want_locale is not None:
+            user.locale = want_locale
+        if want_theme is not None:
+            user.theme = want_theme
+        # email: no local column in HRMS — only via IdP
+        email_out = want_email
 
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return {"full_name": user.full_name, "avatar_seed": user.avatar_seed}
+    return {
+        "full_name": user.full_name,
+        "avatar_seed": user.avatar_seed,
+        "email": email_out,
+        "locale": user.locale,
+        "theme": user.theme,
+    }

@@ -71,6 +71,9 @@ class User(Base):
     # Multiavatar seed: случайный при создании, далее — только явная смена в профиле.
     # NULL → на фронте пустая заглушка. До 64 ASCII (8 hex).
     avatar_seed = Column(String(64), nullable=True)
+    # Unified profile cache (SoT = Authentik attributes)
+    locale = Column(String(16), nullable=True)  # ru | en
+    theme = Column(String(16), nullable=True)  # system | light | dark
     invite_code = Column(String(64), unique=True, nullable=True, index=True)
     # Authentik / OIDC subject (stable UUID from IdP); link for SSO bridge
     authentik_sub = Column(String(255), nullable=True, index=True)

@@ -41,6 +41,13 @@ import {
   type LoginEventDto,
 } from "@/features/user-profile/api/sessionsApi"
 import { fetchIdpLinks } from "@/shared/api/idpAdmin"
+import {
+  applyTheme,
+  storeLocale,
+  type ProfileLocale,
+  type ProfileTheme,
+} from "@/shared/lib/profile-prefs"
+
 type UserProfileModalProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -63,15 +70,26 @@ export function UserProfileModal({
   const [avatarError, setAvatarError] = useState<string | null>(null)
   const [localUser, setLocalUser] = useState<any>(currentUser)
   const [fullNameDraft, setFullNameDraft] = useState("")
+  const [emailDraft, setEmailDraft] = useState("")
+  const [localeDraft, setLocaleDraft] = useState<ProfileLocale>("ru")
+  const [themeDraft, setThemeDraft] = useState<ProfileTheme>("system")
   const [nameSaving, setNameSaving] = useState(false)
   const [nameError, setNameError] = useState<string | null>(null)
   const [nameSaved, setNameSaved] = useState(false)
+  const [prefsSaving, setPrefsSaving] = useState(false)
+  const [prefsError, setPrefsError] = useState<string | null>(null)
+  const [prefsSaved, setPrefsSaved] = useState(false)
 
   // Синхронизируем локального пользователя при обновлении пропса
   useEffect(() => {
     if (currentUser) {
       setLocalUser(currentUser)
       setFullNameDraft(currentUser.full_name || "")
+      setEmailDraft(currentUser.email || "")
+      setLocaleDraft((currentUser.locale as ProfileLocale) || "ru")
+      setThemeDraft((currentUser.theme as ProfileTheme) || "system")
+      if (currentUser.theme) applyTheme(currentUser.theme)
+      if (currentUser.locale) storeLocale(currentUser.locale)
     }
   }, [currentUser])
 
@@ -129,6 +147,9 @@ export function UserProfileModal({
           ...prev,
           full_name: res.data.full_name ?? next,
           avatar_seed: res.data.avatar_seed ?? prev?.avatar_seed,
+          email: res.data.email ?? prev?.email,
+          locale: res.data.locale ?? prev?.locale,
+          theme: res.data.theme ?? prev?.theme,
         }))
         await fetchUserData()
         setNameSaved(true)
@@ -141,6 +162,70 @@ export function UserProfileModal({
       }
     },
     [fullNameDraft, nameSaving, localUser?.full_name, fetchUserData],
+  )
+
+  const handleSavePrefs = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault()
+      if (prefsSaving) return
+      const payload: {
+        email?: string
+        locale?: ProfileLocale
+        theme?: ProfileTheme
+      } = {}
+      const nextEmail = emailDraft.trim()
+      if (nextEmail && nextEmail !== (localUser?.email || "").trim()) {
+        payload.email = nextEmail
+      }
+      if (localeDraft !== (localUser?.locale || "ru")) {
+        payload.locale = localeDraft
+      }
+      if (themeDraft !== (localUser?.theme || "system")) {
+        payload.theme = themeDraft
+      }
+      if (Object.keys(payload).length === 0) return
+      setPrefsSaving(true)
+      setPrefsError(null)
+      setPrefsSaved(false)
+      try {
+        const res = await api.patch("/users/me/profile", payload)
+        setLocalUser((prev: any) => ({
+          ...prev,
+          email: res.data.email ?? payload.email ?? prev?.email,
+          locale: res.data.locale ?? payload.locale ?? prev?.locale,
+          theme: res.data.theme ?? payload.theme ?? prev?.theme,
+        }))
+        if (res.data.theme || payload.theme) {
+          applyTheme(res.data.theme ?? payload.theme)
+        }
+        if (res.data.locale || payload.locale) {
+          storeLocale(res.data.locale ?? payload.locale)
+        }
+        await fetchUserData()
+        setPrefsSaved(true)
+        window.setTimeout(() => setPrefsSaved(false), 2000)
+      } catch (err: any) {
+        console.error("Не удалось сохранить профиль:", err)
+        const detail = err?.response?.data?.detail
+        setPrefsError(
+          typeof detail === "string"
+            ? detail
+            : "Не удалось сохранить. Проверьте email и попробуйте ещё раз.",
+        )
+      } finally {
+        setPrefsSaving(false)
+      }
+    },
+    [
+      prefsSaving,
+      emailDraft,
+      localeDraft,
+      themeDraft,
+      localUser?.email,
+      localUser?.locale,
+      localUser?.theme,
+      fetchUserData,
+    ],
   )
   useEffect(() => {
     if (!open) return
@@ -504,6 +589,94 @@ export function UserProfileModal({
                   )}
                   <p className="text-[11px] text-muted-foreground">
                     Единый профиль: имя и аватар синхронизируются через IdP (Authentik) для всех приложений.
+                  </p>
+                </form>
+
+                <form onSubmit={handleSavePrefs} className="space-y-3 pt-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground" htmlFor="profile-email">
+                      Email
+                    </label>
+                    <input
+                      id="profile-email"
+                      type="email"
+                      value={emailDraft}
+                      onChange={(e) => {
+                        setEmailDraft(e.target.value)
+                        setPrefsError(null)
+                        setPrefsSaved(false)
+                      }}
+                      className="w-full bg-background border border-border/80 rounded-xl px-3.5 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                      autoComplete="email"
+                    />
+                  </div>
+
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80 pt-2">
+                    Оформление
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground" htmlFor="profile-locale">
+                        Язык
+                      </label>
+                      <select
+                        id="profile-locale"
+                        value={localeDraft}
+                        onChange={(e) => {
+                          setLocaleDraft(e.target.value as ProfileLocale)
+                          setPrefsError(null)
+                          setPrefsSaved(false)
+                        }}
+                        className="w-full bg-background border border-border/80 rounded-xl px-3.5 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        <option value="ru">Русский</option>
+                        <option value="en">English</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted-foreground" htmlFor="profile-theme">
+                        Тема
+                      </label>
+                      <select
+                        id="profile-theme"
+                        value={themeDraft}
+                        onChange={(e) => {
+                          setThemeDraft(e.target.value as ProfileTheme)
+                          setPrefsError(null)
+                          setPrefsSaved(false)
+                        }}
+                        className="w-full bg-background border border-border/80 rounded-xl px-3.5 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        <option value="system">Системная</option>
+                        <option value="light">Светлая</option>
+                        <option value="dark">Тёмная</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="submit"
+                      size="sm"
+                      className="rounded-xl"
+                      disabled={prefsSaving}
+                    >
+                      {prefsSaving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : prefsSaved ? (
+                        <>
+                          <CheckCircle2 className="h-4 w-4 mr-1" />
+                          Сохранено
+                        </>
+                      ) : (
+                        "Сохранить email / оформление"
+                      )}
+                    </Button>
+                  </div>
+                  {prefsError && (
+                    <p className="text-xs text-destructive">{prefsError}</p>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">
+                    Общие настройки — сохраняются в IdP и доступны в KTM / HRMS.
                   </p>
                 </form>
 

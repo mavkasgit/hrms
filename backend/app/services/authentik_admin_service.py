@@ -141,9 +141,11 @@ async def _request(
 
     if resp.status_code >= 400:
         detail = resp.text[:500] if resp.text else resp.reason_phrase
+        # Pass through client errors (e.g. email uniqueness 400) for profile writes
+        code = resp.status_code if 400 <= resp.status_code < 500 else 502
         raise AuthentikAdminError(
             f"Authentik API error {resp.status_code}: {detail}",
-            status_code=502,
+            status_code=code,
         )
     if resp.status_code == 204 or not resp.content:
         return None

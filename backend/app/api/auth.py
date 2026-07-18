@@ -275,17 +275,23 @@ async def get_me(
     )
 
     # Unified profile pull (best-effort; local remains if IdP unreachable)
+    # email: no DB column on HRMS — carry from IdP snapshot into response only
+    email_out: str | None = None
     if user.authentik_sub and profile_sync_enabled():
         try:
             snapshot = await sync_local_from_idp(
                 authentik_sub=user.authentik_sub,
                 local_full_name=user.full_name,
                 local_avatar_seed=user.avatar_seed,
+                local_locale=user.locale,
+                local_theme=user.theme,
             )
-            if snapshot is not None and apply_profile_to_user(user, snapshot):
-                db.add(user)
-                await db.commit()
-                await db.refresh(user)
+            if snapshot is not None:
+                email_out = snapshot.email
+                if apply_profile_to_user(user, snapshot):
+                    db.add(user)
+                    await db.commit()
+                    await db.refresh(user)
         except Exception:
             # never break /me for profile sync failures
             pass
@@ -298,6 +304,9 @@ async def get_me(
         "username": user.username,
         "role": user.role,
         "full_name": user.full_name,
+        "email": email_out,
+        "locale": user.locale,
+        "theme": user.theme,
         "has_telegram": has_telegram,
         "telegram_id": user.telegram_id,
         "telegram_username": user.telegram_username,

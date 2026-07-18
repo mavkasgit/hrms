@@ -285,7 +285,7 @@ async def test_me_local_sot_when_api_off(async_client, db_session: AsyncSession,
 
 
 async def test_push_profile_by_sub_http_shape(idp_api_on):
-    """Unit: PATCH body maps name + attributes.profile_avatar_seed."""
+    """Unit: PATCH body maps name + email + attributes (avatar/locale/theme)."""
     from app.services import unified_profile_service as ups
 
     ak = _ak_user(seed="oldseed1")
@@ -300,6 +300,8 @@ async def test_push_profile_by_sub_http_shape(idp_api_on):
             if json_body:
                 if "name" in json_body:
                     out["name"] = json_body["name"]
+                if "email" in json_body:
+                    out["email"] = json_body["email"]
                 if "attributes" in json_body:
                     out["attributes"] = json_body["attributes"]
             return out
@@ -312,11 +314,71 @@ async def test_push_profile_by_sub_http_shape(idp_api_on):
             "sub-uuid-1",
             full_name="Patched",
             avatar_seed="newseed99",
+            email="new@example.com",
+            locale="en",
+            theme="dark",
         )
     assert result.full_name == "Patched"
     assert result.avatar_seed == "newseed99"
+    assert result.email == "new@example.com"
+    assert result.locale == "en"
+    assert result.theme == "dark"
     patch_calls = [c for c in calls if c[0] == "PATCH"]
     assert len(patch_calls) == 1
     body = patch_calls[0][3]
     assert body["name"] == "Patched"
+    assert body["email"] == "new@example.com"
     assert body["attributes"]["profile_avatar_seed"] == "newseed99"
+    assert body["attributes"]["profile_locale"] == "en"
+    assert body["attributes"]["profile_theme"] == "dark"
+
+
+async def test_profile_bad_theme_validation(async_client, db_session: AsyncSession, idp_api_off):
+    """Invalid theme → 422 (Pydantic)."""
+    import uuid as uuid_mod
+
+    from app.api.deps import get_current_user, CurrentUser
+
+    uname = f"up_theme_{uuid_mod.uuid4().hex[:8]}"
+    await _make_user(db_session, username=uname)
+
+    async def override_user():
+        return CurrentUser(uname, role="admin", full_name="Local Name")
+
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        res = await async_client.patch(
+            "/api/users/me/profile",
+            json={"theme": "neon"},
+            headers=_auth(),
+        )
+        assert res.status_code == 422
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_profile_locale_theme_local(async_client, db_session: AsyncSession, idp_api_off):
+    """Without IdP: locale/theme cache to local DB."""
+    import uuid as uuid_mod
+
+    from app.api.deps import get_current_user, CurrentUser
+
+    uname = f"up_lt_{uuid_mod.uuid4().hex[:8]}"
+    await _make_user(db_session, username=uname)
+
+    async def override_user():
+        return CurrentUser(uname, role="admin", full_name="Local Name")
+
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        res = await async_client.patch(
+            "/api/users/me/profile",
+            json={"locale": "ru", "theme": "light"},
+            headers=_auth(),
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["locale"] == "ru"
+        assert body["theme"] == "light"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
