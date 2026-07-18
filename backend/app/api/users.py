@@ -386,22 +386,117 @@ class AvatarSeedUpdate(BaseModel):
     avatar_seed: str | None = Field(None, max_length=64)
 
 
+class ProfileUpdate(BaseModel):
+    """Единый human-profile (SoT Authentik при наличии sub + API token)."""
+    full_name: str | None = Field(None, min_length=1, max_length=255)
+    avatar_seed: str | None = Field(None, max_length=64)
+    # True → явно сбросить avatar (отличается от «не передавали поле»)
+    clear_avatar: bool = False
+
+
+async def _load_me_user(db: AsyncSession, username: str) -> User:
+    result = await db.execute(
+        select(User).where(User.username == username, User.is_deleted == False)
+    )
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    return user
+
+
 @router.patch("/me/avatar")
 async def update_my_avatar(
     payload: AvatarSeedUpdate,
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Установить или сбросить avatar_seed (NULL → пустая заглушка)."""
-    result = await db.execute(
-        select(User).where(User.username == current_user.username, User.is_deleted == False)
-    )
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    """Установить или сбросить avatar_seed. При SSO — пишет в Authentik attributes."""
+    from app.services import unified_profile_service as ups
+    from app.services.authentik_admin_service import AuthentikAdminError
 
-    user.avatar_seed = payload.avatar_seed
+    user = await _load_me_user(db, current_user.username)
+
+    if user.authentik_sub and ups.profile_sync_enabled():
+        try:
+            remote = await ups.push_profile_by_sub(
+                user.authentik_sub,
+                avatar_seed=payload.avatar_seed,
+            )
+            user.avatar_seed = remote.avatar_seed
+            if remote.full_name:
+                user.full_name = remote.full_name
+        except AuthentikAdminError as exc:
+            code = exc.status_code or 502
+            if code == 404:
+                code = 404
+            raise HTTPException(status_code=code, detail=exc.message) from exc
+    else:
+        user.avatar_seed = payload.avatar_seed
+
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return {"avatar_seed": user.avatar_seed}
+    return {"avatar_seed": user.avatar_seed, "full_name": user.full_name}
+
+
+@router.patch("/me/profile")
+async def update_my_profile(
+    payload: ProfileUpdate,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Обновить display-профиль (имя / аватар). SoT = Authentik при наличии связи."""
+    from app.services import unified_profile_service as ups
+    from app.services.authentik_admin_service import AuthentikAdminError
+
+    user = await _load_me_user(db, current_user.username)
+
+    if payload.full_name is None and not payload.clear_avatar and payload.avatar_seed is None:
+        # allow avatar_seed=None only with clear_avatar
+        if not payload.clear_avatar:
+            # empty body: no-op return current
+            return {
+                "full_name": user.full_name,
+                "avatar_seed": user.avatar_seed,
+            }
+
+    want_name = payload.full_name.strip() if payload.full_name else None
+    # avatar: clear_avatar → None; avatar_seed set → value; else leave unchanged on IdP
+    avatar_arg: object
+    if payload.clear_avatar:
+        avatar_arg = None
+    elif payload.avatar_seed is not None:
+        avatar_arg = payload.avatar_seed
+    else:
+        avatar_arg = ...
+
+    if user.authentik_sub and ups.profile_sync_enabled():
+        try:
+            remote = await ups.push_profile_by_sub(
+                user.authentik_sub,
+                full_name=want_name,
+                avatar_seed=avatar_arg,
+            )
+            if want_name:
+                user.full_name = remote.full_name or want_name
+            if avatar_arg is not ...:
+                user.avatar_seed = remote.avatar_seed
+            elif remote.full_name:
+                user.full_name = remote.full_name
+        except AuthentikAdminError as exc:
+            raise HTTPException(
+                status_code=exc.status_code or 502,
+                detail=exc.message,
+            ) from exc
+    else:
+        if want_name:
+            user.full_name = want_name
+        if payload.clear_avatar:
+            user.avatar_seed = None
+        elif payload.avatar_seed is not None:
+            user.avatar_seed = payload.avatar_seed
+
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return {"full_name": user.full_name, "avatar_seed": user.avatar_seed}

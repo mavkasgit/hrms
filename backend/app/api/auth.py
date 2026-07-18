@@ -37,6 +37,8 @@ class LoginResponse(BaseModel):
     username: str
     role: str
     full_name: str
+    # Present after OIDC callback only — FE keeps for Authentik end-session id_token_hint
+    id_token: str | None = None
 
 
 class InviteLoginRequest(BaseModel):
@@ -121,17 +123,30 @@ async def oidc_callback(
         username=result["username"],
         role=result["role"],
         full_name=result["full_name"],
+        id_token=result.get("id_token"),
     )
 
 
 @router.get("/oidc/logout-url", response_model=OidcLogoutUrlResponse)
-async def oidc_logout_url() -> OidcLogoutUrlResponse:
-    """Authentik end_session URL for FE (optional post-logout redirect to /login)."""
+async def oidc_logout_url(
+    id_token_hint: str | None = Query(None, description="OIDC id_token for Authentik end-session"),
+    post_logout_redirect_uri: str | None = Query(
+        None, description="Allowed post-logout landing (requires id_token_hint)"
+    ),
+) -> OidcLogoutUrlResponse:
+    """Authentik end_session URL for FE.
+
+    With registered post-logout URIs Authentik requires ``id_token_hint`` whenever
+    ``post_logout_redirect_uri`` is set — otherwise 400 malformed.
+    """
     if not OidcAuthService.is_enabled():
         return OidcLogoutUrlResponse(enabled=False, logout_url=None)
     return OidcLogoutUrlResponse(
         enabled=True,
-        logout_url=OidcAuthService.logout_url(),
+        logout_url=OidcAuthService.logout_url(
+            id_token_hint=id_token_hint,
+            post_logout_redirect_uri=post_logout_redirect_uri,
+        ),
     )
 
 
@@ -238,7 +253,11 @@ async def get_me(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Получить информацию о текущем авторизованном пользователе."""
+    """Получить информацию о текущем авторизованном пользователе.
+
+    При наличии authentik_sub + AUTHENTIK_API_* подтягивает unified profile (имя/аватар)
+    из Authentik в локальный кэш.
+    """
     result = await db.execute(
         select(User).where(User.username == current_user.username, User.is_deleted == False)
     )
@@ -248,6 +267,29 @@ async def get_me(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Пользователь не найден",
         )
+
+    from app.services.unified_profile_service import (
+        apply_profile_to_user,
+        profile_sync_enabled,
+        sync_local_from_idp,
+    )
+
+    # Unified profile pull (best-effort; local remains if IdP unreachable)
+    if user.authentik_sub and profile_sync_enabled():
+        try:
+            snapshot = await sync_local_from_idp(
+                authentik_sub=user.authentik_sub,
+                local_full_name=user.full_name,
+                local_avatar_seed=user.avatar_seed,
+            )
+            if snapshot is not None and apply_profile_to_user(user, snapshot):
+                db.add(user)
+                await db.commit()
+                await db.refresh(user)
+        except Exception:
+            # never break /me for profile sync failures
+            pass
+
     has_password = (
         user.password_hash is not None and user.password_hash != SSO_BYPASS_HASH
     )
@@ -265,6 +307,12 @@ async def get_me(
         "needs_security_setup": (not has_password) or (not has_telegram),
         "invite_code": user.invite_code,
         "avatar_seed": user.avatar_seed,
+        "authentik_linked": bool(user.authentik_sub),
+        "profile_sot": (
+            "authentik"
+            if (user.authentik_sub and profile_sync_enabled())
+            else "local"
+        ),
     }
 
 

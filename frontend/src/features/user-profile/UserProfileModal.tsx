@@ -62,11 +62,16 @@ export function UserProfileModal({
   const [avatarSaving, setAvatarSaving] = useState(false)
   const [avatarError, setAvatarError] = useState<string | null>(null)
   const [localUser, setLocalUser] = useState<any>(currentUser)
+  const [fullNameDraft, setFullNameDraft] = useState("")
+  const [nameSaving, setNameSaving] = useState(false)
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [nameSaved, setNameSaved] = useState(false)
 
   // Синхронизируем локального пользователя при обновлении пропса
   useEffect(() => {
     if (currentUser) {
       setLocalUser(currentUser)
+      setFullNameDraft(currentUser.full_name || "")
     }
   }, [currentUser])
 
@@ -97,7 +102,7 @@ export function UserProfileModal({
       try {
         await api.patch("/users/me/avatar", { avatar_seed: seed })
         // Обновляем профиль в родителе — useEffect синхронизирует localUser.
-        onUpdateProfile()
+        await fetchUserData()
         setAvatarPickerOpen(false)
       } catch (err) {
         console.error("Не удалось обновить аватар:", err)
@@ -106,7 +111,36 @@ export function UserProfileModal({
         setAvatarSaving(false)
       }
     },
-    [avatarSaving, onUpdateProfile],
+    [avatarSaving, fetchUserData],
+  )
+
+  const handleSaveFullName = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault()
+      const next = fullNameDraft.trim()
+      if (!next || nameSaving) return
+      if (next === (localUser?.full_name || "").trim()) return
+      setNameSaving(true)
+      setNameError(null)
+      setNameSaved(false)
+      try {
+        const res = await api.patch("/users/me/profile", { full_name: next })
+        setLocalUser((prev: any) => ({
+          ...prev,
+          full_name: res.data.full_name ?? next,
+          avatar_seed: res.data.avatar_seed ?? prev?.avatar_seed,
+        }))
+        await fetchUserData()
+        setNameSaved(true)
+        window.setTimeout(() => setNameSaved(false), 2000)
+      } catch (err) {
+        console.error("Не удалось обновить имя:", err)
+        setNameError("Не удалось сохранить имя. Попробуйте ещё раз.")
+      } finally {
+        setNameSaving(false)
+      }
+    },
+    [fullNameDraft, nameSaving, localUser?.full_name, fetchUserData],
   )
   useEffect(() => {
     if (!open) return
@@ -425,12 +459,53 @@ export function UserProfileModal({
                   </div>
                 )}
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground">Полное имя</label>
-                  <div className="bg-muted/40 border border-border/80 rounded-xl px-3.5 py-2 text-sm font-semibold text-foreground">
-                    {localUser.full_name || "Не указано"}
+                <form onSubmit={handleSaveFullName} className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground" htmlFor="profile-full-name">
+                    Полное имя
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      id="profile-full-name"
+                      type="text"
+                      value={fullNameDraft}
+                      onChange={(e) => {
+                        setFullNameDraft(e.target.value)
+                        setNameError(null)
+                        setNameSaved(false)
+                      }}
+                      className="flex-1 bg-background border border-border/80 rounded-xl px-3.5 py-2 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                      maxLength={255}
+                      autoComplete="name"
+                    />
+                    <Button
+                      type="submit"
+                      size="sm"
+                      className="rounded-xl shrink-0"
+                      disabled={
+                        nameSaving ||
+                        !fullNameDraft.trim() ||
+                        fullNameDraft.trim() === (localUser.full_name || "").trim()
+                      }
+                    >
+                      {nameSaving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : nameSaved ? (
+                        <>
+                          <CheckCircle2 className="h-4 w-4 mr-1" />
+                          Сохранено
+                        </>
+                      ) : (
+                        "Сохранить"
+                      )}
+                    </Button>
                   </div>
-                </div>
+                  {nameError && (
+                    <p className="text-xs text-destructive">{nameError}</p>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">
+                    Единый профиль: имя и аватар синхронизируются через IdP (Authentik) для всех приложений.
+                  </p>
+                </form>
 
               </div>
 

@@ -19,6 +19,7 @@ from typing import Any, Literal
 import httpx
 
 from app.core.config import settings
+from app.core.host_net import resolve_authentik_origin
 
 HRMS_ADMIN_GROUP = "hrms-admin"
 HRMS_VIEWER_GROUP = "hrms-viewer"
@@ -36,32 +37,38 @@ class AuthentikAdminError(Exception):
         self.status_code = status_code
 
 
+def resolved_authentik_api_origin() -> str | None:
+    """Admin API base origin — explicit URL or auto LAN IP (no hardcoded host)."""
+    return resolve_authentik_origin(
+        settings.AUTHENTIK_API_URL,
+        fallback_issuer=settings.AUTH_OIDC_ISSUER,
+    )
+
+
 def is_idp_admin_enabled() -> bool:
-    """OIDC on + non-empty API URL + non-empty token."""
+    """OIDC on + resolvable API origin + non-empty token."""
     if not settings.AUTH_OIDC_ENABLED:
         return False
-    url = (settings.AUTHENTIK_API_URL or "").strip()
+    url = resolved_authentik_api_origin()
     token = (settings.AUTHENTIK_API_TOKEN or "").strip()
     return bool(url and token)
 
 
 def public_base_url() -> str | None:
-    """Public Authentik origin for deep-links (no trailing slash)."""
-    raw = (settings.AUTHENTIK_PUBLIC_URL or settings.AUTHENTIK_API_URL or "").strip()
-    if not raw:
-        # Derive from issuer if set: http://host:9000/application/o/hrms/ → http://host:9000
-        issuer = (settings.AUTH_OIDC_ISSUER or "").strip()
-        if issuer:
-            try:
-                from urllib.parse import urlparse
+    """Public Authentik origin for deep-links (no trailing slash).
 
-                p = urlparse(issuer)
-                if p.scheme and p.netloc:
-                    return f"{p.scheme}://{p.netloc}"
-            except Exception:
-                pass
-        return None
-    return raw.rstrip("/")
+    ``auto`` / empty → detect host LAN IP (or HOST_LAN_IP env). Never hardcode office IP.
+    """
+    origin = resolve_authentik_origin(
+        settings.AUTHENTIK_PUBLIC_URL,
+        fallback_issuer=settings.AUTH_OIDC_ISSUER,
+    )
+    if origin:
+        return origin
+    return resolve_authentik_origin(
+        settings.AUTHENTIK_API_URL,
+        fallback_issuer=settings.AUTH_OIDC_ISSUER,
+    )
 
 
 def user_settings_url() -> str | None:
@@ -74,10 +81,27 @@ def admin_url() -> str | None:
     return f"{base}/if/admin/" if base else None
 
 
+def ops_url() -> str | None:
+    """IdP Ops UI (directory / invite / roles) — same host as Authentik, port 9010."""
+    base = public_base_url()
+    if not base:
+        return None
+    from urllib.parse import urlparse
+
+    p = urlparse(base)
+    if not p.scheme or not p.hostname:
+        return None
+    return f"{p.scheme}://{p.hostname}:9010"
+
+
 def _api_base() -> str:
-    raw = (settings.AUTHENTIK_API_URL or "").strip().rstrip("/")
+    raw = resolved_authentik_api_origin()
     if not raw:
-        raise AuthentikAdminError("AUTHENTIK_API_URL is not configured", status_code=503)
+        raise AuthentikAdminError(
+            "AUTHENTIK_API_URL is not configured and LAN IP could not be detected",
+            status_code=503,
+        )
+    raw = raw.rstrip("/")
     if raw.endswith("/api/v3"):
         return raw
     return f"{raw}/api/v3"

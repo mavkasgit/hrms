@@ -92,7 +92,7 @@ class Settings(BaseSettings):
     AUTH_OIDC_REDIRECT_URI: str | None = None
     AUTH_OIDC_SCOPES: str = "openid profile email hrms_access"
     # Optional extra hosts or full issuers (comma-separated) accepted in id_token.iss
-    # e.g. localhost,127.0.0.1,192.168.100.200
+    # e.g. localhost,127.0.0.1,<LAN-IP> — do not hardcode; list aliases as needed
     AUTH_OIDC_ISSUER_ALIASES: str | None = None
     # Optional overrides; if empty, derived from issuer / discovery
     AUTH_OIDC_AUTHORIZATION_URL: str | None = None
@@ -109,9 +109,10 @@ class Settings(BaseSettings):
 
     # Authentik Admin API proxy (SSO-D) — token never exposed to FE
     # Empty AUTHENTIK_API_TOKEN → IdP admin proxy disabled (deep-links only)
-    AUTHENTIK_API_URL: str | None = None  # e.g. http://localhost:9000
+    # AUTHENTIK_*_URL: absolute URL or "auto" (detect host LAN IP at runtime)
+    AUTHENTIK_API_URL: str | None = "auto"
     AUTHENTIK_API_TOKEN: str | None = None
-    AUTHENTIK_PUBLIC_URL: str | None = None  # deep-links; fallback AUTHENTIK_API_URL
+    AUTHENTIK_PUBLIC_URL: str | None = "auto"
 
     model_config = {"env_file": _env_file, "env_file_encoding": "utf-8", "extra": "ignore"}
 
