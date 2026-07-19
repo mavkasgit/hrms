@@ -8,8 +8,7 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog"
 import { Button } from "@/shared/ui/button"
-import { UserAvatar } from "@/shared/ui/user-avatar"
-import { generateRandomSeed } from "@/shared/lib/avatar"
+import { UserAvatar, generateRandomSeed } from "@user/ui"
 
 type AvatarPickerDialogProps = {
   open: boolean

@@ -310,13 +310,59 @@ export async function fetchOidcConfig(): Promise<OidcConfig> {
   return response.json()
 }
 
+/** sessionStorage key: OIDC id_token for Authentik end-session (id_token_hint). */
+export const OIDC_ID_TOKEN_KEY = "hrms_oidc_id_token"
+
+export function storeOidcIdToken(idToken: string | null | undefined): void {
+  try {
+    if (idToken) {
+      sessionStorage.setItem(OIDC_ID_TOKEN_KEY, idToken)
+    } else {
+      sessionStorage.removeItem(OIDC_ID_TOKEN_KEY)
+    }
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+export function clearOidcIdToken(): void {
+  storeOidcIdToken(null)
+}
+
 export async function fetchOidcLogoutUrl(): Promise<OidcLogoutUrlResponse> {
   try {
-    const response = await fetch(`${API_BASE}/auth/oidc/logout-url`)
+    // Authentik requires id_token_hint together with post_logout_redirect_uri
+    // when logout redirect URIs are registered on the provider.
+    let idToken: string | null = null
+    try {
+      idToken = sessionStorage.getItem(OIDC_ID_TOKEN_KEY)
+    } catch {
+      idToken = null
+    }
+    const qs = new URLSearchParams()
+    if (idToken) {
+      qs.set("id_token_hint", idToken)
+      try {
+        if (typeof window !== "undefined" && window.location?.origin) {
+          qs.set("post_logout_redirect_uri", `${window.location.origin}/login`)
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    const q = qs.toString()
+    const response = await fetch(
+      `${API_BASE}/auth/oidc/logout-url${q ? `?${q}` : ""}`,
+    )
     if (!response.ok) {
       return { enabled: false, logout_url: null }
     }
-    return response.json()
+    const data = (await response.json()) as OidcLogoutUrlResponse
+    // Consume hint after building URL (one-shot logout)
+    if (idToken) {
+      clearOidcIdToken()
+    }
+    return data
   } catch {
     return { enabled: false, logout_url: null }
   }
@@ -481,7 +527,7 @@ function sha256Bytes(message: Uint8Array): Uint8Array {
 async function sha256Base64Url(plain: string): Promise<string> {
   const data = new TextEncoder().encode(plain)
   // Secure Context (https / localhost): WebCrypto. HTTP + LAN IP → pure JS.
-  if (globalThis.crypto?.subtle?.digest) {
+  if (typeof globalThis.crypto?.subtle?.digest === "function") {
     const digest = await crypto.subtle.digest("SHA-256", data)
     return base64UrlEncode(digest)
   }
@@ -715,7 +761,7 @@ export async function completeOidcCallback(params: {
     throw OidcAuthError.fromInfo(mapOidcError(response.status, detail))
   }
 
-  const data = (await response.json()) as OidcLoginResponse
+  const data = (await response.json()) as OidcLoginResponse & { id_token?: string }
   if (!data.access_token) {
     throw OidcAuthError.fromInfo({
       title: "Нет токена доступа",
@@ -726,5 +772,7 @@ export async function completeOidcCallback(params: {
   // Fresh app JWT overwrites any previous token; clear re-login loop guard
   clearOidcReloginGuard()
   localStorage.setItem("token", data.access_token)
+  // Keep id_token for Authentik RP-initiated logout (id_token_hint)
+  storeOidcIdToken(data.id_token)
   return data
 }

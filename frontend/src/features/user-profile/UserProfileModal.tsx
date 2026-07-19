@@ -27,8 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog"
-import { UserAvatar } from "@/shared/ui/user-avatar"
-import { getUserSeed } from "@/shared/lib/avatar"
+import { UserAvatar, getUserSeed, applyTheme, storeLocale, type ProfileLocale, type ProfileTheme } from "@user/ui"
 import { AvatarPickerDialog } from "@/features/user-profile/AvatarPickerDialog"
 import { formatDateTime } from "@/shared/utils/date"
 import {
@@ -41,12 +40,6 @@ import {
   type LoginEventDto,
 } from "@/features/user-profile/api/sessionsApi"
 import { fetchIdpLinks } from "@/shared/api/idpAdmin"
-import {
-  applyTheme,
-  storeLocale,
-  type ProfileLocale,
-  type ProfileTheme,
-} from "@/shared/lib/profile-prefs"
 
 type UserProfileModalProps = {
   open: boolean

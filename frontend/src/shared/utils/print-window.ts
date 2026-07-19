@@ -12,7 +12,7 @@ export type PrintNavigateMessage = {
   error?: string
 }
 
-function isPrintNavigateMessage(data: unknown): data is PrintNavigateMessage {
+export function isPrintNavigateMessage(data: unknown): data is PrintNavigateMessage {
   if (!data || typeof data !== "object") return false
   const msg = data as PrintNavigateMessage
   return msg.type === PRINT_NAV_TYPE && typeof msg.windowName === "string" && msg.windowName.length > 0

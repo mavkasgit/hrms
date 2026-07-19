@@ -3,8 +3,7 @@ import { NavLink, useLocation } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
 import api, { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
 import { UserProfileModal } from "@/features/user-profile/UserProfileModal"
-import { UserAvatar } from "@/shared/ui/user-avatar"
-import { getUserSeed } from "@/shared/lib/avatar"
+import { UserAvatar, getUserSeed } from "@user/ui"
 import {
   ChevronDown,
   ChevronRight,

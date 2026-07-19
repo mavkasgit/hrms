@@ -1,5 +1,4 @@
 import { useEffect, useState, useMemo, useCallback } from "react"
-import { useNavigate } from "react-router-dom"
 import {
   Users,
   Plus,
@@ -47,16 +46,8 @@ import { fetchEmployees, fetchEmployee } from "@/entities/employee/api"
 import type { Employee } from "@/entities/employee/types"
 import { EmployeeSearch } from "@/features/employee-search"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select"
-import { UserAvatar } from "@/shared/ui/user-avatar"
-import { getUserSeed } from "@/shared/lib/avatar"
-import {
-  fetchIdpConfig,
-  fetchIdpUsers,
-  setIdpUserAccess,
-  type IdpConfig,
-  type IdpUser,
-  type IdpAccessLevel,
-} from "@/shared/api/idpAdmin"
+import { UserAvatar, getUserSeed } from "@user/ui"
+import { fetchIdpConfig, type IdpConfig } from "@/shared/api/idpAdmin"
 import { fetchOidcConfig } from "@/shared/api/oidcAuth"
 
 interface User {
@@ -210,22 +201,16 @@ function RoleBadge({ role, oidcManaged }: { role: string; oidcManaged: boolean }
 }
 
 export function UsersPage() {
-  const navigate = useNavigate()
-
   // Данные
   const [users, setUsers] = useState<User[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
 
-  // OIDC / IdP (IdP-first when enabled; local IAM when off)
+  // OIDC / IdP (deep-links when enabled; local IAM when off)
   const [oidcEnabled, setOidcEnabled] = useState(false)
   const [oidcConfigLoaded, setOidcConfigLoaded] = useState(false)
   const [idpConfig, setIdpConfig] = useState<IdpConfig | null>(null)
-  const [idpUsers, setIdpUsers] = useState<IdpUser[]>([])
-  const [idpLoading, setIdpLoading] = useState(false)
   const [idpError, setIdpError] = useState("")
-  const [idpSearch, setIdpSearch] = useState("")
-  const [idpSaving, setIdpSaving] = useState<Record<number, boolean>>({})
 
   const [search, setSearch] = useState("")
 
@@ -294,26 +279,15 @@ export function UsersPage() {
       setOidcEnabled(enabled)
       if (!enabled) {
         setIdpConfig(null)
-        setIdpUsers([])
         return
       }
-      setIdpLoading(true)
       try {
         const cfg = await fetchIdpConfig()
         setIdpConfig(cfg)
-        if (cfg.idp_admin_enabled) {
-          const items = await fetchIdpUsers()
-          setIdpUsers(items)
-        } else {
-          setIdpUsers([])
-        }
       } catch (err) {
-        console.error("IdP config/users failed:", err)
-        setIdpError("Не удалось загрузить данные единого входа")
+        console.error("IdP config failed:", err)
+        setIdpError("Не удалось загрузить ссылки IdP")
         setIdpConfig(null)
-        setIdpUsers([])
-      } finally {
-        setIdpLoading(false)
       }
     } catch {
       setOidcEnabled(false)
@@ -337,50 +311,6 @@ export function UsersPage() {
     // loadData is stable enough for mount-after-config; intentionally not memoized
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once mode is known
   }, [oidcConfigLoaded, oidcEnabled])
-
-  const filteredIdpUsers = useMemo(() => {
-    const q = idpSearch.trim().toLowerCase()
-    if (!q) return idpUsers
-    return idpUsers.filter(
-      (u) =>
-        u.username.toLowerCase().includes(q) ||
-        (u.name || "").toLowerCase().includes(q) ||
-        (u.email || "").toLowerCase().includes(q),
-    )
-  }, [idpUsers, idpSearch])
-
-  const handleIdpAccessChange = async (pk: number, level: IdpAccessLevel) => {
-    setIdpSaving((prev) => ({ ...prev, [pk]: true }))
-    setIdpError("")
-    try {
-      const updated = await setIdpUserAccess(pk, level)
-      setIdpUsers((prev) =>
-        prev.map((u) =>
-          u.pk === pk
-            ? {
-                ...u,
-                ...updated,
-                access_level: updated.access_level || level,
-                groups: updated.groups || u.groups,
-              }
-            : u,
-        ),
-      )
-    } catch (err) {
-      console.error(err)
-      setIdpError(formatApiError(err) || "Не удалось изменить доступ")
-    } finally {
-      setIdpSaving((prev) => ({ ...prev, [pk]: false }))
-    }
-  }
-
-  const idpAccessOf = (u: IdpUser): IdpAccessLevel => {
-    const raw = (u.access_level || "").toString()
-    if (raw === "admin" || raw === "viewer" || raw === "none") return raw
-    if (u.groups?.includes("hrms-admin")) return "admin"
-    if (u.groups?.includes("hrms-viewer")) return "viewer"
-    return "none"
-  }
 
   const filteredUsers = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -521,15 +451,10 @@ export function UsersPage() {
   if (!oidcConfigLoaded) {
     return (
       <div className="space-y-6">
-        <div>
-          <button
-            type="button"
-            onClick={() => navigate("/settings")}
-            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Назад в настройки</span>
-          </button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => window.history.back()} title="Назад">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Users className="h-6 w-6 text-primary" />
             Пользователи
@@ -543,205 +468,95 @@ export function UsersPage() {
     )
   }
 
-  // ── OIDC on: IdP-first (Authentik SoT) ──
+  // ── OIDC on: deep-links only (management in IdP Ops / Authentik) ──
   if (oidcEnabled) {
     return (
-      <TooltipProvider delayDuration={300}>
-        <div className="space-y-6">
-          <div>
-            <button
-              type="button"
-              onClick={() => navigate("/settings")}
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span>Назад в настройки</span>
-            </button>
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div className="space-y-1">
-                <h1 className="text-2xl font-bold flex items-center gap-2">
-                  <Users className="h-6 w-6 text-primary" />
-                  Пользователи и доступ
-                </h1>
-                <p className="text-sm text-muted-foreground max-w-2xl">
-                  Каталог учёток ведётся в Authentik (единый IdP). HRMS получает роли из групп при
-                  входе.
-                </p>
-              </div>
-            </div>
+      <div className="space-y-6">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => window.history.back()} title="Назад">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Users className="h-6 w-6 text-primary" />
+              Пользователи
+            </h1>
           </div>
+          <p className="text-sm text-muted-foreground max-w-2xl pl-12">
+            Каталог учёток ведётся в Authentik (единый IdP). HRMS получает роли из групп при
+            входе.
+          </p>
+        </div>
 
-          {/* SoT banner + deep links */}
-          <div className="rounded-lg border bg-card p-4 space-y-3">
-            <div className="flex items-start gap-3">
-              <Shield className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="text-sm font-medium">
-                  Каталог пользователей — в Authentik
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Создание, пароль и MFA пользователей выполняются в IdP. Здесь можно открыть
-                  Admin UI Authentik и (при настроенном API-токене) менять группы доступа к HRMS.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {idpConfig?.admin_url ? (
-                <Button
-                  type="button"
-                  variant="default"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() =>
-                    window.open(idpConfig.admin_url!, "_blank", "noopener,noreferrer")
-                  }
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Открыть Authentik Admin
-                </Button>
-              ) : null}
-              {idpConfig?.user_settings_url ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() =>
-                    window.open(
-                      idpConfig.user_settings_url!,
-                      "_blank",
-                      "noopener,noreferrer",
-                    )
-                  }
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Кабинет пользователя
-                </Button>
-              ) : null}
-            </div>
-          </div>
-
-          {/* HRMS access via IdP groups */}
-          <div className="space-y-3 border rounded-lg p-4 bg-card">
+        <div className="rounded-lg border bg-card p-5 space-y-4 max-w-xl">
+          <div className="flex items-start gap-3">
+            <Shield className="h-5 w-5 text-primary shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-primary" />
-                Доступ к HRMS (группы)
-              </h2>
+              <p className="text-sm font-medium">Управление — в IdP Ops</p>
               <p className="text-sm text-muted-foreground">
-                Группы Authentik{" "}
-                <span className="font-mono text-xs">hrms-admin</span> /{" "}
-                <span className="font-mono text-xs">hrms-viewer</span>. Изменения применяются после
-                нового входа.
+                Invite, роли и каталог сотрудников — в IdP Ops. Пароль, MFA и группы Authentik —
+                в Admin UI.
               </p>
             </div>
-
-            {idpError && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-md flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>{idpError}</span>
-              </div>
-            )}
-
-            {idpLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Загрузка пользователей IdP...
-              </div>
-            ) : !idpConfig?.idp_admin_enabled ? (
-              <div className="p-4 rounded-md border border-amber-500/30 bg-amber-500/10 text-sm space-y-3">
-                <p className="text-foreground">
-                  Настройте{" "}
-                  <span className="font-mono text-xs">AUTHENTIK_API_TOKEN</span> для смены групп
-                  из HRMS, либо управляйте доступом в Admin UI.
-                </p>
-                {idpConfig?.admin_url && (
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() =>
-                      window.open(idpConfig.admin_url!, "_blank", "noopener,noreferrer")
-                    }
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Открыть Authentik Admin
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="flex gap-3 max-w-md">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Поиск IdP: логин, имя, email..."
-                      value={idpSearch}
-                      onChange={(e) => setIdpSearch(e.target.value)}
-                      className="pl-9 bg-background"
-                    />
-                  </div>
-                </div>
-                {filteredIdpUsers.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">
-                    Пользователи IdP не найдены
-                  </p>
-                ) : (
-                  <div className="border rounded-lg overflow-hidden">
-                    <table className="w-full text-sm border-collapse">
-                      <thead>
-                        <tr className="bg-muted/50 border-b text-muted-foreground font-medium">
-                          <th className="px-4 py-2.5 text-left">Логин</th>
-                          <th className="px-4 py-2.5 text-left">Имя</th>
-                          <th className="px-4 py-2.5 text-left">Email</th>
-                          <th className="px-4 py-2.5 text-left">Доступ HRMS</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {filteredIdpUsers.map((iu) => {
-                          const level = idpAccessOf(iu)
-                          return (
-                            <tr key={iu.pk} className="hover:bg-muted/20">
-                              <td className="px-4 py-3 font-mono font-medium">{iu.username}</td>
-                              <td className="px-4 py-3">{iu.name || "—"}</td>
-                              <td className="px-4 py-3 text-muted-foreground">
-                                {iu.email || "—"}
-                              </td>
-                              <td className="px-4 py-3">
-                                <Select
-                                  value={level}
-                                  onValueChange={(v) =>
-                                    void handleIdpAccessChange(iu.pk, v as IdpAccessLevel)
-                                  }
-                                  disabled={Boolean(idpSaving[iu.pk])}
-                                >
-                                  <SelectTrigger
-                                    className="w-[200px]"
-                                    aria-label={`Доступ ${iu.username}`}
-                                  >
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="admin">Администратор</SelectItem>
-                                    <SelectItem value="viewer">Наблюдатель</SelectItem>
-                                    <SelectItem value="none">Нет доступа</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </>
-            )}
           </div>
 
+          {idpError ? (
+            <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-md flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{idpError}</span>
+            </div>
+          ) : null}
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {idpConfig?.ops_url ? (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                className="gap-1.5"
+                onClick={() =>
+                  window.open(idpConfig.ops_url!, "_blank", "noopener,noreferrer")
+                }
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Открыть IdP Ops
+              </Button>
+            ) : null}
+            {idpConfig?.admin_url ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() =>
+                  window.open(idpConfig.admin_url!, "_blank", "noopener,noreferrer")
+                }
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Authentik Admin
+              </Button>
+            ) : null}
+            {idpConfig?.user_settings_url ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() =>
+                  window.open(
+                    idpConfig.user_settings_url!,
+                    "_blank",
+                    "noopener,noreferrer",
+                  )
+                }
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Кабинет пользователя
+              </Button>
+            ) : null}
+          </div>
         </div>
-      </TooltipProvider>
+      </div>
     )
   }
 
@@ -749,31 +564,26 @@ export function UsersPage() {
   return (
     <TooltipProvider delayDuration={300}>
       <div className="space-y-6">
-        <div>
-          <button
-            type="button"
-            onClick={() => navigate("/settings")}
-            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Назад в настройки</span>
-          </button>
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="space-y-1">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={() => window.history.back()} title="Назад">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
               <h1 className="text-2xl font-bold flex items-center gap-2">
                 <Users className="h-6 w-6 text-primary" />
                 Пользователи
               </h1>
-              <p className="text-sm text-muted-foreground max-w-2xl">
-                Управление учётными записями HRMS: логин, пароль и роли.
-              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button onClick={openCreate}>
-                <Plus className="mr-2 h-4 w-4" />
-                Добавить пользователя
-              </Button>
-            </div>
+            <p className="text-sm text-muted-foreground max-w-2xl pl-12">
+              Управление учётными записями HRMS: логин, пароль и роли.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button onClick={openCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              Добавить пользователя
+            </Button>
           </div>
         </div>
 
