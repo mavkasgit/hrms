@@ -59,6 +59,18 @@ const absenceItems = [
   { to: "/sick-leaves", label: "Больничные", icon: Stethoscope },
 ]
 
+const getKtmDashboardURL = () => {
+  const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+  if (isLocalhost) {
+    return `${window.location.protocol}//${window.location.hostname}:9010`
+  } else if (window.location.hostname.endsWith(".local")) {
+    const ktmHostname = window.location.hostname.replace("hrms", "ktm")
+    return `${window.location.protocol}//${ktmHostname}`
+  } else {
+    return `${window.location.protocol}//${window.location.hostname}:8082`
+  }
+}
+
 export function Sidebar() {
   const location = useLocation()
   const hasActiveAbsenceItem = useMemo(
@@ -105,13 +117,19 @@ export function Sidebar() {
   return (
     <aside className="w-64 h-screen sticky top-0 bg-card border-r flex flex-col shrink-0">
       <div className="p-6 flex items-center gap-3">
-        <img
-          src="/logo.svg"
-          alt="HRMS"
-          className="h-10 w-10 rounded-xl shrink-0"
-          width={40}
-          height={40}
-        />
+        <a
+          href={getKtmDashboardURL()}
+          className="shrink-0 hover:opacity-80 transition-opacity"
+          title="Перейти в KTM-2000"
+        >
+          <img
+            src="/logo.svg"
+            alt="HRMS"
+            className="h-10 w-10 rounded-xl"
+            width={40}
+            height={40}
+          />
+        </a>
         <div className="min-w-0">
           <h1 className="text-xl font-bold leading-tight">HRMS</h1>
           <p className="text-sm text-muted-foreground">Управление персоналом</p>
