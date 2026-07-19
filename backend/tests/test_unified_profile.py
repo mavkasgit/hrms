@@ -382,3 +382,188 @@ async def test_profile_locale_theme_local(async_client, db_session: AsyncSession
         assert body["theme"] == "light"
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_me_second_call_within_ttl_skips_pull(async_client, db_session: AsyncSession):
+    import uuid as uuid_mod
+    from unittest.mock import patch, AsyncMock
+    from app.api.deps import get_current_user, CurrentUser
+    from app.services.unified_profile_service import UnifiedProfile
+
+    uname = f"ttl_me_{uuid_mod.uuid4().hex[:8]}"
+    sub = f"sub-{uuid_mod.uuid4().hex}"
+    await _make_user(
+        db_session,
+        username=uname,
+        full_name="Stale",
+        avatar_seed="00000000",
+        authentik_sub=sub,
+    )
+
+    async def override_user():
+        return CurrentUser(uname, role="admin", full_name="Stale")
+
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        mock_profile = UnifiedProfile(
+            full_name="Fresh IdP",
+            avatar_seed="ffffffff",
+            authentik_pk=9,
+            source="idp",
+        )
+        with patch(
+            "app.services.unified_profile_service.sync_local_from_idp",
+            new_callable=AsyncMock,
+            return_value=mock_profile,
+        ) as mock_sync:
+            # 1. Первый запрос (кеш пуст) -> должен дернуть pull
+            res1 = await async_client.get("/api/auth/me", headers=_auth())
+            assert res1.status_code == 200
+            assert mock_sync.call_count == 1
+
+            # 2. Второй запрос подряд -> должен пропустить pull (skip)
+            res2 = await async_client.get("/api/auth/me", headers=_auth())
+            assert res2.status_code == 200
+            assert mock_sync.call_count == 1
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_me_refresh_forces_pull(async_client, db_session: AsyncSession):
+    import uuid as uuid_mod
+    from unittest.mock import patch, AsyncMock
+    from app.api.deps import get_current_user, CurrentUser
+    from app.services.unified_profile_service import UnifiedProfile
+
+    uname = f"ttl_refresh_{uuid_mod.uuid4().hex[:8]}"
+    sub = f"sub-{uuid_mod.uuid4().hex}"
+    await _make_user(
+        db_session,
+        username=uname,
+        full_name="Stale",
+        avatar_seed="00000000",
+        authentik_sub=sub,
+    )
+
+    async def override_user():
+        return CurrentUser(uname, role="admin", full_name="Stale")
+
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        mock_profile = UnifiedProfile(
+            full_name="Fresh IdP",
+            avatar_seed="ffffffff",
+            authentik_pk=9,
+            source="idp",
+        )
+        with patch(
+            "app.services.unified_profile_service.sync_local_from_idp",
+            new_callable=AsyncMock,
+            return_value=mock_profile,
+        ) as mock_sync:
+            # 1. Первый запрос
+            res1 = await async_client.get("/api/auth/me", headers=_auth())
+            assert res1.status_code == 200
+            assert mock_sync.call_count == 1
+
+            # 2. Второй запрос с refresh=1 -> форсирует pull
+            res2 = await async_client.get("/api/auth/me?refresh=1", headers=_auth())
+            assert res2.status_code == 200
+            assert mock_sync.call_count == 2
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_me_ttl_zero_always_pulls(async_client, db_session: AsyncSession, monkeypatch):
+    import uuid as uuid_mod
+    from unittest.mock import patch, AsyncMock
+    from app.api.deps import get_current_user, CurrentUser
+    from app.services.unified_profile_service import UnifiedProfile
+    from app.core.config import settings
+
+    # monkeypatch: TTL=0
+    monkeypatch.setattr(settings, "AUTHENTIK_PROFILE_TTL_SECONDS", 0)
+
+    uname = f"ttl_zero_{uuid_mod.uuid4().hex[:8]}"
+    sub = f"sub-{uuid_mod.uuid4().hex}"
+    await _make_user(
+        db_session,
+        username=uname,
+        full_name="Stale",
+        avatar_seed="00000000",
+        authentik_sub=sub,
+    )
+
+    async def override_user():
+        return CurrentUser(uname, role="admin", full_name="Stale")
+
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        mock_profile = UnifiedProfile(
+            full_name="Fresh IdP",
+            avatar_seed="ffffffff",
+            authentik_pk=9,
+            source="idp",
+        )
+        with patch(
+            "app.services.unified_profile_service.sync_local_from_idp",
+            new_callable=AsyncMock,
+            return_value=mock_profile,
+        ) as mock_sync:
+            # 1. Первый запрос
+            res1 = await async_client.get("/api/auth/me", headers=_auth())
+            assert res1.status_code == 200
+            assert mock_sync.call_count == 1
+
+            # 2. Второй запрос -> при TTL=0 тоже вызывает pull
+            res2 = await async_client.get("/api/auth/me", headers=_auth())
+            assert res2.status_code == 200
+            assert mock_sync.call_count == 2
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_me_stale_cache_pulls(async_client, db_session: AsyncSession):
+    import uuid as uuid_mod
+    from datetime import datetime, timezone, timedelta
+    from unittest.mock import patch, AsyncMock
+    from app.api.deps import get_current_user, CurrentUser
+    from app.services.unified_profile_service import UnifiedProfile
+
+    uname = f"ttl_stale_{uuid_mod.uuid4().hex[:8]}"
+    sub = f"sub-{uuid_mod.uuid4().hex}"
+    user = await _make_user(
+        db_session,
+        username=uname,
+        full_name="Stale",
+        avatar_seed="00000000",
+        authentik_sub=sub,
+    )
+
+    # Искусственно делаем profile_synced_at старым (например, 10 минут назад)
+    user.profile_synced_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+    db_session.add(user)
+    await db_session.commit()
+
+    async def override_user():
+        return CurrentUser(uname, role="admin", full_name="Stale")
+
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        mock_profile = UnifiedProfile(
+            full_name="Fresh IdP",
+            avatar_seed="ffffffff",
+            authentik_pk=9,
+            source="idp",
+        )
+        with patch(
+            "app.services.unified_profile_service.sync_local_from_idp",
+            new_callable=AsyncMock,
+            return_value=mock_profile,
+        ) as mock_sync:
+            # Кеш устарел -> должен произойти pull
+            res = await async_client.get("/api/auth/me", headers=_auth())
+            assert res.status_code == 200
+            assert mock_sync.call_count == 1
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)

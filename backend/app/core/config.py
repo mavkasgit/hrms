@@ -114,6 +114,7 @@ class Settings(BaseSettings):
     AUTHENTIK_API_URL: str | None = "auto"
     AUTHENTIK_API_TOKEN: str | None = None
     AUTHENTIK_PUBLIC_URL: str | None = "auto"
+    AUTHENTIK_PROFILE_TTL_SECONDS: int = 300
 
     @model_validator(mode="after")
     def resolve_auto_urls(self) -> "Settings":

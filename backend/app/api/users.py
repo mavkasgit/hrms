@@ -430,6 +430,7 @@ async def update_my_avatar(
             user.avatar_seed = remote.avatar_seed
             if remote.full_name:
                 user.full_name = remote.full_name
+            user.profile_synced_at = _utcnow()
         except AuthentikAdminError as exc:
             code = exc.status_code or 502
             if code == 404:
@@ -509,6 +510,7 @@ async def update_my_profile(
             if want_theme is not None:
                 user.theme = remote.theme or want_theme
             email_out = remote.email or want_email
+            user.profile_synced_at = _utcnow()
         except AuthentikAdminError as exc:
             raise HTTPException(
                 status_code=exc.status_code or 502,

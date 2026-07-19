@@ -77,6 +77,7 @@ class User(Base):
     invite_code = Column(String(64), unique=True, nullable=True, index=True)
     # Authentik / OIDC subject (stable UUID from IdP); link for SSO bridge
     authentik_sub = Column(String(255), nullable=True, index=True)
+    profile_synced_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

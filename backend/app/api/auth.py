@@ -250,6 +250,7 @@ async def invite_login(
 
 @router.get("/me")
 async def get_me(
+    refresh: int = 0,
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -278,23 +279,47 @@ async def get_me(
     # email: no DB column on HRMS — carry from IdP snapshot into response only
     email_out: str | None = None
     if user.authentik_sub and profile_sync_enabled():
-        try:
-            snapshot = await sync_local_from_idp(
-                authentik_sub=user.authentik_sub,
-                local_full_name=user.full_name,
-                local_avatar_seed=user.avatar_seed,
-                local_locale=user.locale,
-                local_theme=user.theme,
-            )
-            if snapshot is not None:
-                email_out = snapshot.email
-                if apply_profile_to_user(user, snapshot):
+        from datetime import datetime, timezone
+        from app.core.config import settings
+
+        now = datetime.now(timezone.utc)
+        ttl = settings.AUTHENTIK_PROFILE_TTL_SECONDS
+
+        need_pull = True
+        if refresh != 1 and ttl > 0 and user.profile_synced_at is not None:
+            synced_at = user.profile_synced_at
+            if synced_at.tzinfo is None:
+                synced_at = synced_at.replace(tzinfo=timezone.utc)
+            if (now - synced_at).total_seconds() < ttl:
+                need_pull = False
+
+        if need_pull:
+            try:
+                snapshot = await sync_local_from_idp(
+                    authentik_sub=user.authentik_sub,
+                    local_full_name=user.full_name,
+                    local_avatar_seed=user.avatar_seed,
+                    local_locale=user.locale,
+                    local_theme=user.theme,
+                )
+                if snapshot is not None:
+                    email_out = snapshot.email
+                    apply_profile_to_user(user, snapshot)
+
+                user.profile_synced_at = now
+                db.add(user)
+                await db.commit()
+                await db.refresh(user)
+            except Exception:
+                # never break /me for profile sync failures
+                # negative cache: не спамить упавший IdP
+                try:
+                    user.profile_synced_at = now
                     db.add(user)
                     await db.commit()
                     await db.refresh(user)
-        except Exception:
-            # never break /me for profile sync failures
-            pass
+                except Exception:
+                    pass
 
     has_password = (
         user.password_hash is not None and user.password_hash != SSO_BYPASS_HASH
