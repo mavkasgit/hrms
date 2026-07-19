@@ -60,15 +60,7 @@ const absenceItems = [
 ]
 
 const getKtmDashboardURL = () => {
-  const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-  if (isLocalhost) {
-    return `${window.location.protocol}//${window.location.hostname}:9010`
-  } else if (window.location.hostname.endsWith(".local")) {
-    const ktmHostname = window.location.hostname.replace("hrms", "ktm")
-    return `${window.location.protocol}//${ktmHostname}`
-  } else {
-    return `${window.location.protocol}//${window.location.hostname}:8082`
-  }
+  return `${window.location.protocol}//${window.location.hostname}:9000`
 }
 
 export function Sidebar() {
@@ -120,7 +112,7 @@ export function Sidebar() {
         <a
           href={getKtmDashboardURL()}
           className="shrink-0 hover:opacity-80 transition-opacity"
-          title="Перейти в KTM-2000"
+          title="Панель приложений"
         >
           <img
             src="/logo.svg"
