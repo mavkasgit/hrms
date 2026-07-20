@@ -27,20 +27,18 @@ export class LayoutPage {
     await this.navLink(label).click()
   }
 
-  /** Open UserProfileModal from sidebar footer (avatar / «Настройки профиля»). */
+  /** Open UserSettingsDialog from sidebar footer (avatar / «Настройки профиля»). */
   async openProfile() {
     await this.sidebar.getByText('Настройки профиля').click()
     await expect(
-      this.page.getByRole('heading', {
-        name: 'Настройки профиля и безопасности',
-      }),
+      this.page.getByRole('heading', { name: 'Профиль' }),
     ).toBeVisible({ timeout: 10_000 })
   }
 
-  /** Switch profile modal tab to «Активные сессии». */
+  /** Switch settings dialog section to «Сессии». */
   async openProfileSessions() {
     await this.openProfile()
-    await this.page.getByRole('button', { name: 'Активные сессии' }).click()
+    await this.page.getByRole('button', { name: 'Сессии' }).click()
     await expect(
       this.page.getByRole('heading', { name: 'Активные сессии' }),
     ).toBeVisible({ timeout: 10_000 })

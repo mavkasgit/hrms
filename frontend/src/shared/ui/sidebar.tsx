@@ -2,8 +2,9 @@ import { useMemo, useState, useEffect, useCallback } from "react"
 import { NavLink, useLocation } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
 import api, { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
-import { UserProfileModal } from "@/features/user-profile/UserProfileModal"
-import { UserAvatar, getUserSeed } from "@user/ui"
+import { HrmsUserSettingsDialog } from "@/features/user-settings/HrmsUserSettingsDialog"
+import { UserAvatar } from "@/shared/ui/UserAvatar"
+import { getUserSeed } from "@/shared/lib/avatar"
 import {
   ChevronDown,
   ChevronRight,
@@ -235,11 +236,10 @@ export function Sidebar() {
               <LogOut className="h-4 w-4" />
               Выйти
             </button>
-            <UserProfileModal
+            <HrmsUserSettingsDialog
               open={profileOpen}
               onOpenChange={setProfileOpen}
-              currentUser={currentUser}
-              onUpdateProfile={refreshProfile}
+              onProfileUpdated={refreshProfile}
             />
           </>
         ) : (
