@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import multiavatar from "@multiavatar/multiavatar/esm"
 import { User } from "lucide-react"
-import { cn } from "../utils/cn"
+import { cn } from "@/shared/utils/cn"
 
 type Fit = "cover" | "contain"
 
