@@ -1,8 +1,11 @@
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 import bcrypt
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -148,6 +151,110 @@ async def oidc_logout_url(
             post_logout_redirect_uri=post_logout_redirect_uri,
         ),
     )
+
+
+@router.post("/backchannel-logout")
+async def backchannel_logout(
+    logout_token: str | None = Form(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """OIDC Back-Channel Logout (public). Authentik POSTs logout_token form field.
+
+    Phase-1 SLO (AUTH_OIDC_BACKCHANNEL_SID_ENABLED, default on):
+      - replay по jti → 400;
+      - sid в токене → revoke только сессий с этим IdP sid (не все сессии юзера);
+      - без sid (напр. деактивация пользователя) → revoke всех сессий по sub;
+      - аудит: session_revoke с details.source = "authentik_backchannel".
+    Флаг off → legacy: sub → revoke_all без replay-проверки (откат одним переключателем).
+
+    Unknown sub is 200 no-op (no enumeration). Invalid token → 400.
+    """
+    if not logout_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_logout_token",
+        )
+
+    service = OidcAuthService(db)
+    try:
+        claims = await service.validate_logout_token(logout_token)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_logout_token",
+        ) from exc
+
+    if not settings.AUTH_OIDC_BACKCHANNEL_SID_ENABLED:
+        # Legacy path (feature-flag rollback): revoke всех сессий пользователя по sub
+        user = await service.users.get_by_authentik_sub(db, claims.sub)
+        revoked = 0
+        if user is not None:
+            revoked = await session_service.revoke_all(
+                db, user_id=user.id, reason="backchannel_logout"
+            )
+        return JSONResponse(
+            content={"status": "ok", "revoked": revoked},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # Replay-защита: jti одноразовый (OIDC Back-Channel Logout 1.0)
+    if claims.jti and await session_service.is_logout_jti_used(db, claims.jti):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="replay_logout_token",
+        )
+
+    user = await service.users.get_by_authentik_sub(db, claims.sub)
+    revoked = 0
+    if user is not None:
+        if claims.sid:
+            revoked_ids = await session_service.revoke_by_oidc_sid(
+                db, user_id=user.id, oidc_sid=claims.sid, reason="backchannel_logout"
+            )
+            revoked = len(revoked_ids)
+        else:
+            revoked = await session_service.revoke_all(
+                db, user_id=user.id, reason="backchannel_logout"
+            )
+        await session_service.record_login_event(
+            db,
+            event_type="session_revoke",
+            success=True,
+            user_id=user.id,
+            username_attempted=user.username,
+            details={
+                "reason": "backchannel_logout",
+                "source": "authentik_backchannel",
+                "oidc_sid": claims.sid,
+                "revoked": revoked,
+            },
+        )
+
+    # jti фиксируем и при unknown sub: валидный токен считается потреблённым.
+    # Строка живёт до exp токена — дальше replay невозможен по определению.
+    if claims.jti:
+        exp_dt = (
+            datetime.fromtimestamp(claims.exp, tz=timezone.utc)
+            if claims.exp
+            else datetime.now(timezone.utc) + timedelta(minutes=10)
+        )
+        try:
+            await session_service.mark_logout_jti_used(db, claims.jti, expires_at=exp_dt)
+        except IntegrityError as exc:
+            # Гонка повторной доставки: jti уже зафиксирован → replay
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="replay_logout_token",
+            ) from exc
+        await session_service.cleanup_logout_jti(db)
+
+    return JSONResponse(
+        content={"status": "ok", "revoked": revoked},
+        headers={"Cache-Control": "no-store"},
+    )
+
 
 
 @router.post("/login", response_model=LoginResponse)

@@ -129,6 +129,7 @@ async def test_idp_config_and_links(async_client, oidc_on):
     assert data["idp_admin_enabled"] is True
     assert data["user_settings_url"] == "http://localhost:9000/if/user/"
     assert data["admin_url"] == "http://localhost:9000/if/admin/"
+    assert data["ops_url"] == "http://localhost:9010"
     assert "hrms-admin" in data["groups"]
 
     links = await async_client.get("/api/idp/links", headers=_auth())

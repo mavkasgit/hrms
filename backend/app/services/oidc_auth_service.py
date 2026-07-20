@@ -43,9 +43,23 @@ class OidcClaims:
     email: str | None
     name: str | None
     hrms_access_level: str | None
+    # IdP session id — корреляция back-channel logout с конкретной user_session
+    sid: str | None = None
     # TG1: from Authentik Telegram Source property mapping (info.id)
     telegram_id: int | None = None
     telegram_username: str | None = None
+
+
+@dataclass(frozen=True)
+class LogoutClaims:
+    """Normalized claims from a validated OIDC back-channel logout_token."""
+
+    sub: str
+    sid: str | None
+    jti: str | None
+    iss: str
+    # exp (unix ts) — TTL для записи jti в replay-store
+    exp: int | None = None
 
 
 class OidcAuthService:
@@ -458,15 +472,156 @@ class OidcAuthService:
         telegram_id = _extract_telegram_id(claims)
         telegram_username = _extract_telegram_username(claims)
 
+        sid_raw = claims.get("sid")
+        sid = sid_raw if isinstance(sid_raw, str) and sid_raw else None
+
         return OidcClaims(
             sub=sub,
             preferred_username=claims.get("preferred_username") or claims.get("nickname"),
             email=claims.get("email"),
             name=claims.get("name"),
             hrms_access_level=access_level if isinstance(access_level, str) else None,
+            sid=sid,
             telegram_id=telegram_id,
             telegram_username=telegram_username,
         )
+
+    async def validate_logout_token(self, logout_token: str) -> LogoutClaims:
+        """Verify OIDC back-channel logout_token (JWKS RS256, iss, aud, events, sub).
+
+        Raises HTTP 400 on any validation failure (Authentik expects 400, not 401).
+        """
+        client_id = settings.AUTH_OIDC_CLIENT_ID
+        if not client_id:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="OIDC client_id not configured",
+            )
+        if not logout_token or not isinstance(logout_token, str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_logout_token",
+            )
+
+        try:
+            header = jwt.get_unverified_header(logout_token)
+        except JWTError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_logout_token",
+            ) from exc
+
+        alg = header.get("alg") or "RS256"
+        if not isinstance(alg, str) or alg.lower() == "none":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_logout_token",
+            )
+        if alg != "RS256":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_logout_token",
+            )
+
+        kid = header.get("kid")
+        try:
+            jwks = await self.fetch_jwks()
+        except HTTPException as exc:
+            # JWKS unavailable is infra; still map client-facing logout to 400 when possible
+            if exc.status_code == status.HTTP_502_BAD_GATEWAY:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="invalid_logout_token",
+                ) from exc
+            raise
+
+        keys = jwks.get("keys") or []
+        matching = None
+        for key in keys:
+            if kid and key.get("kid") == kid:
+                matching = key
+                break
+            if not kid and key.get("kty") == "RSA":
+                matching = key
+                break
+        if matching is None and keys:
+            matching = keys[0]
+        if matching is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_logout_token",
+            )
+
+        try:
+            rsa_key = RSAKey(matching, algorithm=alg)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("OIDC logout_token JWKS key load failed: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_logout_token",
+            ) from exc
+
+        claims: dict[str, Any] | None = None
+        last_err: Exception | None = None
+        for issuer_candidate in self._issuer_candidates():
+            try:
+                claims = jwt.decode(
+                    logout_token,
+                    rsa_key,
+                    algorithms=["RS256"],
+                    audience=client_id,
+                    issuer=issuer_candidate,
+                    options={
+                        "verify_at_hash": False,
+                        "require_exp": True,
+                        "require_iat": True,
+                        "require_nbf": False,
+                    },
+                )
+                break
+            except JWTError as exc:
+                last_err = exc
+                continue
+
+        if claims is None:
+            logger.info("OIDC logout_token validation failed: %s", last_err)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_logout_token",
+            )
+
+        if "nonce" in claims:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_logout_token",
+            )
+
+        events = claims.get("events")
+        event_key = "http://schemas.openid.net/event/backchannel-logout"
+        if not isinstance(events, dict) or event_key not in events:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_logout_token",
+            )
+
+        sub = claims.get("sub")
+        if not sub or not isinstance(sub, str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_logout_token",
+            )
+
+        sid_raw = claims.get("sid")
+        sid = sid_raw if isinstance(sid_raw, str) and sid_raw else None
+        jti_raw = claims.get("jti")
+        jti = jti_raw if isinstance(jti_raw, str) and jti_raw else None
+        iss_raw = claims.get("iss")
+        iss = iss_raw if isinstance(iss_raw, str) else ""
+        exp_raw = claims.get("exp")
+        exp = exp_raw if isinstance(exp_raw, int) and not isinstance(exp_raw, bool) else None
+
+        return LogoutClaims(sub=sub, sid=sid, jti=jti, iss=iss, exp=exp)
+
 
     # ─── user resolve / link ──────────────────────────────────────────────
 
@@ -673,6 +828,7 @@ class OidcAuthService:
             login_method=login_method,
             ip=ip,
             user_agent=user_agent,
+            oidc_sid=claims.sid,
         )
         return {
             "access_token": token,

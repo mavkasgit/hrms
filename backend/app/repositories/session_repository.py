@@ -24,6 +24,7 @@ class SessionRepository:
         device_label: str | None = None,
         session_id: UUID | None = None,
         last_seen_at: datetime | None = None,
+        oidc_sid: str | None = None,
     ) -> UserSession:
         now = datetime.now(timezone.utc)
         kwargs: dict = {
@@ -37,6 +38,8 @@ class SessionRepository:
         }
         if session_id is not None:
             kwargs["id"] = session_id
+        if oidc_sid is not None:
+            kwargs["oidc_sid"] = oidc_sid
         session = UserSession(**kwargs)
         db.add(session)
         await db.flush()
@@ -107,6 +110,35 @@ class SessionRepository:
         rows = result.fetchall()
         await db.flush()
         return len(rows)
+
+    async def revoke_active_by_oidc_sid(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: int,
+        oidc_sid: str,
+        reason: str,
+        when: datetime | None = None,
+    ) -> list[UUID]:
+        """Revoke non-revoked sessions of user tied to IdP session sid. Returns ids.
+
+        Scoped by user_id (defense in depth): sid коррелирует только сессии
+        того пользователя, чей authentik_sub пришёл в logout_token.
+        """
+        now = when or datetime.now(timezone.utc)
+        result = await db.execute(
+            update(UserSession)
+            .where(
+                UserSession.user_id == user_id,
+                UserSession.oidc_sid == oidc_sid,
+                UserSession.revoked_at.is_(None),
+            )
+            .values(revoked_at=now, revoke_reason=reason)
+            .returning(UserSession.id)
+        )
+        rows = result.fetchall()
+        await db.flush()
+        return [row[0] for row in rows]
 
     async def touch_last_seen(
         self,

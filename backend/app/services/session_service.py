@@ -12,6 +12,7 @@ from app.core.exceptions import HRMSException, NotFoundError
 from app.models.user_login_event import UserLoginEvent
 from app.models.user_session import UserSession
 from app.repositories.login_event_repository import LoginEventRepository
+from app.repositories.logout_jti_repository import LogoutJtiRepository
 from app.repositories.session_repository import SessionRepository
 from app.utils.user_agent import device_label_from_ua
 
@@ -28,10 +29,13 @@ LOGIN_METHODS = frozenset(
     }
 )
 EVENT_TYPES = frozenset({"login_success", "login_failure", "logout", "session_revoke"})
-REVOKE_REASONS = frozenset({"logout", "user_revoke", "password_change", "admin", "expired"})
+REVOKE_REASONS = frozenset(
+    {"logout", "user_revoke", "password_change", "admin", "expired", "backchannel_logout"}
+)
 
 session_repo = SessionRepository()
 login_event_repo = LoginEventRepository()
+logout_jti_repo = LogoutJtiRepository()
 
 
 class SessionInactiveError(HRMSException):
@@ -54,6 +58,7 @@ async def issue_session(
     user_agent: str | None,
     login_method: str,
     ttl_minutes: int,
+    oidc_sid: str | None = None,
 ) -> UserSession:
     """Insert session; expires_at = now + ttl; device_label from UA."""
     if login_method not in LOGIN_METHODS:
@@ -74,6 +79,7 @@ async def issue_session(
         user_agent=user_agent,
         device_label=label,
         last_seen_at=now,
+        oidc_sid=oidc_sid,
     )
 
 
@@ -156,6 +162,40 @@ async def revoke_all(db: AsyncSession, *, user_id: int, reason: str) -> int:
     return await session_repo.revoke_all_for_user(db, user_id, reason, except_id=None)
 
 
+async def revoke_by_oidc_sid(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    oidc_sid: str,
+    reason: str,
+) -> list[UUID]:
+    """Revoke sessions of user tied to IdP sid (back-channel SLO). Returns ids."""
+    if reason not in REVOKE_REASONS:
+        raise HRMSException(
+            f"Неизвестная причина отзыва: {reason}",
+            "invalid_revoke_reason",
+            status_code=400,
+        )
+    return await session_repo.revoke_active_by_oidc_sid(
+        db, user_id=user_id, oidc_sid=oidc_sid, reason=reason
+    )
+
+
+async def is_logout_jti_used(db: AsyncSession, jti: str) -> bool:
+    return await logout_jti_repo.is_used(db, jti)
+
+
+async def mark_logout_jti_used(
+    db: AsyncSession, jti: str, *, expires_at: datetime
+) -> None:
+    await logout_jti_repo.mark_used(db, jti, expires_at=expires_at)
+
+
+async def cleanup_logout_jti(db: AsyncSession) -> int:
+    """Opportunistic purge потреблённых jti с истёкшим exp."""
+    return await logout_jti_repo.delete_expired(db)
+
+
 async def list_sessions(db: AsyncSession, *, user_id: int) -> list[UserSession]:
     return await session_repo.list_active_for_user(db, user_id)
 
@@ -210,6 +250,7 @@ async def complete_login(
     login_method: str,
     ip: str | None = None,
     user_agent: str | None = None,
+    oidc_sid: str | None = None,
 ) -> tuple[str, UserSession]:
     """
     Issue session + JWT with sid + success login_event.
@@ -226,6 +267,7 @@ async def complete_login(
         user_agent=user_agent,
         login_method=login_method,
         ttl_minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+        oidc_sid=oidc_sid,
     )
     full_name = user.full_name or user.username
     token = create_access_token(

@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -17,6 +17,12 @@ class UserSession(Base):
     __table_args__ = (
         Index("ix_user_sessions_user_id_revoked_at", "user_id", "revoked_at"),
         Index("ix_user_sessions_expires_at", "expires_at"),
+        # Lookup активной сессии по IdP sid (back-channel logout корреляция)
+        Index(
+            "ix_user_sessions_oidc_sid",
+            "oidc_sid",
+            postgresql_where=text("oidc_sid IS NOT NULL"),
+        ),
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -42,5 +48,7 @@ class UserSession(Base):
     device_label = Column(String(128), nullable=True)
     # password | invite | telegram_widget | telegram_bot | oidc | oidc_telegram
     login_method = Column(String(32), nullable=False)
+    # sid claim из id_token (OIDC Back-Channel Logout корреляция); NULL для не-OIDC входов
+    oidc_sid = Column(String(255), nullable=True)
 
     user = relationship("User", lazy="select")

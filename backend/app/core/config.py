@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     AUTH_OIDC_SYNC_ROLE_FROM_IDP: bool = False
     # TG1: when true + OIDC enabled, FE prefers Telegram SSO (Authentik TG Source) CTA
     AUTH_OIDC_TELEGRAM_PRIMARY: bool = False
+    # Phase-1 SLO: back-channel logout гасит сессию по sid + replay-защита по jti.
+    # false → мгновенный откат на legacy-поведение (revoke всех сессий по sub)
+    AUTH_OIDC_BACKCHANNEL_SID_ENABLED: bool = True
 
     # Authentik Admin API proxy (SSO-D) — token never exposed to FE
     # Empty AUTHENTIK_API_TOKEN → IdP admin proxy disabled (deep-links only)

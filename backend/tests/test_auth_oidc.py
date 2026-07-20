@@ -18,13 +18,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from app.api.auth import LoginResponse, oidc_callback, oidc_config, oidc_logout_url
+from app.api.auth import (
+    LoginResponse,
+    backchannel_logout,
+    oidc_callback,
+    oidc_config,
+    oidc_logout_url,
+)
 from app.core.config import settings
 from app.core.constants import SSO_BYPASS_HASH
 from app.models.user import User
 from app.models.user_session import UserSession
 from app.schemas.oidc_auth import OidcCallbackRequest
-from app.services.oidc_auth_service import OidcAuthService
+from app.services import session_service
+from app.services.oidc_auth_service import LogoutClaims, OidcAuthService
 
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
@@ -189,6 +196,7 @@ def oidc_enabled():
         "AUTH_OIDC_DEFAULT_ROLE": settings.AUTH_OIDC_DEFAULT_ROLE,
         "AUTH_OIDC_SYNC_ROLE_FROM_IDP": settings.AUTH_OIDC_SYNC_ROLE_FROM_IDP,
         "AUTH_OIDC_TELEGRAM_PRIMARY": settings.AUTH_OIDC_TELEGRAM_PRIMARY,
+        "AUTH_OIDC_BACKCHANNEL_SID_ENABLED": settings.AUTH_OIDC_BACKCHANNEL_SID_ENABLED,
     }
     settings.AUTH_OIDC_ENABLED = True
     settings.AUTH_OIDC_ISSUER = ISSUER
@@ -202,6 +210,7 @@ def oidc_enabled():
     settings.AUTH_OIDC_DEFAULT_ROLE = "viewer"
     settings.AUTH_OIDC_SYNC_ROLE_FROM_IDP = False
     settings.AUTH_OIDC_TELEGRAM_PRIMARY = False
+    settings.AUTH_OIDC_BACKCHANNEL_SID_ENABLED = True
     OidcAuthService.clear_jwks_cache()
     try:
         yield
@@ -275,11 +284,20 @@ async def test_oidc_config_telegram_primary(oidc_enabled):
 
 
 async def test_oidc_logout_url_enabled(oidc_enabled):
+    # Without id_token_hint: bare end-session (Authentik rejects post_logout alone)
     resp = await oidc_logout_url()
     assert resp.enabled is True
     assert resp.logout_url
     assert "end-session" in resp.logout_url
-    assert "login" in (resp.logout_url or "")
+    assert "post_logout_redirect_uri" not in (resp.logout_url or "")
+    # With id_token_hint: post_logout allowed
+    resp2 = await oidc_logout_url(
+        id_token_hint="dummy.jwt.hint",
+        post_logout_redirect_uri="http://localhost:5173/login",
+    )
+    assert resp2.logout_url
+    assert "id_token_hint" in (resp2.logout_url or "")
+    assert "login" in (resp2.logout_url or "")
 
 
 async def test_oidc_callback_disabled_404(oidc_disabled, db_session: AsyncSession):
@@ -687,3 +705,375 @@ async def test_resolve_urls(oidc_enabled):
     assert "token" in OidcAuthService.resolve_token_url()
     assert "jwks" in OidcAuthService.resolve_jwks_url()
     assert "end-session" in OidcAuthService.resolve_end_session_url()
+
+
+# ─── back-channel logout ─────────────────────────────────────────────────────
+
+_BC_EVENT = "http://schemas.openid.net/event/backchannel-logout"
+
+
+def _make_logout_token(
+    *,
+    sub: str = "ak-sub-uuid-001",
+    aud: str = CLIENT_ID,
+    iss: str = ISSUER.rstrip("/"),
+    exp_delta: int = 120,
+    events: dict | None = None,
+    nonce: str | None = None,
+    include_sub: bool = True,
+    extra: dict | None = None,
+    private_pem=None,
+) -> str:
+    now = int(time.time())
+    claims: dict = {
+        "aud": aud,
+        "iss": iss,
+        "iat": now,
+        "exp": now + exp_delta,
+        "jti": f"logout-jti-{now}",
+        "events": events if events is not None else {_BC_EVENT: {}},
+    }
+    if include_sub:
+        claims["sub"] = sub
+    if nonce is not None:
+        claims["nonce"] = nonce
+    if extra:
+        claims.update(extra)
+    return jose_jwt.encode(
+        claims,
+        private_pem if private_pem is not None else _PRIVATE_PEM,
+        algorithm="RS256",
+        headers={"kid": KID},
+    )
+
+
+async def test_validate_logout_token_happy(oidc_enabled):
+    token = _make_logout_token(sub="sub-ok", extra={"sid": "idp-sid-1"})
+    fake = _FakeAsyncClient()
+    svc = OidcAuthService(MagicMock())
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        claims = await svc.validate_logout_token(token)
+    assert isinstance(claims, LogoutClaims)
+    assert claims.sub == "sub-ok"
+    assert claims.sid == "idp-sid-1"
+    assert claims.jti
+
+
+async def test_validate_logout_token_wrong_aud(oidc_enabled):
+    token = _make_logout_token(aud="other-client")
+    fake = _FakeAsyncClient()
+    svc = OidcAuthService(MagicMock())
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        with pytest.raises(HTTPException) as ei:
+            await svc.validate_logout_token(token)
+    assert ei.value.status_code == 400
+
+
+async def test_validate_logout_token_missing_events(oidc_enabled):
+    token = _make_logout_token(events={})
+    fake = _FakeAsyncClient()
+    svc = OidcAuthService(MagicMock())
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        with pytest.raises(HTTPException) as ei:
+            await svc.validate_logout_token(token)
+    assert ei.value.status_code == 400
+
+
+async def test_validate_logout_token_rejects_nonce(oidc_enabled):
+    token = _make_logout_token(nonce="must-not-be-present")
+    fake = _FakeAsyncClient()
+    svc = OidcAuthService(MagicMock())
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        with pytest.raises(HTTPException) as ei:
+            await svc.validate_logout_token(token)
+    assert ei.value.status_code == 400
+
+
+async def test_validate_logout_token_bad_signature(oidc_enabled):
+    other_pem, _ = _generate_rsa_pair()
+    token = _make_logout_token(private_pem=other_pem)
+    fake = _FakeAsyncClient()
+    svc = OidcAuthService(MagicMock())
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        with pytest.raises(HTTPException) as ei:
+            await svc.validate_logout_token(token)
+    assert ei.value.status_code == 400
+
+
+async def test_backchannel_logout_revokes_sessions(
+    oidc_enabled, db_session: AsyncSession
+):
+    user = await _create_user(
+        db_session, username="bc_user", authentik_sub="ak-bc-sub-1"
+    )
+    await session_service.issue_session(
+        db_session,
+        user_id=user.id,
+        ip="127.0.0.1",
+        user_agent="pytest",
+        login_method="oidc",
+        ttl_minutes=60,
+    )
+    await session_service.issue_session(
+        db_session,
+        user_id=user.id,
+        ip="127.0.0.1",
+        user_agent="pytest-2",
+        login_method="password",
+        ttl_minutes=60,
+    )
+    token = _make_logout_token(sub="ak-bc-sub-1")
+    fake = _FakeAsyncClient()
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        resp = await backchannel_logout(logout_token=token, db=db_session)
+    assert resp.status_code == 200
+    assert resp.headers.get("cache-control") == "no-store"
+    body = json.loads(resp.body)
+    assert body["status"] == "ok"
+    assert body["revoked"] == 2
+    active = await session_service.list_sessions(db_session, user_id=user.id)
+    assert active == []
+
+
+async def test_backchannel_logout_unknown_sub_noop(
+    oidc_enabled, db_session: AsyncSession
+):
+    token = _make_logout_token(sub="no-such-authentik-sub")
+    fake = _FakeAsyncClient()
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        resp = await backchannel_logout(logout_token=token, db=db_session)
+    assert resp.status_code == 200
+    body = json.loads(resp.body)
+    assert body == {"status": "ok", "revoked": 0}
+
+
+async def test_backchannel_logout_invalid_token_400(
+    oidc_enabled, db_session: AsyncSession
+):
+    with pytest.raises(HTTPException) as ei:
+        await backchannel_logout(logout_token="not-a-jwt", db=db_session)
+    assert ei.value.status_code == 400
+
+
+async def test_backchannel_logout_missing_token_400(db_session: AsyncSession):
+    with pytest.raises(HTTPException) as ei:
+        await backchannel_logout(logout_token=None, db=db_session)
+    assert ei.value.status_code == 400
+
+
+# ─── Phase-1 SLO: sid-корреляция, replay-защита, аудит, feature-флаг ─────────
+
+
+async def _login_events(db: AsyncSession, user_id: int) -> list:
+    from app.models.user_login_event import UserLoginEvent
+
+    rows = (
+        await db.execute(
+            select(UserLoginEvent).where(UserLoginEvent.user_id == user_id)
+        )
+    ).scalars().all()
+    return list(rows)
+
+
+async def test_oidc_callback_stores_oidc_sid(oidc_enabled, db_session: AsyncSession):
+    """sid claim из id_token сохраняется в user_sessions.oidc_sid при OIDC-логине."""
+    await _create_user(db_session, username="sid_user", authentik_sub="ak-sid-sub")
+    id_token = _make_id_token(sub="ak-sid-sub", extra={"sid": "idp-sid-callback-1"})
+    fake = _FakeAsyncClient(
+        token_body={"access_token": "a", "id_token": id_token, "token_type": "Bearer"}
+    )
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        await oidc_callback(
+            OidcCallbackRequest(code="c", code_verifier="v"),
+            _make_request(),
+            db_session,
+        )
+    row = (
+        await db_session.execute(
+            select(UserSession).where(UserSession.login_method == "oidc")
+        )
+    ).scalar_one()
+    assert row.oidc_sid == "idp-sid-callback-1"
+
+
+async def test_backchannel_logout_revokes_only_matching_sid(
+    oidc_enabled, db_session: AsyncSession
+):
+    """logout_token с sid гасит только сессию с этим sid, не трогая вторую сессию."""
+    user = await _create_user(
+        db_session, username="bc_sid_user", authentik_sub="ak-bc-sid-sub"
+    )
+    await session_service.issue_session(
+        db_session,
+        user_id=user.id,
+        ip="127.0.0.1",
+        user_agent="browser-1",
+        login_method="oidc",
+        ttl_minutes=60,
+        oidc_sid="idp-sid-A",
+    )
+    await session_service.issue_session(
+        db_session,
+        user_id=user.id,
+        ip="127.0.0.1",
+        user_agent="browser-2",
+        login_method="oidc",
+        ttl_minutes=60,
+        oidc_sid="idp-sid-B",
+    )
+    token = _make_logout_token(sub="ak-bc-sid-sub", extra={"sid": "idp-sid-A"})
+    fake = _FakeAsyncClient()
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        resp = await backchannel_logout(logout_token=token, db=db_session)
+    assert resp.status_code == 200
+    body = json.loads(resp.body)
+    assert body["revoked"] == 1
+
+    active = await session_service.list_sessions(db_session, user_id=user.id)
+    assert len(active) == 1
+    assert active[0].oidc_sid == "idp-sid-B"
+
+    # Аудит: источник отзыва зафиксирован
+    revoke_events = [
+        e for e in await _login_events(db_session, user.id)
+        if e.event_type == "session_revoke"
+    ]
+    assert len(revoke_events) == 1
+    details = revoke_events[0].details
+    assert details["source"] == "authentik_backchannel"
+    assert details["reason"] == "backchannel_logout"
+    assert details["oidc_sid"] == "idp-sid-A"
+    assert details["revoked"] == 1
+
+
+async def test_backchannel_logout_no_sid_falls_back_to_revoke_all(
+    oidc_enabled, db_session: AsyncSession
+):
+    """logout_token без sid (деактивация пользователя) гасит все сессии + аудит."""
+    user = await _create_user(
+        db_session, username="bc_nosid_user", authentik_sub="ak-bc-nosid-sub"
+    )
+    await session_service.issue_session(
+        db_session,
+        user_id=user.id,
+        ip="127.0.0.1",
+        user_agent="browser-1",
+        login_method="oidc",
+        ttl_minutes=60,
+        oidc_sid="idp-sid-X",
+    )
+    await session_service.issue_session(
+        db_session,
+        user_id=user.id,
+        ip="127.0.0.1",
+        user_agent="browser-2",
+        login_method="password",
+        ttl_minutes=60,
+    )
+    token = _make_logout_token(sub="ak-bc-nosid-sub")
+    fake = _FakeAsyncClient()
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        resp = await backchannel_logout(logout_token=token, db=db_session)
+    assert json.loads(resp.body)["revoked"] == 2
+    assert await session_service.list_sessions(db_session, user_id=user.id) == []
+
+    revoke_events = [
+        e for e in await _login_events(db_session, user.id)
+        if e.event_type == "session_revoke"
+    ]
+    assert len(revoke_events) == 1
+    assert revoke_events[0].details["source"] == "authentik_backchannel"
+    assert revoke_events[0].details["oidc_sid"] is None
+
+
+async def test_backchannel_logout_replay_rejected(
+    oidc_enabled, db_session: AsyncSession
+):
+    """Повторная доставка того же logout_token (jti) → 400, двойного revoke нет."""
+    user = await _create_user(
+        db_session, username="bc_replay_user", authentik_sub="ak-bc-replay-sub"
+    )
+    await session_service.issue_session(
+        db_session,
+        user_id=user.id,
+        ip="127.0.0.1",
+        user_agent="browser-1",
+        login_method="oidc",
+        ttl_minutes=60,
+        oidc_sid="idp-sid-replay",
+    )
+    token = _make_logout_token(sub="ak-bc-replay-sub", extra={"sid": "idp-sid-replay"})
+    fake = _FakeAsyncClient()
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        resp = await backchannel_logout(logout_token=token, db=db_session)
+        assert json.loads(resp.body)["revoked"] == 1
+        # Replay: тот же самый токен второй раз
+        with pytest.raises(HTTPException) as ei:
+            await backchannel_logout(logout_token=token, db=db_session)
+    assert ei.value.status_code == 400
+    assert ei.value.detail == "replay_logout_token"
+
+
+async def test_backchannel_logout_unknown_sid_revokes_nothing(
+    oidc_enabled, db_session: AsyncSession
+):
+    """sid из токена не совпал ни с одной сессией → 200, revoked=0, сессии живы."""
+    user = await _create_user(
+        db_session, username="bc_unknown_sid", authentik_sub="ak-bc-unk-sid-sub"
+    )
+    await session_service.issue_session(
+        db_session,
+        user_id=user.id,
+        ip="127.0.0.1",
+        user_agent="browser-1",
+        login_method="oidc",
+        ttl_minutes=60,
+        oidc_sid="idp-sid-real",
+    )
+    token = _make_logout_token(sub="ak-bc-unk-sid-sub", extra={"sid": "idp-sid-other"})
+    fake = _FakeAsyncClient()
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        resp = await backchannel_logout(logout_token=token, db=db_session)
+    assert json.loads(resp.body)["revoked"] == 0
+    active = await session_service.list_sessions(db_session, user_id=user.id)
+    assert len(active) == 1
+
+
+async def test_backchannel_logout_flag_off_legacy_behavior(
+    oidc_enabled, db_session: AsyncSession
+):
+    """AUTH_OIDC_BACKCHANNEL_SID_ENABLED=false → legacy: revoke всех сессий по sub."""
+    settings.AUTH_OIDC_BACKCHANNEL_SID_ENABLED = False
+    user = await _create_user(
+        db_session, username="bc_legacy_user", authentik_sub="ak-bc-legacy-sub"
+    )
+    await session_service.issue_session(
+        db_session,
+        user_id=user.id,
+        ip="127.0.0.1",
+        user_agent="browser-1",
+        login_method="oidc",
+        ttl_minutes=60,
+        oidc_sid="idp-sid-A",
+    )
+    await session_service.issue_session(
+        db_session,
+        user_id=user.id,
+        ip="127.0.0.1",
+        user_agent="browser-2",
+        login_method="oidc",
+        ttl_minutes=60,
+        oidc_sid="idp-sid-B",
+    )
+    token = _make_logout_token(sub="ak-bc-legacy-sub", extra={"sid": "idp-sid-A"})
+    fake = _FakeAsyncClient()
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        resp = await backchannel_logout(logout_token=token, db=db_session)
+    # legacy: обе сессии отозваны, несмотря на sid в токене
+    assert json.loads(resp.body)["revoked"] == 2
+    assert await session_service.list_sessions(db_session, user_id=user.id) == []
+    # legacy: jti не фиксируется — повторная доставка не считается replay
+    with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
+        resp2 = await backchannel_logout(logout_token=token, db=db_session)
+    assert resp2.status_code == 200
+

@@ -115,8 +115,11 @@ export async function logout(): Promise<void> {
 
   // Optional Authentik end_session (dual-run when OIDC off → just /login)
   try {
-    const { fetchOidcLogoutUrl } = await import("@/shared/api/oidcAuth")
+    const { fetchOidcLogoutUrl, clearOidcIdToken } = await import(
+      "@/shared/api/oidcAuth"
+    )
     const { enabled, logout_url } = await fetchOidcLogoutUrl()
+    clearOidcIdToken()
     if (enabled && logout_url) {
       window.location.href = logout_url
       return
