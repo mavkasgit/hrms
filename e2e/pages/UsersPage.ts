@@ -3,13 +3,12 @@ import { type Page, type Locator, expect } from '@playwright/test'
 /**
  * Page Object: /users
  * - OIDC off: local users table, create dialog, invite, delete
- * - OIDC on: IdP-first (Authentik SoT banner + groups panel; no local IAM)
+ * - OIDC on: deep-links to IdP Ops / Authentik (no local IAM, no groups table)
  * Selectors: role/label/text (no e2e-* testids on this page).
  */
 export class UsersPage {
   readonly page: Page
-  readonly headingLocal: Locator
-  readonly headingIdp: Locator
+  readonly heading: Locator
   readonly addButton: Locator
   readonly searchInput: Locator
   readonly createDialog: Locator
@@ -17,13 +16,8 @@ export class UsersPage {
 
   constructor(page: Page) {
     this.page = page
-    this.headingLocal = page.getByRole('heading', {
+    this.heading = page.getByRole('heading', {
       name: 'Пользователи',
-      level: 1,
-      exact: true,
-    })
-    this.headingIdp = page.getByRole('heading', {
-      name: 'Пользователи и доступ',
       level: 1,
       exact: true,
     })
@@ -35,7 +29,7 @@ export class UsersPage {
 
   /**
    * Wait until mode is resolved (no flash loader).
-   * Local: «Добавить пользователя»; IdP-first: SoT copy about Authentik.
+   * Local: «Добавить пользователя»; OIDC: deep-link card / IdP copy.
    */
   async goto() {
     await this.page.goto('/users')
@@ -46,19 +40,18 @@ export class UsersPage {
   }
 
   async expectIdpFirstLayout() {
-    await expect(this.headingIdp).toBeVisible({ timeout: 10_000 })
+    await expect(this.heading).toBeVisible({ timeout: 10_000 })
     await expect(this.page.getByText(/каталог учёток ведётся в Authentik/i)).toBeVisible()
-    await expect(this.page.getByText(/каталог пользователей — в Authentik/i)).toBeVisible()
+    await expect(this.page.getByText(/управление — в IdP Ops/i)).toBeVisible()
     await expect(this.addButton).toHaveCount(0)
     await expect(this.page.getByRole('tab', { name: 'Приглашения' })).toHaveCount(0)
-    // Groups panel heading
-    await expect(
-      this.page.getByRole('heading', { name: /доступ к HRMS/i })
-    ).toBeVisible()
+    // No groups table / TOKEN empty state
+    await expect(this.page.getByRole('heading', { name: /доступ к HRMS/i })).toHaveCount(0)
+    await expect(this.page.getByText(/AUTHENTIK_API_TOKEN/i)).toHaveCount(0)
   }
 
   async expectLocalIamLayout() {
-    await expect(this.headingLocal).toBeVisible({ timeout: 10_000 })
+    await expect(this.heading).toBeVisible({ timeout: 10_000 })
     await expect(this.addButton).toBeVisible()
     await expect(this.page.getByRole('tab', { name: 'Приглашения' })).toBeVisible()
   }

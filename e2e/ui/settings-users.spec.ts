@@ -38,16 +38,11 @@ test.describe('Users admin @ui', () => {
       await usersPage.goto()
 
       if (oidcOn) {
-        // POM: Authentik SoT, no «Добавить пользователя», heading «Доступ к HRMS»
+        // Deep-links only: IdP Ops / Authentik, no local create or groups table
         await usersPage.expectIdpFirstLayout()
-        // Groups blurb and/or TOKEN empty state may both be on page — assert separately
-        // (do not .or() two independent texts: strict mode fails when both match)
-        await expect(page.getByText(/hrms-admin/).first()).toBeVisible({ timeout: 10_000 })
-        // Empty state when !idp_admin_enabled — optional, both markers can coexist
-        const tokenHint = page.getByText(/AUTHENTIK_API_TOKEN/i)
-        if ((await tokenHint.count()) > 0) {
-          await expect(tokenHint.first()).toBeVisible()
-        }
+        await expect(
+          page.getByRole('button', { name: /открыть IdP Ops|Authentik Admin/i }).first()
+        ).toBeVisible({ timeout: 10_000 })
         return
       }
 
