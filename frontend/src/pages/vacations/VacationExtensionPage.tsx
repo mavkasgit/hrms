@@ -3,7 +3,7 @@ import { useState, useEffect } from "react"
 import { X, FilePen } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/tabs"
 import { Button } from "@/shared/ui/button"
-import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useExtendVacation } from "@/entities/vacation"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
@@ -166,12 +166,12 @@ export function VacationExtensionPage() {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="flex flex-wrap gap-4">
-                        <div className="w-[130px]"><DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />{errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}</div>
+                        <div className="w-[130px]"><DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />{errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}</div>
                         <OrderNumberField value={orderNumber} onChange={setOrderNumber} orderTypeId={extensionOrderType?.id} orderTypes={orderTypes} required error={errors.orderNumber} />
                       </div>
                       <div className="flex flex-wrap gap-4">
-                        <div className="w-[130px]"><DatePicker label="Начало продления *" value={periodStart} onChange={setPeriodStart} />{errors.periodStart && <p className="text-xs text-red-500 mt-1">{errors.periodStart}</p>}</div>
-                        <div className="w-[130px]"><DatePicker label="Конец продления *" value={periodEnd} onChange={setPeriodEnd} />{errors.periodEnd && <p className="text-xs text-red-500 mt-1">{errors.periodEnd}</p>}</div>
+                        <div className="w-[130px]"><DocumentDatePicker label="Начало продления *" value={periodStart} onChange={setPeriodStart} />{errors.periodStart && <p className="text-xs text-red-500 mt-1">{errors.periodStart}</p>}</div>
+                        <div className="w-[130px]"><DocumentDatePicker label="Конец продления *" value={periodEnd} onChange={setPeriodEnd} />{errors.periodEnd && <p className="text-xs text-red-500 mt-1">{errors.periodEnd}</p>}</div>
                       </div>
                       <div className="flex gap-3 pt-2">
                         <Button variant="outline" onClick={() => { setSelectedVacation(null); setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setDraftId(null); setErrors({}) }} disabled={isPending}>Очистить</Button>

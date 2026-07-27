@@ -1,5 +1,5 @@
 import { Input } from "@/shared/ui/input"
-import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { FieldGroup } from "../components/FieldGroup"
 
 type StatementContractExpiryFieldsProps = {
@@ -24,7 +24,7 @@ export function StatementContractExpiryFields({ extraFields, extraFieldErrors, o
         )}
       </div>
       <div>
-        <DatePicker
+        <DocumentDatePicker
           label="Дата начала контракта"
           value={(extraFields["old_contract_start"] as string) || ""}
           onChange={(v) => onFieldChange("old_contract_start", v)}

@@ -3,7 +3,7 @@ import { useState, useEffect } from "react"
 import { X, FilePen } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/tabs"
 import { Button } from "@/shared/ui/button"
-import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useRecallVacation, useHolidays } from "@/entities/vacation"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
@@ -170,12 +170,12 @@ export function VacationRecallPage() {
                     <div className="space-y-4">
                       <div className="flex flex-wrap gap-4">
                         <div className="w-[130px]">
-                          <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                          <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
                           {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                         </div>
                         <OrderNumberField value={orderNumber} onChange={setOrderNumber} orderTypeId={recallOrderType?.id} orderTypes={orderTypes} required error={errors.orderNumber} />
                         <div className="w-[130px]">
-                          <DatePicker label="Дата отзыва *" value={recallDate} onChange={setRecallDate} disabled={!selectedVacation} />
+                          <DocumentDatePicker label="Дата отзыва *" value={recallDate} onChange={setRecallDate} disabled={!selectedVacation} />
                           {errors.recallDate && <p className="text-xs text-red-500 mt-1">{errors.recallDate}</p>}
                         </div>
                       </div>

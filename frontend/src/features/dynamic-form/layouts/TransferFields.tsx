@@ -1,5 +1,5 @@
 import { Input } from "@/shared/ui/input"
-import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 
 type TransferFieldsProps = {
   extraFields: Record<string, string | number>
@@ -24,7 +24,7 @@ export function TransferFields({ extraFields, extraFieldErrors, onFieldChange }:
         <h4 className="text-sm font-semibold text-muted-foreground mb-2">Новый контракт</h4>
         <div className="flex gap-4 flex-wrap items-end">
           <div>
-            <DatePicker
+            <DocumentDatePicker
               label="Дата начала"
               value={(extraFields["new_contract_start"] as string) || ""}
               onChange={handleNewStartChange}
@@ -34,7 +34,7 @@ export function TransferFields({ extraFields, extraFieldErrors, onFieldChange }:
             )}
           </div>
           <div>
-            <DatePicker
+            <DocumentDatePicker
               label="Дата окончания"
               value={(extraFields["new_contract_end"] as string) || ""}
               onChange={(v) => onFieldChange("new_contract_end", v)}

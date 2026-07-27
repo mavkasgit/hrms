@@ -5,6 +5,7 @@ import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployees
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { YearFilter } from "@/shared/ui/year-filter"
 import { Badge } from "@/shared/ui/badge"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
@@ -945,7 +946,7 @@ export function OrdersPage() {
 
                 <div className="flex gap-4">
                   <div className="w-[130px]">
-                    <DatePicker
+                    <DocumentDatePicker
                       label="Дата приказа"
                       value={orderDate}
                       onChange={setOrderDate}
@@ -1107,7 +1108,7 @@ export function OrdersPage() {
           <div className="border-t px-4 py-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
               <div className="w-[130px]">
-                <DatePicker
+                <DocumentDatePicker
                   label="Дата приказа"
                   value={generalOrderDate}
                   onChange={setGeneralOrderDate}

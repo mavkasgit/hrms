@@ -6,7 +6,7 @@ import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/shared/ui/table"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
-import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
 import {
@@ -262,11 +262,11 @@ export function SickLeavesPage() {
 
               <div className="flex gap-4">
                 <div className="w-[130px]">
-                  <DatePicker label="Дата начала *" value={startDate} onChange={setStartDate} />
+                  <DocumentDatePicker label="Дата начала *" value={startDate} onChange={setStartDate} />
                   {errors.startDate && <p className="text-xs text-red-500 mt-1">{errors.startDate}</p>}
                 </div>
                 <div className="w-[130px]">
-                  <DatePicker label="Дата конца *" value={endDate} onChange={setEndDate} />
+                  <DocumentDatePicker label="Дата конца *" value={endDate} onChange={setEndDate} />
                   {errors.endDate && <p className="text-xs text-red-500 mt-1">{errors.endDate}</p>}
                 </div>
                 {startDate && endDate && (

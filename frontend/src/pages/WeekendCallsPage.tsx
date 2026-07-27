@@ -6,6 +6,7 @@ import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shar
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import { Button } from "@/shared/ui/button"
 import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { EmptyState } from "@/shared/ui/empty-state"
 import { Input } from "@/shared/ui/input"
 import { Skeleton } from "@/shared/ui/skeleton"
@@ -704,7 +705,7 @@ export function WeekendCallsPage() {
 
               <div className="flex gap-4">
                 <div className="w-[130px]">
-                  <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                  <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
                   {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                 </div>
                 <OrderNumberField
@@ -745,17 +746,17 @@ export function WeekendCallsPage() {
                 </div>
                 {mode === "single" ? (
                   <div className="w-[130px]">
-                    <DatePicker label="Дата вызова *" value={callDate} onChange={setCallDate} />
+                    <DocumentDatePicker label="Дата вызова *" value={callDate} onChange={setCallDate} />
                     {errors.callDate && <p className="text-xs text-red-500 mt-1">{errors.callDate}</p>}
                   </div>
                 ) : (
                   <>
                     <div className="w-[130px]">
-                      <DatePicker label="Дата начала *" value={callDateStart} onChange={setCallDateStart} />
+                      <DocumentDatePicker label="Дата начала *" value={callDateStart} onChange={setCallDateStart} />
                       {errors.callDateStart && <p className="text-xs text-red-500 mt-1">{errors.callDateStart}</p>}
                     </div>
                     <div className="w-[130px]">
-                      <DatePicker label="Дата конца *" value={callDateEnd} onChange={setCallDateEnd} />
+                      <DocumentDatePicker label="Дата конца *" value={callDateEnd} onChange={setCallDateEnd} />
                       {errors.callDateEnd && <p className="text-xs text-red-500 mt-1">{errors.callDateEnd}</p>}
                     </div>
                   </>
@@ -796,7 +797,7 @@ export function WeekendCallsPage() {
             <div className="grid gap-4">
               <div className="flex gap-4">
                 <div className="w-[130px]">
-                  <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                  <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
                   {groupErrors.orderDate && <p className="text-xs text-red-500 mt-1">{groupErrors.orderDate}</p>}
                 </div>
                 <OrderNumberField
@@ -837,17 +838,17 @@ export function WeekendCallsPage() {
                 </div>
                 {groupCallMode === "single" ? (
                   <div className="w-[130px]">
-                    <DatePicker label="Дата вызова *" value={groupCallDate} onChange={setGroupCallDate} />
+                    <DocumentDatePicker label="Дата вызова *" value={groupCallDate} onChange={setGroupCallDate} />
                     {groupErrors.callDate && <p className="text-xs text-red-500 mt-1">{groupErrors.callDate}</p>}
                   </div>
                 ) : (
                   <>
                     <div className="w-[130px]">
-                      <DatePicker label="Дата начала *" value={groupCallDateStart} onChange={setGroupCallDateStart} />
+                      <DocumentDatePicker label="Дата начала *" value={groupCallDateStart} onChange={setGroupCallDateStart} />
                       {groupErrors.callDateStart && <p className="text-xs text-red-500 mt-1">{groupErrors.callDateStart}</p>}
                     </div>
                     <div className="w-[130px]">
-                      <DatePicker label="Дата конца *" value={groupCallDateEnd} onChange={setGroupCallDateEnd} />
+                      <DocumentDatePicker label="Дата конца *" value={groupCallDateEnd} onChange={setGroupCallDateEnd} />
                       {groupErrors.callDateEnd && <p className="text-xs text-red-500 mt-1">{groupErrors.callDateEnd}</p>}
                     </div>
                   </>

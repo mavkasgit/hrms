@@ -6,6 +6,7 @@ import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shar
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import { Button } from "@/shared/ui/button"
 import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { EmptyState } from "@/shared/ui/empty-state"
 import { Input } from "@/shared/ui/input"
 import { Skeleton } from "@/shared/ui/skeleton"
@@ -759,7 +760,7 @@ export function UnpaidLeavesPage() {
 
               <div className="flex gap-4">
                 <div className="w-[130px]">
-                  <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                  <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
                   {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                 </div>
                 <OrderNumberField
@@ -771,11 +772,11 @@ export function UnpaidLeavesPage() {
                   error={errors.orderNumber}
                 />
                 <div className="w-[130px]">
-                  <DatePicker label="Дата начала *" value={vacationStart} onChange={setVacationStart} />
+                  <DocumentDatePicker label="Дата начала *" value={vacationStart} onChange={setVacationStart} />
                   {errors.vacationStart && <p className="text-xs text-red-500 mt-1">{errors.vacationStart}</p>}
                 </div>
                 <div className="w-[130px]">
-                  <DatePicker label="Дата конца *" value={vacationEnd} onChange={setVacationEnd} />
+                  <DocumentDatePicker label="Дата конца *" value={vacationEnd} onChange={setVacationEnd} />
                   {errors.vacationEnd && <p className="text-xs text-red-500 mt-1">{errors.vacationEnd}</p>}
                 </div>
                 <div className="w-[110px]">
@@ -825,7 +826,7 @@ export function UnpaidLeavesPage() {
             <div className="grid gap-4">
               <div className="flex gap-4">
                 <div className="w-[130px]">
-                  <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                  <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
                   {groupErrors.orderDate && <p className="text-xs text-red-500 mt-1">{groupErrors.orderDate}</p>}
                 </div>
                 <OrderNumberField
@@ -837,7 +838,7 @@ export function UnpaidLeavesPage() {
                   error={groupErrors.orderNumber}
                 />
                 <div className="w-[130px]">
-                  <DatePicker label="Дата начала отпуска *" value={groupVacationStart} onChange={setGroupVacationStartAndRecalc} />
+                  <DocumentDatePicker label="Дата начала отпуска *" value={groupVacationStart} onChange={setGroupVacationStartAndRecalc} />
                   {groupErrors.vacationStart && <p className="text-xs text-red-500 mt-1">{groupErrors.vacationStart}</p>}
                 </div>
               </div>

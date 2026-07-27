@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { FilePen, X } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs"
 import { Button } from "@/shared/ui/button"
-import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
@@ -247,7 +247,7 @@ export function VacationPostponePage() {
                     <div className="space-y-4">
                       <div className="flex flex-wrap gap-4">
                         <div className="w-[130px]">
-                          <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                          <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
                           {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                         </div>
                         <OrderNumberField
@@ -266,7 +266,7 @@ export function VacationPostponePage() {
                         </p>
                         <div className="flex flex-wrap gap-4 items-start">
                           <div className="w-[130px]">
-                            <DatePicker
+                            <DocumentDatePicker
                               label="Начало переноса *"
                               value={postponeStartDate}
                               onChange={setPostponeStartDate}
@@ -276,7 +276,7 @@ export function VacationPostponePage() {
                             )}
                           </div>
                           <div className="w-[130px]">
-                            <DatePicker
+                            <DocumentDatePicker
                               label="Конец переноса *"
                               value={postponeEndDate}
                               onChange={setPostponeEndDate}

@@ -1,5 +1,5 @@
 import { Input } from "@/shared/ui/input"
-import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { addYearsToDate } from "@/shared/utils/date"
 import { FieldGroup } from "../components/FieldGroup"
 import { QuickOptions } from "../components/QuickOptions"
@@ -42,7 +42,7 @@ export function NotificationContractExtensionFields({ extraFields, extraFieldErr
       {/* Old contract */}
       <FieldGroup title="Предыдущий контракт">
         <div>
-          <DatePicker
+          <DocumentDatePicker
             label="Дата начала"
             value={(extraFields["old_contract_start"] as string) || ""}
             onChange={(v) => onFieldChange("old_contract_start", v)}
@@ -53,7 +53,7 @@ export function NotificationContractExtensionFields({ extraFields, extraFieldErr
           )}
         </div>
         <div>
-          <DatePicker
+          <DocumentDatePicker
             label="Дата окончания"
             value={(extraFields["old_contract_end"] as string) || ""}
             onChange={handleOldContractEndChange}
@@ -80,7 +80,7 @@ export function NotificationContractExtensionFields({ extraFields, extraFieldErr
       {/* New contract */}
       <FieldGroup title="Новый контракт" className="pt-2">
         <div>
-          <DatePicker
+          <DocumentDatePicker
             label="Дата начала"
             value={(extraFields["new_contract_start"] as string) || ""}
             onChange={handleStartDateChange}
@@ -91,7 +91,7 @@ export function NotificationContractExtensionFields({ extraFields, extraFieldErr
           )}
         </div>
         <div>
-          <DatePicker
+          <DocumentDatePicker
             label="Дата окончания"
             value={(extraFields["new_contract_end"] as string) || ""}
             onChange={(v) => onFieldChange("new_contract_end", v)}

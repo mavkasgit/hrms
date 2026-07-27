@@ -10,7 +10,7 @@ import {
 } from "@/shared/ui/tooltip"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
-import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
@@ -1050,7 +1050,7 @@ export function VacationsPage() {
 
               <div className="flex gap-4 items-end">
                 <div className="w-[130px]">
-                  <DatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                  <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
                   {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                 </div>
                 <OrderNumberField
@@ -1062,11 +1062,11 @@ export function VacationsPage() {
                   error={errors.orderNumber}
                 />
                 <div className="w-[130px]">
-                  <DatePicker label="Дата начала *" value={startDate} onChange={setStartDate} />
+                  <DocumentDatePicker label="Дата начала *" value={startDate} onChange={setStartDate} />
                   {errors.startDate && <p className="text-xs text-red-500 mt-1">{errors.startDate}</p>}
                 </div>
                 <div className="w-[130px]">
-                  <DatePicker label="Дата конца *" value={endDate} onChange={setEndDate} />
+                  <DocumentDatePicker label="Дата конца *" value={endDate} onChange={setEndDate} />
                   {errors.endDate && <p className="text-xs text-red-500 mt-1">{errors.endDate}</p>}
                 </div>
                 {startDate && endDate && (

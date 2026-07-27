@@ -13,13 +13,6 @@ class OrderCreate(BaseModel):
     extra_fields: Optional[dict[str, Any]] = None
     draft_id: Optional[str] = None
 
-    @field_validator("order_date")
-    @classmethod
-    def order_date_not_future(cls, v: date) -> date:
-        if v > date.today():
-            raise ValueError("Дата приказа не может быть в будущем")
-        return v
-
 
 class OrderResponse(BaseModel):
     id: int

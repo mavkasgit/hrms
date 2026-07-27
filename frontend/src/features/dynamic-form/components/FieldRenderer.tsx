@@ -1,4 +1,4 @@
-import { DatePicker } from "@/shared/ui/date-picker"
+import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { Input } from "@/shared/ui/input"
 import { ComboboxCreate } from "@/shared/ui/combobox-create"
 import { addYearsToDate, addMonthsToDate } from "@/shared/utils/date"
@@ -104,7 +104,7 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
   if (field.type === "date") {
     return (
       <div className="inline-flex flex-col min-w-0">
-        <DatePicker
+        <DocumentDatePicker
           label={field.label}
           value={displayValue}
           onChange={(v) => onChange(field.key, v)}
