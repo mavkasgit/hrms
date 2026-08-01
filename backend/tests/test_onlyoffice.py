@@ -576,3 +576,261 @@ async def test_get_current_user_or_onlyoffice_query_token(monkeypatch):
     assert exc_info.value.status_code == 401
 
 
+# === #30: Commit from server metadata ===
+
+
+@pytest.mark.asyncio
+async def test_commit_single_order_from_metadata(monkeypatch, tmp_path):
+    """#30 AC1/AC6: commit creates order from server metadata without frontend payload."""
+    import json
+    from app.services.order_draft_service import order_draft_service
+    from app.services.order_service import OrderService
+
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    order_draft_service._drafts_dir = tmp_path / ".drafts"
+    order_draft_service.ensure_drafts_dir()
+
+    draft_id = "aaaaaaaa-1111-2222-3333-444444444444"
+    # Create draft docx
+    draft_path = order_draft_service._drafts_dir / f"{draft_id}_order.docx"
+    draft_path.write_bytes(b"draft-content")
+
+    # Create metadata
+    metadata = {
+        "draft_id": draft_id,
+        "kind": "single_order",
+        "order_type_code": "vacation_paid",
+        "payload": {
+            "employee_id": 5,
+            "order_type_id": 2,
+            "order_date": "2026-08-01",
+            "order_number": "99-К",
+            "notes": None,
+            "extra_fields": {"vacation_start": "2026-08-10", "vacation_end": "2026-08-20"},
+        },
+        "created_by": "admin",
+        "created_at": "2026-08-01T12:00:00+00:00",
+        "status": "draft",
+        "schema_version": 1,
+    }
+    order_draft_service.save_draft_metadata(draft_id, metadata)
+
+    svc = OrderService()
+    fake_order = SimpleNamespace(id=77, order_number="99-К")
+
+    async def fake_create_order(db, data):
+        # Verify OrderCreate was built from metadata
+        assert data.employee_id == 5
+        assert data.order_type_id == 2
+        assert data.order_date == date(2026, 8, 1)
+        assert data.order_number == "99-К"
+        assert data.extra_fields == {"vacation_start": "2026-08-10", "vacation_end": "2026-08-20"}
+        assert data.draft_id == draft_id
+        return fake_order
+
+    monkeypatch.setattr(svc, "create_order", fake_create_order)
+
+    db = MagicMock()
+    order = await svc.create_single_order_from_draft(db, draft_id)
+    assert order.id == 77
+
+
+@pytest.mark.asyncio
+async def test_commit_draft_without_metadata_raises_outdated(monkeypatch, tmp_path):
+    """#30 AC3: draft without metadata is rejected with 'Черновик устарел' message."""
+    from app.services.order_draft_service import order_draft_service
+    from app.services.order_service import OrderService
+
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    order_draft_service._drafts_dir = tmp_path / ".drafts"
+    order_draft_service.ensure_drafts_dir()
+
+    draft_id = "bbbbbbbb-1111-2222-3333-444444444444"
+    # Create draft docx but NO metadata
+    draft_path = order_draft_service._drafts_dir / f"{draft_id}_order.docx"
+    draft_path.write_bytes(b"draft-no-meta")
+
+    svc = OrderService()
+    db = MagicMock()
+
+    with pytest.raises(HRMSException) as exc_info:
+        await svc.create_single_order_from_draft(db, draft_id)
+
+    assert exc_info.value.status_code == 409
+    assert "Черновик устарел" in exc_info.value.message
+    assert exc_info.value.error_code == "draft_outdated"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_commit_returns_success(monkeypatch, tmp_path):
+    """#30 AC5: duplicate commit of same draft doesn't create second order (silent success)."""
+    from app.api.onlyoffice import commit_order_draft
+    from app.services.order_draft_service import order_draft_service
+
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    order_draft_service._drafts_dir = tmp_path / ".drafts"
+    order_draft_service.ensure_drafts_dir()
+
+    draft_id = "cccccccc-1111-2222-3333-444444444444"
+    draft_path = order_draft_service._drafts_dir / f"{draft_id}_order.docx"
+    draft_path.write_bytes(b"draft-dup")
+
+    # Simulate already-claimed lock (first commit succeeded)
+    lock_path = order_draft_service._commit_lock_path(draft_id)
+    lock_path.write_bytes(b"1")
+
+    db = MagicMock()
+    result = await commit_order_draft(draft_id=draft_id, db=db, current_user="admin")
+
+    assert result["duplicate"] is True
+    assert "уже создан" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_failed_commit_releases_lock_for_retry(monkeypatch, tmp_path):
+    """#30 AC4: on failed save, draft remains available for retry (lock released)."""
+    from app.api.onlyoffice import commit_order_draft
+    from app.services.order_draft_service import order_draft_service
+    from app.services.order_service import order_service as order_service_singleton
+
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    order_draft_service._drafts_dir = tmp_path / ".drafts"
+    order_draft_service.ensure_drafts_dir()
+
+    draft_id = "dddddddd-1111-2222-3333-444444444444"
+    draft_path = order_draft_service._drafts_dir / f"{draft_id}_order.docx"
+    draft_path.write_bytes(b"draft-retry")
+
+    # Metadata exists
+    metadata = {
+        "draft_id": draft_id,
+        "kind": "single_order",
+        "order_type_code": "general_order",
+        "payload": {
+            "employee_id": None,
+            "order_type_id": 1,
+            "order_date": "2026-08-01",
+            "order_number": "50",
+            "notes": None,
+            "extra_fields": None,
+        },
+        "created_by": "admin",
+        "created_at": "2026-08-01T12:00:00+00:00",
+        "status": "draft",
+        "schema_version": 1,
+    }
+    order_draft_service.save_draft_metadata(draft_id, metadata)
+
+    # Make create_single_order_from_draft fail
+    async def failing_create(db, draft_id_arg):
+        raise RuntimeError("DB connection lost")
+
+    monkeypatch.setattr(order_service_singleton, "create_single_order_from_draft", failing_create)
+
+    db = MagicMock()
+    with pytest.raises(RuntimeError, match="DB connection lost"):
+        await commit_order_draft(draft_id=draft_id, db=db, current_user="admin")
+
+    # Lock must be released so retry is possible
+    lock_path = order_draft_service._commit_lock_path(draft_id)
+    assert not lock_path.exists(), "commit lock must be released after failure"
+    # Draft file still exists
+    assert draft_path.exists()
+
+
+# --- Tests for list_drafts (#32) ---
+
+
+def test_list_drafts_returns_metadata(monkeypatch, tmp_path):
+    """list_drafts returns metadata for existing drafts sorted by created_at desc."""
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    svc = OrderDraftService()
+    svc.ensure_drafts_dir()
+
+    # Create two drafts with docx files and metadata
+    draft_id_1 = "aaaaaaaa-1111-2222-3333-444444444444"
+    draft_id_2 = "bbbbbbbb-1111-2222-3333-444444444444"
+
+    (svc._drafts_dir / f"{draft_id_1}_order1.docx").write_bytes(b"PK1")
+    (svc._drafts_dir / f"{draft_id_2}_order2.docx").write_bytes(b"PK2")
+
+    meta1 = {
+        "draft_id": draft_id_1,
+        "kind": "single_order",
+        "order_type_code": "vacation_paid",
+        "payload": {"employee_id": 1, "order_number": "10-К", "order_date": "2026-07-01"},
+        "created_by": "admin",
+        "created_at": "2026-07-01T10:00:00+00:00",
+        "status": "draft",
+        "schema_version": 1,
+    }
+    meta2 = {
+        "draft_id": draft_id_2,
+        "kind": "group_order",
+        "order_type_code": "vacation_unpaid_group",
+        "payload": {"order_number": "20-К", "order_date": "2026-08-01", "employees": [{"employee_id": 1}, {"employee_id": 2}]},
+        "created_by": "admin",
+        "created_at": "2026-08-01T12:00:00+00:00",
+        "status": "draft",
+        "schema_version": 1,
+    }
+    svc.save_draft_metadata(draft_id_1, meta1)
+    svc.save_draft_metadata(draft_id_2, meta2)
+
+    result = svc.list_drafts()
+    assert len(result) == 2
+    # Newest first
+    assert result[0]["draft_id"] == draft_id_2
+    assert result[1]["draft_id"] == draft_id_1
+    assert result[0]["kind"] == "group_order"
+    assert result[1]["order_type_code"] == "vacation_paid"
+
+
+def test_list_drafts_skips_orphaned_metadata(monkeypatch, tmp_path):
+    """list_drafts skips metadata whose docx file is missing."""
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    svc = OrderDraftService()
+    svc.ensure_drafts_dir()
+
+    # Draft with docx
+    draft_id_ok = "cccccccc-1111-2222-3333-444444444444"
+    (svc._drafts_dir / f"{draft_id_ok}_order.docx").write_bytes(b"PK")
+    svc.save_draft_metadata(draft_id_ok, {
+        "draft_id": draft_id_ok,
+        "kind": "single_order",
+        "order_type_code": "general_order",
+        "payload": {"order_number": "5"},
+        "created_by": "admin",
+        "created_at": "2026-07-15T09:00:00+00:00",
+        "status": "draft",
+        "schema_version": 1,
+    })
+
+    # Orphaned metadata (no docx)
+    draft_id_orphan = "dddddddd-5555-6666-7777-888888888888"
+    svc.save_draft_metadata(draft_id_orphan, {
+        "draft_id": draft_id_orphan,
+        "kind": "single_order",
+        "order_type_code": "general_order",
+        "payload": {"order_number": "6"},
+        "created_by": "admin",
+        "created_at": "2026-07-16T09:00:00+00:00",
+        "status": "draft",
+        "schema_version": 1,
+    })
+
+    result = svc.list_drafts()
+    assert len(result) == 1
+    assert result[0]["draft_id"] == draft_id_ok
+
+
+def test_list_drafts_empty_when_no_drafts(monkeypatch, tmp_path):
+    """list_drafts returns empty list when no drafts exist."""
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    svc = OrderDraftService()
+
+    result = svc.list_drafts()
+    assert result == []
+

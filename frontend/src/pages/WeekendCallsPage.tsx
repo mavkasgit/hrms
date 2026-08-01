@@ -277,25 +277,8 @@ export function WeekendCallsPage() {
       return
     }
 
-    const extraFields: Record<string, string> = {}
-    if (mode === "single") {
-      extraFields.call_date = callDate
-    } else {
-      extraFields.call_date_start = callDateStart
-      extraFields.call_date_end = callDateEnd
-    }
-
     commitDraftMutation.mutate(
-      {
-        draftId,
-        order: {
-          employee_id: selectedEmployee.id,
-          order_type_id: weekendCallType.id,
-          order_date: orderDate,
-          order_number: orderNumber,
-          extra_fields: extraFields,
-        },
-      },
+      draftId,
       {
         onSuccess: (order) => {
           if (openPrint && order?.id) {

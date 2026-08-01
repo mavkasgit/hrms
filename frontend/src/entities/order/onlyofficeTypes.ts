@@ -26,7 +26,10 @@ export interface OrderDraftResponse {
   file_path: string
 }
 
-export type CommitOrderDraftResponse = Order
+/** Backend возвращает Order либо {duplicate: true}, если черновик уже закоммичен (#31). */
+export type CommitOrderDraftResponse =
+  | Order
+  | { message: string; duplicate: true; id?: undefined; order_number?: undefined }
 
 export interface GroupDraftResponse {
   draft_id: string
@@ -49,4 +52,19 @@ export interface OnlyOfficeSaveStatusResponse {
   oo_status: number | null
   file_mtime: number | null
   error: string | null
+}
+
+export interface DraftListItem {
+  draft_id: string
+  kind: "single_order" | "group_order"
+  order_type_code: string | null
+  order_type_name: string | null
+  order_number: string | null
+  order_date: string | null
+  employee_id: number | null
+  employee_name: string | null
+  group_employee_count?: number
+  created_by: string | null
+  created_at: string | null
+  status: string
 }

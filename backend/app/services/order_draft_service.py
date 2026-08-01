@@ -104,6 +104,14 @@ class OrderDraftService:
             ) from exc
         return draft_path
 
+    def release_commit_lock(self, draft_id: str) -> None:
+        """Release the commit lock so the draft can be retried after a failed save (#30)."""
+        lock_path = self._commit_lock_path(draft_id)
+        try:
+            lock_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
     def delete_draft(self, draft_id: str) -> None:
         try:
             draft_path = self.get_draft_path(draft_id)
@@ -145,6 +153,27 @@ class OrderDraftService:
             raise HRMSException("Метаданные черновика не найдены", "draft_metadata_not_found", status_code=404)
         with open(metadata_path, "r", encoding="utf-8") as f:
             return json.load(f)
+
+    def list_drafts(self) -> list[dict[str, Any]]:
+        """List all drafts with their metadata."""
+        self.ensure_drafts_dir()
+        drafts: list[dict[str, Any]] = []
+        for meta_file in self._drafts_dir.glob("*.json"):
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+                # Only include if the docx still exists
+                draft_id = metadata.get("draft_id", meta_file.stem)
+                try:
+                    self.get_draft_path(draft_id)
+                except HRMSException:
+                    continue  # skip orphaned metadata
+                drafts.append(metadata)
+            except (json.JSONDecodeError, OSError):
+                continue
+        # Sort by created_at descending (newest first)
+        drafts.sort(key=lambda d: d.get("created_at", ""), reverse=True)
+        return drafts
 
     async def create_group_draft(
         self,

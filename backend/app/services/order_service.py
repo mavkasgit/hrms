@@ -162,6 +162,41 @@ class OrderService:
                 )
         return order
 
+    async def create_single_order_from_draft(self, db: AsyncSession, draft_id: str) -> Order:
+        """
+        Commit a single-order draft using server-stored metadata (#30).
+
+        Reads .drafts/{draft_id}.json, validates kind/schema_version,
+        constructs OrderCreate from payload and delegates to create_order.
+        """
+        try:
+            metadata = order_draft_service.read_draft_metadata(draft_id)
+        except HRMSException as exc:
+            if exc.status_code == 404:
+                raise HRMSException(
+                    "Черновик устарел, создайте заново",
+                    "draft_outdated",
+                    status_code=409,
+                ) from exc
+            raise
+
+        if metadata.get("kind") != "single_order":
+            raise HRMSException("Неверный тип черновика", "invalid_draft_kind", status_code=400)
+        if metadata.get("schema_version", 0) != 1:
+            raise HRMSException("Неподдерживаемая версия схемы черновика", "unsupported_draft_schema", status_code=400)
+
+        payload = metadata["payload"]
+        data = OrderCreate(
+            employee_id=payload.get("employee_id"),
+            order_type_id=payload["order_type_id"],
+            order_date=date.fromisoformat(payload["order_date"]) if payload.get("order_date") else date.today(),
+            order_number=payload.get("order_number"),
+            notes=payload.get("notes"),
+            extra_fields=payload.get("extra_fields"),
+            draft_id=draft_id,
+        )
+        return await self.create_order(db, data)
+
     async def _do_create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
         from app.core.paths import storage_path as resolve_storage_path
 

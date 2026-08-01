@@ -2,6 +2,7 @@ import api from "@/shared/api/axios"
 import type { GroupOrderCreate, Order, OrderCreate } from "./types"
 import type {
   CommitOrderDraftResponse,
+  DraftListItem,
   GroupDraftResponse,
   OnlyOfficeConfig,
   OnlyOfficeForceSaveResponse,
@@ -66,8 +67,8 @@ export async function fetchDraftSaveStatus(draftId: string, saveId: string) {
   return data
 }
 
-export async function commitOrderDraft(draftId: string, order: OrderCreate) {
-  const { data } = await api.post<CommitOrderDraftResponse>(`/orders/drafts/${draftId}/commit`, order)
+export async function commitOrderDraft(draftId: string) {
+  const { data } = await api.post<CommitOrderDraftResponse>(`/orders/drafts/${draftId}/commit`)
   return data
 }
 
@@ -97,5 +98,10 @@ export async function createGroupDraft(payload: GroupOrderCreate) {
 
 export async function commitGroupDraft(draftId: string) {
   const { data } = await api.post<Order>(`/orders/group-drafts/${draftId}/commit`)
+  return data
+}
+
+export async function fetchOrderDrafts() {
+  const { data } = await api.get<DraftListItem[]>("/orders/drafts")
   return data
 }

@@ -28,8 +28,7 @@ export function useDraftOnlyOfficeConfig(draftId: string | null) {
 export function useCommitOrderDraft() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ draftId, order }: { draftId: string; order: OrderCreate }) =>
-      api.commitOrderDraft(draftId, order),
+    mutationFn: (draftId: string) => api.commitOrderDraft(draftId),
     onSuccess: (order) => {
       queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
       queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
@@ -39,6 +38,7 @@ export function useCommitOrderDraft() {
       queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
       queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
       queryClient.invalidateQueries({ queryKey: ["next-order-number"] })
+      queryClient.invalidateQueries({ queryKey: ["order-drafts"] })
       showGlobalToast({
         title: "Приказ создан",
         description: order?.order_number
@@ -52,9 +52,20 @@ export function useCommitOrderDraft() {
   })
 }
 
+export function useOrderDrafts() {
+  return useQuery({
+    queryKey: ["order-drafts"],
+    queryFn: () => api.fetchOrderDrafts(),
+  })
+}
+
 export function useDeleteOrderDraft() {
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (draftId: string) => api.deleteOrderDraft(draftId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["order-drafts"] })
+    },
   })
 }
 
@@ -81,6 +92,7 @@ export function useCommitGroupDraft() {
       queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
       queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
+      queryClient.invalidateQueries({ queryKey: ["order-drafts"] })
       showGlobalToast({
         title: "Приказ создан",
         description: order?.order_number

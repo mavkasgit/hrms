@@ -249,20 +249,7 @@ export function UnpaidLeavesPage() {
       return
     }
     commitDraftMutation.mutate(
-      {
-        draftId,
-        order: {
-          employee_id: selectedEmployee.id,
-          order_type_id: unpaidLeaveType.id,
-          order_date: orderDate,
-          order_number: orderNumber,
-          extra_fields: {
-            vacation_start: vacationStart,
-            vacation_end: vacationEnd,
-            vacation_days: Number(vacationDays),
-          },
-        },
-      },
+      draftId,
       {
         onSuccess: (order) => {
           if (openPrint && order?.id) {

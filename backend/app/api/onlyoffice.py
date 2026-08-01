@@ -346,6 +346,50 @@ async def order_onlyoffice_save_status(
     return await onlyoffice_save_tracker.get(save_id)
 
 
+@router.get("/orders/drafts")
+async def list_order_drafts(
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    drafts = order_draft_service.list_drafts()
+
+    result = []
+    for meta in drafts:
+        payload = meta.get("payload", {})
+        item = {
+            "draft_id": meta.get("draft_id"),
+            "kind": meta.get("kind"),
+            "order_type_code": meta.get("order_type_code"),
+            "order_number": payload.get("order_number"),
+            "order_date": payload.get("order_date"),
+            "employee_id": payload.get("employee_id"),
+            "employee_name": None,
+            "order_type_name": None,
+            "created_by": meta.get("created_by"),
+            "created_at": meta.get("created_at"),
+            "status": meta.get("status", "draft"),
+        }
+        # Resolve employee name
+        if payload.get("employee_id"):
+            emp = await order_service.get_employee_by_id(db, payload["employee_id"])
+            if emp:
+                item["employee_name"] = emp.name
+        # Resolve order type name
+        if meta.get("order_type_code"):
+            try:
+                ot = await order_service.get_order_type_by_code(db, meta["order_type_code"])
+                item["order_type_name"] = ot.name
+            except Exception:
+                item["order_type_name"] = meta["order_type_code"]
+        # For group drafts, show employee count
+        if meta.get("kind") == "group_order":
+            employees = payload.get("employees", [])
+            item["group_employee_count"] = len(employees)
+        result.append(item)
+    return result
+
+
 @router.post("/orders/drafts")
 async def create_order_draft(
     data: OrderCreate,
@@ -526,14 +570,26 @@ async def draft_onlyoffice_save_status(
 @router.post("/orders/drafts/{draft_id}/commit")
 async def commit_order_draft(
     draft_id: str,
-    data: OrderCreate,
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
     # Atomic claim prevents double-create when UI sends commit twice (postMessage+BC race).
-    order_draft_service.claim_draft_for_commit(draft_id)
-    order = await order_service.create_order(db, data.model_copy(update={"draft_id": draft_id}))
+    try:
+        order_draft_service.claim_draft_for_commit(draft_id)
+    except HRMSException as exc:
+        if exc.status_code == 409:
+            # Duplicate commit: draft already committed — return success silently (#30 AC5)
+            return {"message": "Приказ уже создан", "duplicate": True}
+        raise
+
+    try:
+        order = await order_service.create_single_order_from_draft(db, draft_id)
+    except Exception:
+        # Release lock so the draft remains available for retry (#30 AC4)
+        order_draft_service.release_commit_lock(draft_id)
+        raise
+
     return order_service._serialize_order(order)
 
 

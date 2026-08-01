@@ -2,8 +2,8 @@ import { useState } from "react"
 import { useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { useDraftOnlyOfficeConfig } from "@/entities/order/useOnlyOffice"
-import { forceSaveDraft, fetchDraftSaveStatus } from "@/entities/order/onlyofficeApi"
-import { publishDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
+import { commitOrderDraft, forceSaveDraft, fetchDraftSaveStatus } from "@/entities/order/onlyofficeApi"
+import { openOrderPrint } from "@/entities/order/orderActions"
 import { requestAndWaitOnlyOfficeSave } from "@/entities/order/waitForOnlyOfficeSave"
 import {
   EditorSaveBanner,
@@ -53,7 +53,13 @@ export function DraftOrderEditorPage() {
         })
 
         beginSave("Создаём приказ…")
-        publishDraftOrderSave({ draftId, openPrint, printWindowName })
+        // Коммитим черновик напрямую из окна редактора — родительская страница не нужна (#31).
+        const result = await commitOrderDraft(draftId)
+
+        // duplicate: true — приказ уже создан параллельным коммитом, молча считаем успехом.
+        if (openPrint && "id" in result && result.id) {
+          openOrderPrint(result.id, printWindowName || "_blank")
+        }
       })
 
       succeedSave()
