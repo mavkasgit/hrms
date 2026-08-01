@@ -1,10 +1,11 @@
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Optional, List, TYPE_CHECKING
 
 from sqlalchemy import (
-    Column, Integer, String, Date, ForeignKey, Boolean, Text, Index, UniqueConstraint, Time
+    Column, Integer, String, Date, DateTime, ForeignKey, Boolean, Text, Index, UniqueConstraint, Time
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
 
 from app.models.base import Base
 
@@ -77,6 +78,11 @@ class WorkScheduleEntry(Base):
     planned_hours_override: Mapped[Optional[float]] = mapped_column(nullable=True)
 
     note: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    # Когда запись была последний раз изменена (для отслеживания «приказ изменился»)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     schedule: Mapped["WorkSchedule"] = relationship("WorkSchedule", back_populates="entries")
 

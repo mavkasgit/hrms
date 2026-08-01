@@ -33,7 +33,7 @@ import { getAdminTokenFromStorage } from './auth'
 
 export const API_BASE = process.env.E2E_API_URL
   ? process.env.E2E_API_URL.replace(/\/api$/, '')
-  : 'http://127.0.0.1:8000'
+  : 'http://127.0.0.1:8011'
 
 // =============================================================================
 // RESOURCE TRACKERS

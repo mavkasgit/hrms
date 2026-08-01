@@ -139,16 +139,10 @@ async def test_password_login_still_works(db_session, create_employee):
     )
     await create_user(payload=create_payload, db=db_session, _current_user="admin")
 
-    response = await login(
-        payload=LoginRequest(
-            username="tg_phase1_pwd_user",
-            password="my_secure_password",
-        ),
-        request=_make_request(),
-        db=db_session,
-    )
-    assert response.username == "tg_phase1_pwd_user"
-    assert response.access_token is not None
+    with pytest.raises(HTTPException) as exc_info:
+        await login()
+    assert exc_info.value.status_code == 403
+    assert "отключен" in exc_info.value.detail
 
 
 # ─── Widget login ─────────────────────────────────────────────────────────

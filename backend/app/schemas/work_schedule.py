@@ -65,3 +65,34 @@ class WorkScheduleListResponse(BaseModel):
 
 class BulkSetEntriesRequest(BaseModel):
     entries: List[WorkScheduleEntryCreate]
+
+
+# --- Частичная массовая запись (выделение в табеле) ---
+
+
+class PartialEntryItem(BaseModel):
+    """Одна ячейка массового заполнения: сотрудник + дата + значение."""
+
+    employee_id: int
+    work_date: date
+    shift_type_code: Optional[str] = Field(None, max_length=20)
+    planned_hours_override: Optional[float] = None
+
+
+class PartialBulkRequest(BaseModel):
+    entries: List[PartialEntryItem]
+
+
+class PartialEntryResult(BaseModel):
+    """Построчный результат записи одной ячейки."""
+
+    employee_id: int
+    work_date: date
+    success: bool
+    error: Optional[str] = None
+
+
+class PartialBulkResponse(BaseModel):
+    results: List[PartialEntryResult]
+    success_count: int
+    error_count: int

@@ -43,8 +43,8 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     container_name: hrms-backend-test
-    expose:
-      - "8000"
+    ports:
+      - "8011:8000"
     volumes:
       - orders_test_data:/app/data/orders
       - staffing_test_data:/app/data/staffing

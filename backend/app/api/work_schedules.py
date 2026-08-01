@@ -13,6 +13,8 @@ from app.schemas.work_schedule import (
     WorkScheduleEntryCreate,
     WorkScheduleEntryResponse,
     BulkSetEntriesRequest,
+    PartialBulkRequest,
+    PartialBulkResponse,
 )
 from app.services.work_schedule_service import (
     work_schedule_service,
@@ -85,6 +87,23 @@ async def create_work_schedule(
     return WorkScheduleResponse.model_validate(refreshed)
 
 
+@router.post("/partial-bulk", response_model=PartialBulkResponse)
+async def partial_bulk_set_entries(
+    data: PartialBulkRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Массовое заполнение выделенного диапазона табеля.
+
+    Принимает список (сотрудник, дата, значение), сам создаёт графики на
+    нужные месяцы и возвращает построчный результат. Частичный отказ не
+    откатывает успешные строки.
+    """
+    return await work_schedule_service.partial_bulk_set(
+        db, [e.model_dump() for e in data.entries], current_user
+    )
+
+
 @router.put("/{schedule_id}", response_model=WorkScheduleResponse)
 async def update_work_schedule(
     schedule_id: int,
@@ -98,8 +117,6 @@ async def update_work_schedule(
         )
     except WorkScheduleNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
     refreshed = await work_schedule_service.get_schedule(db, schedule.id, with_entries=True)
     return WorkScheduleResponse.model_validate(refreshed)
 
@@ -170,8 +187,6 @@ async def set_work_schedule_entry(
         )
     except WorkScheduleNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return WorkScheduleEntryResponse.model_validate(entry)
@@ -193,8 +208,6 @@ async def bulk_set_entries(
         )
     except WorkScheduleNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     refreshed = await work_schedule_service.get_schedule(db, schedule_id, with_entries=True)
@@ -215,5 +228,3 @@ async def delete_work_schedule_entry(
         await work_schedule_service.delete_entry(db, entry_id)
     except WorkScheduleNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))

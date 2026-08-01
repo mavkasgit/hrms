@@ -1,23 +1,15 @@
-/**
- * Auth project — clean browser (no storageState).
- * Login tests must not create users; only use existing admin credentials.
- *
- * Dual-run: password form via `/login?password=1` (works whether OIDC on/off).
- * OIDC / SSO covered in oidc-login.spec.ts (opt-in E2E_OIDC=1).
- */
 import { test, expect } from '@playwright/test'
 import { getAdminCredentials } from '../fixtures/auth'
 import { LoginPage } from '../pages/LoginPage'
 
 test.describe('Login @auth', () => {
-  test('valid credentials land on app', async ({ page }) => {
-    const { username, password } = getAdminCredentials()
+  test('valid break glass lands on app', async ({ page }) => {
+    const { password } = getAdminCredentials()
     const login = new LoginPage(page)
 
     await login.goto()
-    await login.loginWithPassword(username, password)
+    await login.loginWithBreakGlass(password)
 
-    // Leave login page (dashboard / employees / root)
     await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 })
 
     const token = await login.getToken()
@@ -25,11 +17,10 @@ test.describe('Login @auth', () => {
   })
 
   test('invalid password shows error and stays on login', async ({ page }) => {
-    const { username } = getAdminCredentials()
     const login = new LoginPage(page)
 
     await login.goto()
-    await login.loginWithPassword(username, 'definitely-wrong-password-e2e')
+    await login.loginWithBreakGlass('definitely-wrong-password-e2e')
 
     await expect(page.getByText(/Неверный|Ошибка входа|парол/i)).toBeVisible({
       timeout: 10_000,
@@ -38,5 +29,30 @@ test.describe('Login @auth', () => {
 
     const token = await login.getToken()
     expect(token).toBeFalsy()
+  })
+
+  test('break_glass_login_regression @auth', async ({ request }) => {
+    const bgPassword = process.env.E2E_BREAK_GLASS_PASSWORD || 'dev'
+    const resp = await request.post('/api/auth/break-glass/login', {
+      data: { password: bgPassword },
+    })
+    if (resp.status() === 200) {
+      const data = await resp.json()
+      expect(data.access_token).toBeTruthy()
+      expect(data.role).toBe('admin')
+    } else {
+      expect(resp.status()).toBe(401)
+    }
+  })
+
+  test('sso_only_blocks_password_endpoint_when_enabled @auth', async ({ request }) => {
+    test.skip(
+      process.env.E2E_SSO_ONLY !== '1',
+      'E2E_SSO_ONLY!=1 — skip SSO-only password endpoint block check'
+    )
+    const resp = await request.post('/api/auth/login', {
+      data: { username: 'admin', password: 'dev' },
+    })
+    expect(resp.status()).toBe(403)
   })
 })

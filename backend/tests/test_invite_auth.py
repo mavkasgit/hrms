@@ -49,76 +49,13 @@ async def test_invite_login_flow(db_session: AsyncSession, async_client: AsyncCl
     db_session.add(user)
     await db_session.commit()
 
-    # 2. Логин по неверному инвайт-коду должен отдавать 401
+    # 2. Логин по неверному инвайт-коду должен отдавать 410 (endpoint отключён)
     resp = await async_client.post("/api/auth/invite/login", json={"invite_code": "111111"})
-    assert resp.status_code == 401
+    assert resp.status_code == 410
 
-    # 3. Успешный логин
+    # 3. Любой инвайт-код (даже правильный) тоже 410 — endpoint отключён
     resp = await async_client.post("/api/auth/invite/login", json={"invite_code": "987654"})
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["username"] == "invite_test_user"
-    assert data["access_token"] is not None
-    # JWT carries session id
-    from jose import jwt as jose_jwt
-    claims = jose_jwt.get_unverified_claims(data["access_token"])
-    assert claims.get("sid")
-
-    token = data["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # 4. Проверяем /auth/me
-    me_resp = await async_client.get("/api/auth/me", headers=headers)
-    assert me_resp.status_code == 200
-    me_data = me_resp.json()
-    assert me_data["username"] == "invite_test_user"
-    assert me_data["has_telegram"] is False
-    assert me_data["has_password"] is False
-    assert me_data["password_changed_at"] is None
-    assert me_data["needs_security_setup"] is True
-    assert me_data["invite_code"] == "987654"
-
-    # 5. Установка пароля НЕ должна сбрасывать invite_code, пока нет Telegram
-    # (баннер онбординга остаётся, пока не выполнены оба пункта)
-    setup_resp = await async_client.post(
-        "/api/users/me/setup-password",
-        json={"password": "new_secure_password"},
-        headers=headers,
-    )
-    assert setup_resp.status_code == 200
-
-    await db_session.refresh(user)
-    assert user.invite_code == "987654"
-    assert user.password_hash != "sso_bypass_hash"
-    assert user.password_changed_at is not None
-
-    me_resp = await async_client.get("/api/auth/me", headers=headers)
-    assert me_resp.status_code == 200
-    me_data = me_resp.json()
-    assert me_data["has_password"] is True
-    assert me_data["has_telegram"] is False
-    assert me_data["password_changed_at"] is not None
-    assert me_data["needs_security_setup"] is True  # Telegram ещё не привязан
-    assert me_data["invite_code"] == "987654"
-
-    # 6. После привязки Telegram (при уже заданном пароле) invite_code сбрасывается
-    from app.repositories.user_repository import UserRepository
-
-    repo = UserRepository()
-    await repo.link_telegram(db_session, user, telegram_id=77770001)
-    await db_session.commit()
-    await db_session.refresh(user)
-
-    assert user.telegram_id == 77770001
-    assert user.invite_code is None
-
-    me_resp = await async_client.get("/api/auth/me", headers=headers)
-    assert me_resp.status_code == 200
-    me_data = me_resp.json()
-    assert me_data["has_password"] is True
-    assert me_data["has_telegram"] is True
-    assert me_data["needs_security_setup"] is False
-    assert me_data["invite_code"] is None
+    assert resp.status_code == 410
 
 
 async def test_link_telegram_keeps_invite_until_password(db_session: AsyncSession, create_employee):

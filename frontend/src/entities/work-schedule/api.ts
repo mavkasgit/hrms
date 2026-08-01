@@ -5,6 +5,8 @@ import type {
   WorkScheduleUpdate,
   WorkScheduleEntryCreate,
   BulkSetEntriesRequest,
+  PartialBulkRequest,
+  PartialBulkResponse,
 } from "./types"
 
 export async function fetchWorkSchedules(
@@ -71,4 +73,12 @@ export async function deleteWorkScheduleEntry(
   entryId: number
 ): Promise<void> {
   await api.delete(`/work-schedules/${scheduleId}/entries/${entryId}`)
+}
+
+/** Массовое заполнение выделенного диапазона табеля одним запросом */
+export async function partialBulkSet(
+  payload: PartialBulkRequest
+): Promise<PartialBulkResponse> {
+  const { data } = await api.post<PartialBulkResponse>("/work-schedules/partial-bulk", payload)
+  return data
 }

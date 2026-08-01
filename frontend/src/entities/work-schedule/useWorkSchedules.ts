@@ -10,8 +10,14 @@ import {
   setWorkScheduleEntry,
   bulkSetEntries,
   deleteWorkScheduleEntry,
+  partialBulkSet,
 } from "./api"
-import type { WorkScheduleCreate, WorkScheduleUpdate, BulkSetEntriesRequest } from "./types"
+import type {
+  WorkScheduleCreate,
+  WorkScheduleUpdate,
+  BulkSetEntriesRequest,
+  PartialBulkRequest,
+} from "./types"
 
 export function useWorkSchedules(year: number, month: number, employeeId?: number) {
   return useQuery({
@@ -112,6 +118,19 @@ export function useDeleteWorkScheduleEntry() {
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["work-schedule", variables.scheduleId] })
       qc.invalidateQueries({ queryKey: ["work-schedules"] })
+    },
+  })
+}
+
+/** Массовое заполнение выделенного диапазона табеля одним запросом */
+export function usePartialBulkSet() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: PartialBulkRequest) => partialBulkSet(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["work-schedules"] })
+      qc.invalidateQueries({ queryKey: ["timesheet-grid"] })
+      qc.invalidateQueries({ queryKey: ["timesheet"] })
     },
   })
 }

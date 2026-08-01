@@ -132,9 +132,9 @@ async def create_user(
     if telegram_id is not None:
         invite_code = None
 
-    # App SoT for roles: payload.role (default viewer). Non-OIDC legacy default remains admin if omitted.
+    # App SoT for roles: при OIDC роль назначит IdP при первом входе (fail-closed).
     if settings.AUTH_OIDC_ENABLED:
-        role = payload.role or "viewer"
+        role = "viewer"
     else:
         role = payload.role or "admin"
 
@@ -212,7 +212,12 @@ async def update_user(
         user.full_name = payload.full_name
         
     if payload.role is not None:
-        # App SoT: admins may change role even when OIDC is enabled
+        # Fail-closed: роль управляется IdP при OIDC
+        if settings.AUTH_OIDC_ENABLED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="role_managed_by_idp",
+            )
         user.role = payload.role
 
     # Telegram / phone link (field present in JSON, including null → clear)
@@ -309,7 +314,12 @@ async def generate_invite_code(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Сгенерировать одноразовый инвайт-код для пользователя."""
+    """
+    Сгенерировать приглашение для пользователя.
+    При AUTH_SSO_ONLY=True + Authentik API Token: создаёт пользователя в Authentik
+    и возвращает ссылку на enrollment flow.
+    Fallback / legacy: 6-значный код.
+    """
     if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -321,12 +331,49 @@ async def generate_invite_code(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Пользователь не найден",
         )
-    
+
+    from app.services import authentik_admin_service as ak
+
+    # SSO-only mode path: Authentik API user provisioning + enrollment invitation flow
+    if settings.AUTH_SSO_ONLY and ak.is_idp_admin_enabled():
+        ak_user: dict | None = None
+        try:
+            ak_user = await ak.get_authentik_user_by_username(user.username)
+            if not ak_user:
+                role_group = ak.HRMS_ADMIN_GROUP if user.role == "admin" else ak.HRMS_VIEWER_GROUP
+                ak_user = await ak.create_authentik_user(
+                    username=user.username,
+                    name=user.full_name,
+                    email=user.username,
+                    groups=[role_group],
+                )
+            if ak_user and "pk" in ak_user and not user.authentik_sub:
+                user.authentik_sub = str(ak_user["pk"])
+                db.add(user)
+                await db.commit()
+                await db.refresh(user)
+        except ak.AuthentikAdminError as exc:
+            raise HTTPException(
+                status_code=exc.status_code or 502,
+                detail=f"Ошибка создания пользователя в Authentik: {exc.message}",
+            ) from exc
+
+        invite_url: str | None = None
+        if ak_user and "pk" in ak_user:
+            invite_url = await ak.create_authentik_invite_link(int(ak_user["pk"]))
+
+        return {
+            "invite_type": "authentik_enrollment",
+            "invite_url": invite_url,
+            "authentik_linked": bool(user.authentik_sub),
+            "invite_code": None,
+        }
+
+    # Legacy path (dual-run mode): 6-digit invite code
     import secrets
-    
+
     for _ in range(5):
         invite_code = str(secrets.randbelow(900000) + 100000)
-        # Проверяем уникальность
         existing = await db.execute(
             select(User).where(User.invite_code == invite_code, User.is_deleted == False)
         )
@@ -337,13 +384,18 @@ async def generate_invite_code(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Не удалось сгенерировать уникальный инвайт-код",
         )
-        
+
     user.invite_code = invite_code
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    
-    return {"invite_code": invite_code}
+
+    return {
+        "invite_type": "local",
+        "invite_code": invite_code,
+        "invite_url": None,
+        "authentik_linked": bool(user.authentik_sub),
+    }
 
 
 @router.post("/me/setup-password")

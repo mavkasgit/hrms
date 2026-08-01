@@ -29,7 +29,7 @@ type OidcConfig = {
 }
 
 function apiBase(): string {
-  return (process.env.E2E_API_URL || 'http://localhost:8000/api').replace(
+  return (process.env.E2E_API_URL || 'http://localhost:8011/api').replace(
     /\/$/,
     ''
   )
@@ -103,6 +103,8 @@ test.describe('OIDC / Authentik @auth @oidc', () => {
       'authorization_url required when enabled'
     ).toBeTruthy()
     expect(config.client_id, 'client_id required when enabled').toBeTruthy()
+    expect(typeof (config as Record<string, unknown>).login_hint_enabled).toBe('boolean')
+    expect(typeof (config as Record<string, unknown>).sso_only).toBe('boolean')
   })
 
   test('sso_button_visible_when_enabled @oidc', async ({ page, request }) => {
@@ -120,8 +122,8 @@ test.describe('OIDC / Authentik @auth @oidc', () => {
       await expect(login.ssoButton).toBeVisible({ timeout: 15_000 })
     }
 
-    // Password dual-run still present on ?password=1
-    await expect(login.submitButton).toBeVisible()
+    // Break Glass form still present on ?password=1
+    await expect(login.breakGlassSubmitButton).toBeVisible()
   })
 
   test('oidc_redirects_to_idp @oidc', async ({ page, request }) => {

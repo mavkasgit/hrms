@@ -37,20 +37,20 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
-    port: 5173,
+    port: 5171,
     // COOP: same-origin breaks Telegram Login popup; allow popups for OIDC widget
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8011',
         changeOrigin: true,
       },
       // OnlyOffice proxy — mirrors nginx.conf routing for prod.
       //
       // DEV: Vite dev server serves frontend directly, so /web-apps/* requests
-      //      go to Vite (localhost:5173) and must be proxied to OnlyOffice
+      //      go to Vite (localhost:5171) and must be proxied to OnlyOffice
       //      container at localhost:8085. Without this, the browser gets 404.
       //
       // DOCKER/PROD: nginx proxies /web-apps/* -> onlyoffice:80 automatically.

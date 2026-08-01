@@ -45,3 +45,29 @@ export interface WorkScheduleUpdate {
 export interface BulkSetEntriesRequest {
   entries: WorkScheduleEntryCreate[]
 }
+
+/** Одна ячейка массового заполнения выделения: сотрудник + дата + значение */
+export interface PartialEntryItem {
+  employee_id: number
+  work_date: string
+  shift_type_code: string | null
+  planned_hours_override?: number | null
+}
+
+export interface PartialBulkRequest {
+  entries: PartialEntryItem[]
+}
+
+/** Построчный результат записи одной ячейки */
+export interface PartialEntryResult {
+  employee_id: number
+  work_date: string
+  success: boolean
+  error: string | null
+}
+
+export interface PartialBulkResponse {
+  results: PartialEntryResult[]
+  success_count: number
+  error_count: number
+}

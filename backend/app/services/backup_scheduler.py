@@ -6,6 +6,26 @@ from app.core.database import async_session
 from app.core.logging import logger
 from app.api.backups import _create_backup_archive, _iter_backup_files, _delete_backup_file, _read_backup_meta, _read_config_json
 
+import socket
+
+
+def _is_db_port_open() -> bool:
+    try:
+        from urllib.parse import urlparse
+        url_str = settings.DATABASE_URL
+        if "+asyncpg" in url_str:
+            url_str = url_str.replace("postgresql+asyncpg://", "http://")
+        elif "postgresql://" in url_str:
+            url_str = url_str.replace("postgresql://", "http://")
+        parsed = urlparse(url_str)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 5432
+        with socket.create_connection((host, port), timeout=0.1):
+            return True
+    except Exception:
+        return False
+
+
 # Уникальный 64-битный ключ для блокировки автоматического бэкапа (advisory lock)
 BACKUP_SCHEDULER_LOCK_ID = 238290234
 
@@ -51,7 +71,10 @@ async def run_backup_cycle():
 
     logger.info("Запуск проверки автоматического бэкапа", time=target_time_str)
 
-    # 2. Пытаемся захватить распределенный лок в PostgreSQL
+    # 2. Пытаемся захватить распределенный лок в PostgreSQL (если БД доступна)
+    if not _is_db_port_open():
+        return
+
     try:
         async with async_session() as session:
             async with session.begin():

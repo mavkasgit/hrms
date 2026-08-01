@@ -17,11 +17,30 @@ async_session = async_sessionmaker(
 )
 
 
+from fastapi import HTTPException, status
+
+
 async def get_db():
-    async with async_session() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+    try:
+        async with async_session() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+    except (OSError, ConnectionRefusedError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="База данных временно недоступна (PostgreSQL не запущен)",
+        )
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "connect call failed" in err_msg or "refused" in err_msg or "connection refused" in err_msg or "winerror 1225" in err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="База данных временно недоступна (PostgreSQL не запущен)",
+            )
+        raise
+
+

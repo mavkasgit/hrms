@@ -8,7 +8,7 @@ import {
   tryForceOidcRelogin,
   type OidcErrorInfo,
 } from "@/shared/api/oidcAuth"
-import { Button } from "@/shared/ui/button"
+
 
 /**
  * OIDC redirect target: /auth/callback?code=...&state=...
@@ -126,27 +126,7 @@ export function OidcCallbackPage() {
               )}
             </div>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              type="button"
-              className="w-full"
-              onClick={() => {
-                window.location.href = "/login"
-              }}
-            >
-              Войти снова
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                window.location.href = "/login?password=1"
-              }}
-            >
-              Вход с паролем
-            </Button>
-          </div>
+          
         </div>
       </div>
     )

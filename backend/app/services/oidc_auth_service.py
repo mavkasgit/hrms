@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 _JWKS_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _JWKS_TTL_SECONDS = 3600
 
-# Valid hrms_access_level claim values (align deps.py / Authentik scope mapping)
-_ACCESS_LEVELS = frozenset({"admin", "viewer", "no_access"})
+# Valid hrms_role claim values from IdP (align deps.py / Authentik scope mapping)
+_ACCESS_LEVELS = frozenset({"admin", "viewer", "no_access", "conflict"})
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class OidcClaims:
     preferred_username: str | None
     email: str | None
     name: str | None
-    hrms_access_level: str | None
+    hrms_role: str | None
     # IdP session id — корреляция back-channel logout с конкретной user_session
     sid: str | None = None
     # TG1: from Authentik Telegram Source property mapping (info.id)
@@ -208,6 +208,8 @@ class OidcAuthService:
     def public_config(cls) -> dict[str, Any]:
         """Payload for GET /auth/oidc/config (no secrets)."""
         telegram_primary = bool(settings.AUTH_OIDC_TELEGRAM_PRIMARY)
+        login_hint_enabled = bool(settings.AUTH_OIDC_LOGIN_HINT_ENABLED)
+        sso_only = bool(settings.AUTH_SSO_ONLY)
         if not cls.is_enabled():
             return {
                 "enabled": False,
@@ -217,6 +219,8 @@ class OidcAuthService:
                 "scopes": None,
                 "issuer": None,
                 "telegram_primary": False,
+                "login_hint_enabled": login_hint_enabled,
+                "sso_only": sso_only,
             }
         try:
             auth_url = cls.resolve_authorization_url()
@@ -230,6 +234,8 @@ class OidcAuthService:
                 "scopes": settings.AUTH_OIDC_SCOPES,
                 "issuer": settings.AUTH_OIDC_ISSUER,
                 "telegram_primary": telegram_primary,
+                "login_hint_enabled": login_hint_enabled,
+                "sso_only": sso_only,
             }
         return {
             "enabled": True,
@@ -239,6 +245,8 @@ class OidcAuthService:
             "scopes": settings.AUTH_OIDC_SCOPES,
             "issuer": issuer.rstrip("/"),
             "telegram_primary": telegram_primary,
+            "login_hint_enabled": login_hint_enabled,
+            "sso_only": sso_only,
         }
 
     @classmethod
@@ -278,7 +286,7 @@ class OidcAuthService:
                 # http://localhost:5173/auth/callback → http://localhost:5173/login
                 if "/auth/callback" in redirect:
                     params["post_logout_redirect_uri"] = redirect.replace(
-                        "/auth/callback", "/login"
+                        "/auth/callback", "/login?logout=1"
                     )
         if params:
             sep = "&" if "?" in base else "?"
@@ -465,7 +473,7 @@ class OidcAuthService:
                 detail="invalid_id_token_sub",
             )
 
-        access_level = claims.get("hrms_access_level")
+        access_level = claims.get("hrms_role")
         if access_level is not None and access_level not in _ACCESS_LEVELS:
             access_level = None
 
@@ -480,7 +488,7 @@ class OidcAuthService:
             preferred_username=claims.get("preferred_username") or claims.get("nickname"),
             email=claims.get("email"),
             name=claims.get("name"),
-            hrms_access_level=access_level if isinstance(access_level, str) else None,
+            hrms_role=access_level if isinstance(access_level, str) else None,
             sid=sid,
             telegram_id=telegram_id,
             telegram_username=telegram_username,
@@ -637,7 +645,7 @@ class OidcAuthService:
         user = await self.users.get_by_authentik_sub(self.db, claims.sub)
         if user is not None:
             await self._maybe_sync_telegram_username(user, claims)
-            await self._maybe_sync_role(user, claims)
+            await self._sync_role_from_idp(user, claims)
             return user
 
         # TG1: existing users.telegram_id ↔ Authentik Telegram Source claim
@@ -646,7 +654,7 @@ class OidcAuthService:
             if found_tg is not None:
                 await self.users.link_authentik_sub(self.db, found_tg, claims.sub)
                 await self._maybe_sync_telegram_username(found_tg, claims)
-                await self._maybe_sync_role(found_tg, claims)
+                await self._sync_role_from_idp(found_tg, claims)
                 return found_tg
 
         candidates: list[str] = []
@@ -667,7 +675,7 @@ class OidcAuthService:
             if found is not None:
                 await self.users.link_authentik_sub(self.db, found, claims.sub)
                 await self._maybe_sync_telegram_username(found, claims)
-                await self._maybe_sync_role(found, claims)
+                await self._sync_role_from_idp(found, claims)
                 return found
 
         if not settings.AUTH_OIDC_ALLOW_JIT:
@@ -704,30 +712,44 @@ class OidcAuthService:
         return f"oidc_{safe}_{int(time.time()) % 100000}"[:100]
 
     def _role_from_claims(self, claims: OidcClaims) -> str:
-        """JIT create role: claim only when SYNC flag on; else AUTH_OIDC_DEFAULT_ROLE."""
-        default = (settings.AUTH_OIDC_DEFAULT_ROLE or "viewer").strip()
-        default = default if default in ("admin", "viewer") else "viewer"
-        if not settings.AUTH_OIDC_SYNC_ROLE_FROM_IDP:
-            return default
-        level = claims.hrms_access_level
-        if level == "admin":
-            return "admin"
-        if level == "viewer":
-            return "viewer"
-        return default
+        """JIT create role: fail-closed — only admin/viewer accepted from IdP claim."""
+        level = claims.hrms_role
+        if level in ("admin", "viewer"):
+            return level
+        # fail-closed: no default role for JIT
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="no_access",
+        )
 
-    async def _maybe_sync_role(self, user: User, claims: OidcClaims) -> None:
-        """Sync local role from IdP claim only when AUTH_OIDC_SYNC_ROLE_FROM_IDP is true."""
-        if not settings.AUTH_OIDC_SYNC_ROLE_FROM_IDP:
-            return
-        level = claims.hrms_access_level
-        if level not in ("admin", "viewer"):
-            return
-        if user.role != level:
-            user.role = level
+    async def _sync_role_from_idp(self, user: User, claims: OidcClaims) -> None:
+        """Unconditional fail-closed role sync from IdP claim hrms_role."""
+        hrms_role = claims.hrms_role
+
+        if hrms_role in ("admin", "viewer"):
+            user.role = hrms_role
+            user.is_active = True
             self.db.add(user)
             await self.db.flush()
             await self.db.refresh(user)
+        elif hrms_role == "conflict":
+            # Ошибка данных в IdP — логировать, отказать
+            logger.warning(
+                "OIDC role conflict for user %s (sub=%s)", user.username, claims.sub
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="role_conflict",
+            )
+        else:
+            # no_access или отсутствует — fail-closed
+            user.is_active = False
+            self.db.add(user)
+            await self.db.flush()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="no_access",
+            )
 
     async def _maybe_sync_telegram_username(self, user: User, claims: OidcClaims) -> None:
         """Refresh telegram_username from IdP claim when present (soft/mutable)."""
@@ -794,31 +816,16 @@ class OidcAuthService:
             user = await self.resolve_or_provision_user(claims)
         except HTTPException as exc:
             if exc.status_code == status.HTTP_403_FORBIDDEN:
+                reason = exc.detail if isinstance(exc.detail, str) else "oidc_user_not_linked"
                 await session_service.record_failed_login(
                     self.db,
                     username_attempted=claims.preferred_username or claims.email or claims.sub,
-                    reason="oidc_user_not_linked",
+                    reason=reason,
                     method="oidc",
                     ip=ip,
                     user_agent=user_agent,
                 )
             raise
-
-        # Block no_access from IdP claim (align deps.py)
-        if claims.hrms_access_level == "no_access":
-            await session_service.record_failed_login(
-                self.db,
-                username_attempted=user.username,
-                reason="no_access",
-                method="oidc",
-                ip=ip,
-                user_agent=user_agent,
-                user_id=user.id,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="no_access",
-            )
 
         # T6: label sessions as Telegram SSO when claim present
         login_method = "oidc_telegram" if claims.telegram_id is not None else "oidc"

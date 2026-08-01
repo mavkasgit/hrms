@@ -14,13 +14,14 @@ test.describe('Timesheet @smoke', () => {
     const monthLabel = page.getByText(
       /январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр|\d{4}/i
     )
-    const table = page.locator('table').first()
+    // Сетка табеля теперь div-based (react-datasheet-grid), а не <table>
+    const grid = page.locator('[data-testid="timesheet-grid"]')
     const empty = page.getByText(/нет данных/i)
 
     await expect(
       monthNav
         .or(monthLabel)
-        .or(table)
+        .or(grid)
         .or(empty)
         .first()
     ).toBeVisible({ timeout: 15_000 })

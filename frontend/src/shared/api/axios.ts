@@ -143,20 +143,21 @@ export function redirectToLoginWithError(message: string): void {
   }
 }
 
-/** Запасной вход по логину/паролю через /api/auth/login. */
-export async function loginWithPassword(username: string, password: string): Promise<void> {
+/** Аварийный вход (Break Glass). */
+export async function loginWithPassword(_username: string, password: string): Promise<void> {
   const baseURL = import.meta.env.VITE_API_URL || "/api"
-  const response = await fetch(`${baseURL}/auth/login`, {
+  const bgResp = await fetch(`${baseURL}/auth/break-glass/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ password }),
   })
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}))
-    throw new Error(data.detail || "Неверный логин или пароль")
+  if (bgResp.ok) {
+    const bgData = await bgResp.json()
+    localStorage.setItem("token", bgData.access_token)
+    return
   }
-  const data = await response.json()
-  localStorage.setItem("token", data.access_token)
+  const errData = await bgResp.json().catch(() => ({}))
+  throw new Error(errData.detail || "Неверный пароль аварийного доступа")
 }
 
 api.interceptors.request.use((config) => {
@@ -210,6 +211,7 @@ function isCredentialLoginUrl(url: string | undefined): boolean {
   if (!url) return false
   return (
     url.includes("/auth/login") ||
+    url.includes("/auth/break-glass/login") ||
     url.includes("/auth/invite/login") ||
     url.includes("/auth/telegram/widget") ||
     // poll challenge: 401 = bad poll_secret, не logout
@@ -312,6 +314,25 @@ export function getUserAccessLevel(): "admin" | "viewer" | "no_access" {
 
 export function isUserAdmin(): boolean {
   return getUserAccessLevel() === "admin"
+}
+
+export function isBreakGlassUser(): boolean {
+  const token = getToken()
+  if (!token) return false
+  try {
+    const base64Url = token.split('.')[1]
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+    const jsonPayload = decodeURIComponent(
+      window.atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    )
+    const payload = JSON.parse(jsonPayload)
+    return Boolean(payload.is_break_glass)
+  } catch (e) {
+    return false
+  }
 }
 
 export default api

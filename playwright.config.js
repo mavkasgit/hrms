@@ -118,7 +118,7 @@ export default defineConfig({
     ],
     webServer: {
         command: 'npm run frontend',
-        url: 'http://localhost:5173',
+        url: 'http://localhost:5171',
         timeout: 120000,
         // Local: reuse running Vite. CI: always start a fresh webServer.
         reuseExistingServer: !process.env.CI,

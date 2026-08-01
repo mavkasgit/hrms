@@ -10,9 +10,6 @@ import {
   Filter,
   ArrowLeft,
   Calendar,
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Badge } from "@/shared/ui/badge"
@@ -28,173 +25,20 @@ import {
 } from "@/shared/ui/dialog"
 import { useToast } from "@/shared/ui/use-toast"
 import { useTimesheetGrid, useTimesheetImports, useRollbackImport } from "@/entities/timesheet"
-import type { TimesheetPlanCell, TimesheetFactCell, TimesheetEmployeeRow } from "@/entities/timesheet"
+import type { TimesheetEmployeeRow } from "@/entities/timesheet"
 import { TimesheetImportModal } from "@/features/timesheet-import"
-import { CellEditPopover } from "@/features/timesheet-cell-edit"
 import { TimesheetFiltersMenu, TimesheetTemplateButtons, useTimesheetFilters } from "@/features/timesheet-filters"
-import { getShiftTypeMeta } from "@/shared/config/shiftTypes"
+import { TimesheetGrid, formatHours } from "@/features/timesheet-grid"
+import type { TimesheetViewMode, TimesheetSortField } from "@/features/timesheet-grid"
 import type { SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import { EmptyState } from "@/shared/ui/empty-state"
 import { Input } from "@/shared/ui/input"
 import { useNavigate } from "react-router-dom"
 
-type ViewMode = "plan" | "fact" | "merged"
-type SortField = "department" | "tags" | "employee"
+type SortField = TimesheetSortField
 type FilterField = "department" | "tags"
 
-const DOW_SHORT = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
 const MONTHS_SHORT = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
-
-function formatHours(h: number | null | undefined) {
-  if (h === null || h === undefined) return ""
-  return Number.isInteger(h) ? String(h) : h.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")
-}
-
-const NON_WORKING_LABELS: Record<string, string> = {
-  vacation: "О",
-  sick: "Б",
-  A: "А",
-  absence: "П",
-  D: "Д",
-  VK: "ВК",
-  VS: "ВС"
-}
-
-function cellStatus(
-  planCell: TimesheetPlanCell | undefined,
-  factCell: TimesheetFactCell | undefined,
-  absences: any[],
-  shiftTypeMap: Record<string, any>,
-  dateStr: string
-) {
-  const activeAbsences = absences.filter(
-    (a) => dateStr >= a.start_date && dateStr <= a.end_date
-  )
-
-  if (activeAbsences.length > 0) {
-    const a = activeAbsences[0]
-    let label = "Б"
-    let tooltip = "Больничный"
-
-    if (a.type === "vacation") {
-      const isUnpaid = a.vacation_type === "Отпуск за свой счет"
-      label = isUnpaid ? "А" : "О"
-      tooltip = isUnpaid ? "Отпуск за свой счет" : "Отпуск"
-    }
-
-    const factHours = factCell ? (factCell.work_hours ?? factCell.presence_hours ?? 0) : 0
-    if (factHours > 0) {
-      return {
-        label: formatHours(factHours),
-        color: "bg-amber-100 ring-2 ring-amber-400 ring-inset",
-        tooltip: `${tooltip} (по факту отработано ${formatHours(factHours)}ч)`
-      }
-    }
-    return { label, color: "", stColor: "", isNight: false, tooltip }
-  }
-
-  const isPlanNight = !!(
-    planCell?.shift_type_code &&
-    shiftTypeMap[planCell.shift_type_code] &&
-    (shiftTypeMap[planCell.shift_type_code].is_night || shiftTypeMap[planCell.shift_type_code].isNight)
-  )
-  const isFactNight = !!(factCell && factCell.night_hours && factCell.night_hours > 0)
-  const isNight = isPlanNight || isFactNight
-
-  let planHours = 0
-  let planCode: string | null = null
-  if (planCell) {
-    if (planCell.shift_type_code) {
-      planCode = planCell.shift_type_code
-    }
-    if (planCell.planned_hours_override !== null) {
-      planHours = planCell.planned_hours_override
-    } else if (planCode && shiftTypeMap[planCode]) {
-      const st = shiftTypeMap[planCode]
-      planHours = st.planned_hours ?? st.plannedHours ?? 0
-    }
-  }
-
-  const hasFact = factCell !== undefined
-  const factHours = factCell ? (factCell.work_hours ?? factCell.presence_hours ?? 0) : 0
-
-  if (!hasFact) {
-    let label = ""
-    let stColor = ""
-
-    if (planCode) {
-      const st = shiftTypeMap[planCode]
-      if (NON_WORKING_LABELS[planCode]) {
-        label = NON_WORKING_LABELS[planCode]
-      } else if (planHours > 0) {
-        label = formatHours(planHours)
-        if (st.is_working || st.isWorking) {
-          stColor = st.color
-        }
-      }
-    } else if (planHours > 0) {
-      label = formatHours(planHours)
-    }
-
-    return {
-      label,
-      color: "",
-      stColor,
-      isNight,
-      tooltip: `План: ${planHours}ч (нет факта)`
-    }
-  }
-
-  const isPlanNonWorking = planCode && NON_WORKING_LABELS[planCode]
-
-  if (isPlanNonWorking) {
-    if (factHours === 0) {
-      const st = shiftTypeMap[planCode!]
-      return {
-        label: NON_WORKING_LABELS[planCode!],
-        color: "",
-        stColor: "",
-        isNight: false,
-        tooltip: `План: ${st.name}, Факт: 0ч`
-      }
-    } else {
-      return {
-        label: formatHours(factHours),
-        color: "bg-amber-100 ring-2 ring-amber-400 ring-inset",
-        isNight: false,
-        tooltip: `Расхождение: План ${planHours}ч (${shiftTypeMap[planCode!].name}), Факт ${factHours}ч`
-      }
-    }
-  }
-
-  if (planHours !== factHours) {
-    return {
-      label: formatHours(factHours),
-      color: "bg-amber-100 ring-1 ring-amber-300 ring-inset",
-      isNight,
-      tooltip: `Расхождение: План ${planHours}ч, Факт ${factHours}ч`
-    }
-  }
-
-  let stColor = ""
-  if (planCode && shiftTypeMap[planCode]) {
-    const st = shiftTypeMap[planCode]
-    if (st.is_working || st.isWorking) {
-      stColor = st.color
-    }
-  }
-  if (!stColor && isNight && shiftTypeMap["night"]) {
-    stColor = shiftTypeMap["night"].color
-  }
-
-  return {
-    label: factHours > 0 ? formatHours(factHours) : "",
-    color: "",
-    stColor,
-    isNight,
-    tooltip: `План ${planHours}ч, Факт ${factHours}ч`
-  }
-}
 
 function getDaysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate()
@@ -207,10 +51,11 @@ export function TimesheetPage() {
   const [month, setMonth] = useState(today.getMonth() + 1)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [tempYear, setTempYear] = useState(today.getFullYear())
-  const [viewMode, setViewMode] = useState<ViewMode>("merged")
+  const [viewMode, setViewMode] = useState<TimesheetViewMode>("merged")
   const [importOpen, setImportOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [search, setSearch] = useState("")
+  const [onlyDivergences, setOnlyDivergences] = useState(false)
   const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
   const [columnFilters, setColumnFilters] = useState<Record<FilterField, Set<string>>>({
     department: new Set(),
@@ -229,57 +74,6 @@ export function TimesheetPage() {
   const { addToast } = useToast()
 
   const templateState = useTimesheetFilters()
-
-  const shiftTypeMap = useMemo(() => {
-    const map: Record<string, any> = {}
-    for (const st of gridQuery.data?.shift_types ?? []) {
-      const meta = getShiftTypeMeta(st.code)
-      map[st.code] = {
-        ...st,
-        color: meta?.color ?? "#94a3b8",
-        letter: meta?.letter,
-      }
-    }
-    return map
-  }, [gridQuery.data])
-
-  const holidayByDate = useMemo(() => {
-    const map: Record<string, any> = {}
-    for (const h of gridQuery.data?.holidays ?? []) {
-      map[h.date] = h
-    }
-    return map
-  }, [gridQuery.data])
-
-  const days = useMemo(() => {
-    const result: {
-      date: string
-      day: number
-      dow: number
-      dowShort: string
-      isWeekend: boolean
-      isHoliday: boolean
-      holidayName: string | null
-    }[] = []
-    const daysCount = getDaysInMonth(year, month)
-    for (let d = 1; d <= daysCount; d++) {
-      const date = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
-      const dt = new Date(year, month - 1, d)
-      const dow = dt.getDay()
-      const holiday = holidayByDate[date] || null
-      const isHoliday = !!holiday
-      result.push({
-        date,
-        day: d,
-        dow,
-        dowShort: DOW_SHORT[dow],
-        isWeekend: dow === 0 || dow === 6,
-        isHoliday,
-        holidayName: holiday?.name ?? null,
-      })
-    }
-    return result
-  }, [year, month, holidayByDate])
 
   const monthName = new Date(year, month - 1, 1).toLocaleDateString("ru-RU", {
     month: "long",
@@ -338,6 +132,19 @@ export function TimesheetPage() {
       )
     }
 
+    // Фильтр «только расхождения»: сотрудники, у которых есть хотя бы одна ячейка,
+    // где ручное значение отличается от авто
+    if (onlyDivergences) {
+      rows = rows.filter((r) =>
+        Object.values(r.cells ?? {}).some(
+          (c) =>
+            c.manual?.shift_type_code &&
+            c.auto?.shift_type_code &&
+            c.manual.shift_type_code !== c.auto.shift_type_code
+        )
+      )
+    }
+
     // Сортировка
     const sorted = [...rows].sort((a, b) => {
       for (const sc of sortConfigs) {
@@ -357,7 +164,7 @@ export function TimesheetPage() {
     })
 
     return sorted
-  }, [enrichedEmployees, search, sortConfigs, columnFilters])
+  }, [enrichedEmployees, search, sortConfigs, columnFilters, onlyDivergences])
 
   const totals = useMemo(() => {
     const data = gridQuery.data?.employees ?? []
@@ -370,19 +177,10 @@ export function TimesheetPage() {
         }).length,
         0
       ),
-      totalHours: data.reduce(
-        (sum, e) =>
-          sum +
-          Object.values(e.fact).reduce(
-            (s, f) => s + (f.work_hours || f.presence_hours || 0),
-            0
-          ),
-        0
-      ),
+      // Часы считаются по итоговому слою (result) — сервис отдаёт result_hours
+      totalHours: data.reduce((sum, e) => sum + (e.result_hours ?? 0), 0),
     }
   }, [gridQuery.data])
-
-
 
   const handleRollback = async (importId: number) => {
     if (!confirm("Откатить этот импорт? Все связанные дневные записи будут удалены.")) return
@@ -406,6 +204,7 @@ export function TimesheetPage() {
 
   const handleClearAllFilters = () => {
     setSearch("")
+    setOnlyDivergences(false)
     setSortConfigs([])
     setColumnFilters({ department: new Set(), tags: new Set() })
   }
@@ -413,7 +212,10 @@ export function TimesheetPage() {
   const activeFiltersCount =
     columnFilters.department.size +
     columnFilters.tags.size +
-    (search.trim() ? 1 : 0)
+    (search.trim() ? 1 : 0) +
+    (onlyDivergences ? 1 : 0)
+
+  const employeeSortDirection = sortConfigs.find((s) => s.field === "employee")?.order ?? null
 
   return (
     <div className="space-y-4">
@@ -501,7 +303,7 @@ export function TimesheetPage() {
             </div>
           </PopoverContent>
         </Popover>
-        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+        <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as TimesheetViewMode)}>
           <TabsList>
             <TabsTrigger value="plan">План</TabsTrigger>
             <TabsTrigger value="fact">Факт</TabsTrigger>
@@ -517,6 +319,17 @@ export function TimesheetPage() {
             className="pl-9 w-64"
           />
         </div>
+        {/* Переключатель «только расхождения» (ручное ≠ авто) */}
+        <Button
+          variant={onlyDivergences ? "default" : "outline"}
+          size="sm"
+          className="h-9"
+          onClick={() => setOnlyDivergences((v) => !v)}
+          data-testid="divergence-filter-toggle"
+          title="Показать только сотрудников с расхождениями ручного и авто значений"
+        >
+          Расхождения
+        </Button>
         <TimesheetFiltersMenu
           departmentOptions={departmentOptions}
           tagOptions={tagOptions}
@@ -577,206 +390,32 @@ export function TimesheetPage() {
           }
         />
       ) : (
-        <div className="border rounded-lg overflow-x-auto bg-card">
-          <table className="text-sm border-collapse" style={{ minWidth: 900 + days.length * 32 }}>
-            <thead>
-              <tr>
-                <th className="sticky left-0 z-10 bg-background border px-2 py-1 text-left min-w-[240px]">
-                  <button
-                    type="button"
-                    onClick={() => handleSortChange("employee")}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <span>Сотрудник</span>
-                    {(() => {
-                      const active = sortConfigs.find((s) => s.field === "employee")
-                      if (active?.order === "asc") return <ArrowUp className="h-3.5 w-3.5" />
-                      if (active?.order === "desc") return <ArrowDown className="h-3.5 w-3.5" />
-                      return <ArrowUpDown className="h-3.5 w-3.5 opacity-45" />
-                    })()}
-                  </button>
-                </th>
-                {days.map((d) => {
-                  const thClass = `border px-0 py-0 text-center min-w-[36px] ${
-                    d.isHoliday
-                      ? "bg-red-100 border-red-300"
-                      : d.isWeekend
-                      ? "bg-slate-100 border-slate-300"
-                      : ""
-                  }`
-                  return (
-                    <th key={d.date} className={thClass} title={d.holidayName || d.date}>
-                      <div
-                        className={`text-[10px] leading-tight ${
-                          d.isHoliday ? "text-red-900" : "text-muted-foreground"
-                        }`}
-                      >
-                        {d.dowShort}
-                      </div>
-                      <div
-                        className={`text-xs font-medium leading-tight ${
-                          d.isHoliday ? "text-red-900 font-bold" : ""
-                        }`}
-                      >
-                        {d.day}
-                      </div>
-                    </th>
-                  )
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredEmployees.map((emp) => (
-                <tr key={emp.id} className="hover:bg-muted/30">
-                  <td className="sticky left-0 z-10 bg-card border px-2 py-1 text-sm whitespace-nowrap">
-                    <span className="truncate">{emp.name}</span>
-                  </td>
-                  {days.map((d) => {
-                    const plan = emp.plan[d.date]
-                    const fact = emp.fact[d.date]
-                    const status = cellStatus(plan, fact, emp.absences, shiftTypeMap, d.date)
-                    const activeAbsence = emp.absences.find(
-                      (a: any) => d.date >= a.start_date && d.date <= a.end_date
-                    )
-
-                    // Приоритет заливки ячейки: праздник > выходной > обычная.
-                    // Фон и border на самой <td>, чтобы вся ячейка была окрашена
-                    // и границы оставались видны. Внутри — кликабельный div.
-                    const tdClass = d.isHoliday
-                      ? "p-0 bg-red-100/80 border-red-300"
-                      : d.isWeekend
-                      ? "p-0 bg-slate-100 border-slate-300"
-                      : "p-0"
-                    const cellInnerClass =
-                      "w-full h-full min-h-[28px] min-w-[36px] px-1 py-1 text-center text-xs cursor-pointer hover:ring-2 hover:ring-primary/60 hover:ring-inset flex items-center justify-center"
-
-                    if (viewMode === "plan") {
-                      const label = plan
-                        ? plan.planned_hours_override !== null
-                          ? String(plan.planned_hours_override)
-                          : plan.shift_type_code && shiftTypeMap[plan.shift_type_code]
-                          ? (shiftTypeMap[plan.shift_type_code].code?.[0] || "?")
-                          : ""
-                        : ""
-                      const isShiftNight = plan?.shift_type_code &&
-                        shiftTypeMap[plan.shift_type_code] &&
-                        (shiftTypeMap[plan.shift_type_code].is_night || shiftTypeMap[plan.shift_type_code].isNight)
-                      const stColor =
-                        isShiftNight && plan?.shift_type_code && !d.isHoliday && !d.isWeekend
-                          ? shiftTypeMap[plan.shift_type_code]?.color
-                          : null
-                      return (
-                        <td
-                          key={d.date}
-                          className={`border ${tdClass}`}
-                          title={
-                            plan?.shift_type_code
-                              ? `${d.date}${d.holidayName ? ` · ${d.holidayName}` : ""} · Смена: ${shiftTypeMap[plan.shift_type_code]?.name || ""}\n${plan.note || ""}`
-                              : d.holidayName
-                              ? `${d.date} · ${d.holidayName}`
-                              : d.date
-                          }
-                        >
-                          <CellEditPopover
-                            employeeId={emp.id}
-                            year={year}
-                            month={month}
-                            workDate={d.date}
-                            currentShiftTypeCode={plan?.shift_type_code ?? null}
-                            currentHours={plan?.planned_hours_override ?? null}
-                            currentNote={plan?.note ?? null}
-                            absence={activeAbsence}
-                            onSaved={() => gridQuery.refetch()}
-                          >
-                            <div
-                              className={`${cellInnerClass} ${d.isHoliday ? "text-red-900" : d.isWeekend ? "text-slate-700" : ""}`}
-                              style={stColor ? { backgroundColor: `${stColor}30` } : undefined}
-                            >
-                              {label}
-                            </div>
-                          </CellEditPopover>
-                        </td>
-                      )
-                    }
-
-                    if (viewMode === "fact") {
-                      const hours = fact?.work_hours || fact?.presence_hours
-                      const isFactNight = !!(fact && fact.night_hours && fact.night_hours > 0)
-                      const stColor = isFactNight && shiftTypeMap["night"] ? shiftTypeMap["night"].color : ""
-                      const cellBgStyle = isFactNight && stColor
-                        ? { backgroundColor: `${stColor}35` }
-                        : undefined
-
-                      return (
-                        <td
-                          key={d.date}
-                          className={`border ${tdClass}`}
-                          style={cellBgStyle}
-                          title={fact ? `${d.date} · ${hours ?? 0}ч` : d.holidayName ? `${d.date} · ${d.holidayName}` : d.date}
-                        >
-                          <CellEditPopover
-                            employeeId={emp.id}
-                            year={year}
-                            month={month}
-                            workDate={d.date}
-                            currentShiftTypeCode={plan?.shift_type_code ?? null}
-                            currentHours={plan?.planned_hours_override ?? null}
-                            currentNote={plan?.note ?? null}
-                            absence={activeAbsence}
-                            onSaved={() => gridQuery.refetch()}
-                          >
-                            <div
-                              className={`${cellInnerClass} ${d.isHoliday ? "text-red-900" : d.isWeekend ? "text-slate-700" : ""}`}
-                            >
-                              {hours ? formatHours(hours) : ""}
-                            </div>
-                          </CellEditPopover>
-                        </td>
-                      )
-                    }
-
-                    const isNight = status.isNight
-                    const cellBgStyle = isNight && status.stColor
-                      ? { backgroundColor: `${status.stColor}35` }
-                      : undefined
-
-                    return (
-                      <td
-                        key={d.date}
-                        className={`border ${tdClass} ${status.color}`}
-                        style={cellBgStyle}
-                        title={status.tooltip || d.holidayName || d.date}
-                      >
-                          <CellEditPopover
-                            employeeId={emp.id}
-                            year={year}
-                            month={month}
-                            workDate={d.date}
-                            currentShiftTypeCode={plan?.shift_type_code ?? null}
-                            currentHours={plan?.planned_hours_override ?? null}
-                            currentNote={plan?.note ?? null}
-                            absence={activeAbsence}
-                            onSaved={() => gridQuery.refetch()}
-                          >
-                          <div
-                            className={`${cellInnerClass} ${d.isHoliday ? "text-red-900" : d.isWeekend ? "text-slate-700" : ""}`}
-                          >
-                            {status.label}
-                          </div>
-                        </CellEditPopover>
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="h-[calc(100vh-330px)] min-h-[360px]">
+          <TimesheetGrid
+            employees={filteredEmployees}
+            gridData={gridQuery.data}
+            periodStart={periodStart}
+            periodEnd={periodEnd}
+            viewMode={viewMode}
+            year={year}
+            month={month}
+            sortField="employee"
+            sortDirection={employeeSortDirection}
+            onToggleSort={handleSortChange}
+          />
         </div>
       )}
+
       <div className="text-xs text-muted-foreground space-y-2 mt-4">
         <div className="flex flex-wrap gap-x-4 gap-y-2">
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-3.5 h-3.5 bg-amber-100 border border-amber-300 rounded" /> Расхождение плана и факта
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-3.5 h-3.5 border-2 border-orange-500 rounded" /> Расхождение ручного и авто
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-3.5 h-3.5 rounded-full bg-violet-500 animate-pulse" /> Приказ изменился
           </span>
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-3.5 h-3.5 bg-slate-100 border border-slate-300 rounded" /> Выходной (Сб/Вс)
@@ -816,7 +455,6 @@ export function TimesheetPage() {
         onOpenChange={setImportOpen}
         onImported={() => gridQuery.refetch()}
       />
-
 
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">

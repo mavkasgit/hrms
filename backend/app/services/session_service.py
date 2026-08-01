@@ -26,6 +26,7 @@ LOGIN_METHODS = frozenset(
         "telegram_bot",
         "oidc",
         "oidc_telegram",  # OIDC via Authentik Telegram Source (claim telegram_id present)
+        "break_glass",
     }
 )
 EVENT_TYPES = frozenset({"login_success", "login_failure", "logout", "session_revoke"})

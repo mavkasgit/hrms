@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.logging import get_audit_logger
+from app.core.shift_types import get_shift_type
 from app.models.employee import Employee
 from app.models.timesheet import TimesheetImport, TimesheetEntry, TimesheetUnmatchedRow
 from app.models.vacation import Vacation
@@ -48,6 +49,27 @@ def _entry_to_fact_dict(entry: TimesheetEntry) -> Dict[str, Any]:
         "overtime_hours": entry.overtime_hours,
         "schedule_name": entry.schedule_name,
     }
+
+
+def _hours_by_result(cells: Dict[str, Any]) -> float:
+    """Часы за период, посчитанные по итоговому слою каждой ячейки (result).
+
+    Итог = ручное значение, иначе авто. Рабочая смена даёт planned_hours из
+    каталога (или ручной override), нерабочие статусы — 0 часов.
+    """
+    total = 0.0
+    for cell in cells.values():
+        code = cell.get("result")
+        if not code:
+            continue
+        shift_type = get_shift_type(code)
+        if not shift_type or not shift_type.is_working:
+            continue
+        manual = cell.get("manual") or {}
+        override = manual.get("planned_hours_override")
+        hours = override if override is not None else shift_type.planned_hours
+        total += float(hours)
+    return total
 
 
 class TimesheetImportService:
@@ -519,6 +541,7 @@ class TimesheetImportService:
                             "shift_type_code": entry.shift_type_code,
                             "planned_hours_override": entry.planned_hours_override,
                             "note": entry.note,
+                            "updated_at": entry.updated_at,
                         }
 
         # Фактические записи
@@ -544,6 +567,7 @@ class TimesheetImportService:
                         Vacation.employee_id.in_(emp_ids_list),
                         Vacation.start_date <= period_end,
                         Vacation.end_date >= period_start,
+                        Vacation.is_deleted == False,  # noqa: E712
                     )
                 )
             )
@@ -556,6 +580,7 @@ class TimesheetImportService:
                         "end_date": v.end_date.isoformat(),
                         "vacation_type": v.vacation_type,
                         "order_id": v.order_id,
+                        "order_updated_at": v.updated_at or v.created_at,
                     }
                 )
 
@@ -576,6 +601,7 @@ class TimesheetImportService:
                         "type": "sick_leave",
                         "start_date": s.start_date.isoformat(),
                         "end_date": s.end_date.isoformat(),
+                        "order_updated_at": s.updated_at or s.created_at,
                     }
                 )
 
@@ -620,6 +646,117 @@ class TimesheetImportService:
                 for p in pos_result.scalars().all():
                     pos_names[p.id] = p.name
 
+        # --- Build per-day three-layer cells (auto / manual / result) ---
+        from datetime import timedelta
+
+        def _build_cells_for_employee(
+            plan_map: Dict[date, dict],
+            absence_list: List[Dict[str, Any]],
+        ) -> Dict[str, Any]:
+            """Трёхслойная ячейка на каждый день периода: авто / ручное / итог.
+
+            Все дни периода присутствуют в ответе — отсутствие слоя выражено явно
+            (None), чтобы интерфейс и подсчёты не гадали о пропущенных датах.
+            """
+            cells: Dict[str, Any] = {}
+            current = period_start
+            while current <= period_end:
+                date_str = current.isoformat()
+
+                # Auto layer: check absences covering this day
+                auto = None
+                conflict = False
+                covering_vacation = None
+                covering_sick = None
+                for ab in absence_list:
+                    ab_start = ab["start_date"]
+                    ab_end = ab["end_date"]
+                    if ab_start <= date_str <= ab_end:
+                        if ab["type"] == "vacation":
+                            covering_vacation = ab
+                        elif ab["type"] == "sick_leave":
+                            covering_sick = ab
+
+                if covering_vacation and covering_sick:
+                    conflict = True
+                    # Sick leave wins for auto value
+                    auto = {
+                        "shift_type_code": "sick",
+                        "source": "sick_leave",
+                        "order_id": covering_sick.get("order_id"),
+                    }
+                elif covering_sick:
+                    auto = {
+                        "shift_type_code": "sick",
+                        "source": "sick_leave",
+                        "order_id": covering_sick.get("order_id"),
+                    }
+                elif covering_vacation:
+                    vtype = covering_vacation.get("vacation_type", "")
+                    code = "A" if vtype == "Отпуск за свой счет" else "vacation"
+                    auto = {
+                        "shift_type_code": code,
+                        "source": "vacation",
+                        "order_id": covering_vacation.get("order_id"),
+                    }
+
+                # Manual layer: from WorkScheduleEntry
+                manual = None
+                plan_entry = plan_map.get(current)
+                if plan_entry:
+                    manual = {
+                        "shift_type_code": plan_entry.get("shift_type_code"),
+                        "planned_hours_override": plan_entry.get("planned_hours_override"),
+                        "note": plan_entry.get("note"),
+                    }
+
+                # Result: manual ?? auto
+                result = None
+                if manual and manual.get("shift_type_code"):
+                    result = manual["shift_type_code"]
+                elif auto:
+                    result = auto["shift_type_code"]
+
+                # Флаг «приказ изменился»: приказ новее ручной записи
+                order_changed = False
+                if plan_entry and plan_entry.get("updated_at") and auto:
+                    entry_ts = plan_entry["updated_at"]
+                    # Берём таймстемп приказа (отпуск/больничный)
+                    order_ts = None
+                    if covering_sick:
+                        order_ts = covering_sick.get("order_updated_at")
+                    elif covering_vacation:
+                        order_ts = covering_vacation.get("order_updated_at")
+                    if order_ts and entry_ts:
+                        # Приводим к aware datetime для сравнения
+                        from datetime import timezone as tz
+                        if hasattr(order_ts, "hour"):
+                            # Это datetime
+                            if order_ts.tzinfo is None:
+                                order_ts = order_ts.replace(tzinfo=tz.utc)
+                            if entry_ts.tzinfo is None:
+                                entry_ts = entry_ts.replace(tzinfo=tz.utc)
+                            order_changed = order_ts > entry_ts
+
+                cells[date_str] = {
+                    "auto": auto,
+                    "manual": manual,
+                    "result": result,
+                    "conflict": conflict,
+                    "order_changed": order_changed,
+                }
+
+                current += timedelta(days=1)
+            return cells
+
+        cells_by_emp: Dict[int, Dict[str, Any]] = {
+            e.id: _build_cells_for_employee(
+                plan_entries_by_emp.get(e.id, {}),
+                absences_by_emp.get(e.id, []),
+            )
+            for e in employees
+        }
+
         return {
             "period_start": period_start.isoformat(),
             "period_end": period_end.isoformat(),
@@ -641,6 +778,8 @@ class TimesheetImportService:
                         for d, en in fact_entries_by_emp.get(e.id, {}).items()
                     },
                     "absences": absences_by_emp.get(e.id, []),
+                    "cells": cells_by_emp.get(e.id, {}),
+                    "result_hours": _hours_by_result(cells_by_emp.get(e.id, {})),
                 }
                 for e in employees
             ],

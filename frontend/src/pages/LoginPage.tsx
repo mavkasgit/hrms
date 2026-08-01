@@ -1,45 +1,29 @@
 import { useState, useEffect, useRef } from "react"
-import { useSearchParams } from "react-router-dom"
-import { Loader2, Bug, LogIn, Shield } from "lucide-react"
-import {
-  loginWithPassword,
-  isDevMode,
-  consumeAuthErrorForLogin,
-} from "@/shared/api/axios"
+import { Loader2, LogIn, Shield } from "lucide-react"
+import { consumeAuthErrorForLogin } from "@/shared/api/axios"
 import { TelegramIcon } from "@/shared/ui/icons"
 import {
   fetchOidcConfig,
   startOidcLogin,
+  resolveAuthorizationUrl,
   type OidcConfig,
 } from "@/shared/api/oidcAuth"
 
-// VITE_SSO_STUB=false — always show full login form even when OIDC enabled
-// Default (absent): stub → auto startOidcLogin when OIDC on; escape via /login?password=1
-
 export function LoginPage() {
-  const [searchParams] = useSearchParams()
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
+  const [breakGlassPassword, setBreakGlassPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [oidcConfig, setOidcConfig] = useState<OidcConfig | null>(null)
   const [oidcLoaded, setOidcLoaded] = useState(false)
+  const [oidcUnreachable, setOidcUnreachable] = useState(false)
   const [oidcStarting, setOidcStarting] = useState(false)
   const oidcAutoStartedRef = useRef(false)
 
-  const devMode = isDevMode()
-  /** Full form: CI/dev escape hatch (?password=1 or VITE_SSO_STUB=false) */
-  const forceFullForm =
-    searchParams.get("password") === "1" ||
-    import.meta.env.VITE_SSO_STUB === "false"
   const oidcEnabled = Boolean(
     oidcConfig?.enabled &&
       oidcConfig.authorization_url &&
       oidcConfig.client_id
   )
-  /** Stub when OIDC on and no password escape (default product UX) */
-  const ssoStubActive = oidcLoaded && oidcEnabled && !forceFullForm
-  /** Authentik Telegram Source — primary SSO CTA label only (no in-app bot) */
   const telegramPrimary = Boolean(oidcEnabled && oidcConfig?.telegram_primary)
 
   useEffect(() => {
@@ -51,6 +35,21 @@ export function LoginPage() {
       try {
         const oidc = await fetchOidcConfig()
         if (!cancelled) setOidcConfig(oidc)
+
+        if (oidc.enabled && oidc.authorization_url) {
+          try {
+            const controller = new AbortController()
+            const timer = setTimeout(() => controller.abort(), 1200)
+            const targetUrl = resolveAuthorizationUrl(oidc.authorization_url)
+            await fetch(targetUrl, {
+              mode: "no-cors",
+              signal: controller.signal,
+            })
+            clearTimeout(timer)
+          } catch {
+            if (!cancelled) setOidcUnreachable(true)
+          }
+        }
       } catch {
         if (!cancelled) setOidcConfig(null)
       } finally {
@@ -63,58 +62,55 @@ export function LoginPage() {
     }
   }, [])
 
-  async function handleOidcLogin() {
+  const isLogoutAction = typeof window !== "undefined" && window.location.search.includes("logout")
+
+  async function handleOidcLogin(forceReauth = false) {
     if (!oidcConfig || !oidcEnabled) return
     setError(null)
     setOidcStarting(true)
     try {
-      await startOidcLogin(oidcConfig)
-      // redirect — no further UI
+      await startOidcLogin(oidcConfig, { forceReauth: forceReauth || isLogoutAction })
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Ошибка входа через единый вход")
       setOidcStarting(false)
     }
   }
 
-  // Stub mode: auto-redirect to Authentik once (ref guard)
+  // Auto-redirect to Authentik when reachable (unless user just logged out)
   useEffect(() => {
-    if (!ssoStubActive || !oidcConfig || oidcAutoStartedRef.current) return
+    if (!oidcLoaded || !oidcEnabled || oidcUnreachable || oidcAutoStartedRef.current || isLogoutAction) return
     oidcAutoStartedRef.current = true
     void handleOidcLogin()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once on stub activation
-  }, [ssoStubActive, oidcConfig])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [oidcLoaded, oidcEnabled, oidcUnreachable, isLogoutAction])
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleBreakGlassSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
     try {
-      await loginWithPassword(username, password)
-      window.location.href = "/"
+      const baseURL = import.meta.env.VITE_API_URL || "/api"
+      const resp = await fetch(`${baseURL}/auth/break-glass/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: breakGlassPassword }),
+      })
+      if (resp.ok) {
+        const bgData = await resp.json()
+        localStorage.setItem("token", bgData.access_token)
+        window.location.href = "/"
+        return
+      }
+      const errData = await resp.json().catch(() => ({}))
+      throw new Error(errData.detail || "Неверный пароль аварийного доступа")
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Ошибка входа")
+      setError(err instanceof Error ? err.message : "Ошибка аварийного входа")
     } finally {
       setLoading(false)
     }
   }
 
-  async function loginAsDev(role: "admin" | "viewer") {
-    setLoading(true)
-    setError(null)
-    try {
-      await loginWithPassword(role, "dev")
-    } catch {
-      localStorage.setItem("token", role)
-    } finally {
-      setLoading(false)
-      window.location.href = "/"
-    }
-  }
-
-  const showOidcPending = !forceFullForm && !oidcLoaded
-  const showSsoStub = ssoStubActive || showOidcPending
-
-  if (showSsoStub) {
+  if (!oidcLoaded || (oidcEnabled && !oidcUnreachable && oidcStarting)) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-white">
         <div className="w-full max-w-md space-y-6 p-8 bg-white border border-slate-200 rounded-2xl shadow-lg">
@@ -142,15 +138,6 @@ export function LoginPage() {
               {error}
             </p>
           )}
-
-          <p className="text-center text-sm">
-            <a
-              href="/login?password=1"
-              className="text-slate-600 underline hover:text-slate-900"
-            >
-              Войти по паролю
-            </a>
-          </p>
         </div>
       </div>
     )
@@ -173,7 +160,7 @@ export function LoginPage() {
           </div>
         </div>
 
-        {/* Authentik SSO — Telegram Source is IdP-side only */}
+        {/* Primary Authentik SSO Login */}
         {oidcEnabled && (
           <div className="space-y-3">
             <button
@@ -200,38 +187,32 @@ export function LoginPage() {
                 Единый вход для HRMS и KTM-2000 (Authentik)
               </p>
             )}
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                <div className="w-full border-t border-slate-200" />
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="bg-white px-2 text-slate-400">или</span>
-              </div>
-            </div>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-slate-700">Логин</label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Введите логин"
-              required
-              autoComplete="username"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 bg-white text-slate-900 placeholder:text-slate-400"
-            />
+        {oidcUnreachable && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-800 space-y-1">
+            <div className="font-medium flex items-center gap-1.5 text-amber-900">
+              <Shield className="h-4 w-4 text-amber-600 shrink-0" />
+              <span>Единый вход (Authentik) недоступен</span>
+            </div>
+            <p className="text-amber-700">
+              Включен аварийный вход (Break Glass). Введите пароль аварийного доступа.
+            </p>
           </div>
+        )}
+
+        {/* Break Glass emergency access form */}
+        <form onSubmit={handleBreakGlassSubmit} className="space-y-4 pt-2">
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-slate-700">Пароль</label>
+            <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider">
+              Аварийный доступ (Break Glass)
+            </label>
             <input
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Введите пароль"
-              required
+              value={breakGlassPassword}
+              onChange={(e) => setBreakGlassPassword(e.target.value)}
+              placeholder="Пароль аварийного доступа"
               autoComplete="current-password"
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 bg-white text-slate-900 placeholder:text-slate-400"
             />
@@ -245,45 +226,13 @@ export function LoginPage() {
 
           <button
             type="submit"
-            disabled={loading || oidcStarting}
-            className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-700 disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer"
+            disabled={loading || !breakGlassPassword}
+            className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-700 disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-            Войти
+            Аварийный вход
           </button>
         </form>
-
-        {devMode && (
-          <div className="border border-amber-200 bg-amber-50 rounded-xl p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Bug className="h-4 w-4 text-amber-600" />
-              <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
-                Dev / Test режим
-              </span>
-            </div>
-            <p className="text-xs text-amber-600">
-              Быстрый вход без KTM-2000. Только в dev/test окружении.
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => loginAsDev("admin")}
-                disabled={loading}
-                title="Полный доступ: создание, редактирование, удаление"
-                className="flex-1 py-2 px-3 text-sm font-medium bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white rounded-lg transition-colors cursor-pointer"
-              >
-                Войти как Admin
-              </button>
-              <button
-                onClick={() => loginAsDev("viewer")}
-                disabled={loading}
-                title="Только просмотр — создание должностей будет недоступно"
-                className="flex-1 py-2 px-3 text-sm font-medium bg-white hover:bg-amber-50 text-amber-700 border border-amber-300 rounded-lg transition-colors cursor-pointer disabled:opacity-60"
-              >
-                Войти как Viewer
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )

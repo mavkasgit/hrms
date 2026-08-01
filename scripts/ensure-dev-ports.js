@@ -1,7 +1,7 @@
 /**
  * Ensure HRMS local dev ports are free before npm run dev.
  *
- * Ports: 8000 (backend), 5173 (Vite frontend).
+ * Ports: 8011 (backend), 5173 (Vite frontend).
  *
  * Why not kill-port alone?
  *   On Windows kill-port uses TaskKill /F /PID without /T → orphan
@@ -22,7 +22,7 @@ const { execFileSync, spawnSync } = require("child_process");
 const readline = require("readline");
 const os = require("os");
 
-const DEFAULT_PORTS = [8000, 5173];
+const DEFAULT_PORTS = [8011, 5173];
 const isWin = process.platform === "win32";
 
 function parseArgs(argv) {
@@ -144,8 +144,22 @@ function processInfo(pid) {
   return { pid, name, cmd };
 }
 
+function isDockerProcess(info) {
+  const name = (info.name || "").toLowerCase();
+  const cmd = (info.cmd || "").toLowerCase();
+  return (
+    name.includes("docker") ||
+    cmd.includes("docker") ||
+    name.includes("vmmem") ||
+    name.includes("vpnkit") ||
+    cmd.includes("vpnkit") ||
+    name.includes("wslrelay") ||
+    cmd.includes("wslrelay")
+  );
+}
+
 function collectOccupants(portMap) {
-  /** @type {{ port: number, pid: number, name: string, cmd: string }[]} */
+  /** @type {{ port: number, pid: number, name: string, cmd: string, isDocker: boolean }[]} */
   const rows = [];
   const seen = new Set();
   for (const [port, pids] of portMap) {
@@ -155,7 +169,8 @@ function collectOccupants(portMap) {
       if (seen.has(key)) continue;
       seen.add(key);
       const info = processInfo(pid);
-      rows.push({ port, pid, name: info.name, cmd: info.cmd });
+      const isDocker = isDockerProcess(info);
+      rows.push({ port, pid, name: info.name, cmd: info.cmd, isDocker });
     }
   }
   return rows;
@@ -220,8 +235,14 @@ function printOccupants(rows) {
   console.log("   (old uvicorn/vite orphans cause WinError 10048 / EADDRINUSE and stale API)");
   console.log("");
   for (const row of rows) {
-    console.log(`   :${row.port}  PID ${row.pid}  ${row.name}`);
-    if (row.cmd) console.log(`           ${row.cmd}`);
+    if (row.isDocker) {
+      console.log(`   :${row.port}  PID ${row.pid}  ${row.name} [DOCKER - PROTECTED]`);
+      if (row.cmd) console.log(`           ${row.cmd}`);
+      console.log(`           ℹ Docker process detected — skipping kill to protect Docker Desktop.`);
+    } else {
+      console.log(`   :${row.port}  PID ${row.pid}  ${row.name}`);
+      if (row.cmd) console.log(`           ${row.cmd}`);
+    }
   }
   console.log("");
 }
@@ -236,9 +257,84 @@ function askYesNo(question) {
     rl.question(question, (answer) => {
       rl.close();
       const a = String(answer || "").trim().toLowerCase();
+      // Pressing Enter (empty string) defaults to YES (true). Also accepts y/yes/д/да.
       resolve(a === "" || a === "y" || a === "yes" || a === "д" || a === "да");
     });
   });
+}
+
+function isDockerDaemonReady() {
+  try {
+    const r = spawnSync("docker", ["info"], {
+      encoding: "utf8",
+      timeout: 4000,
+      windowsHide: true,
+    });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function startDockerDesktop() {
+  if (isWin) {
+    const exePath = "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe";
+    try {
+      spawnSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `if (Test-Path '${exePath}') { Start-Process '${exePath}' } else { Start-Process 'Docker Desktop' }`,
+        ],
+        { windowsHide: true }
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  } else if (process.platform === "darwin") {
+    try {
+      spawnSync("open", ["-a", "Docker"]);
+      return true;
+    } catch {
+      return false;
+    }
+  } else {
+    try {
+      spawnSync("sudo", ["systemctl", "start", "docker"]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function ensureDockerRunning(maxWaitSeconds = 45) {
+  if (isDockerDaemonReady()) {
+    return true;
+  }
+
+  console.log("⚠ Docker daemon is not responding. Launching Docker Desktop...");
+  startDockerDesktop();
+
+  const startTime = Date.now();
+  const timeoutMs = maxWaitSeconds * 1000;
+
+  while (Date.now() - startTime < timeoutMs) {
+    sleepMs(2500);
+    if (isDockerDaemonReady()) {
+      console.log("\n✓ Docker Desktop is ready.");
+      return true;
+    }
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    process.stdout.write(`   Waiting for Docker daemon to initialize... (${elapsed}s)\r`);
+  }
+
+  console.log("");
+  console.error("✗ Docker daemon did not respond within timeout. Please check Docker Desktop.");
+  return false;
 }
 
 async function main() {
@@ -247,60 +343,76 @@ async function main() {
   let portMap = findListeningPids(ports);
   let rows = collectOccupants(portMap);
 
-  if (rows.length === 0) {
-    console.log(`✓ Dev ports free: ${ports.map((p) => ":" + p).join(", ")}`);
-    process.exit(0);
-  }
-
-  printOccupants(rows);
-
-  if (checkOnly) {
-    console.log("Use: npm run dev:kill   or   HRMS_DEV_KILL=1 npm run dev");
-    process.exit(1);
-  }
-
-  let shouldKill = forceKill;
-  if (!shouldKill) {
-    if (process.stdin.isTTY && process.stdout.isTTY) {
-      shouldKill = await askYesNo("Kill these processes (process tree) and continue? [Y/n] ");
-      if (!shouldKill) {
-        console.error("Aborted. Free ports manually or run: npm run dev:kill");
-        process.exit(1);
-      }
-    } else {
-      console.error("Non-interactive shell: ports busy. Run npm run dev:kill or set HRMS_DEV_KILL=1");
-      process.exit(1);
-    }
-  }
-
-  const uniquePids = [...new Set(rows.map((r) => r.pid))];
-  console.log(`Killing ${uniquePids.length} process tree(s)...`);
-  for (const pid of uniquePids) {
-    const ok = killTree(pid);
-    console.log(ok ? `  ✓ tree PID ${pid}` : `  ✗ failed PID ${pid}`);
-  }
-
-  // Brief settle; re-check (orphans may rebind briefly)
-  sleepMs(800);
-  portMap = findListeningPids(ports);
-  rows = collectOccupants(portMap);
-  if (rows.length > 0) {
-    console.log("Still busy after kill — second pass...");
-    for (const pid of new Set(rows.map((r) => r.pid))) {
-      killTree(pid);
-    }
-    sleepMs(500);
-    portMap = findListeningPids(ports);
-    rows = collectOccupants(portMap);
-  }
-
   if (rows.length > 0) {
     printOccupants(rows);
-    console.error("✗ Could not free all dev ports. Close the processes manually and retry.");
-    process.exit(1);
+
+    const killableRows = rows.filter((r) => !r.isDocker);
+    const dockerRows = rows.filter((r) => r.isDocker);
+
+    if (checkOnly && killableRows.length > 0) {
+      console.log("Use: npm run dev:kill   or   HRMS_DEV_KILL=1 npm run dev");
+      process.exit(1);
+    }
+
+    if (killableRows.length > 0) {
+      let shouldKill = forceKill;
+      if (!shouldKill) {
+        if (process.stdin.isTTY && process.stdout.isTTY) {
+          const promptMsg = `Kill non-Docker processes (${killableRows.length} tree(s)) and continue? [Y/n] (Press Enter for Yes): `;
+          shouldKill = await askYesNo(promptMsg);
+          if (!shouldKill) {
+            console.error("Aborted. Free ports manually or run: npm run dev:kill");
+            process.exit(1);
+          }
+        } else {
+          console.error(
+            "Non-interactive shell: ports busy. Run npm run dev:kill or set HRMS_DEV_KILL=1"
+          );
+          process.exit(1);
+        }
+      }
+
+      const uniquePids = [...new Set(killableRows.map((r) => r.pid))];
+      console.log(`Killing ${uniquePids.length} process tree(s) (Docker processes excluded)...`);
+      for (const pid of uniquePids) {
+        const ok = killTree(pid);
+        console.log(ok ? `  ✓ tree PID ${pid}` : `  ✗ failed PID ${pid}`);
+      }
+
+      // Brief settle; re-check (orphans may rebind briefly)
+      sleepMs(800);
+      portMap = findListeningPids(ports);
+      rows = collectOccupants(portMap);
+      const remainingKillable = rows.filter((r) => !r.isDocker);
+
+      if (remainingKillable.length > 0) {
+        console.log("Still busy after kill — second pass...");
+        for (const pid of new Set(remainingKillable.map((r) => r.pid))) {
+          killTree(pid);
+        }
+        sleepMs(500);
+        portMap = findListeningPids(ports);
+        rows = collectOccupants(portMap);
+      }
+
+      const finalKillable = rows.filter((r) => !r.isDocker);
+      if (finalKillable.length > 0) {
+        printOccupants(finalKillable);
+        console.error(
+          "✗ Could not free all dev ports from non-Docker processes. Close them manually and retry."
+        );
+        process.exit(1);
+      }
+    }
   }
 
   console.log(`✓ Dev ports free: ${ports.map((p) => ":" + p).join(", ")}`);
+
+  if (!checkOnly) {
+    const dockerOk = ensureDockerRunning();
+    if (!dockerOk) process.exit(1);
+  }
+
   process.exit(0);
 }
 
@@ -308,3 +420,4 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+

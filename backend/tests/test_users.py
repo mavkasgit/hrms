@@ -46,8 +46,11 @@ def test_user_schema_username_validation():
             UserCreate(username=username, full_name="Иванов Иван", role="viewer")
 
 
-async def test_create_user_api_role_and_validation(async_client, db_session: AsyncSession):
+async def test_create_user_api_role_and_validation(async_client, db_session: AsyncSession, monkeypatch):
     """Тест создания пользователя через API с проверкой валидации и роли."""
+    from app.core.config import settings
+    # Роль можно менять только при выключенном OIDC (иначе она управляется IdP)
+    monkeypatch.setattr(settings, "AUTH_OIDC_ENABLED", False)
     import uuid
     username = f"user_{uuid.uuid4().hex[:8]}"
     # Создание с корректными данными

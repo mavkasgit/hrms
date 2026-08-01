@@ -20,6 +20,8 @@ export type OidcConfig = {
   issuer: string | null
   /** TG1: prefer Telegram SSO CTA; hide in-app bot login modal on LoginPage */
   telegram_primary?: boolean
+  login_hint_enabled?: boolean
+  sso_only?: boolean
 }
 
 export type OidcLoginResponse = {
@@ -344,7 +346,7 @@ export async function fetchOidcLogoutUrl(): Promise<OidcLogoutUrlResponse> {
       qs.set("id_token_hint", idToken)
       try {
         if (typeof window !== "undefined" && window.location?.origin) {
-          qs.set("post_logout_redirect_uri", `${window.location.origin}/login`)
+          qs.set("post_logout_redirect_uri", `${window.location.origin}/login?logout=1`)
         }
       } catch {
         /* ignore */
@@ -370,7 +372,7 @@ export async function fetchOidcLogoutUrl(): Promise<OidcLogoutUrlResponse> {
 
 /**
  * Resolve redirect_uri from the page origin (LAN IP / localhost / hostname).
- * Prefer window.location so both dev (:5173) and prod (:8081) work without
+ * Prefer window.location so both dev (:5171) and prod (:8081) work without
  * hardcoding — Authentik allow-list must include both ports × hosts.
  */
 export function resolveOidcRedirectUri(config: OidcConfig): string {
@@ -564,6 +566,8 @@ export type StartOidcLoginOptions = {
    * Uses OIDC `prompt=login` + `max_age=0` (MSAL / Auth0 / oidc-client pattern).
    */
   forceReauth?: boolean
+  /** Optional pre-filled username/email for Authentik identification step */
+  loginHint?: string
 }
 
 /** Policy / config failures — show error card, do not auto-retry. */
@@ -707,6 +711,9 @@ export async function startOidcLogin(
   url.searchParams.set("state", state)
   url.searchParams.set("code_challenge", codeChallenge)
   url.searchParams.set("code_challenge_method", "S256")
+  if (config.login_hint_enabled !== false && options.loginHint) {
+    url.searchParams.set("login_hint", options.loginHint)
+  }
   // Force re-auth: overwrite IdP session / tokens (prompt=login + max_age=0)
   if (options.forceReauth) {
     url.searchParams.set("prompt", "login")

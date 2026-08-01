@@ -9,6 +9,7 @@ export {
   useBulkSetEntries,
   useSetWorkScheduleEntry,
   useDeleteWorkScheduleEntry,
+  usePartialBulkSet,
 } from "./useWorkSchedules"
 export {
   fetchWorkSchedules,
@@ -21,6 +22,7 @@ export {
   setWorkScheduleEntry,
   bulkSetEntries,
   deleteWorkScheduleEntry,
+  partialBulkSet,
 } from "./api"
 export type {
   WorkSchedule,
@@ -29,4 +31,8 @@ export type {
   WorkScheduleEntry,
   WorkScheduleEntryCreate,
   BulkSetEntriesRequest,
+  PartialEntryItem,
+  PartialBulkRequest,
+  PartialEntryResult,
+  PartialBulkResponse,
 } from "./types"

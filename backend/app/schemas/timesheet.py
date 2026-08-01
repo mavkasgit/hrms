@@ -99,6 +99,29 @@ class TimesheetCell(BaseModel):
     absences: List[Dict[str, Any]] = []
 
 
+class TimesheetAutoValue(BaseModel):
+    """Автоматический слой: вычисляется из отпусков/больничных."""
+    shift_type_code: str
+    source: str  # "vacation" | "sick_leave"
+    order_id: Optional[int] = None
+
+
+class TimesheetManualValue(BaseModel):
+    """Ручной слой: из WorkScheduleEntry."""
+    shift_type_code: Optional[str] = None
+    planned_hours_override: Optional[float] = None
+    note: Optional[str] = None
+
+
+class TimesheetCellDay(BaseModel):
+    """Трёхслойная ячейка дня: auto + manual + result."""
+    auto: Optional[TimesheetAutoValue] = None
+    manual: Optional[TimesheetManualValue] = None
+    result: Optional[str] = None  # shift_type_code that wins (manual ?? auto)
+    conflict: bool = False  # vacation + sick leave overlap same day
+    order_changed: bool = False  # приказ изменился после ручной правки
+
+
 class TimesheetEmployeeTag(BaseModel):
     id: int
     name: str
@@ -117,6 +140,8 @@ class TimesheetEmployeeRow(BaseModel):
     plan: Dict[str, Dict[str, Any]] = Field(default_factory=dict)  # date.isoformat -> plan cell
     fact: Dict[str, Dict[str, Any]] = Field(default_factory=dict)  # date.isoformat -> fact cell
     absences: List[Dict[str, Any]] = []
+    cells: Dict[str, TimesheetCellDay] = Field(default_factory=dict)  # date.isoformat -> 3-layer cell
+    result_hours: float = 0.0  # часы за период по итоговому слою (result)
 
 
 class TimesheetResponse(BaseModel):

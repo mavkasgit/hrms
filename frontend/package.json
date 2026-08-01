@@ -31,6 +31,7 @@
     "pdfmake": "^0.3.7",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
+    "react-datasheet-grid": "^4.11.6",
     "react-day-picker": "^9.14.0",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",

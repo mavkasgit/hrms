@@ -33,6 +33,9 @@ export type {
   TimesheetPlanCell,
   TimesheetFactCell,
   TimesheetAbsence,
+  TimesheetAutoValue,
+  TimesheetManualValue,
+  TimesheetCellDay,
   TimesheetEmployeeRow,
   TimesheetUnmatchedRow,
 } from "./types"

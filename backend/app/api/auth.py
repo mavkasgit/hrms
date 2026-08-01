@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 import bcrypt
+from jose import jwt
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
@@ -11,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.constants import SSO_BYPASS_HASH
-from app.core.database import get_db
+from app.core.database import get_db, async_session
 from app.models.user import User
 from app.api.deps import get_current_user, CurrentUser
 from app.schemas.oidc_auth import (
@@ -34,6 +35,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class BreakGlassLoginRequest(BaseModel):
+    password: str
+
+
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -44,20 +49,7 @@ class LoginResponse(BaseModel):
     id_token: str | None = None
 
 
-class InviteLoginRequest(BaseModel):
-    invite_code: str
 
-
-def _verify_password(plain: str, hashed: str) -> bool:
-    """Проверить пароль. В dev-режиме принимаем пароль 'dev' без хэша."""
-    # Dev bypass: если DEV_BYPASS_AUTH включён и пароль "dev" — пропускаем
-    if settings.DEV_BYPASS_AUTH and plain == "dev":
-        return True
-    # Обычная проверка bcrypt
-    try:
-        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
-    except Exception:
-        return False
 
 
 def _request_meta(request: Request) -> tuple[str | None, str | None]:
@@ -77,6 +69,11 @@ def _login_response(user: User, token: str) -> LoginResponse:
 
 
 async def _resolve_user_id(db: AsyncSession, current_user: CurrentUser) -> int:
+    if getattr(current_user, "is_break_glass", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Операция недоступна для учетной записи аварийного доступа",
+        )
     result = await db.execute(
         select(User).where(User.username == current_user.username, User.is_deleted == False)
     )
@@ -160,14 +157,12 @@ async def backchannel_logout(
 ) -> JSONResponse:
     """OIDC Back-Channel Logout (public). Authentik POSTs logout_token form field.
 
-    Phase-1 SLO (AUTH_OIDC_BACKCHANNEL_SID_ENABLED, default on):
-      - replay по jti → 400;
-      - sid в токене → revoke только сессий с этим IdP sid (не все сессии юзера);
-      - без sid (напр. деактивация пользователя) → revoke всех сессий по sub;
-      - аудит: session_revoke с details.source = "authentik_backchannel".
-    Флаг off → legacy: sub → revoke_all без replay-проверки (откат одним переключателем).
+    - replay protection via jti (one-time use);
+    - if sid present: revoke only sessions with that IdP sid (not all user sessions);
+    - if sid absent (e.g. user deactivation): revoke all sessions by sub;
+    - audit: session_revoke event with source="authentik_backchannel".
 
-    Unknown sub is 200 no-op (no enumeration). Invalid token → 400.
+    Unknown sub is 200 no-op (no enumeration). Invalid token -> 400.
     """
     if not logout_token:
         raise HTTPException(
@@ -185,19 +180,6 @@ async def backchannel_logout(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="invalid_logout_token",
         ) from exc
-
-    if not settings.AUTH_OIDC_BACKCHANNEL_SID_ENABLED:
-        # Legacy path (feature-flag rollback): revoke всех сессий пользователя по sub
-        user = await service.users.get_by_authentik_sub(db, claims.sub)
-        revoked = 0
-        if user is not None:
-            revoked = await session_service.revoke_all(
-                db, user_id=user.id, reason="backchannel_logout"
-            )
-        return JSONResponse(
-            content={"status": "ok", "revoked": revoked},
-            headers={"Cache-Control": "no-store"},
-        )
 
     # Replay-защита: jti одноразовый (OIDC Back-Channel Logout 1.0)
     if claims.jti and await session_service.is_logout_jti_used(db, claims.jti):
@@ -258,101 +240,193 @@ async def backchannel_logout(
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(
-    payload: LoginRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> LoginResponse:
+async def login() -> LoginResponse:
     """
-    Запасной вход по логину и паролю (dual-run escape; SSO is Authentik OIDC).
-
-    В dev-режиме (DEV_BYPASS_AUTH=True на бэкенде) принимает пароль "dev"
-    для любого существующего пользователя.
+    Эндпоинт входа по логину и паролю отключён.
+    Единственный путь аутентификации — Authentik SSO (OIDC) и Break Glass.
     """
-    ip, ua = _request_meta(request)
-    result = await db.execute(
-        select(User).where(User.username == payload.username, User.is_deleted == False)
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Вход по логину и паролю отключен. Используйте единый вход (SSO).",
     )
-    user = result.scalars().first()
-
-    if not user:
-        await session_service.record_failed_login(
-            db,
-            username_attempted=payload.username,
-            reason="invalid_credentials",
-            method="password",
-            ip=ip,
-            user_agent=ua,
-            user_id=None,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный логин или пароль",
-        )
-
-    if not _verify_password(payload.password, user.password_hash):
-        await session_service.record_failed_login(
-            db,
-            username_attempted=payload.username,
-            reason="invalid_credentials",
-            method="password",
-            ip=ip,
-            user_agent=ua,
-            user_id=user.id,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный логин или пароль",
-        )
-
-    token, _session = await session_service.complete_login(
-        db,
-        user=user,
-        login_method="password",
-        ip=ip,
-        user_agent=ua,
-    )
-    return _login_response(user, token)
 
 
 @router.post("/invite/login", response_model=LoginResponse)
-async def invite_login(
-    payload: InviteLoginRequest,
+async def invite_login() -> LoginResponse:
+    """
+    Эндпоинт входа по инвайт-коду отключён.
+    Единственный путь аутентификации — Authentik SSO (OIDC) и Break Glass.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Вход по инвайт-коду отключен. Перейдите по ссылке приглашения Authentik.",
+    )
+
+
+import socket
+
+
+def _is_db_port_open() -> bool:
+    try:
+        from urllib.parse import urlparse
+        url_str = settings.DATABASE_URL
+        if "+asyncpg" in url_str:
+            url_str = url_str.replace("postgresql+asyncpg://", "http://")
+        elif "postgresql://" in url_str:
+            url_str = url_str.replace("postgresql://", "http://")
+        parsed = urlparse(url_str)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 5432
+        with socket.create_connection((host, port), timeout=0.1):
+            return True
+    except Exception:
+        return False
+
+
+async def _safe_record_break_glass_event(
+    event_type: str,
+    success: bool,
+    username_attempted: str,
+    ip_address: str,
+    user_agent: str,
+    session_id: UUID | None = None,
+    details: dict | None = None,
+):
+    if not _is_db_port_open():
+        import structlog
+        structlog.get_logger().warning(
+            "Skipping break-glass database audit record (Database is offline)",
+            source="emergency_access",
+        )
+        return
+
+    db = async_session()
+    try:
+        await session_service.record_login_event(
+            db,
+            event_type=event_type,
+            success=success,
+            username_attempted=username_attempted,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            session_id=session_id,
+            details=details,
+        )
+        await db.commit()
+    except Exception as exc:
+        import structlog
+        structlog.get_logger().warning(
+            "Could not save break-glass login event to database",
+            error=str(exc),
+            source="emergency_access",
+        )
+    finally:
+        try:
+            await db.close()
+        except BaseException:
+            pass
+
+
+@router.post("/break-glass/login", response_model=LoginResponse)
+async def break_glass_login(
+    payload: BreakGlassLoginRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     """
-    Вход по одноразовому инвайт-коду.
+    Аварийный (Break Glass) вход по паролю.
+    Изолирован от таблицы users и стандартного сервиса входа.
     """
     ip, ua = _request_meta(request)
-    result = await db.execute(
-        select(User).where(User.invite_code == payload.invite_code, User.is_deleted == False)
-    )
-    user = result.scalars().first()
+    username = settings.BREAK_GLASS_USER or "emergency_admin"
 
-    if not user:
-        await session_service.record_failed_login(
-            db,
-            username_attempted=payload.invite_code,
-            reason="invalid_invite",
-            method="invite",
-            ip=ip,
+    if not settings.BREAK_GLASS_ENABLED:
+        await _safe_record_break_glass_event(
+            event_type="login_failure",
+            success=False,
+            username_attempted=username,
+            ip_address=ip,
             user_agent=ua,
-            user_id=None,
+            details={"source": "emergency_access", "reason": "break_glass_disabled"},
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Код приглашения недействителен. Убедитесь, что код введен верно, или что аккаунт не был активирован ранее (в этом случае войдите с помощью пароля или Telegram).",
+            detail="Аварийный доступ отключен",
         )
 
-    token, _session = await session_service.complete_login(
-        db,
-        user=user,
-        login_method="invite",
+    # Проверка пароля (открытый пароль или bcrypt-хэш)
+    password_ok = False
+    if settings.BREAK_GLASS_PASSWORD:
+        password_ok = (payload.password == settings.BREAK_GLASS_PASSWORD)
+    elif settings.BREAK_GLASS_PASSWORD_HASH:
+        try:
+            password_ok = bcrypt.checkpw(
+                payload.password.encode("utf-8"),
+                settings.BREAK_GLASS_PASSWORD_HASH.encode("utf-8"),
+            )
+        except Exception:
+            password_ok = False
+
+    if not password_ok:
+        await _safe_record_break_glass_event(
+            event_type="login_failure",
+            success=False,
+            username_attempted=username,
+            ip_address=ip,
+            user_agent=ua,
+            details={"source": "emergency_access", "reason": "invalid_credentials"},
+        )
+        import structlog
+        structlog.get_logger().warning(
+            "Emergency access login failed",
+            username=username,
+            ip=ip,
+            source="emergency_access",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверный пароль аварийного доступа",
+        )
+
+    # Успешный вход
+    session_id = uuid4()
+    token_data = {
+        "sub": username,
+        "username": username,
+        "role": "admin",
+        "hrms_access_level": "admin",
+        "is_break_glass": True,
+        "sid": str(session_id),
+    }
+    secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
+    token = jwt.encode(token_data, secret_key, algorithm=settings.ALGORITHM)
+
+    await _safe_record_break_glass_event(
+        event_type="login_success",
+        success=True,
+        username_attempted=username,
+        ip_address=ip,
+        user_agent=ua,
+        session_id=session_id,
+        details={"source": "emergency_access", "method": "break_glass"},
+    )
+
+    import structlog
+    structlog.get_logger().critical(
+        "EMERGENCY BREAK-GLASS ACCESS ACTIVATED",
+        username=username,
         ip=ip,
         user_agent=ua,
+        session_id=str(session_id),
+        source="emergency_access",
     )
-    return _login_response(user, token)
+
+    return LoginResponse(
+        access_token=token,
+        token_type="bearer",
+        username=username,
+        role="admin",
+        full_name="Emergency Access Admin",
+    )
 
 
 @router.get("/me")
@@ -366,6 +440,27 @@ async def get_me(
     При наличии authentik_sub + AUTHENTIK_API_* подтягивает unified profile (имя/аватар)
     из Authentik в локальный кэш.
     """
+    if getattr(current_user, "is_break_glass", False):
+        return {
+            "username": current_user.username,
+            "role": "admin",
+            "full_name": current_user.full_name or "Emergency Access Admin",
+            "email": None,
+            "locale": "ru",
+            "theme": "system",
+            "has_telegram": False,
+            "telegram_id": None,
+            "telegram_username": None,
+            "has_password": True,
+            "password_changed_at": None,
+            "needs_security_setup": False,
+            "invite_code": None,
+            "avatar_seed": "emergency",
+            "authentik_linked": False,
+            "profile_sot": "local",
+            "is_break_glass": True,
+        }
+
     result = await db.execute(
         select(User).where(User.username == current_user.username, User.is_deleted == False)
     )
@@ -590,6 +685,20 @@ async def logout(
             detail="Invalid token payload",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if payload.get("is_break_glass") is True:
+        sid_raw = payload.get("sid")
+        session_id = UUID(str(sid_raw)) if sid_raw else None
+        await session_service.record_login_event(
+            db,
+            event_type="logout",
+            success=True,
+            user_id=None,
+            username_attempted=username,
+            session_id=session_id,
+            details={"source": "emergency_access", "method": "break_glass"},
+        )
+        return
 
     result = await db.execute(
         select(User).where(User.username == username, User.is_deleted == False)

@@ -105,6 +105,7 @@ class MockAsyncContextManager:
 @pytest.mark.asyncio
 async def test_run_backup_cycle_lock_acquisition_failure(monkeypatch):
     # Mock no backups today
+    monkeypatch.setattr("app.services.backup_scheduler._is_db_port_open", lambda: True)
     monkeypatch.setattr("app.services.backup_scheduler._iter_backup_files", lambda: [])
     monkeypatch.setattr("app.services.backup_scheduler._read_config_json", lambda: {
         "auto_enabled": True,
@@ -142,6 +143,7 @@ async def test_run_backup_cycle_lock_acquisition_failure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_backup_cycle_success(monkeypatch):
+    monkeypatch.setattr("app.services.backup_scheduler._is_db_port_open", lambda: True)
     monkeypatch.setattr("app.services.backup_scheduler._iter_backup_files", lambda: [])
     monkeypatch.setattr("app.services.backup_scheduler._read_config_json", lambda: {
         "auto_enabled": True,

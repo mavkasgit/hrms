@@ -82,6 +82,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     is_deleted = Column(Boolean, default=False, nullable=False, index=True)
+    is_active = Column(Boolean, default=True, nullable=False, server_default=text("true"))
     deleted_at = Column(DateTime(timezone=True))
     deleted_by = Column(String(100))
 

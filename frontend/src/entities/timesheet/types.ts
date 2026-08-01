@@ -111,6 +111,28 @@ export interface TimesheetAbsence {
   start_date: string
   end_date: string
   vacation_type?: string
+  order_id?: number | null
+}
+
+export interface TimesheetAutoValue {
+  shift_type_code: string
+  source: "vacation" | "sick_leave"
+  order_id: number | null
+}
+
+export interface TimesheetManualValue {
+  shift_type_code: string | null
+  planned_hours_override: number | null
+  note: string | null
+}
+
+export interface TimesheetCellDay {
+  auto: TimesheetAutoValue | null
+  manual: TimesheetManualValue | null
+  result: string | null
+  conflict: boolean
+  /** Приказ (отпуск/больничный) изменился после ручной правки — нужно «принять» */
+  order_changed: boolean
 }
 
 export interface TimesheetEmployeeTag {
@@ -131,6 +153,8 @@ export interface TimesheetEmployeeRow {
   plan: Record<string, TimesheetPlanCell>
   fact: Record<string, TimesheetFactCell>
   absences: TimesheetAbsence[]
+  cells: Record<string, TimesheetCellDay>
+  result_hours: number
 }
 
 export interface Timesheet {

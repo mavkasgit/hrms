@@ -20,6 +20,7 @@ class CurrentUser(str):
         role: str | None = None,
         full_name: str | None = None,
         session_id: UUID | None = None,
+        is_break_glass: bool = False,
     ):
         instance = super().__new__(cls, username)
         instance.username = username
@@ -27,12 +28,23 @@ class CurrentUser(str):
         instance.full_name = full_name
         # Optional: set when JWT carries sid and session is active (not for "admin" bypass).
         instance.session_id = session_id
+        instance.is_break_glass = is_break_glass
         return instance
 
 async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ) -> CurrentUser:
+    # Service-to-service key (idp-ops sync) — static, no session, read-only viewer
+    service_key = request.headers.get("X-Service-Key")
+    if service_key and settings.SERVICE_API_KEY:
+        if service_key == settings.SERVICE_API_KEY:
+            return CurrentUser("idp-ops-service", role="viewer", full_name="IdP Ops Sync")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid service key",
+        )
+
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         raise HTTPException(
@@ -89,6 +101,24 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Break Glass (Emergency Access) token handling: bypasses users table & DB session assertion
+    if payload.get("is_break_glass") is True:
+        if not settings.BREAK_GLASS_ENABLED:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Аварийный доступ отключен",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        sid_raw = payload.get("sid")
+        session_id = UUID(str(sid_raw)) if sid_raw else None
+        return CurrentUser(
+            username=username,
+            role="admin",
+            full_name="Emergency Access Admin",
+            session_id=session_id,
+            is_break_glass=True,
         )
 
     # Hybrid JWT + server session: claim sid required (legacy tokens → re-login).
@@ -176,6 +206,12 @@ async def get_current_user(
                     detail="Не удалось автоматически зарегистрировать пользователя в кадровой системе",
                 )
     else:
+        # Fail-closed: заблокировать деактивированных пользователей (IdP отозвал роль)
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Доступ запрещен. У вас нет активной роли в кадровой системе.",
+            )
         # Sync role from JWT claim (legacy path when claim present on token)
         if user.role != expected_role:
             user.role = expected_role

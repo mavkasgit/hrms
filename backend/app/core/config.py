@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
@@ -14,6 +15,16 @@ class Settings(BaseSettings):
 
     # Dev/test: password "dev" + magic Bearer "admin". Must be false in prod.
     DEV_BYPASS_AUTH: bool = True
+
+    # Service-to-service API key (idp-ops reads employees). Header: X-Service-Key.
+    # Empty → disabled. Never expires, no login required.
+    SERVICE_API_KEY: str = ""
+
+    # Break Glass (Emergency Access) configuration
+    BREAK_GLASS_ENABLED: bool = False
+    BREAK_GLASS_USER: str = "emergency_admin"
+    BREAK_GLASS_PASSWORD: str = ""
+    BREAK_GLASS_PASSWORD_HASH: str = ""
 
     KTM2000_SYNC_URL: str = "http://localhost:8010/api/integration/sync-employee"
     KTM2000_INTEGRATION_TOKEN: str = "ktm2000-integration-token-default"
@@ -71,7 +82,7 @@ class Settings(BaseSettings):
     TELEGRAM_UPDATES_POLLING: bool = True
     # Public URL of HRMS app — used for "Open HRMS" inline button in bot reply.
     # Defaults to the Vite dev origin; override per env for staging/prod.
-    TELEGRAM_PUBLIC_APP_URL: str = "http://localhost:5173"
+    TELEGRAM_PUBLIC_APP_URL: str = "http://localhost:5171"
     # When True, bot sends a friendly confirmation message + inline "Open HRMS"
     # button right after /start <token>. Disable for silent test mode.
     TELEGRAM_BOT_REPLY_ENABLED: bool = True
@@ -89,7 +100,7 @@ class Settings(BaseSettings):
     AUTH_OIDC_ISSUER: str | None = None  # e.g. http://192.168.x.x:9000/application/o/hrms/
     AUTH_OIDC_CLIENT_ID: str | None = None
     AUTH_OIDC_CLIENT_SECRET: str | None = None  # empty for public+PKCE
-    # Hint only — SPA uses window.location.origin (dev :5173 / prod :8081)
+    # Hint only — SPA uses window.location.origin (dev :5171 / prod :8081)
     AUTH_OIDC_REDIRECT_URI: str | None = None
     AUTH_OIDC_SCOPES: str = "openid profile email hrms_access"
     # Optional extra hosts or full issuers (comma-separated) accepted in id_token.iss
@@ -102,14 +113,11 @@ class Settings(BaseSettings):
     AUTH_OIDC_END_SESSION_URL: str | None = None
     # Align with TELEGRAM_ALLOW_JIT: no auto-create local User unless true
     AUTH_OIDC_ALLOW_JIT: bool = False
-    AUTH_OIDC_DEFAULT_ROLE: str = "viewer"
-    # App SoT for roles: claim → users.role only when explicitly opted in
-    AUTH_OIDC_SYNC_ROLE_FROM_IDP: bool = False
     # TG1: when true + OIDC enabled, FE prefers Telegram SSO (Authentik TG Source) CTA
     AUTH_OIDC_TELEGRAM_PRIMARY: bool = False
-    # Phase-1 SLO: back-channel logout гасит сессию по sid + replay-защита по jti.
-    # false → мгновенный откат на legacy-поведение (revoke всех сессий по sub)
-    AUTH_OIDC_BACKCHANNEL_SID_ENABLED: bool = True
+    # Phase-3: SSO-only mode (blocks password & invite login; redirect to Authentik SSO)
+    AUTH_SSO_ONLY: bool = False
+    AUTH_OIDC_LOGIN_HINT_ENABLED: bool = True
 
     # Authentik Admin API proxy (SSO-D) — token never exposed to FE
     # Empty AUTHENTIK_API_TOKEN → IdP admin proxy disabled (deep-links only)
@@ -118,6 +126,29 @@ class Settings(BaseSettings):
     AUTHENTIK_API_TOKEN: str | None = None
     AUTHENTIK_PUBLIC_URL: str | None = "auto"
     AUTHENTIK_PROFILE_TTL_SECONDS: int = 300
+    AUTHENTIK_ENROLLMENT_FLOW_SLUG: str | None = "invite"
+    OPS_PUBLIC_IP: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def expand_env_placeholders(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        import re
+        ops_ip = (values.get("OPS_PUBLIC_IP") or values.get("ops_public_ip") or os.getenv("OPS_PUBLIC_IP") or "").strip()
+        if not ops_ip or ops_ip.startswith("${"):
+            from app.core.host_net import env_lan_ip, detect_lan_ip
+            ops_ip = env_lan_ip() or detect_lan_ip() or "127.0.0.1"
+        for k, v in list(values.items()):
+            if isinstance(v, str) and "${" in v:
+                def _repl(m: re.Match) -> str:
+                    var_name = m.group(1)
+                    if var_name == "OPS_PUBLIC_IP":
+                        return ops_ip
+                    val = values.get(var_name) or values.get(var_name.lower()) or os.getenv(var_name)
+                    return str(val) if (val and not str(val).startswith("${")) else m.group(0)
+                values[k] = re.sub(r"\$\{([A-Za-z0-9_]+)\}", _repl, v)
+        return values
 
     @model_validator(mode="after")
     def resolve_auto_urls(self) -> "Settings":
@@ -126,7 +157,7 @@ class Settings(BaseSettings):
         # Разрешение APP_PUBLIC_URL
         if self.APP_PUBLIC_URL == "auto":
             ip = env_lan_ip() or detect_lan_ip() or "localhost"
-            port = 8081 if self.ENV == "prod" else (8080 if self.ENV == "test" else 5173)
+            port = 8081 if self.ENV == "prod" else (8080 if self.ENV == "test" else 5171)
             self.APP_PUBLIC_URL = f"http://{ip}:{port}"
             
         # Разрешение TELEGRAM_PUBLIC_APP_URL

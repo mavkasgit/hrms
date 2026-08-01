@@ -61,8 +61,8 @@ def oidc_off():
     settings.AUTH_OIDC_ENABLED = original
 
 
-async def test_update_role_allowed_when_oidc(async_client, db_session: AsyncSession, oidc_on):
-    """App SoT: create with explicit admin + PUT role change work under OIDC."""
+async def test_update_role_blocked_when_oidc(async_client, db_session: AsyncSession, oidc_on):
+    """Fail-closed: role change via API blocked when OIDC enabled (managed by IdP)."""
     import uuid
 
     username = f"idp_role_{uuid.uuid4().hex[:8]}"
@@ -73,26 +73,19 @@ async def test_update_role_allowed_when_oidc(async_client, db_session: AsyncSess
     )
     assert create.status_code == 201
     body = create.json()
-    assert body["role"] == "admin"
+    # OIDC on: payload.role ignored, defaults to viewer (IdP assigns on first login)
+    assert body["role"] == "viewer"
     assert "authentik_sub" in body
     assert body["authentik_sub"] is None
     user_id = body["id"]
 
     resp = await async_client.put(
         f"/api/users/{user_id}",
-        json={"role": "viewer"},
-        headers=_auth(),
-    )
-    assert resp.status_code == 200
-    assert resp.json()["role"] == "viewer"
-
-    resp_up = await async_client.put(
-        f"/api/users/{user_id}",
         json={"role": "admin"},
         headers=_auth(),
     )
-    assert resp_up.status_code == 200
-    assert resp_up.json()["role"] == "admin"
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "role_managed_by_idp"
 
     await async_client.delete(f"/api/users/{user_id}", headers=_auth())
 

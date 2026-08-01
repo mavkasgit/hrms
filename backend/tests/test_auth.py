@@ -63,91 +63,12 @@ async def test_create_user_hashes_password(db_session, create_employee):
     assert bcrypt.checkpw("secretpassword123".encode("utf-8"), user.password_hash.encode("utf-8"))
 
 
-async def test_login_success_with_password(db_session, create_employee):
-    """Тест: успешный логин с правильным паролем."""
-    employee = await create_employee()
-    await db_session.commit()
-
-    # Сначала создаем пользователя с паролем
-    create_payload = UserCreate(
-        username="login_user",
-        full_name="Логин Пользователь",
-        employee_id=employee.id,
-        role="viewer",
-        password="my_secure_password",
-    )
-    await create_user(payload=create_payload, db=db_session, _current_user="admin")
-
-    # Пытаемся войти
-    login_payload = LoginRequest(
-        username="login_user",
-        password="my_secure_password",
-    )
-    response = await login(payload=login_payload, request=_make_request(), db=db_session)
-    assert response.username == "login_user"
-    assert response.role == "viewer"
-    assert response.access_token is not None
-
-    # JWT must carry sid (session claim)
-    payload = jwt.get_unverified_claims(response.access_token)
-    assert payload.get("sid")
-
-
-async def test_login_failure_with_wrong_password(db_session, create_employee):
-    """Тест: ошибка логина с неверным паролем."""
-    employee = await create_employee()
-    await db_session.commit()
-
-    # Создаем пользователя
-    create_payload = UserCreate(
-        username="wrong_pass_user",
-        full_name="Неверный Пароль Пользователь",
-        employee_id=employee.id,
-        role="admin",
-        password="correctpassword",
-    )
-    await create_user(payload=create_payload, db=db_session, _current_user="admin")
-
-    # Пытаемся войти с неверным паролем
-    login_payload = LoginRequest(
-        username="wrong_pass_user",
-        password="incorrectpassword",
-    )
+async def test_login_disabled_permanently():
+    """Тест: эндпоинт login() отключён насовсем и возвращает 403."""
     with pytest.raises(HTTPException) as exc_info:
-        await login(payload=login_payload, request=_make_request(), db=db_session)
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "Неверный логин или пароль"
-
-
-async def test_login_dev_bypass(db_session, create_employee):
-    """Тест: dev bypass с паролем 'dev', когда DEV_BYPASS_AUTH=True."""
-    original_bypass = settings.DEV_BYPASS_AUTH
-    settings.DEV_BYPASS_AUTH = True
-
-    try:
-        employee = await create_employee()
-        await db_session.commit()
-
-        # Создаем пользователя с паролем
-        create_payload = UserCreate(
-            username="dev_bypass_user",
-            full_name="Dev Bypass Пользователь",
-            employee_id=employee.id,
-            role="admin",
-            password="some_long_password",
-        )
-        await create_user(payload=create_payload, db=db_session, _current_user="admin")
-
-        # Логинимся с паролем 'dev'
-        login_payload = LoginRequest(
-            username="dev_bypass_user",
-            password="dev",
-        )
-        response = await login(payload=login_payload, request=_make_request(), db=db_session)
-        assert response.username == "dev_bypass_user"
-        assert response.access_token is not None
-    finally:
-        settings.DEV_BYPASS_AUTH = original_bypass
+        await login()
+    assert exc_info.value.status_code == 403
+    assert "отключен" in exc_info.value.detail or "disabled" in exc_info.value.detail
 
 
 async def test_magic_admin_allowed_when_dev_bypass(db_session):

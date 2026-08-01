@@ -14,6 +14,8 @@ class OidcConfigResponse(BaseModel):
     issuer: str | None = None
     # TG1: FE prefers «Войти через Telegram» SSO CTA when true
     telegram_primary: bool = False
+    login_hint_enabled: bool = True
+    sso_only: bool = False
 
 
 class OidcCallbackRequest(BaseModel):

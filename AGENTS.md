@@ -200,3 +200,19 @@ npm run db:makemigrate -- -m "msg"    # Создать новую миграци
 - Backend API Docs: http://localhost:8000/docs (Swagger UI)
 - Frontend Dev: http://localhost:5173
 - Playwright Report: `playwright-report/`
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues (`mavkasgit/hrms`) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
