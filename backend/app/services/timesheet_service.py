@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -828,6 +828,171 @@ class TimesheetImportService:
             for h in holidays
         ]
         return base
+
+    # --- Автозаполнение ручного слоя по турникету (#16) ---
+
+    @staticmethod
+    def fact_hours_to_shift_code(
+        presence_hours: Optional[float],
+        night_hours: Optional[float],
+    ) -> Tuple[Optional[str], Optional[float]]:
+        """Подбирает тип смены по факту из турникета (нормализованные часы).
+
+        Возвращает (код смены, planned_hours_override). Часы уже нормализованы
+        импортом к 4/8/12 (normalize_imported_hours) — здесь НЕ нормализуем
+        повторно, чтобы в ячейке было ожидаемое значение, а не искажённое дважды.
+
+        Правило:
+          - ночная смена (night_hours >= 6) → "night"
+          - 12ч → "day_long"
+          - 8ч → "day"
+          - 4ч (короткая) → "day" с override фактических часов
+          - без прохода (0/None) → None (не пишем)
+        """
+        if not presence_hours or presence_hours <= 0:
+            return None, None
+        night = night_hours or 0
+        if night >= 6 and presence_hours >= 10:
+            return "night", None
+        if presence_hours >= 10:
+            return "day_long", None
+        if presence_hours >= 6:
+            return "day", None
+        # 4ч — нет отдельного типа смены, пишем день с переопределением часов
+        return "day", presence_hours
+
+    async def apply_turnstile_autofill(
+        self,
+        db: AsyncSession,
+        period_start: date,
+        period_end: date,
+        current_user: str,
+        employee_ids: Optional[List[int]] = None,
+        department_id: Optional[int] = None,
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """Переносит факт из турникета в ручной слой за период.
+
+        Дни без прохода пропускаются. Ячейки, где ручной слой уже заполнен,
+        НЕ перетираются (руками набранное важнее подсказки). Возвращает
+        построчный результат и счётчики; при dry_run ничего не пишет.
+        """
+        # Загрузка сотрудников и их фактов одним запросом
+        emp_stmt = select(Employee).where(
+            Employee.is_deleted == False, Employee.is_dismissed == False
+        )
+        if employee_ids is not None:
+            emp_stmt = emp_stmt.where(Employee.id.in_(employee_ids))
+        if department_id is not None:
+            emp_stmt = emp_stmt.where(Employee.department_id == department_id)
+        result = await db.execute(emp_stmt)
+        employees = list(result.scalars().all())
+        emp_ids = [e.id for e in employees]
+        if not emp_ids:
+            return {
+                "results": [],
+                "applied": 0,
+                "skipped_no_pass": 0,
+                "skipped_manual": 0,
+                "dry_run": dry_run,
+            }
+
+        fact_entries = await self.entry_repo.get_by_period(
+            db, period_start, period_end, employee_ids=emp_ids
+        )
+
+        # Уже существующие ручные значения за период (чтобы не перетирать)
+        from app.models.work_schedule import WorkSchedule, WorkScheduleEntry
+        existing_stmt = (
+            select(WorkSchedule.employee_id, WorkScheduleEntry.work_date)
+            .join(WorkScheduleEntry, WorkScheduleEntry.schedule_id == WorkSchedule.id)
+            .where(
+                WorkSchedule.employee_id.in_(emp_ids),
+                WorkScheduleEntry.work_date >= period_start,
+                WorkScheduleEntry.work_date <= period_end,
+                WorkScheduleEntry.shift_type_code.isnot(None),
+            )
+        )
+        existing_result = await db.execute(existing_stmt)
+        existing_keys = {
+            (e_id, wd.isoformat()) for e_id, wd in existing_result.all()
+        }
+
+        # Группируем факты по сотруднику+дню
+        facts: Dict[Tuple[int, date], TimesheetEntry] = {}
+        for entry in fact_entries:
+            if entry.employee_id is None:
+                continue
+            facts[(entry.employee_id, entry.work_date)] = entry
+
+        entries_to_apply: List[Dict[str, Any]] = []
+        results: List[Dict[str, Any]] = []
+        applied = skipped_no_pass = skipped_manual = 0
+
+        for emp in employees:
+            current = period_start
+            while current <= period_end:
+                fact = facts.get((emp.id, current))
+                if not fact or not (fact.presence_hours or fact.work_hours):
+                    skipped_no_pass += 1
+                    current += timedelta(days=1)
+                    continue
+
+                key = (emp.id, current.isoformat())
+                if key in existing_keys:
+                    skipped_manual += 1
+                    current += timedelta(days=1)
+                    continue
+
+                code, override = self.fact_hours_to_shift_code(
+                    fact.presence_hours, fact.night_hours
+                )
+                if code is None:
+                    skipped_no_pass += 1
+                    current += timedelta(days=1)
+                    continue
+
+                entries_to_apply.append(
+                    {
+                        "employee_id": emp.id,
+                        "work_date": current,
+                        "shift_type_code": code,
+                        "planned_hours_override": override,
+                    }
+                )
+                results.append(
+                    {
+                        "employee_id": emp.id,
+                        "employee_name": emp.name,
+                        "work_date": current.isoformat(),
+                        "shift_type_code": code,
+                        "planned_hours_override": override,
+                        "success": True,
+                        "skipped": False,
+                    }
+                )
+                applied += 1
+                current += timedelta(days=1)
+
+        if not dry_run and entries_to_apply:
+            from app.services.work_schedule_service import work_schedule_service
+
+            bulk = await work_schedule_service.partial_bulk_set(
+                db, entries_to_apply, current_user
+            )
+            # Отмечаем строки, которые реально не записались
+            failed = {r["work_date"] for r in bulk["results"] if not r["success"]}
+            for r in results:
+                if r["work_date"] in failed:
+                    r["success"] = False
+
+        return {
+            "results": results,
+            "applied": applied,
+            "skipped_no_pass": skipped_no_pass,
+            "skipped_manual": skipped_manual,
+            "dry_run": dry_run,
+        }
 
 
 timesheet_import_service = TimesheetImportService()

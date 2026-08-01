@@ -1,7 +1,8 @@
 from datetime import date
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File, Form
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -25,6 +26,14 @@ router = APIRouter(prefix="/timesheet", tags=["timesheet"])
 
 
 from app.api.deps import get_current_user as _get_current_user_stub
+
+
+class TurnstileAutofillRequest(BaseModel):
+    period_start: date
+    period_end: date
+    employee_ids: Optional[List[int]] = None
+    department_id: Optional[int] = None
+    dry_run: bool = False
 
 
 # --- Импорт ---
@@ -188,4 +197,32 @@ async def get_timesheet_grid(
         raise HTTPException(status_code=400, detail="period_end должен быть не раньше period_start")
     return await timesheet_import_service.get_timesheet_grid(
         db, period_start, period_end, department_id=department_id
+    )
+
+
+# --- Автозаполнение ручного слоя по турникету (#16) ---
+
+
+@router.post("/autofill")
+async def apply_turnstile_autofill(
+    data: TurnstileAutofillRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Переносит факт из турникета в ручной слой за период.
+
+    dry_run=true возвращает превью («будет изменено N ячеек»), не записывая.
+    Дни без прохода пропускаются; ячейки с уже заполненным ручным слоем
+    не перетираются. Возвращает построчный результат.
+    """
+    if data.period_end < data.period_start:
+        raise HTTPException(status_code=400, detail="period_end должен быть не раньше period_start")
+    return await timesheet_import_service.apply_turnstile_autofill(
+        db,
+        data.period_start,
+        data.period_end,
+        current_user,
+        employee_ids=data.employee_ids,
+        department_id=data.department_id,
+        dry_run=data.dry_run,
     )
