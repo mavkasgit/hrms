@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     STAFFING_PATH: str = str(BASE_DIR / "data" / "staffing")
     NOTIFICATIONS_PATH: str = str(BASE_DIR / "data" / "notifications")
     STATEMENTS_PATH: str = str(BASE_DIR / "data" / "statements")
+    TIMESHEET_SNAPSHOTS_PATH: str = str(BASE_DIR / "data" / "timesheet_snapshots")
 
     MAX_PHOTO_SIZE: int = 5 * 1024 * 1024
     MAX_DOCUMENT_SIZE: int = 10 * 1024 * 1024

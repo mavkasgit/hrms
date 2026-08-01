@@ -131,6 +131,90 @@ async def test_order_draft_service_creates_docx(monkeypatch, tmp_path):
 
     assert draft["draft_id"]
     assert Path(draft["file_path"]).exists()
+    # Метаданные сохранены рядом с docx (#29)
+    metadata_path = service.get_metadata_path(draft["draft_id"])
+    assert metadata_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_order_draft_metadata_content(monkeypatch, tmp_path):
+    """#29: метаданные содержат полный payload, создателя, время, статус и версию схемы."""
+    import json
+
+    service = OrderDraftService()
+    service._drafts_dir = tmp_path / ".drafts"
+
+    document = Document()
+    document.add_paragraph("Черновик")
+
+    async def fake_build_document(*_args, **_kwargs):
+        return document, {"{order_number}": "42-к"}
+
+    monkeypatch.setattr("app.services.order_draft_service._build_document", fake_build_document)
+    monkeypatch.setattr("app.services.order_draft_service._build_filename", lambda *_args: "order.docx")
+
+    draft = await service.create_draft(
+        OrderCreate(
+            employee_id=7,
+            order_type_id=3,
+            order_date=date(2026, 8, 1),
+            order_number="42-к",
+            notes="тест",
+            extra_fields={"vacation_start": "2026-08-10"},
+        ),
+        SimpleNamespace(name="Петров П.П."),
+        SimpleNamespace(code="vacation_paid", name="Отпуск"),
+        user_id="admin-user",
+    )
+
+    metadata = json.loads(service.get_metadata_path(draft["draft_id"]).read_text(encoding="utf-8"))
+    assert metadata["draft_id"] == draft["draft_id"]
+    assert metadata["kind"] == "single_order"
+    assert metadata["order_type_code"] == "vacation_paid"
+    assert metadata["payload"]["employee_id"] == 7
+    assert metadata["payload"]["order_type_id"] == 3
+    assert metadata["payload"]["order_date"] == "2026-08-01"
+    assert metadata["payload"]["order_number"] == "42-к"
+    assert metadata["payload"]["notes"] == "тест"
+    assert metadata["payload"]["extra_fields"] == {"vacation_start": "2026-08-10"}
+    assert metadata["created_by"] == "admin-user"
+    assert metadata["status"] == "draft"
+    assert metadata["schema_version"] == 1
+    assert "created_at" in metadata
+
+
+@pytest.mark.asyncio
+async def test_order_draft_metadata_failure_rolls_back_docx(monkeypatch, tmp_path):
+    """#29: при ошибке сохранения метаданных черновик откатывается целиком."""
+    service = OrderDraftService()
+    service._drafts_dir = tmp_path / ".drafts"
+
+    document = Document()
+    document.add_paragraph("Черновик")
+
+    async def fake_build_document(*_args, **_kwargs):
+        return document, {"{order_number}": "1"}
+
+    monkeypatch.setattr("app.services.order_draft_service._build_document", fake_build_document)
+    monkeypatch.setattr("app.services.order_draft_service._build_filename", lambda *_args: "order.docx")
+
+    # Ломаем сохранение метаданных
+    def broken_save_metadata(draft_id, metadata):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service, "save_draft_metadata", broken_save_metadata)
+
+    with pytest.raises(OSError, match="disk full"):
+        await service.create_draft(
+            OrderCreate(employee_id=1, order_type_id=2, order_date=date.today(), order_number="1"),
+            SimpleNamespace(name="Иванов"),
+            SimpleNamespace(code="test", name="Тест"),
+        )
+
+    # Docx не должен остаться
+    drafts_dir = tmp_path / ".drafts"
+    docx_files = list(drafts_dir.glob("*.docx")) if drafts_dir.exists() else []
+    assert docx_files == []
 
 
 def test_order_draft_service_rejects_unknown_draft(tmp_path):

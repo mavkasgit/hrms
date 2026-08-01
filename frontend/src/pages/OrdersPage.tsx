@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, Fragment } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen, Search, Filter, Printer, FileText } from "lucide-react"
 import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
@@ -67,6 +67,8 @@ import {
 } from "@/features/dynamic-form"
 import { getOrderTypeLayout } from "@/entities/order/orderTypeLayouts"
 import { formatDate } from "@/shared/utils/date"
+import { useOrderFormRecovery, OrderFormRecoveryBanner } from "@/features/order-form-recovery"
+import type { OrderFormDraft } from "@/features/order-form-recovery"
 
 const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
   "Прием на работу": "bg-green-100 text-green-800 border-green-200",
@@ -635,7 +637,55 @@ export function OrdersPage() {
     setExtraFieldErrors({})
     setExtraFields({})
     setDraftId(null)
+    // Очищаем сохранённый черновик формы (#28) — приказ успешно создан
+    localStorage.removeItem("hrms_order_form_draft")
   }
+
+  // Восстановление несохранённого заполнения формы (#28)
+  const recoveryFormState = useMemo(() => ({
+    employee_id: selectedEmployee?.id ?? null,
+    order_type_id: selectedOrderTypeId,
+    order_date: orderDate,
+    order_number: orderNumber,
+    extra_fields: extraFields,
+  }), [selectedEmployee, selectedOrderTypeId, orderDate, orderNumber, extraFields])
+
+  const handleRecoveryRestore = useCallback((draft: OrderFormDraft) => {
+    // Перевалидация: сотрудник загружается по id, тип приказа — из актуального списка
+    if (draft.employee_id) {
+      // useEmployee не подходит для динамического вызова — используем прямой запрос
+      import("@/shared/api/axios").then((mod) => {
+        mod.default.get(`/employees/${draft.employee_id}`).then((res: { data: Employee }) => {
+          setSelectedEmployee(res.data)
+        }).catch(() => { /* сотрудник удалён — пропускаем */ })
+      })
+    }
+    if (draft.order_type_id) {
+      const type = orderTypes.find((t) => t.id === draft.order_type_id && t.is_active)
+      if (type) {
+        setSelectedOrderTypeId(type.id)
+        setOrderTypeSearch(type.name)
+      }
+    }
+    if (draft.order_date) setOrderDate(draft.order_date)
+    if (draft.order_number) setOrderNumber(draft.order_number)
+    if (draft.extra_fields && Object.keys(draft.extra_fields).length > 0) {
+      setExtraFields(draft.extra_fields)
+    }
+  }, [orderTypes])
+
+  const {
+    pendingDraft: recoveryPendingDraft,
+    restore: recoveryRestore,
+    dismiss: recoveryDismiss,
+    remove: recoveryRemove,
+    confirmOverwrite: recoveryConfirmOverwrite,
+    overwritePrompt: recoveryOverwritePrompt,
+    cancelOverwrite: recoveryCancelOverwrite,
+  } = useOrderFormRecovery({
+    formState: recoveryFormState,
+    onRestore: handleRecoveryRestore,
+  })
 
   const resetGeneralForm = () => {
     setGeneralOrderDate(new Date().toISOString().split("T")[0])
@@ -911,6 +961,16 @@ export function OrdersPage() {
           </Tabs>
         </div>
       </div>
+
+      {/* Восстановление несохранённого заполнения формы (#28) */}
+      {recoveryPendingDraft && activeTab === "all" && !isViewer && (
+        <OrderFormRecoveryBanner
+          draft={recoveryPendingDraft}
+          onRestore={recoveryRestore}
+          onDismiss={recoveryDismiss}
+          onRemove={recoveryRemove}
+        />
+      )}
 
       {activeTab === "all" && !isViewer && (
       <div className="border rounded-lg bg-card">
@@ -1709,6 +1769,24 @@ export function OrdersPage() {
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmDeletePreset} className="bg-red-600 hover:bg-red-700">
               Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
+      <AlertDialog open={recoveryOverwritePrompt} onOpenChange={(open) => !open && recoveryCancelOverwrite()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Перезаписать сохранённое заполнение?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Уже есть несохранённое заполнение формы приказа. Новое заполнение заменит его.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={recoveryCancelOverwrite}>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={recoveryConfirmOverwrite}>
+              Перезаписать
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

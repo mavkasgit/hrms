@@ -23,7 +23,9 @@ class OrderDraftService:
         self._drafts_dir.mkdir(parents=True, exist_ok=True)
         return self._drafts_dir
 
-    async def create_draft(self, data: OrderCreate, employee: Employee | None, order_type: OrderType) -> dict[str, Any]:
+    async def create_draft(
+        self, data: OrderCreate, employee: Employee | None, order_type: OrderType, user_id: str = "system"
+    ) -> dict[str, Any]:
         draft_id = str(uuid.uuid4())
         order_number = data.order_number.strip() if data.order_number else "DRAFT"
         doc, replacements = await _build_document(order_number, data, employee, order_type)
@@ -34,6 +36,37 @@ class OrderDraftService:
             asyncio.to_thread(doc.save, str(file_path)),
             timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
         )
+
+        # Сохраняем метаданные черновика (#29): полный payload создания,
+        # создатель, время, статус и версия схемы. При ошибке записи
+        # метаданных откатываем черновик целиком — не остаётся docx без метаданных.
+        metadata = {
+            "draft_id": draft_id,
+            "kind": "single_order",
+            "order_type_code": order_type.code,
+            "payload": {
+                "employee_id": data.employee_id,
+                "order_type_id": data.order_type_id,
+                "order_date": data.order_date.isoformat() if data.order_date else None,
+                "order_number": order_number,
+                "notes": data.notes,
+                "extra_fields": data.extra_fields,
+            },
+            "created_by": user_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": "draft",
+            "schema_version": 1,
+        }
+        try:
+            self.save_draft_metadata(draft_id, metadata)
+        except Exception:
+            # Откат: удаляем docx, чтобы не осталось черновика без метаданных
+            try:
+                file_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+
         return {"draft_id": draft_id, "file_path": str(file_path)}
 
     def get_draft_path(self, draft_id: str) -> Path:

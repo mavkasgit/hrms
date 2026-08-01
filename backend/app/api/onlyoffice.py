@@ -372,7 +372,7 @@ async def create_order_draft(
     data = await _normalize_vacation_draft_fields(db, data, order_type.code)
     data = await _normalize_transfer_draft_fields(db, data, order_type.code)
 
-    return await order_draft_service.create_draft(data, employee, order_type)
+    return await order_draft_service.create_draft(data, employee, order_type, user_id=current_user)
 
 
 async def _normalize_vacation_draft_fields(db: AsyncSession, data: OrderCreate, order_type_code: str) -> OrderCreate:
