@@ -277,6 +277,23 @@ class VacationService:
             original_order_id=order.id,
         )
         await db.flush()
+
+        # Внутреннее уведомление «приказ изменился» (#18): отпуск создан,
+        # авто-слой табеля мог измениться — сигналим администраторам.
+        try:
+            from app.services.internal_notification_service import internal_notification_service
+
+            await internal_notification_service.notify_admins_about_absence_change(
+                db,
+                employee.name,
+                "vacation",
+                str(start_date),
+                str(end_date),
+                order_id=order.id,
+            )
+        except Exception as exc:  # noqa: BLE001 — уведомление не валит создание отпуска
+            audit_logger.warning(f"Не удалось создать уведомление: {exc}")
+
         await db.commit()
 
         audit_logger.info(
@@ -381,6 +398,22 @@ class VacationService:
             )
             updated = await vacation_repository.update(db, id, {"order_id": recreated_order.id})
             await order_service.hard_delete_order(db, existing_order.id)
+
+        # Внутреннее уведомление «приказ изменился» (#18): отпуск изменён,
+        # авто-слой табеля мог измениться — сигналим администраторам.
+        try:
+            from app.services.internal_notification_service import internal_notification_service
+
+            await internal_notification_service.notify_admins_about_absence_change(
+                db,
+                employee.name if employee else str(vacation.employee_id),
+                "vacation",
+                str(updated.start_date),
+                str(updated.end_date),
+                order_id=updated.order_id,
+            )
+        except Exception as exc:  # noqa: BLE001 — уведомление не валит обновление
+            audit_logger.warning(f"Не удалось создать уведомление: {exc}")
 
         await db.commit()
 

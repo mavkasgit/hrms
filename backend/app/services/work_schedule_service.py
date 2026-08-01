@@ -97,6 +97,39 @@ class WorkScheduleService:
         schedule.approved_at = date.today()
         await db.flush()
         await db.refresh(schedule)
+
+        # Файловый слепок табеля (#17): утверждение сохраняет копию данных
+        # файлом, правки больше не блокируются. Генерация синхронная — она
+        # быстрая (один месяц одного сотрудника) и не требует фоновой задачи.
+        # expire(schedule) сбрасывает eager-loaded entries из identity-map,
+        # чтобы последующие правки (bulk_set) не увидели устаревший список.
+        try:
+            from app.services.timesheet_snapshot_service import timesheet_snapshot_service
+
+            employee = await timesheet_snapshot_service.build_employee_cells(
+                db, schedule.employee_id, schedule.year, schedule.month
+            )
+            if employee:
+                timesheet_snapshot_service.save_snapshot(
+                    employee,
+                    schedule.year,
+                    schedule.month,
+                    schedule.employee_id,
+                    current_user,
+                )
+        except Exception as exc:  # noqa: BLE001 — слепок не должен валить утверждение
+            from app.core.logging import get_audit_logger
+
+            get_audit_logger().warning(
+                f"Не удалось создать слепок табеля для графика #{schedule_id}: {exc}"
+            )
+
+        # expire(entries) сбрасывает eager-loaded список из identity-map,
+        # чтобы последующие правки (set_entry / bulk_set) не увидели
+        # устаревший список записей. Только колонка relationships — без
+        # полного expire, иначе sync-доступ в тестах вызовет lazy-load.
+        db.expire(schedule, ["entries"])
+
         return schedule
 
     async def unapprove_schedule(self, db: AsyncSession, schedule_id: int) -> WorkSchedule:

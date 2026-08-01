@@ -2,6 +2,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -147,6 +148,47 @@ async def unapprove_work_schedule(
         raise HTTPException(status_code=404, detail=str(e))
     refreshed = await work_schedule_service.get_schedule(db, schedule_id, with_entries=True)
     return WorkScheduleResponse.model_validate(refreshed)
+
+
+# --- Файловые слепки табеля при утверждении (#17) ---
+
+
+@router.get("/{schedule_id}/snapshots")
+async def list_schedule_snapshots(
+    schedule_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Список файловых слепков табеля графика (история, новые первыми)."""
+    schedule = await work_schedule_service.get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail="График не найден")
+    from app.services.timesheet_snapshot_service import timesheet_snapshot_service
+
+    return {"items": timesheet_snapshot_service.list_snapshots(schedule.employee_id)}
+
+
+@router.get("/{schedule_id}/snapshots/{file_name}")
+async def download_schedule_snapshot(
+    schedule_id: int,
+    file_name: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Скачивание конкретного слепка табеля графика."""
+    schedule = await work_schedule_service.get_schedule(db, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail="График не найден")
+    from app.services.timesheet_snapshot_service import timesheet_snapshot_service
+
+    path = timesheet_snapshot_service.resolve_snapshot(schedule.employee_id, file_name)
+    if not path:
+        raise HTTPException(status_code=404, detail="Слепок не найден")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=path.name,
+    )
 
 
 @router.delete("/{schedule_id}", status_code=204)
