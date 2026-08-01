@@ -45,6 +45,7 @@ from app.api.work_schedules import router as work_schedules_router
 from app.api.timesheet import router as timesheet_router
 from app.api.admin_settings import router as admin_settings_router
 from app.api.idp_admin import router as idp_admin_router
+from app.api.internal_notifications import router as internal_notifications_router
 
 
 # Ссылка на фоновую задачу планировщика (чтобы GC не удалил ее)
@@ -177,6 +178,7 @@ app.include_router(work_schedules_router, prefix="/api")
 app.include_router(timesheet_router, prefix="/api")
 app.include_router(admin_settings_router, prefix="/api")
 app.include_router(idp_admin_router, prefix="/api")
+app.include_router(internal_notifications_router, prefix="/api")
 
 
 

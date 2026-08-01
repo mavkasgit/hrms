@@ -12,6 +12,7 @@ import {
   isBreakGlassUser,
   AUTH_ERROR_STORAGE_KEY,
 } from "@/shared/api/axios"
+import { NotificationBell } from "@/features/internal-notifications"
 
 /** Toast on parent list page when OnlyOffice editor window reports successful save. */
 function DocumentEditorSaveListener() {
@@ -71,6 +72,10 @@ export function Layout() {
           <main className="flex-1 p-6 overflow-auto">
             <Outlet />
           </main>
+          {/* Колокольчик внутренних уведомлений (#18) — в правом верхнем углу */}
+          <div className="fixed top-4 right-4 z-40">
+            <NotificationBell />
+          </div>
         </div>
       </div>
       <Toaster />

@@ -38,4 +38,5 @@ from app.models.system_setting import SystemSetting  # noqa: F401, E402
 from app.models.user_session import UserSession  # noqa: F401, E402
 from app.models.user_login_event import UserLoginEvent  # noqa: F401, E402
 from app.models.logout_jti import UsedLogoutJti  # noqa: F401, E402
+from app.models.internal_notification import InternalNotification  # noqa: F401, E402
 
