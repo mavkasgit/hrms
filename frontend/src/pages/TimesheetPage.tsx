@@ -10,6 +10,7 @@ import {
   Filter,
   ArrowLeft,
   Calendar,
+  Wand2,
 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Badge } from "@/shared/ui/badge"
@@ -24,7 +25,7 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog"
 import { useToast } from "@/shared/ui/use-toast"
-import { useTimesheetGrid, useTimesheetImports, useRollbackImport } from "@/entities/timesheet"
+import { useTimesheetGrid, useTimesheetImports, useRollbackImport, useTurnstileAutofill } from "@/entities/timesheet"
 import type { TimesheetEmployeeRow } from "@/entities/timesheet"
 import { TimesheetImportModal } from "@/features/timesheet-import"
 import { TimesheetFiltersMenu, TimesheetTemplateButtons, useTimesheetFilters } from "@/features/timesheet-filters"
@@ -71,6 +72,7 @@ export function TimesheetPage() {
   const gridQuery = useTimesheetGrid(periodStart, periodEnd)
   const importsQuery = useTimesheetImports(1, 20, periodStart, periodEnd)
   const rollbackMutation = useRollbackImport()
+  const autofillMutation = useTurnstileAutofill()
   const { addToast } = useToast()
 
   const templateState = useTimesheetFilters()
@@ -192,6 +194,44 @@ export function TimesheetPage() {
     }
   }
 
+  // Заполнение ручного слоя из факта турникета (#16): сначала превью
+  // «будет изменено N ячеек», после подтверждения — применение.
+  const handleTurnstileAutofill = async () => {
+    const preview = await autofillMutation.mutateAsync({
+      period_start: periodStart,
+      period_end: periodEnd,
+      dry_run: true,
+    })
+    if (preview.applied === 0) {
+      addToast({
+        title: "Заполнять нечего",
+        description: "Нет дней с проходом турникета без ручного значения за выбранный период.",
+        variant: "default",
+      })
+      return
+    }
+    const ok = confirm(
+      `Заполнить ручной слой по турникету за период?\nБудет изменено ячеек: ${preview.applied}. ` +
+        `Пропущено (нет прохода): ${preview.skipped_no_pass}. ` +
+        `Не тронуто (уже заполнено руками): ${preview.skipped_manual}.`
+    )
+    if (!ok) return
+    try {
+      const result = await autofillMutation.mutateAsync({
+        period_start: periodStart,
+        period_end: periodEnd,
+        dry_run: false,
+      })
+      addToast({
+        title: `Заполнено по турникету: ${result.applied} ячеек`,
+        description: `Без прохода: ${result.skipped_no_pass}, уже заполнено руками: ${result.skipped_manual}.`,
+        variant: "success",
+      })
+    } catch (err: any) {
+      addToast({ title: "Ошибка", description: err.message, variant: "destructive" })
+    }
+  }
+
   const handleSortChange = (field: SortField) => {
     setSortConfigs((prev) => {
       const existing = prev.find((s) => s.field === field)
@@ -232,6 +272,14 @@ export function TimesheetPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleTurnstileAutofill}
+            data-testid="timesheet-autofill-button"
+            title="Перенести факт из турникета в ручной слой за период"
+          >
+            <Wand2 className="h-4 w-4 mr-1" /> Заполнить по турникету
+          </Button>
           <Button variant="outline" onClick={() => setHistoryOpen(true)}>
             <History className="h-4 w-4 mr-1" /> История импортов
           </Button>

@@ -7,6 +7,7 @@ export {
   useConfirmImport,
   useAssignUnmatchedRow,
   useRollbackImport,
+  useTurnstileAutofill,
 } from "./useTimesheet"
 export {
   previewTimesheetImport,
@@ -17,6 +18,7 @@ export {
   rollbackTimesheetImport,
   fetchTimesheet,
   fetchTimesheetGrid,
+  applyTurnstileAutofill,
 } from "./api"
 export type {
   TimesheetImport,

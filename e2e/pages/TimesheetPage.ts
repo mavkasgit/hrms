@@ -25,6 +25,10 @@ export class TimesheetPage {
   readonly acceptOrdersToolbar: Locator
   /** Глобальная кнопка «Принять приказы» */
   readonly acceptOrdersGlobal: Locator
+  /** Уголок-протяжка (#25) */
+  readonly fillHandle: Locator
+  /** Кнопка «Заполнить по турникету» (#16) */
+  readonly autofillButton: Locator
 
   constructor(page: Page) {
     this.page = page
@@ -42,6 +46,8 @@ export class TimesheetPage {
     this.fillSelect = page.getByTestId('timesheet-fill-select')
     this.acceptOrdersToolbar = page.getByTestId('accept-orders-toolbar')
     this.acceptOrdersGlobal = page.getByTestId('accept-orders-global')
+    this.fillHandle = page.getByTestId('timesheet-fill-handle')
+    this.autofillButton = page.getByTestId('timesheet-autofill-button')
   }
 
   async goto() {
@@ -201,3 +207,4 @@ export class TimesheetPage {
     }
   }
 }
+

@@ -7,12 +7,15 @@ import type { TimesheetEmployeeRow, TimesheetGrid as TimesheetGridData } from "@
 import { usePartialBulkSet } from "@/entities/work-schedule"
 import type { PartialEntryItem } from "@/entities/work-schedule"
 import { getShiftTypeMeta, SHIFT_TYPE_CATALOG } from "@/shared/config/shiftTypes"
+import { useToast } from "@/shared/ui/use-toast"
 import { TimesheetDayCell } from "./TimesheetDayCell"
+import { cellToClipboardValue, parseClipboardValue } from "./clipboard"
 import type { DayColumnData, ShiftTypeMap, TimesheetViewMode, TimesheetSortField } from "./types"
 
 const ROW_HEIGHT = 32
 const HEADER_HEIGHT = 36
 const PANEL_WIDTH = 240
+const COL_WIDTH = 44
 const DOW_SHORT = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
 
 /** Максимальный размер стека отмены */
@@ -98,6 +101,11 @@ export function TimesheetGrid({
   const [gridHeight, setGridHeight] = useState(400)
   const gridRef = useRef<DataSheetGridRef>(null)
   const activeCellRef = useRef<ActiveCell | null>(null)
+  const [activeCell, setActiveCell] = useState<ActiveCell | null>(null)
+  const { addToast } = useToast()
+
+  // Число нераспознанных ячеек при последней вставке (сбрасывается в handleChange)
+  const rejectedPasteRef = useRef(0)
 
   // Массовое заполнение выделения одним запросом (инвалидация — в хуке)
   const { mutateAsync: partialBulkMutate } = usePartialBulkSet()
@@ -131,6 +139,7 @@ export function TimesheetGrid({
   // Отслеживание активной ячейки для Home/End/PageUp/PageDown
   const handleActiveCellChange = useCallback(({ cell }: { cell: ActiveCell | null }) => {
     activeCellRef.current = cell
+    setActiveCell(cell)
   }, [])
 
   // Home/End/PageUp/PageDown — библиотека не обрабатывает эти клавиши
@@ -192,6 +201,69 @@ export function TimesheetGrid({
     }
   }, [])
 
+  // --- Протяжка за уголок (#25) ---
+  // Позиция уголка: нижний-правый угол источника (выделение или активная ячейка).
+  // Измеряем по DOM-элементу .dsg-selection-rect (всегда в DOM, virtualize-safe).
+  const [handlePos, setHandlePos] = useState<{ left: number; top: number } | null>(null)
+  const [cellEditing, setCellEditing] = useState(false)
+  const [fillTargetRect, setFillTargetRect] = useState<{
+    left: number
+    top: number
+    width: number
+    height: number
+  } | null>(null)
+  const fillDragRef = useRef<{
+    source: GridSelection
+    startX: number
+    startY: number
+    endRow?: number
+    endCol?: number
+  } | null>(null)
+
+  // Скрываем уголок, пока открыт inline-редактор (select)
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const onFocusIn = (e: FocusEvent) => {
+      if ((e.target as HTMLElement)?.tagName === "SELECT") setCellEditing(true)
+    }
+    const onFocusOut = (e: FocusEvent) => {
+      if ((e.target as HTMLElement)?.tagName === "SELECT") setCellEditing(false)
+    }
+    container.addEventListener("focusin", onFocusIn)
+    container.addEventListener("focusout", onFocusOut)
+    return () => {
+      container.removeEventListener("focusin", onFocusIn)
+      container.removeEventListener("focusout", onFocusOut)
+    }
+  }, [])
+
+  // Источник протяжки: выделение, иначе активная ячейка (одна ячейка тоже можно)
+  const fillSource = useMemo<GridSelection | null>(() => {
+    if (selection) return selection
+    if (activeCell) return { min: activeCell, max: activeCell }
+    return null
+  }, [selection, activeCell])
+
+  // Пересчитываем позицию уголка при смене выделения/скролле/размере
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || cellEditing || !fillSource) {
+      setHandlePos(null)
+      return
+    }
+    const el =
+      container.querySelector<HTMLElement>(".dsg-selection-rect") ??
+      container.querySelector<HTMLElement>(".dsg-active-cell")
+    if (!el) {
+      setHandlePos(null)
+      return
+    }
+    const containerRect = container.getBoundingClientRect()
+    const rect = el.getBoundingClientRect()
+    setHandlePos({ left: rect.right - containerRect.left, top: rect.bottom - containerRect.top })
+  }, [fillSource, cellEditing, gridHeight, rows.length, dayDates.length])
+
   /**
    * Пакетное сохранение правок ячеек одним запросом partial-bulk.
    * Эндпоинт сам создаёт графики на нужные месяцы и возвращает построчный
@@ -215,6 +287,145 @@ export function TimesheetGrid({
     [partialBulkMutate]
   )
 
+  // Применение протяжки: циклически повторяет источник по целевой области.
+  // Значение копируется из result-слоя источника (видимое, ручное или авто),
+  // записывается в ручной слой. Одна операция — одна запись в истории.
+  const applyFill = useCallback(
+    (source: GridSelection, target: GridSelection) => {
+      const srcRows = source.max.row - source.min.row + 1
+      const srcCols = source.max.col - source.min.col + 1
+      const changes: PartialEntryItem[] = []
+      const undoCells: UndoEntry["cells"] = []
+      const newRows = [...rows]
+      for (let r = target.min.row; r <= target.max.row; r++) {
+        const row = rows[r]
+        if (!row) continue
+        // Пропускаем строки, целиком внутри источника — их не трогаем
+        const rowInSource = r >= source.min.row && r <= source.max.row
+        const updatedCells = { ...row.cells }
+        let rowChanged = false
+        for (let c = target.min.col; c <= target.max.col; c++) {
+          const colInSource = c >= source.min.col && c <= source.max.col
+          if (rowInSource && colInSource) continue
+          const date = dayDates[c]
+          if (!date) continue
+          // Циклический индекс источника
+          const srcR = source.min.row + ((((r - source.min.row) % srcRows) + srcRows) % srcRows)
+          const srcC = source.min.col + ((((c - source.min.col) % srcCols) + srcCols) % srcCols)
+          const srcCell = rows[srcR]?.cells?.[dayDates[srcC]]
+          const code = srcCell?.result ?? srcCell?.manual?.shift_type_code ?? null
+          const cellDay = row.cells?.[date]
+          undoCells.push({
+            employee_id: row.id,
+            work_date: date,
+            shift_type_code: cellDay?.manual?.shift_type_code ?? null,
+            planned_hours_override: cellDay?.manual?.planned_hours_override ?? null,
+          })
+          updatedCells[date] = {
+            auto: cellDay?.auto ?? null,
+            manual: code
+              ? { shift_type_code: code, planned_hours_override: null, note: null }
+              : null,
+            result: code || cellDay?.auto?.shift_type_code || null,
+            conflict: cellDay?.conflict ?? false,
+            order_changed: false,
+          }
+          changes.push({
+            employee_id: row.id,
+            work_date: date,
+            shift_type_code: code,
+            planned_hours_override: null,
+          })
+          rowChanged = true
+        }
+        if (rowChanged) newRows[r] = { ...row, cells: updatedCells }
+      }
+      if (undoCells.length > 0) {
+        undoStackRef.current.push({ cells: undoCells })
+        if (undoStackRef.current.length > UNDO_STACK_MAX) {
+          undoStackRef.current.shift()
+        }
+      }
+      prevRowsRef.current = newRows
+      setRows(newRows)
+      void persistCells(changes)
+    },
+    [rows, dayDates, persistCells]
+  )
+
+  // Начало протяжки: запоминаем источник и точку старта мыши
+  const handleFillMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!fillSource || !handlePos) return
+      fillDragRef.current = { source: fillSource, startX: e.clientX, startY: e.clientY }
+      setFillTargetRect({
+        left: handlePos.left - COL_WIDTH,
+        top: handlePos.top - ROW_HEIGHT,
+        width: COL_WIDTH,
+        height: ROW_HEIGHT,
+      })
+
+      const onMove = (ev: MouseEvent) => {
+        const drag = fillDragRef.current
+        if (!drag) return
+        const { source, startX, startY } = drag
+        // Уголок стоит на границе ячейки источника. Чтобы протяжка вниз на
+        // половину строки уже давала +1 строку, но лёгкий сдвиг вбок в пределах
+        // той же колонки (до центра следующей ячейки) не сдвигал колонку,
+        // дельты считаем по направлению с учётом границы.
+        const dY = ev.clientY - startY
+        const dX = ev.clientX - startX
+        const deltaRows = dY > 0 ? 1 + Math.floor(dY / ROW_HEIGHT) : dY < 0 ? Math.ceil(dY / ROW_HEIGHT) : 0
+        const deltaCols = dX > 0 ? 1 + Math.floor(dX / COL_WIDTH) : dX < 0 ? Math.ceil(dX / COL_WIDTH) : 0
+        const endCol = Math.max(0, Math.min(dayDates.length - 1, source.max.col + deltaCols))
+        const endRow = Math.max(0, Math.min(rows.length - 1, source.max.row + deltaRows))
+        const minCol = Math.min(source.min.col, endCol)
+        const maxCol = Math.max(source.max.col, endCol)
+        const minRow = Math.min(source.min.row, endRow)
+        const maxRow = Math.max(source.max.row, endRow)
+        const rect = {
+          left: handlePos.left + (minCol - source.max.col - 1) * COL_WIDTH,
+          top: handlePos.top + (minRow - source.max.row - 1) * ROW_HEIGHT,
+          width: (maxCol - minCol + 1) * COL_WIDTH,
+          height: (maxRow - minRow + 1) * ROW_HEIGHT,
+        }
+        setFillTargetRect(rect)
+        drag.endRow = endRow
+        drag.endCol = endCol
+      }
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove)
+        window.removeEventListener("mouseup", onUp)
+        const drag = fillDragRef.current
+        fillDragRef.current = null
+        setFillTargetRect(null)
+        if (!drag || drag.endRow === undefined || drag.endCol === undefined) return
+        const { source, endRow, endCol } = drag
+        const minCol = Math.min(source.min.col, endCol)
+        const maxCol = Math.max(source.max.col, endCol)
+        const minRow = Math.min(source.min.row, endRow)
+        const maxRow = Math.max(source.max.row, endRow)
+        // Если цель не больше источника — ничего не делаем
+        if (
+          minRow === source.min.row &&
+          maxRow === source.max.row &&
+          minCol === source.min.col &&
+          maxCol === source.max.col
+        ) {
+          return
+        }
+        applyFill(source, {
+          min: { row: minRow, col: minCol },
+          max: { row: maxRow, col: maxCol },
+        })
+      }
+      window.addEventListener("mousemove", onMove)
+      window.addEventListener("mouseup", onUp)
+    },
+    [fillSource, handlePos, dayDates.length, rows.length, applyFill]
+  )
   // Ctrl+Z — отмена последней операции (стек in-memory)
   useEffect(() => {
     const onUndo = (e: KeyboardEvent) => {
@@ -436,8 +647,19 @@ export function TimesheetGrid({
         }
       }
       void persistCells(changes)
+
+      // Нераспознанные значения вставки не записываются — сообщаем количество
+      const rejected = rejectedPasteRef.current
+      if (rejected > 0) {
+        rejectedPasteRef.current = 0
+        addToast({
+          title: `Не распознано ячеек: ${rejected}`,
+          description: "Нераспознанные значения не записаны. Проверьте содержимое буфера обмена.",
+          variant: "default",
+        })
+      }
     },
-    [dayDates, persistCells]
+    [dayDates, persistCells, addToast]
   )
 
   // Колонки дней (28–31)
@@ -500,21 +722,27 @@ export function TimesheetGrid({
               },
             },
           }),
-          copyValue: ({ rowData }) => rowData.cells?.[date]?.manual?.shift_type_code ?? rowData.cells?.[date]?.result ?? "",
+          // Ctrl+C — в буфер идёт видимое значение (#24, решение #10):
+          // рабочая смена — кодом, статус — буквой, авто-ячейка — не пустой
+          copyValue: ({ rowData }) => cellToClipboardValue(rowData.cells?.[date], shiftTypeMap),
+          // Ctrl+V — распознаём код/букву/часы из Excel; вставленное всегда
+          // становится ручным слоем; нераспознанное не записывается и считается
           pasteValue: ({ rowData, value }) => {
-            const code = value.trim()
-            const matched =
-              code &&
-              Object.keys(shiftTypeMap).find((c) => c.toLowerCase() === code.toLowerCase())
-            if (!matched) return rowData
+            const code = parseClipboardValue(String(value ?? ""), shiftTypeMap)
+            if (!code) {
+              if (String(value ?? "").trim() !== "") {
+                rejectedPasteRef.current += 1
+              }
+              return rowData
+            }
             return {
               ...rowData,
               cells: {
                 ...rowData.cells,
                 [date]: {
                   auto: rowData.cells?.[date]?.auto ?? null,
-                  manual: { shift_type_code: matched, planned_hours_override: null, note: null },
-                  result: matched,
+                  manual: { shift_type_code: code, planned_hours_override: null, note: null },
+                  result: code,
                   conflict: rowData.cells?.[date]?.conflict ?? false,
                   order_changed: false,
                 },
@@ -653,6 +881,33 @@ export function TimesheetGrid({
           cellClassName={cellClassName}
           className="!border-0 !h-full"
         />
+
+        {/* Превью протяжки (#25): подсвечивает целевую область, пока тянешь */}
+        {fillTargetRect && (
+          <div
+            data-testid="timesheet-fill-preview"
+            className="absolute z-20 pointer-events-none border-2 border-dashed border-primary/70 bg-primary/10"
+            style={{
+              left: fillTargetRect.left,
+              top: fillTargetRect.top,
+              width: fillTargetRect.width,
+              height: fillTargetRect.height,
+            }}
+          />
+        )}
+
+        {/* Уголок-протяжка (#25): за него тянут выделение вниз/вправо/обратно */}
+        {handlePos && fillSource && !cellEditing && (
+          <div
+            data-testid="timesheet-fill-handle"
+            className="absolute z-30 h-2.5 w-2.5 cursor-crosshair rounded-[2px] border-2 border-background bg-primary shadow"
+            style={{
+              left: handlePos.left - 5,
+              top: handlePos.top - 5,
+            }}
+            onMouseDown={handleFillMouseDown}
+          />
+        )}
 
         {/* Плавающая панель массового заполнения выделения.
             stopPropagation не даёт документ-обработчикам сетки снять выделение

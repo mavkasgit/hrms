@@ -8,7 +8,9 @@ import {
   rollbackTimesheetImport,
   fetchTimesheet,
   fetchTimesheetGrid,
+  applyTurnstileAutofill,
 } from "./api"
+import type { TurnstileAutofillRequest } from "./api"
 
 export function useTimesheetImports(
   page = 1,
@@ -93,6 +95,18 @@ export function useRollbackImport() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["timesheet-imports"] })
       qc.invalidateQueries({ queryKey: ["timesheet"] })
+    },
+  })
+}
+
+export function useTurnstileAutofill() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: TurnstileAutofillRequest) => applyTurnstileAutofill(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["timesheet-grid"] })
+      qc.invalidateQueries({ queryKey: ["timesheet"] })
+      qc.invalidateQueries({ queryKey: ["work-schedules"] })
     },
   })
 }

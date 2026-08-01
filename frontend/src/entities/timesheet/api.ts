@@ -103,3 +103,35 @@ export async function fetchTimesheetGrid(
   })
   return data
 }
+
+export interface TurnstileAutofillRequest {
+  period_start: string
+  period_end: string
+  employee_ids?: number[]
+  department_id?: number
+  dry_run?: boolean
+}
+
+export interface TurnstileAutofillResult {
+  applied: number
+  skipped_no_pass: number
+  skipped_manual: number
+  dry_run: boolean
+  results: Array<{
+    employee_id: number
+    employee_name: string
+    work_date: string
+    shift_type_code: string
+    planned_hours_override: number | null
+    success: boolean
+    skipped: boolean
+  }>
+}
+
+/** Перенос факта из турникета в ручной слой за период (#16). */
+export async function applyTurnstileAutofill(
+  payload: TurnstileAutofillRequest
+): Promise<TurnstileAutofillResult> {
+  const { data } = await api.post<TurnstileAutofillResult>("/timesheet/autofill", payload)
+  return data
+}
