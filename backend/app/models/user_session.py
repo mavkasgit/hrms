@@ -40,13 +40,13 @@ class UserSession(Base):
     )
     expires_at = Column(DateTime(timezone=True), nullable=False)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
-    # logout | user_revoke | password_change | admin | expired
+    # logout | user_revoke | admin | expired | backchannel_logout
     revoke_reason = Column(String(32), nullable=True)
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(Text, nullable=True)
     # e.g. "Google Chrome (Windows)" — server-side UA parse
     device_label = Column(String(128), nullable=True)
-    # password | invite | oidc | break_glass
+    # oidc | break_glass
     login_method = Column(String(32), nullable=False)
     # sid claim из id_token (OIDC Back-Channel Logout корреляция); NULL для не-OIDC входов
     oidc_sid = Column(String(255), nullable=True)

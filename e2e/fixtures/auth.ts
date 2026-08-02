@@ -2,8 +2,9 @@
  * Auth paths and credentials for e2e rewrite.
  * storageState is produced by setup/auth.setup.ts (project `setup`).
  *
- * Credentials: DEV_BYPASS_AUTH accepts password "dev" for any existing user.
- * Default username is `admin` (dev seed / first-login JIT path).
+ * Login path: Break Glass (`POST /auth/break-glass/login`) — пароль берётся
+ * из env-конфига бэкенда (BREAK_GLASS_PASSWORD; в dev/test это "dev").
+ * Парольного входа по локальным хэшам в HRMS нет (#36).
  * Override via E2E_ADMIN_USERNAME / E2E_ADMIN_PASSWORD — never invent prod secrets.
  */
 import fs from 'fs'
@@ -25,7 +26,7 @@ export type AdminCredentials = {
   password: string
 }
 
-/** Dev defaults: username admin, password dev (backend DEV_BYPASS_AUTH). */
+/** Dev defaults: username admin, password dev (backend BREAK_GLASS_PASSWORD). */
 export function getAdminCredentials(): AdminCredentials {
   return {
     username: process.env.E2E_ADMIN_USERNAME || 'admin',

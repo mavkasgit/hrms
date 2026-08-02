@@ -39,6 +39,10 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_dev
       DEV_BYPASS_AUTH: "true"
+      # e2e setup/auth входят через break-glass (#36: парольного входа нет)
+      BREAK_GLASS_ENABLED: "true"
+      BREAK_GLASS_USER: emergency_admin
+      BREAK_GLASS_PASSWORD: dev
       ENV: dev
       SECRET_KEY: ci-e2e-secret-not-for-prod
       # OnlyOffice — Document Server container below

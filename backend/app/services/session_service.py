@@ -20,15 +20,13 @@ from app.utils.user_agent import device_label_from_ua
 
 LOGIN_METHODS = frozenset(
     {
-        "password",
-        "invite",
         "oidc",
         "break_glass",
     }
 )
 EVENT_TYPES = frozenset({"login_success", "login_failure", "logout", "session_revoke"})
 REVOKE_REASONS = frozenset(
-    {"logout", "user_revoke", "password_change", "admin", "expired", "backchannel_logout"}
+    {"logout", "user_revoke", "admin", "expired", "backchannel_logout"}
 )
 
 session_repo = SessionRepository()

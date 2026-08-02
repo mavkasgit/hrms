@@ -1,20 +1,42 @@
 import pytest
 from fastapi import HTTPException
+from httpx import ASGITransport, AsyncClient
 from starlette.requests import Request
 
-from app.api.auth import login
 from app.core.config import settings
+from app.core.database import get_db
+from app.main import app
 
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 
-async def test_login_disabled_permanently():
-    """Тест: эндпоинт login() отключён насовсем и возвращает 403."""
-    with pytest.raises(HTTPException) as exc_info:
-        await login()
-    assert exc_info.value.status_code == 403
-    assert "отключен" in exc_info.value.detail or "disabled" in exc_info.value.detail
+@pytest.fixture
+async def async_client(db_session):
+    """ASGI client bound to the same db_session (savepoint-safe)."""
+
+    async def override_get_db():
+        try:
+            yield db_session
+        finally:
+            await db_session.commit()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.clear()
+
+
+async def test_password_login_endpoint_removed(async_client):
+    """#36: POST /auth/login удалён (нет парольного хранилища) → 404."""
+    resp = await async_client.post(
+        "/api/auth/login", json={"username": "admin", "password": "dev"}
+    )
+    assert resp.status_code == 404
 
 
 async def test_magic_admin_allowed_when_dev_bypass(db_session):

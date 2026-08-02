@@ -14,7 +14,6 @@ from app.core.database import get_db
 from app.core.user_auth import generate_avatar_seed
 from app.main import app
 from app.models.user import User
-from app.core.constants import SSO_BYPASS_HASH
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
@@ -77,7 +76,6 @@ async def _make_user(
 ) -> User:
     user = User(
         username=username,
-        password_hash=SSO_BYPASS_HASH,
         full_name=full_name,
         role="admin",
         avatar_seed=avatar_seed,

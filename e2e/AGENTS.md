@@ -80,22 +80,21 @@ Hardcoded JWT / `extraHTTPHeaders` Authorization — **удалены** (E4).
 | Переменная | Default | Назначение |
 |------------|---------|------------|
 | `E2E_ADMIN_USERNAME` | `admin` | Логин для setup/auth |
-| `E2E_ADMIN_PASSWORD` | `dev` | Пароль; бэкенд `DEV_BYPASS_AUTH=True` принимает `"dev"` |
+| `E2E_ADMIN_PASSWORD` | `dev` | Пароль break-glass; должен совпадать с `BREAK_GLASS_PASSWORD` бэкенда |
 | `E2E_BASE_URL` | `http://localhost:5173` | Frontend |
 | `E2E_API_URL` | `http://localhost:8000/api` | API base |
 
 Шаблон: `e2e/.env.example`. Локально: `e2e/.env`.
 
-**Путь login:** password dual-run на `/login?password=1` (placeholder «Введите логин/пароль» → «Войти»).  
-При OIDC on без query `/login` — SSO stub (auto-redirect); e2e setup/password всегда `?password=1`.  
-Если form fail и видна dev-кнопка «Войти как Admin» — setup делает fallback (см. `setup/auth.setup.ts`).
+**Путь login:** break-glass форма на `/login` (placeholder «Пароль аварийного доступа» → «Аварийный вход») → `POST /auth/break-glass/login` (проверка по env-конфигу `BREAK_GLASS_*`, не по БД). Парольного входа нет (#36: `POST /auth/login` удалён → 404).  
+При OIDC on страница также показывает SSO CTA и может auto-redirect'ить в Authentik; если IdP недоступен — остаётся форма break-glass (см. `setup/auth.setup.ts`).
 
 **API request auth:** Playwright `request` не видит localStorage → `fixtures/api.ts` читает token из storageState (`getAdminTokenFromStorage`) и создаёт context с `Authorization: Bearer …`.  
 Для raw HTTP вне apiOps: `helpers/api-request.ts` → `createAuthenticatedRequest(playwright)`.
 
 **Импорт:** `import { test, expect } from '../fixtures/index'` (apiOps + storageState).
 
-**POM login:** `e2e/pages/LoginPage.ts` — password + SSO CTA; используется в `setup/auth.setup.ts`, `auth/login.spec.ts`, `auth/oidc-login.spec.ts`.
+**POM login:** `e2e/pages/LoginPage.ts` — break-glass форма + SSO CTA; используется в `setup/auth.setup.ts`, `auth/login.spec.ts`, `auth/oidc-login.spec.ts`.
 
 **P0 smoke/api:**
 - smoke: `e2e/smoke/*.spec.ts` (titles contain `@smoke`)
@@ -106,13 +105,13 @@ Hardcoded JWT / `extraHTTPHeaders` Authorization — **удалены** (E4).
 
 | Режим | CI / default | Описание |
 |-------|--------------|----------|
-| **Password dual-run** | **active** | `setup` + `auth/login.spec.ts` — `/login?password=1`; работает при OIDC off **и** on |
+| **Break-glass** | **active** | `setup` + `auth/login.spec.ts` — форма аварийного входа на `/login`; работает при OIDC off **и** on |
 | **OIDC e2e** | **opt-in** | `auth/oidc-login.spec.ts` (`@oidc`) — skip без флагов; **не** требует Authentik в GHA smoke |
 
 **Правила:**
 
 1. CI smoke **не** поднимает Authentik и **не** ставит `E2E_OIDC=1`.
-2. `setup/auth.setup.ts` — **только** form password (+ dev «Войти как Admin» fallback). OIDC в setup **запрещён**.
+2. `setup/auth.setup.ts` — **только** форма break-glass. OIDC в setup **запрещён**.
 
 **Локальный OIDC:**
 
@@ -154,7 +153,7 @@ npm run test:e2e
 npm run test:e2e:smoke        # setup + smoke (быстрый gate)
 npm run test:e2e:api          # setup + api (контракты HTTP)
 npm run test:e2e:ui           # setup + ui (клики / контроль процесса)
-npm run test:e2e:auth         # auth only (no storage) — password + oidc file (oidc skips w/o E2E_OIDC)
+npm run test:e2e:auth         # auth only (no storage) — break-glass + oidc file (oidc skips w/o E2E_OIDC)
 npm run test:e2e:oidc         # OIDC/Authentik opt-in (sets E2E_OIDC=1; still skips if backend disabled)
 npm run test:e2e:regression   # setup + smoke + ui + api + auth
 

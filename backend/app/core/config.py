@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     DATABASE_URL_LOCAL: str = "postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_dev"
     ENV: str = "dev"
 
-    # Dev/test: password "dev" + magic Bearer "admin". Must be false in prod.
+    # Dev/test: magic Bearer "admin" token. Must be false in prod.
     DEV_BYPASS_AUTH: bool = True
 
     # Service-to-service API key (idp-ops reads employees). Header: X-Service-Key.
@@ -75,7 +75,8 @@ class Settings(BaseSettings):
     SESSION_LAST_SEEN_THROTTLE_SECONDS: int = 300
     LOGIN_EVENTS_RETENTION_DAYS: int = 90  # default window for list_login_events queries
 
-    # OIDC / Authentik bridge (A3) — dual-run; false = local password/invite only
+    # OIDC / Authentik bridge (A3) — единственный пользовательский путь входа
+    # (плюс аварийный break-glass). false = вход только через break-glass.
     AUTH_OIDC_ENABLED: bool = False
     AUTH_OIDC_ISSUER: str | None = None  # e.g. http://192.168.x.x:9000/application/o/hrms/
     AUTH_OIDC_CLIENT_ID: str | None = None
@@ -93,7 +94,8 @@ class Settings(BaseSettings):
     AUTH_OIDC_END_SESSION_URL: str | None = None
     # JIT-создание локального User при первом OIDC-входе (иначе 403)
     AUTH_OIDC_ALLOW_JIT: bool = False
-    # Phase-3: SSO-only mode (blocks password & invite login; redirect to Authentik SSO)
+    # SSO-only режим (информационный флаг в /auth/oidc/config): парольные и
+    # invite-пути входа удалены (#33/#35/#36), вход — только Authentik SSO.
     AUTH_SSO_ONLY: bool = False
     AUTH_OIDC_LOGIN_HINT_ENABLED: bool = True
 

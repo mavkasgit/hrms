@@ -6,7 +6,6 @@ from jose import JWTError, jwt
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
-from app.core.constants import SSO_BYPASS_HASH
 from app.core.database import get_db
 from app.core.user_auth import generate_avatar_seed
 from app.models.user import User
@@ -62,7 +61,7 @@ async def get_current_user(
         
     token = auth_header[7:]
 
-    # Magic Bearer "admin" — dev/test only (gated by DEV_BYPASS_AUTH, like password "dev")
+    # Magic Bearer "admin" — dev/test only (gated by DEV_BYPASS_AUTH)
     if token == "admin":
         if not settings.DEV_BYPASS_AUTH:
             raise HTTPException(
@@ -186,7 +185,6 @@ async def get_current_user(
             username=username,
             full_name=jwt_full_name,
             role=expected_role,
-            password_hash=SSO_BYPASS_HASH,
             avatar_seed=generate_avatar_seed(),
             is_deleted=False,
         )

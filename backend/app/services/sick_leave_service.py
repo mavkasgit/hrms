@@ -46,7 +46,6 @@ class SickLeaveService:
 
             user = User(
                 username=current_user,
-                password_hash="stub-password-hash",
                 role=UserRole.ADMIN.value if current_user == "admin" else UserRole.HR_SPECIALIST.value,
                 full_name=current_user,
                 avatar_seed=generate_avatar_seed(),

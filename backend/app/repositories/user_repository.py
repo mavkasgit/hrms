@@ -3,7 +3,6 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.constants import SSO_BYPASS_HASH
 from app.core.user_auth import generate_avatar_seed
 from app.models.user import User
 
@@ -63,7 +62,6 @@ class UserRepository:
             username=username,
             full_name=full_name,
             role=role,
-            password_hash=SSO_BYPASS_HASH,
             authentik_sub=authentik_sub,
             avatar_seed=generate_avatar_seed(),
             is_deleted=False,

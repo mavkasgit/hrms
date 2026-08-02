@@ -26,7 +26,6 @@ from app.api.auth import (
     oidc_logout_url,
 )
 from app.core.config import settings
-from app.core.constants import SSO_BYPASS_HASH
 from app.models.user import User
 from app.models.user_session import UserSession
 from app.schemas.oidc_auth import OidcCallbackRequest
@@ -231,7 +230,6 @@ async def _create_user(
 ) -> User:
     user = User(
         username=username,
-        password_hash=SSO_BYPASS_HASH,
         role=role,
         full_name="OIDC Local User",
         authentik_sub=authentik_sub,
@@ -580,7 +578,6 @@ async def test_oidc_callback_jit_creates_user(
         )
     ).scalar_one()
     assert row.authentik_sub == "ak-jit-sub"
-    assert row.password_hash == SSO_BYPASS_HASH
 
 
 async def test_oidc_jit_uses_claim_role(
@@ -737,7 +734,7 @@ async def test_backchannel_logout_revokes_sessions(
         user_id=user.id,
         ip="127.0.0.1",
         user_agent="pytest-2",
-        login_method="password",
+        login_method="break_glass",
         ttl_minutes=60,
     )
     token = _make_logout_token(sub="ak-bc-sub-1")
@@ -885,7 +882,7 @@ async def test_backchannel_logout_no_sid_falls_back_to_revoke_all(
         user_id=user.id,
         ip="127.0.0.1",
         user_agent="browser-2",
-        login_method="password",
+        login_method="break_glass",
         ttl_minutes=60,
     )
     token = _make_logout_token(sub="ak-bc-nosid-sub")
@@ -966,14 +963,12 @@ async def test_oidc_config_exposes_phase3_fields(oidc_enabled):
     assert cfg.login_hint_enabled is True
 
 
-async def test_sso_only_blocks_login_endpoint():
-    """AUTH_SSO_ONLY=True / default: blocks POST /auth/login with 403."""
-    from app.api.auth import login
+async def test_password_login_endpoint_removed():
+    """#36: POST /auth/login удалён вместе с парольным хранилищем — маршрута нет."""
+    from app.api.auth import router as auth_router
 
-    with pytest.raises(HTTPException) as exc_info:
-        await login()
-    assert exc_info.value.status_code == 403
-    assert "отключен" in exc_info.value.detail or "disabled" in exc_info.value.detail
+    paths = {getattr(route, "path", "") for route in auth_router.routes}
+    assert "/login" not in paths
 
 
 async def test_invite_login_endpoint_removed():

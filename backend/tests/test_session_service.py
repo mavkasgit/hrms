@@ -11,7 +11,6 @@ from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.constants import SSO_BYPASS_HASH
 from app.models.user import User
 from app.services import session_service
 from app.services.auth_token import create_access_token
@@ -23,7 +22,6 @@ from app.utils.user_agent import device_label_from_ua
 async def _create_user(db: AsyncSession, username: str = "session_user") -> User:
     user = User(
         username=username,
-        password_hash=SSO_BYPASS_HASH,
         role="viewer",
         full_name="Session Test User",
     )
@@ -124,7 +122,7 @@ async def test_issue_list_revoke_session(db_session: AsyncSession):
         user_id=user.id,
         ip="10.0.0.5",
         user_agent=ua,
-        login_method="password",
+        login_method="oidc",
         ttl_minutes=60,
     )
     assert session.id is not None
@@ -142,7 +140,7 @@ async def test_issue_list_revoke_session(db_session: AsyncSession):
         user_id=user.id,
         ip="10.0.0.6",
         user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
-        login_method="password",
+        login_method="oidc",
         ttl_minutes=60,
     )
     active = await session_service.list_sessions(db_session, user_id=user.id)
@@ -175,7 +173,7 @@ async def test_revoke_others_and_all(db_session: AsyncSession):
         user_id=user.id,
         ip="1.1.1.1",
         user_agent=None,
-        login_method="password",
+        login_method="oidc",
         ttl_minutes=30,
     )
     s2 = await session_service.issue_session(
@@ -183,14 +181,14 @@ async def test_revoke_others_and_all(db_session: AsyncSession):
         user_id=user.id,
         ip="2.2.2.2",
         user_agent=None,
-        login_method="invite",
+        login_method="break_glass",
         ttl_minutes=30,
     )
     n = await session_service.revoke_others(
         db_session,
         user_id=user.id,
         current_session_id=s1.id,
-        reason="password_change",
+        reason="admin",
     )
     assert n == 1
     active = await session_service.list_sessions(db_session, user_id=user.id)
@@ -220,7 +218,7 @@ async def test_revoke_foreign_session(db_session: AsyncSession):
         user_id=u1.id,
         ip=None,
         user_agent=None,
-        login_method="password",
+        login_method="oidc",
         ttl_minutes=10,
     )
     with pytest.raises(SessionNotFoundError):
@@ -240,7 +238,7 @@ async def test_record_and_list_login_events(db_session: AsyncSession):
         user_id=user.id,
         ip="9.9.9.9",
         user_agent="Chrome",
-        login_method="password",
+        login_method="oidc",
         ttl_minutes=60,
     )
     await session_service.record_login_event(
@@ -252,7 +250,7 @@ async def test_record_and_list_login_events(db_session: AsyncSession):
         ip_address="9.9.9.9",
         user_agent="Chrome",
         session_id=session.id,
-        details={"method": "password"},
+        details={"method": "oidc"},
     )
     await session_service.record_login_event(
         db_session,
@@ -279,7 +277,7 @@ async def test_expired_session_not_active(db_session: AsyncSession):
         user_id=user.id,
         ip=None,
         user_agent=None,
-        login_method="password",
+        login_method="oidc",
         ttl_minutes=0,
     )
     # force expires_at in the past to avoid race

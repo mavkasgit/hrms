@@ -18,11 +18,6 @@ export class LoginPage {
   }
 
   async goto() {
-    await this.page.goto('/login?password=1')
-    await expect(this.heading).toBeVisible({ timeout: 15_000 })
-  }
-
-  async gotoSsoStub() {
     await this.page.goto('/login')
     await expect(this.heading).toBeVisible({ timeout: 15_000 })
   }

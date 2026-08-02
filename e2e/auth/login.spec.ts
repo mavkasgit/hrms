@@ -45,14 +45,11 @@ test.describe('Login @auth', () => {
     }
   })
 
-  test('sso_only_blocks_password_endpoint_when_enabled @auth', async ({ request }) => {
-    test.skip(
-      process.env.E2E_SSO_ONLY !== '1',
-      'E2E_SSO_ONLY!=1 — skip SSO-only password endpoint block check'
-    )
+  test('password_login_endpoint_removed @auth', async ({ request }) => {
+    // #36: парольное хранилище удалено — POST /auth/login больше не существует.
     const resp = await request.post('/api/auth/login', {
       data: { username: 'admin', password: 'dev' },
     })
-    expect(resp.status()).toBe(403)
+    expect(resp.status()).toBe(404)
   })
 })

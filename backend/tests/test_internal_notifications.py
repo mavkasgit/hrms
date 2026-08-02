@@ -18,7 +18,6 @@ async def _create_admin(db_session, username: str) -> User:
         username=username,
         full_name=username,
         role="admin",
-        password_hash="x",
         is_deleted=False,
         is_active=True,
     )

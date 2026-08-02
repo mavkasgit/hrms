@@ -47,9 +47,6 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(100), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
-    # Когда пользователь последний раз задал/сменил локальный пароль (NULL = пароль не задан).
-    password_changed_at = Column(DateTime(timezone=True), nullable=True)
     role = Column(String(50), nullable=False, default=UserRole.VIEWER.value)
     full_name = Column(String(255), nullable=False)
 

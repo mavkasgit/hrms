@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import uuid
 
-import bcrypt
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -55,25 +54,21 @@ async def _make_user(
     db: AsyncSession,
     *,
     username: str | None = None,
-    password: str = "secretpassword123",
     role: str = "viewer",
-) -> tuple[User, str]:
-    """Create user with bcrypt password. Returns (user, plain_password)."""
+) -> User:
+    """Create a local user (SSO-only: no password storage)."""
     name = username or _uid("user")
     user = User(
         username=name,
         full_name=f"Sessions {name}",
         role=role,
-        password_hash=bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode(
-            "utf-8"
-        ),
         is_deleted=False,
     )
     db.add(user)
     await db.flush()
     await db.refresh(user)
     await db.commit()
-    return user, password
+    return user
 
 
 async def _login(
@@ -84,7 +79,7 @@ async def _login(
         user_id=user.id,
         ip="127.0.0.1",
         user_agent="pytest-sessions-agent",
-        login_method="password",
+        login_method="oidc",
         ttl_minutes=60,
     )
     token = create_access_token(
@@ -101,7 +96,7 @@ async def _login(
 
 
 async def test_login_creates_session_and_sid(async_client: AsyncClient, db_session):
-    user, password = await _make_user(db_session)
+    user = await _make_user(db_session)
 
     token, claims = await _login(db_session, user)
     assert claims.get("sid"), "JWT must include sid claim"
@@ -118,7 +113,7 @@ async def test_login_creates_session_and_sid(async_client: AsyncClient, db_sessi
 
 
 async def test_revoke_session_rejects_token(async_client: AsyncClient, db_session):
-    user, password = await _make_user(db_session)
+    user = await _make_user(db_session)
     token, claims = await _login(db_session, user)
     sid = claims["sid"]
 
@@ -138,7 +133,7 @@ async def test_revoke_session_rejects_token(async_client: AsyncClient, db_sessio
 
 
 async def test_logout_revokes_current(async_client: AsyncClient, db_session):
-    user, password = await _make_user(db_session)
+    user = await _make_user(db_session)
     token, _ = await _login(db_session, user)
 
     logout_resp = await async_client.post(
@@ -150,14 +145,15 @@ async def test_logout_revokes_current(async_client: AsyncClient, db_session):
     assert me_after.status_code == 401
 
 
-async def test_failed_login_event(async_client: AsyncClient, db_session):
-    user, password = await _make_user(db_session)
+async def test_password_login_endpoint_removed(async_client: AsyncClient, db_session):
+    """#36: POST /auth/login удалён вместе с парольным хранилищем → 404."""
+    user = await _make_user(db_session)
 
     fail = await async_client.post(
         "/api/auth/login",
-        json={"username": user.username, "password": "wrong-password-xxx"},
+        json={"username": user.username, "password": "whatever"},
     )
-    assert fail.status_code == 403
+    assert fail.status_code == 404
 
     token, _ = await _login(db_session, user)
 
@@ -168,7 +164,7 @@ async def test_failed_login_event(async_client: AsyncClient, db_session):
 
 
 async def test_revoke_others_keeps_current(async_client: AsyncClient, db_session):
-    user, password = await _make_user(db_session)
+    user = await _make_user(db_session)
 
     token_a, claims_a = await _login(db_session, user)
     token_b, claims_b = await _login(db_session, user)
@@ -190,7 +186,7 @@ async def test_revoke_others_keeps_current(async_client: AsyncClient, db_session
 
 
 async def test_legacy_token_without_sid(async_client: AsyncClient, db_session):
-    user, _ = await _make_user(db_session)
+    user = await _make_user(db_session)
     token = create_access_token(
         username=user.username,
         role=user.role,

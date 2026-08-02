@@ -9,7 +9,7 @@
  * - E2E_OIDC_FULL=1
  * - optional E2E_AUTHENTIK_USER / E2E_AUTHENTIK_PASSWORD for full login
  *
- * CI default: password dual-run only (this file skips without E2E_OIDC).
+ * CI default: break-glass login only (this file skips without E2E_OIDC).
  *
  * Tag: @oidc — run: npm run test:e2e:oidc  or
  *   npx playwright test e2e/auth/oidc-login.spec.ts
@@ -80,7 +80,7 @@ async function requireOidcEnabled(
 ): Promise<OidcConfig> {
   test.skip(
     process.env.E2E_OIDC !== '1',
-    'E2E_OIDC!=1 — optional OIDC suite skipped (CI default password path)'
+    'E2E_OIDC!=1 — optional OIDC suite skipped (CI default: break-glass)'
   )
 
   const config = await fetchOidcConfig(request)
@@ -109,12 +109,12 @@ test.describe('OIDC / Authentik @auth @oidc', () => {
     await requireOidcEnabled(request)
     const login = new LoginPage(page)
 
-    // Full form path: dual-run SSO CTA + password (not auto-stub)
+    // Login page: SSO CTA + break-glass form (no password dual-run since #36)
     await login.goto()
     // Wait for FE to load OIDC config and render CTA
     await expect(login.ssoButton).toBeVisible({ timeout: 15_000 })
 
-    // Break Glass form still present on ?password=1
+    // Break Glass form still present alongside the SSO button
     await expect(login.breakGlassSubmitButton).toBeVisible()
   })
 

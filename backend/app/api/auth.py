@@ -29,11 +29,6 @@ from app.utils.user_agent import device_label_from_ua
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-
 class BreakGlassLoginRequest(BaseModel):
     password: str
 
@@ -92,7 +87,7 @@ async def _resolve_user_id(db: AsyncSession, current_user: CurrentUser) -> int:
 async def oidc_config() -> OidcConfigResponse:
     """
     Public OIDC client config for FE (authorize URL + PKCE params).
-    When disabled: ``enabled=false`` and null fields (password login unchanged).
+    When disabled: ``enabled=false`` and null fields.
     """
     return OidcConfigResponse(**OidcAuthService.public_config())
 
@@ -236,18 +231,6 @@ async def backchannel_logout(
         headers={"Cache-Control": "no-store"},
     )
 
-
-
-@router.post("/login", response_model=LoginResponse)
-async def login() -> LoginResponse:
-    """
-    Эндпоинт входа по логину и паролю отключён.
-    Единственный путь аутентификации — Authentik SSO (OIDC) и Break Glass.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Вход по логину и паролю отключен. Используйте единый вход (SSO).",
-    )
 
 
 import socket

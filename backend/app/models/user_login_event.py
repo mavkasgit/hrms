@@ -32,7 +32,7 @@ class UserLoginEvent(Base):
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(Text, nullable=True)
     session_id = Column(UUID(as_uuid=True), nullable=True)
-    # e.g. {"reason": "invalid_credentials", "method": "password"}
+    # e.g. {"reason": "invalid_credentials", "method": "oidc"}
     details = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

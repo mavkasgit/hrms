@@ -210,7 +210,6 @@ function formatErrorMessage(data: any, fallbackMessage: string): string {
 function isCredentialLoginUrl(url: string | undefined): boolean {
   if (!url) return false
   return (
-    url.includes("/auth/login") ||
     url.includes("/auth/break-glass/login") ||
     // OIDC code exchange failure — stay on callback, don't loop logout
     url.includes("/auth/oidc/callback")
