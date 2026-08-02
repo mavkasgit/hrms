@@ -29,13 +29,6 @@ class User(Base):
             "role IN ('admin', 'viewer')",
             name="ck_users_role",
         ),
-        # Partial unique: soft-deleted rows do not block re-link / JIT (M3).
-        Index(
-            "ix_users_phone_active",
-            "phone",
-            unique=True,
-            postgresql_where=text("is_deleted = false"),
-        ),
         # Partial unique: soft-deleted rows do not block re-link of Authentik sub
         Index(
             "ix_users_authentik_sub_active",
@@ -53,9 +46,6 @@ class User(Base):
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
     employee = relationship("Employee")
 
-    # Phone auth identity (uniqueness via partial index above)
-    phone = Column(String(32), nullable=True, index=True)
-    phone_verified_at = Column(DateTime(timezone=True), nullable=True)
     # Multiavatar seed: случайный при создании, далее — только явная смена в профиле.
     # NULL → на фронте пустая заглушка. До 64 ASCII (8 hex).
     avatar_seed = Column(String(64), nullable=True)

@@ -143,23 +143,6 @@ export function redirectToLoginWithError(message: string): void {
   }
 }
 
-/** Аварийный вход (Break Glass). */
-export async function loginWithPassword(_username: string, password: string): Promise<void> {
-  const baseURL = import.meta.env.VITE_API_URL || "/api"
-  const bgResp = await fetch(`${baseURL}/auth/break-glass/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
-  })
-  if (bgResp.ok) {
-    const bgData = await bgResp.json()
-    localStorage.setItem("token", bgData.access_token)
-    return
-  }
-  const errData = await bgResp.json().catch(() => ({}))
-  throw new Error(errData.detail || "Неверный пароль аварийного доступа")
-}
-
 api.interceptors.request.use((config) => {
   const token = getToken()
   if (token) {

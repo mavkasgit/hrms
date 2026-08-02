@@ -14,12 +14,6 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_by_phone(self, db: AsyncSession, phone: str) -> User | None:
-        result = await db.execute(
-            select(User).where(User.phone == phone, User.is_deleted == False)
-        )
-        return result.scalar_one_or_none()
-
     async def get_by_authentik_sub(self, db: AsyncSession, authentik_sub: str) -> User | None:
         result = await db.execute(
             select(User).where(

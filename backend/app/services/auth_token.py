@@ -1,4 +1,4 @@
-"""Shared JWT access-token helper for password and SSO login."""
+"""Shared JWT access-token helper for SSO (OIDC) and break-glass login."""
 
 import time
 from uuid import UUID

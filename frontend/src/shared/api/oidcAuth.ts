@@ -296,7 +296,7 @@ export function mapIdpRedirectError(error: string, description: string | null): 
 export async function fetchOidcConfig(): Promise<OidcConfig> {
   const response = await fetch(`${API_BASE}/auth/oidc/config`)
   if (!response.ok) {
-    // Treat misconfigured/disabled as disabled — keep password login working
+    // Treat misconfigured/disabled as disabled — break-glass login remains available
     return {
       enabled: false,
       authorization_url: null,
@@ -722,7 +722,7 @@ export async function startOidcLogin(
 
 /**
  * Exchange authorization code for app JWT via backend bridge.
- * Stores token in localStorage under the same key as password login.
+ * Stores token in localStorage under the standard auth key.
  */
 export async function completeOidcCallback(params: {
   code: string
