@@ -1,7 +1,7 @@
 /**
  * Ensure HRMS local dev ports are free before npm run dev.
  *
- * Ports: 8011 (backend), 5173 (Vite frontend).
+ * Ports: 8011 (backend), 5171 (Vite frontend).
  *
  * Why not kill-port alone?
  *   On Windows kill-port uses TaskKill /F /PID without /T → orphan
@@ -22,7 +22,7 @@ const { execFileSync, spawnSync } = require("child_process");
 const readline = require("readline");
 const os = require("os");
 
-const DEFAULT_PORTS = [8011, 5173];
+const DEFAULT_PORTS = [8011, 5171];
 const isWin = process.platform === "win32";
 
 function parseArgs(argv) {

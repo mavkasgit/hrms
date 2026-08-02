@@ -3,7 +3,7 @@
 # Stack in CI (no docker-compose monorepo):
 #   - services: postgres:15
 #   - backend: uvicorn app.main:app :8000 (break-glass login, seeded admin)
-#   - frontend: playwright webServer → npm run frontend :5173
+#   - frontend: playwright webServer → npm run frontend :5171
 #
 # Status: full green on GHA is NOT yet verified in this repo.
 # Prefer workflow_dispatch for intentional runs; PR path is best-effort
@@ -57,9 +57,11 @@ jobs:
       SECRET_KEY: ci-e2e-secret-not-for-prod
       # Frontend (Vite reads VITE_* from process env; no .env.dev in CI)
       VITE_AUTH_MODE: dev
+      # Абсолютный API-URL: в CI бэкенд на :8000 (Vite-прокси dev-режима на :8011 не применяется)
+      VITE_API_URL: http://localhost:8000/api
       # Playwright
       CI: "true"
-      E2E_BASE_URL: http://localhost:5173
+      E2E_BASE_URL: http://localhost:5171
       E2E_API_URL: http://localhost:8000/api
       E2E_ADMIN_USERNAME: admin
       E2E_ADMIN_PASSWORD: dev
@@ -128,7 +130,7 @@ jobs:
         run: npx playwright install chromium --with-deps
 
       - name: e2e smoke (setup + smoke)
-        # Frontend started by playwright.config webServer (npm run frontend :5173)
+        # Frontend started by playwright.config webServer (npm run frontend :5171)
         run: npx playwright test --project=setup --project=smoke
 
       - name: Dump backend log on failure

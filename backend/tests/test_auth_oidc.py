@@ -37,7 +37,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 ISSUER = "http://localhost:9000/application/o/hrms/"
 CLIENT_ID = "hrms"
-REDIRECT_URI = "http://localhost:5173/auth/callback"
+REDIRECT_URI = "http://localhost:5171/auth/callback"
 KID = "test-key-1"
 
 
@@ -271,7 +271,7 @@ async def test_oidc_logout_url_enabled(oidc_enabled):
     # With id_token_hint: post_logout allowed
     resp2 = await oidc_logout_url(
         id_token_hint="dummy.jwt.hint",
-        post_logout_redirect_uri="http://localhost:5173/login",
+        post_logout_redirect_uri="http://localhost:5171/login",
     )
     assert resp2.logout_url
     assert "id_token_hint" in (resp2.logout_url or "")

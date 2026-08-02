@@ -276,7 +276,7 @@ class OidcAuthService:
             elif settings.AUTH_OIDC_REDIRECT_URI:
                 # Default post-logout to FE /login (origin of redirect_uri)
                 redirect = settings.AUTH_OIDC_REDIRECT_URI
-                # http://localhost:5173/auth/callback → http://localhost:5173/login
+                # http://localhost:5171/auth/callback → http://localhost:5171/login
                 if "/auth/callback" in redirect:
                     params["post_logout_redirect_uri"] = redirect.replace(
                         "/auth/callback", "/login?logout=1"

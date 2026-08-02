@@ -26,7 +26,7 @@ npm run dev
 ```
 
 Точки доступа:
-- Frontend: `http://localhost:5173`
+- Frontend: `http://localhost:5171`
 - Backend API: `http://localhost:8000`
 - OnlyOffice: `http://localhost:8085`
 

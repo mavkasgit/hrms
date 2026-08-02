@@ -122,7 +122,7 @@ OnlyOffice Document Server используется для автоматиче�
 
 | Порт | Сервис / Назначение | Доступность |
 |---|---|---|
-| **5173** | Frontend (Vite Dev Server) | Локально, `http://localhost:5173` |
+| **5171** | Frontend (Vite Dev Server) | Локально, `http://localhost:5171` |
 | **8000** | Backend API (Uvicorn) | Локально, `http://localhost:8000` |
 | **8000/docs** | Swagger UI (FastAPI) | Локально, `http://localhost:8000/docs` |
 | **8085** | OnlyOffice Document Server (dev) | Внутри контейнера / локально `http://localhost:8085` |

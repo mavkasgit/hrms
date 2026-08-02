@@ -51,7 +51,7 @@ API: seed employee
 → cleanup
 ```
 
-**Нужно для прогона:** FE `:5173`, BE `:8000`, OnlyOffice DS (dev: `:8085`).
+**Нужно для прогона:** FE `:5171`, BE `:8000`, OnlyOffice DS (dev: `:8085`).
 
 ### 1.4 CI notes
 
@@ -108,7 +108,7 @@ API: seed employee
 
 ```powershell
 cd C:\Users\user\VibeCoding\hrms
-# Postgres dev, backend :8000, frontend :5173
+# Postgres dev, backend :8000, frontend :5171
 npm run dev          # или dev:backend + frontend отдельно
 ```
 

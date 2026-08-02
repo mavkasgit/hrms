@@ -141,7 +141,7 @@ Workflow [`.github/workflows/e2e-smoke.yml`](../.github/workflows/e2e-smoke.yml)
 |--|--|
 | **Triggers** | `workflow_dispatch`, `pull_request`, `push` → `main` / `master` / `feat/e2e-rewrite` |
 | **Command** | `npx playwright test --project=setup --project=smoke` (`workers: 1`) |
-| **Stack** | GHA `postgres:15` → alembic migrate → seed `admin` → uvicorn `:8000` → Playwright `webServer` (Vite `:5173`) |
+| **Stack** | GHA `postgres:15` → alembic migrate → seed `admin` → uvicorn `:8000` → Playwright `webServer` (Vite `:5171`) |
 | **Credentials** | `E2E_ADMIN_USERNAME=admin` / `E2E_ADMIN_PASSWORD=dev` — login через break-glass (`BREAK_GLASS_ENABLED=true`, `BREAK_GLASS_PASSWORD=dev`) |
 | **PR policy** | **best-effort** (`continue-on-error: true` on `pull_request`) — flaky full stack must not block merge until green is proven on GHA |
 | **Manual** | Actions → **e2e-smoke** → **Run workflow** (hard-fail for debugging) |

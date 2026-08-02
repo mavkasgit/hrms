@@ -170,7 +170,7 @@ export function mapOidcError(status: number, detail: unknown): OidcErrorInfo {
       info: {
         title: "Неверный адрес возврата",
         message:
-          "redirect_uri не совпадает с allow-list в IdP. Должен быть точный URL, например http://localhost:5173/auth/callback.",
+          "redirect_uri не совпадает с allow-list в IdP. Должен быть точный URL, например http://localhost:5171/auth/callback.",
         code: text || "redirect_uri",
       },
     },

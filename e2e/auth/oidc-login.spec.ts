@@ -221,7 +221,7 @@ test.describe('OIDC / Authentik @auth @oidc', () => {
     try {
       await page.waitForURL(
         (url) =>
-          url.host.includes('5173') &&
+          url.host.includes('5171') &&
           (url.pathname.includes('/auth/callback') ||
             (!url.pathname.includes('/if/flow') &&
               !url.pathname.includes('/login'))),

@@ -198,7 +198,7 @@ npm run db:makemigrate -- -m "msg"    # Создать новую миграци
 ## Полезные ссылки
 
 - Backend API Docs: http://localhost:8000/docs (Swagger UI)
-- Frontend Dev: http://localhost:5173
+- Frontend Dev: http://localhost:5171
 - Playwright Report: `playwright-report/`
 
 ---

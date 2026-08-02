@@ -81,7 +81,7 @@ Hardcoded JWT / `extraHTTPHeaders` Authorization — **удалены** (E4).
 |------------|---------|------------|
 | `E2E_ADMIN_USERNAME` | `admin` | Логин для setup/auth |
 | `E2E_ADMIN_PASSWORD` | `dev` | Пароль break-glass; должен совпадать с `BREAK_GLASS_PASSWORD` бэкенда |
-| `E2E_BASE_URL` | `http://localhost:5173` | Frontend |
+| `E2E_BASE_URL` | `http://localhost:5171` | Frontend |
 | `E2E_API_URL` | `http://localhost:8000/api` | API base |
 
 Шаблон: `e2e/.env.example`. Локально: `e2e/.env`.
@@ -169,7 +169,7 @@ npx playwright test --project=auth --list
 ```
 
 Окружение: `npm run docker:test:up` (или DEV `npm run dev` — нужны frontend **и** backend для login).  
-Base URL: `E2E_BASE_URL` (default `http://localhost:5173`).
+Base URL: `E2E_BASE_URL` (default `http://localhost:5171`).
 
 ## 7. Workers / parallel
 

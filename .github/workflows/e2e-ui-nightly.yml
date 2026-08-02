@@ -54,8 +54,10 @@ jobs:
       BACKEND_INTERNAL_CALLBACK_URL: http://host.docker.internal:8000
       APP_PUBLIC_URL: http://host.docker.internal:8000
       VITE_AUTH_MODE: dev
+      # Абсолютный API-URL: в CI бэкенд на :8000 (Vite-прокси dev-режима на :8011 не применяется)
+      VITE_API_URL: http://localhost:8000/api
       CI: "true"
-      E2E_BASE_URL: http://localhost:5173
+      E2E_BASE_URL: http://localhost:5171
       E2E_API_URL: http://localhost:8000/api
       E2E_ADMIN_USERNAME: admin
       E2E_ADMIN_PASSWORD: dev

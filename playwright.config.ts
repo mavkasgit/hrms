@@ -82,7 +82,7 @@ export default defineConfig({
     : 'list',
   timeout: 60000,
   use: {
-    baseURL: process.env.E2E_BASE_URL || 'http://localhost:5173',
+    baseURL: process.env.E2E_BASE_URL || 'http://localhost:5171',
     // headless when managed/headless; headed only if explicitly requested
     headless: BROWSER_MODE !== 'headed',
     trace: 'on-first-retry',

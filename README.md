@@ -106,7 +106,7 @@ npm run dev
 
 | Сервис    | URL                       |
 | --------- | ------------------------- |
-| Frontend  | http://localhost:5173      |
+| Frontend  | http://localhost:5171      |
 | Backend   | http://localhost:8000      |
 | API Docs  | http://localhost:8000/docs |
 
@@ -153,7 +153,7 @@ npm run prod:tunnel:up
 | `npm run frontend`     | Запуск только frontend (Vite dev server)               |
 | `npm run dev:backend`  | Запуск только backend через `scripts/run.js`           |
 | `npm run dev:migrate`  | Миграции БД с ожиданием Postgres                       |
-| `npm run dev:kill`     | Остановка портов 8000, 5173                            |
+| `npm run dev:kill`     | Остановка портов 8000, 5171                            |
 | `npm run dev:restart`  | Перезапуск DEV-окружения                               |
 
 ### Docker
@@ -182,7 +182,7 @@ npm run prod:tunnel:up
 ## E2E-тестирование (Playwright)
 
 Проект использует [Playwright](https://playwright.dev/) для end-to-end тестирования.  
-Конфигурация: `playwright.config.ts` (Chromium, baseURL: `http://localhost:5173`).
+Конфигурация: `playwright.config.ts` (Chromium, baseURL: `http://localhost:5171`).
 
 ### Тестовые сьюты
 

@@ -97,7 +97,7 @@ def _document_server_url(request: Request) -> str:
     # ========================================================================
     #
     # DEV MODE (docker compose up for postgres + onlyoffice, local backend/frontend):
-    #   - Frontend: Vite dev server on localhost:5173
+    #   - Frontend: Vite dev server on localhost:5171
     #   - Backend:  uvicorn on localhost:8000
     #   - OnlyOffice: Docker container on localhost:8085
     #   - No nginx proxy in dev
