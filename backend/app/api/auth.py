@@ -250,18 +250,6 @@ async def login() -> LoginResponse:
     )
 
 
-@router.post("/invite/login", response_model=LoginResponse)
-async def invite_login() -> LoginResponse:
-    """
-    Эндпоинт входа по инвайт-коду отключён.
-    Единственный путь аутентификации — Authentik SSO (OIDC) и Break Glass.
-    """
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Вход по инвайт-коду отключен. Перейдите по ссылке приглашения Authentik.",
-    )
-
-
 import socket
 
 

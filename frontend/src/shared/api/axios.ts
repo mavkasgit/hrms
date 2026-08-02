@@ -212,7 +212,6 @@ function isCredentialLoginUrl(url: string | undefined): boolean {
   return (
     url.includes("/auth/login") ||
     url.includes("/auth/break-glass/login") ||
-    url.includes("/auth/invite/login") ||
     // OIDC code exchange failure — stay on callback, don't loop logout
     url.includes("/auth/oidc/callback")
   )

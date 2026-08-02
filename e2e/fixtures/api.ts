@@ -41,7 +41,6 @@ export const API_BASE = process.env.E2E_API_URL
 
 type CreatedResources = {
   notifications: number[]
-  users: number[]
   tags: number[]
   orders: number[]
   vacations: number[]
@@ -56,14 +55,6 @@ export type TagRecord = {
   category?: string | null
   color?: string | null
   sort_order?: number
-}
-
-export type UserRecord = {
-  id: number
-  username: string
-  full_name?: string | null
-  role?: string
-  employee_id?: number | null
 }
 
 // =============================================================================
@@ -425,44 +416,6 @@ async function apiListTags(request: APIRequestContext): Promise<TagRecord[]> {
   return Array.isArray(data) ? data : data.items || []
 }
 
-async function apiCreateUser(
-  request: APIRequestContext,
-  data: {
-    username: string
-    full_name?: string
-    employee_id?: number
-    role?: string
-    password?: string
-  }
-): Promise<UserRecord> {
-  const resp = await request.post(`${API_BASE}/api/users`, {
-    data: {
-      role: 'viewer',
-      full_name: data.full_name || data.username,
-      ...data,
-    },
-  })
-  if (![200, 201].includes(resp.status())) {
-    const body = await resp.text().catch(() => '')
-    throw new Error(`createUser failed: ${resp.status()} ${body}`)
-  }
-  return resp.json()
-}
-
-async function apiDeleteUser(request: APIRequestContext, id: number): Promise<void> {
-  const resp = await request.delete(`${API_BASE}/api/users/${id}`)
-  expect([200, 204]).toContain(resp.status())
-}
-
-async function apiGenerateInvite(
-  request: APIRequestContext,
-  userId: number
-): Promise<{ invite_code: string }> {
-  const resp = await request.post(`${API_BASE}/api/users/${userId}/generate-invite`)
-  expect(resp.status()).toBe(200)
-  return resp.json()
-}
-
 async function apiCreateGroupDraft(
   request: APIRequestContext,
   payload: Record<string, unknown>
@@ -564,17 +517,6 @@ export type ApiOperations = {
   deleteTag: (id: number) => Promise<void>
   listTags: () => Promise<TagRecord[]>
   trackTag: (id: number) => void
-  // Users
-  createUser: (data: {
-    username: string
-    full_name?: string
-    employee_id?: number
-    role?: string
-    password?: string
-  }) => Promise<UserRecord>
-  deleteUser: (id: number) => Promise<void>
-  generateInvite: (userId: number) => Promise<{ invite_code: string }>
-  trackUser: (id: number) => void
   // Structure list / track (UI-created entities)
   listDepartments: () => Promise<Department[]>
   listPositions: () => Promise<Position[]>
@@ -635,7 +577,6 @@ export const test = base.extend<ApiFixtures>({
 
     const resources: CreatedResources = {
       notifications: [],
-      users: [],
       tags: [],
       orders: [],
       vacations: [],
@@ -773,20 +714,6 @@ export const test = base.extend<ApiFixtures>({
         if (!resources.tags.includes(id)) resources.tags.push(id)
       },
 
-      createUser: async (data) => {
-        const user = await apiCreateUser(apiRequest, data)
-        resources.users.push(user.id)
-        return user
-      },
-      deleteUser: async (id: number) => {
-        await apiDeleteUser(apiRequest, id)
-        resources.users = resources.users.filter((x) => x !== id)
-      },
-      generateInvite: async (userId: number) => apiGenerateInvite(apiRequest, userId),
-      trackUser: (id: number) => {
-        if (!resources.users.includes(id)) resources.users.push(id)
-      },
-
       listDepartments: async () => apiListDepartments(apiRequest),
       listPositions: async () => apiListPositions(apiRequest),
       trackDepartment: (id: number) => {
@@ -801,11 +728,7 @@ export const test = base.extend<ApiFixtures>({
 
       // Explicit cleanup (also runs automatically after each test)
       cleanup: async () => {
-        // users → notifications → tags → orders → vacations → employees → positions → departments
-        for (const userId of [...resources.users].reverse()) {
-          await apiDeleteUser(apiRequest, userId).catch(() => {})
-        }
-        resources.users = []
+        // notifications → tags → orders → vacations → employees → positions → departments
         for (const notifId of [...resources.notifications].reverse()) {
           await apiDeleteNotification(apiRequest, notifId).catch(() => {})
         }
@@ -843,9 +766,6 @@ export const test = base.extend<ApiFixtures>({
     await use(apiOps)
 
     // Auto teardown: reverse FK order
-    for (const userId of [...resources.users].reverse()) {
-      await apiDeleteUser(apiRequest, userId).catch(() => {})
-    }
     for (const notifId of [...resources.notifications].reverse()) {
       await apiDeleteNotification(apiRequest, notifId).catch(() => {})
     }
