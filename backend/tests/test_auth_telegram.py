@@ -19,7 +19,6 @@ from app.api.telegram_auth import (
     telegram_webhook,
     telegram_widget_login,
 )
-from app.api.users import create_user
 from app.core.config import settings
 from app.repositories.challenge_repository import ChallengeRepository
 from app.repositories.user_repository import UserRepository
@@ -27,7 +26,6 @@ from app.schemas.telegram_auth import (
     TelegramBotChallengeRequest,
     TelegramWidgetLoginRequest,
 )
-from app.schemas.user import UserCreate
 from app.services.telegram_auth_service import TelegramAuthService
 from starlette.requests import Request
 
@@ -55,6 +53,44 @@ def _make_request(
         "server": ("test", 80),
     }
     return Request(scope)
+
+
+async def _create_local_user(
+    db_session,
+    *,
+    username: str,
+    full_name: str,
+    employee_id: int | None = None,
+    role: str = "viewer",
+    password: str | None = None,
+    telegram_id: int | None = None,
+):
+    """#35: admin-IAM API удалён — тестовые пользователи создаются напрямую в БД."""
+    import bcrypt
+
+    from app.core.constants import SSO_BYPASS_HASH
+    from app.core.user_auth import generate_avatar_seed
+    from app.models.user import User
+
+    password_hash = (
+        bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        if password
+        else SSO_BYPASS_HASH
+    )
+    user = User(
+        username=username,
+        full_name=full_name,
+        role=role,
+        employee_id=employee_id,
+        password_hash=password_hash,
+        telegram_id=telegram_id,
+        avatar_seed=generate_avatar_seed(),
+        is_deleted=False,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
 
 
 @pytest.fixture
@@ -130,14 +166,14 @@ async def test_password_login_still_works(db_session, create_employee):
     employee = await create_employee()
     await db_session.commit()
 
-    create_payload = UserCreate(
+    await _create_local_user(
+        db_session,
         username="tg_phase1_pwd_user",
         full_name="Password Still Works",
         employee_id=employee.id,
         role="viewer",
         password="my_secure_password",
     )
-    await create_user(payload=create_payload, db=db_session, _current_user="admin")
 
     with pytest.raises(HTTPException) as exc_info:
         await login()
@@ -628,14 +664,14 @@ async def test_link_conflict_409(db_session, bot_configured, create_employee):
     employee = await create_employee()
     await db_session.commit()
 
-    create_payload = UserCreate(
+    await _create_local_user(
+        db_session,
         username="wants_same_tg",
         full_name="Wants Same",
         employee_id=employee.id,
         role="viewer",
         password="password123",
     )
-    await create_user(payload=create_payload, db=db_session, _current_user="admin")
     await db_session.commit()
 
     service = TelegramAuthService(db_session)
@@ -666,14 +702,14 @@ async def test_link_conflict_409(db_session, bot_configured, create_employee):
 async def test_link_and_unlink_via_challenge(db_session, bot_configured, create_employee):
     employee = await create_employee()
     await db_session.commit()
-    create_payload = UserCreate(
+    await _create_local_user(
+        db_session,
         username="link_unlink_user",
         full_name="Link Unlink",
         employee_id=employee.id,
         role="viewer",
         password="password123",
     )
-    await create_user(payload=create_payload, db=db_session, _current_user="admin")
     await db_session.commit()
 
     service = TelegramAuthService(db_session)
@@ -711,14 +747,14 @@ async def test_link_via_challenge_with_jit_enabled(db_session, bot_configured, j
     """Verify that even with JIT enabled, linking Telegram to an existing user does not provision a new user."""
     employee = await create_employee()
     await db_session.commit()
-    create_payload = UserCreate(
+    await _create_local_user(
+        db_session,
         username="link_jit_user",
         full_name="Link JIT User",
         employee_id=employee.id,
         role="viewer",
         password="password123",
     )
-    await create_user(payload=create_payload, db=db_session, _current_user="admin")
     await db_session.commit()
 
     service = TelegramAuthService(db_session)
@@ -828,14 +864,14 @@ async def test_link_with_id_token_returns_501(db_session, create_employee):
     """OIDC id_token link path is not implemented → 501, never AttributeError."""
     employee = await create_employee()
     await db_session.commit()
-    create_payload = UserCreate(
+    await _create_local_user(
+        db_session,
         username="oidc_link_user",
         full_name="OIDC Link",
         employee_id=employee.id,
         role="viewer",
         password="password123",
     )
-    await create_user(payload=create_payload, db=db_session, _current_user="admin")
     await db_session.commit()
 
     service = TelegramAuthService(db_session)
@@ -879,7 +915,8 @@ async def test_unlink_with_real_password_ok(db_session, create_employee):
     """User with real password may unlink Telegram (200-equivalent success)."""
     employee = await create_employee()
     await db_session.commit()
-    create_payload = UserCreate(
+    await _create_local_user(
+        db_session,
         username="pw_unlink_user",
         full_name="PW Unlink",
         employee_id=employee.id,
@@ -887,7 +924,6 @@ async def test_unlink_with_real_password_ok(db_session, create_employee):
         password="password123",
         telegram_id=555002,
     )
-    await create_user(payload=create_payload, db=db_session, _current_user="admin")
     await db_session.commit()
 
     service = TelegramAuthService(db_session)

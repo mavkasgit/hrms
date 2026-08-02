@@ -212,7 +212,6 @@ function isCredentialLoginUrl(url: string | undefined): boolean {
   return (
     url.includes("/auth/login") ||
     url.includes("/auth/break-glass/login") ||
-    url.includes("/auth/invite/login") ||
     url.includes("/auth/telegram/widget") ||
     // poll challenge: 401 = bad poll_secret, не logout
     url.includes("/auth/telegram/bot/challenge") ||

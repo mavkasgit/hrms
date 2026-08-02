@@ -127,7 +127,6 @@ class Settings(BaseSettings):
     AUTHENTIK_API_TOKEN: str | None = None
     AUTHENTIK_PUBLIC_URL: str | None = "auto"
     AUTHENTIK_PROFILE_TTL_SECONDS: int = 300
-    AUTHENTIK_ENROLLMENT_FLOW_SLUG: str | None = "invite"
     OPS_PUBLIC_IP: str | None = None
 
     @model_validator(mode="before")

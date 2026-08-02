@@ -3,11 +3,12 @@ import { UsersPage } from '../pages/UsersPage'
 import { createAuthenticatedRequest } from '../helpers/api-request'
 
 /**
- * Users admin @ui (/users, redirect from /settings/users).
+ * Users admin @ui (/users) после удаления админ-IAM (#35).
  *
- * Dual-run:
- * - OIDC on: IdP-first layout (Authentik SoT), no local create/invite/delete.
- * - OIDC off: create viewer → generate invite → delete via UI.
+ * Локальной таблицы и CRUD нет:
+ * - OIDC on: карточка «Управление — в IdP» со ссылками на админку Authentik.
+ * - OIDC off: заглушка-предупреждение.
+ * Эндпоинты создания/редактирования/удаления/инвайтов удалены (404).
  */
 async function isOidcEnabled(request: {
   get: (url: string) => Promise<{ ok: () => boolean; json: () => Promise<unknown> }>
@@ -25,9 +26,8 @@ async function isOidcEnabled(request: {
 test.describe('Users admin @ui', () => {
   test.setTimeout(60_000)
 
-  test('@ui /users: IdP-first when OIDC, else create → invite → delete', async ({
+  test('@ui /users: IdP links when OIDC, else warning stub', async ({
     page,
-    apiOps,
     playwright,
   }) => {
     const { request, dispose } = await createAuthenticatedRequest(playwright)
@@ -38,78 +38,22 @@ test.describe('Users admin @ui', () => {
       await usersPage.goto()
 
       if (oidcOn) {
-        // Deep-links only: IdP Ops / Authentik, no local create or groups table
         await usersPage.expectIdpFirstLayout()
-        await expect(
-          page.getByRole('button', { name: /открыть IdP Ops|Authentik Admin/i }).first()
-        ).toBeVisible({ timeout: 10_000 })
-        return
+      } else {
+        await usersPage.expectOidcOffWarning()
       }
 
-      // ── Local IAM path ──
-      await usersPage.expectLocalIamLayout()
+      // Админ-IAM удалён: write-эндпоинты /users отдают 404
+      const postResp = await request.post('/api/users', {
+        data: { username: 'e2e-removed-user' },
+      })
+      expect(postResp.status()).toBe(404)
 
-      const u = apiOps.uid()
-      const empName = `e2e-emp-user-${u}`
-      const username = `e2e-u-${u}`
+      const listResp = await request.get('/api/users')
+      expect(listResp.status()).toBe(404)
 
-      const employee = await apiOps.createEmployee({ name: empName })
-      expect(employee.id).toBeGreaterThan(0)
-
-      let createdUserId: number | undefined
-
-      try {
-        const createRespPromise = page.waitForResponse(
-          (r) =>
-            r.url().includes('/api/users') &&
-            !r.url().includes('generate-invite') &&
-            r.request().method() === 'POST' &&
-            r.status() < 400,
-          { timeout: 20_000 }
-        )
-
-        await usersPage.openCreateDialog()
-        await usersPage.selectEmployeeByName(empName)
-        await usersPage.fillUsername(username)
-        await usersPage.selectRole('Наблюдатель')
-        await usersPage.saveCreate()
-
-        const createResp = await createRespPromise
-        const body = (await createResp.json().catch(() => ({}))) as { id?: number }
-        if (typeof body.id === 'number') createdUserId = body.id
-
-        await usersPage.expectUserInTable(username)
-        await expect(
-          usersPage.userRow(username).getByText(/Наблюдатель|Администратор/)
-        ).toBeVisible()
-
-        await usersPage.generateInvite(username)
-
-        await usersPage.deleteUser(username)
-        await usersPage.expectUserNotInTable(username)
-        createdUserId = undefined
-
-        const listResp = await request.get('/api/users')
-        expect(listResp.ok()).toBeTruthy()
-        const list = (await listResp.json()) as Array<{ username?: string }>
-        expect(list.some((x) => x.username === username)).toBe(false)
-      } finally {
-        if (createdUserId != null) {
-          await request.delete(`/api/users/${createdUserId}`).catch(() => {})
-        } else {
-          const listResp = await request.get('/api/users').catch(() => null)
-          if (listResp?.ok()) {
-            const list = (await listResp.json()) as Array<{
-              id?: number
-              username?: string
-            }>
-            const found = list.find((x) => x.username === username)
-            if (found?.id) {
-              await request.delete(`/api/users/${found.id}`).catch(() => {})
-            }
-          }
-        }
-      }
+      const inviteResp = await request.post('/api/users/1/generate-invite')
+      expect(inviteResp.status()).toBe(404)
     } finally {
       await dispose()
     }

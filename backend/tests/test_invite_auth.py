@@ -34,28 +34,10 @@ async def async_client(db_session: AsyncSession):
         app.dependency_overrides.clear()
 
 
-async def test_invite_login_flow(db_session: AsyncSession, async_client: AsyncClient, create_employee):
-    # 1. Создаем пользователя с инвайт-кодом
-    employee = await create_employee()
-    user = User(
-        username="invite_test_user",
-        full_name="Инвайт Тест",
-        role="viewer",
-        password_hash="sso_bypass_hash",
-        invite_code="987654",
-        is_deleted=False,
-        employee_id=employee.id,
-    )
-    db_session.add(user)
-    await db_session.commit()
-
-    # 2. Логин по неверному инвайт-коду должен отдавать 410 (endpoint отключён)
+async def test_invite_login_removed(db_session: AsyncSession, async_client: AsyncClient):
+    """#35: вход по инвайт-коду удалён — эндпоинт отвечает 404."""
     resp = await async_client.post("/api/auth/invite/login", json={"invite_code": "111111"})
-    assert resp.status_code == 410
-
-    # 3. Любой инвайт-код (даже правильный) тоже 410 — endpoint отключён
-    resp = await async_client.post("/api/auth/invite/login", json={"invite_code": "987654"})
-    assert resp.status_code == 410
+    assert resp.status_code == 404
 
 
 async def test_link_telegram_keeps_invite_until_password(db_session: AsyncSession, create_employee):

@@ -53,67 +53,6 @@ def oidc_on():
         setattr(settings, k, v)
 
 
-@pytest.fixture
-def oidc_off():
-    original = settings.AUTH_OIDC_ENABLED
-    settings.AUTH_OIDC_ENABLED = False
-    yield
-    settings.AUTH_OIDC_ENABLED = original
-
-
-async def test_update_role_blocked_when_oidc(async_client, db_session: AsyncSession, oidc_on):
-    """Fail-closed: role change via API blocked when OIDC enabled (managed by IdP)."""
-    import uuid
-
-    username = f"idp_role_{uuid.uuid4().hex[:8]}"
-    create = await async_client.post(
-        "/api/users",
-        json={"username": username, "full_name": "IdP Role User", "role": "admin"},
-        headers=_auth(),
-    )
-    assert create.status_code == 201
-    body = create.json()
-    # OIDC on: payload.role ignored, defaults to viewer (IdP assigns on first login)
-    assert body["role"] == "viewer"
-    assert "authentik_sub" in body
-    assert body["authentik_sub"] is None
-    user_id = body["id"]
-
-    resp = await async_client.put(
-        f"/api/users/{user_id}",
-        json={"role": "admin"},
-        headers=_auth(),
-    )
-    assert resp.status_code == 403
-    assert resp.json()["detail"] == "role_managed_by_idp"
-
-    await async_client.delete(f"/api/users/{user_id}", headers=_auth())
-
-
-async def test_update_role_allowed_when_oidc_off(async_client, oidc_off):
-    import uuid
-
-    username = f"local_role_{uuid.uuid4().hex[:8]}"
-    create = await async_client.post(
-        "/api/users",
-        json={"username": username, "full_name": "Local Role User", "role": "viewer"},
-        headers=_auth(),
-    )
-    assert create.status_code == 201
-    assert create.json()["role"] == "viewer"
-    user_id = create.json()["id"]
-
-    resp = await async_client.put(
-        f"/api/users/{user_id}",
-        json={"role": "admin"},
-        headers=_auth(),
-    )
-    assert resp.status_code == 200
-    assert resp.json()["role"] == "admin"
-
-    await async_client.delete(f"/api/users/{user_id}", headers=_auth())
-
-
 async def test_idp_config_and_links(async_client, oidc_on):
     cfg = await async_client.get("/api/idp/config", headers=_auth())
     assert cfg.status_code == 200

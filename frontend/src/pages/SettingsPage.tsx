@@ -103,7 +103,7 @@ export function SettingsPage() {
               <p className="text-sm text-muted-foreground mb-3">
                 {oidcEnabled
                   ? "Доступ и IdP: каталог в Authentik, группы hrms-admin / hrms-viewer. Telegram/MFA — только в IdP."
-                  : "Локальные учётные записи HRMS: логин/пароль и роли (без in-app Telegram/invite)."}
+                  : "Жизненный цикл аккаунтов — в админке IdP (Authentik); локальное создание пользователей удалено."}
               </p>
             </div>
           </div>

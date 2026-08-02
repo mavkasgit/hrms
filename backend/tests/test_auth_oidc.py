@@ -1066,12 +1066,10 @@ async def test_sso_only_blocks_login_endpoint():
     assert "отключен" in exc_info.value.detail or "disabled" in exc_info.value.detail
 
 
-async def test_sso_only_blocks_invite_login_endpoint():
-    """AUTH_SSO_ONLY=True / default: blocks POST /auth/invite/login with 410."""
-    from app.api.auth import invite_login
+async def test_invite_login_endpoint_removed():
+    """#35: POST /auth/invite/login удалён — маршрута больше нет."""
+    from app.api.auth import router as auth_router
 
-    with pytest.raises(HTTPException) as exc_info:
-        await invite_login()
-    assert exc_info.value.status_code == 410
-    assert "отключен" in exc_info.value.detail or "disabled" in exc_info.value.detail
+    paths = {getattr(route, "path", "") for route in auth_router.routes}
+    assert "/invite/login" not in paths
 
