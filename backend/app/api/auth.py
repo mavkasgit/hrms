@@ -418,7 +418,6 @@ async def get_me(
             "email": None,
             "locale": "ru",
             "theme": "system",
-            "invite_code": None,
             "avatar_seed": "emergency",
             "authentik_linked": False,
             "profile_sot": "local",
@@ -494,7 +493,6 @@ async def get_me(
         "email": email_out,
         "locale": user.locale,
         "theme": user.theme,
-        "invite_code": user.invite_code,
         "avatar_seed": user.avatar_seed,
         "authentik_linked": bool(user.authentik_sub),
         "profile_sot": (

@@ -115,7 +115,6 @@ export const en: UserSettingsDict = {
   },
   loginMethods: {
     password: "Password",
-    invite: "Invite",
     oidc: "Single sign-on",
   },
 }

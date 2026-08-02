@@ -62,7 +62,6 @@ class User(Base):
     # Unified profile cache (SoT = Authentik attributes)
     locale = Column(String(16), nullable=True)  # ru | en
     theme = Column(String(16), nullable=True)  # system | light | dark
-    invite_code = Column(String(64), unique=True, nullable=True, index=True)
     # Authentik / OIDC subject (stable UUID from IdP); link for SSO bridge
     authentik_sub = Column(String(255), nullable=True, index=True)
     profile_synced_at = Column(DateTime(timezone=True), nullable=True)

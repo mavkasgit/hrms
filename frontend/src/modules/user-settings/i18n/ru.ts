@@ -117,7 +117,6 @@ export const ru = {
   },
   loginMethods: {
     password: "Пароль",
-    invite: "Инвайт",
     oidc: "Единый вход",
   } as Record<string, string>,
 }

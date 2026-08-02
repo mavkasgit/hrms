@@ -57,10 +57,41 @@ npm run test:e2e:ui:parallel
 Изоляция данных: `apiOps.uid()` → prefix `w{N}-` (`workerPrefix(parallelIndex)`), сущности `e2e-…`.  
 Default multi-worker: **parallel by file** (`fullyParallel: false`); tests inside a file stay serial.
 
-## E2E handoff
+## Покрытие E2E (карта specs)
 
-Статус rewrite, backlog и команды: **[docs/e2e-handoff.md](./e2e-handoff.md)**.  
-Канон написания тестов: **[e2e/AGENTS.md](../e2e/AGENTS.md)**.
+Канон написания тестов: **[e2e/AGENTS.md](../e2e/AGENTS.md)** (слои, cleanup, selectors, npm-скрипты).
+
+| Project | Содержание |
+|---------|------------|
+| **setup** | admin login → storageState |
+| **auth** | valid login + bad password (без storage) |
+| **api** | catalog, errors, timesheet, vacation balance/periods smoke, order-type letter |
+| **smoke** | nav, structure, employees CRUD, orders list shell, timesheet open, vacations happy |
+| **ui** | structure/employees lifecycle, vacations/plan/add-days, absences, timesheet deeper, **orders OO** (create, hire/dismissal, edit-docx, group-drafts, other types), **import**, **settings** (users, holidays), **vacation adjustment tabs**, **notifications/statements**, **templates** smoke |
+
+### OnlyOffice (важный сценарий)
+
+`e2e/ui/order-onlyoffice-create.spec.ts` (+ hire/dismissal, other types, edit-docx, group-drafts):
+
+```text
+API: seed employee
+→ UI /orders: выбрать сотрудника + тип (transfer) + номер
+→ «Создать приказ» → popup draft /edit-docx
+→ OnlyOffice + «Сохранить приказ» (forcesave + commit)
+→ проверка в реестре / API
+→ cleanup
+```
+
+Нужно для прогона: FE `:5171`, BE `:8000`, OnlyOffice DS (dev: `:8085`).
+
+### Backlog / техдолг
+
+| # | Долг | Статус |
+|---|------|--------|
+| 1 | Backups restore | open — destructive; backend tests |
+| 2 | Dashboard deep | open — shallow optional |
+| 3 | Multi-worker full **ui** suite | ✅ `npm run test:e2e:ui:parallel` |
+| 4 | CI full **ui** + OnlyOffice job | ✅ `.github/workflows/e2e-ui-nightly.yml` |
 
 ## Backend (pytest)
 

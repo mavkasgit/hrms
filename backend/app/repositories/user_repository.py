@@ -20,12 +20,6 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_by_invite_code(self, db: AsyncSession, invite_code: str) -> User | None:
-        result = await db.execute(
-            select(User).where(User.invite_code == invite_code, User.is_deleted == False)
-        )
-        return result.scalar_one_or_none()
-
     async def get_by_authentik_sub(self, db: AsyncSession, authentik_sub: str) -> User | None:
         result = await db.execute(
             select(User).where(
