@@ -70,7 +70,3 @@ class UserOut(UserBase):
     class Config:
         from_attributes = True
 
-
-class UserPasswordSetup(BaseModel):
-    password: str = Field(..., min_length=4, max_length=128)
-

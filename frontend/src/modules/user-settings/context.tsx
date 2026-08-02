@@ -12,7 +12,6 @@ import type {
 /** Разрешённые флаги (после учёта доступных методов api). */
 export interface ResolvedFeatures {
   avatar: boolean
-  password: boolean
   idp: boolean
   sessions: boolean
   loginHistory: boolean

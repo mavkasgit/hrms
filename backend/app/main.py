@@ -93,7 +93,6 @@ async def check_write_access_middleware(request: Request, call_next):
         is_exempt = (
             path == "/api/health"
             or path.endswith("/onlyoffice/callback")
-            or path == "/api/users/me/setup-password"
             or path.startswith("/api/auth/")
         )
         if path.startswith("/api") and not is_exempt:

@@ -25,9 +25,6 @@ export interface UserSettingsApi {
   /** Установить (seed) или сбросить (null) аватар. */
   updateAvatar(seed: string | null): Promise<{ avatar_seed: string | null }>
 
-  /** Установить/сменить локальный пароль. */
-  setPassword(password: string): Promise<void>
-
   /** Deep-links в IdP (SSO). Без метода — блок SSO скрыт. */
   getIdpLinks?(): Promise<IdpLinks>
 

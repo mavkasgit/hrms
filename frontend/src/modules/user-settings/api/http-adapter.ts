@@ -19,7 +19,6 @@ export interface HttpAdapterEndpoints {
   getProfile: string
   updateProfile: string
   updateAvatar: string
-  setPassword: string
   idpLinks: string
   sessions: string
   session: (id: string) => string
@@ -31,7 +30,6 @@ const DEFAULT_ENDPOINTS: HttpAdapterEndpoints = {
   getProfile: "/auth/me",
   updateProfile: "/users/me/profile",
   updateAvatar: "/users/me/avatar",
-  setPassword: "/users/me/setup-password",
   idpLinks: "/idp/links",
   sessions: "/auth/sessions",
   session: (id) => `/auth/sessions/${encodeURIComponent(id)}`,
@@ -114,10 +112,6 @@ export function createHttpAdapter(options: HttpAdapterOptions = {}): UserSetting
       request<{ avatar_seed: string | null }>("PATCH", ep.updateAvatar, {
         avatar_seed: seed,
       }),
-
-    setPassword: async (password) => {
-      await request<{ status: string }>("POST", ep.setPassword, { password })
-    },
 
     getIdpLinks: () => request<IdpLinks>("GET", ep.idpLinks),
 

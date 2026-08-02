@@ -35,10 +35,6 @@ export const hrmsUserSettingsApi: UserSettingsApi = {
     return data
   },
 
-  async setPassword(password) {
-    await api.post("/users/me/setup-password", { password })
-  },
-
   async getIdpLinks(): Promise<IdpLinks> {
     const { data } = await api.get<IdpLinks>("/idp/links")
     return data

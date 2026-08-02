@@ -81,7 +81,6 @@ export function UserSettingsDialog({
   const features = useMemo<ResolvedFeatures>(
     () => ({
       avatar: featuresProp?.avatar ?? true,
-      password: featuresProp?.password ?? true,
       idp: featuresProp?.idp ?? Boolean(api.getIdpLinks),
       sessions: featuresProp?.sessions ?? Boolean(api.listSessions),
       loginHistory: featuresProp?.loginHistory ?? Boolean(api.listLoginEvents),
@@ -178,7 +177,7 @@ export function UserSettingsDialog({
           {
             id: "security" as const,
             label: dict.nav.security,
-            visible: features.password || features.idp,
+            visible: features.idp,
           },
           {
             id: "sessions" as const,

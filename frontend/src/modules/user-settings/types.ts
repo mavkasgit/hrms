@@ -24,8 +24,6 @@ export interface UserProfile {
   avatar_seed?: string | null
   locale?: UserLocale | null
   theme?: UserTheme | null
-  has_password?: boolean
-  password_changed_at?: string | null
 }
 
 /** Патч профиля (только изменённые поля). */
@@ -80,8 +78,6 @@ export type NotifyFn = (toast: {
 export interface UserSettingsFeatures {
   /** Выбор аватара (по seed). По умолчанию true. */
   avatar?: boolean
-  /** Локальный пароль (escape hatch). По умолчанию true. */
-  password?: boolean
   /** Блок внешнего IdP. По умолчанию — авто (есть api.getIdpLinks). */
   idp?: boolean
   /** Активные сессии. По умолчанию — авто (есть api.listSessions). */

@@ -43,13 +43,3 @@ export function resolveDict(
   if (!override) return base
   return deepMerge(base, override)
 }
-
-/** Подстановка переменных вида {min} в строки словаря. */
-export function interpolate(
-  template: string,
-  vars: Record<string, string | number>,
-): string {
-  return template.replace(/\{(\w+)\}/g, (_, key) =>
-    key in vars ? String(vars[key]) : `{${key}}`,
-  )
-}

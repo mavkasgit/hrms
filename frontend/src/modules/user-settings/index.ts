@@ -6,7 +6,7 @@
  *   import { UserSettingsDialog, createHttpAdapter } from "@/modules/user-settings"
  */
 
-export const USER_SETTINGS_MODULE_VERSION = "1.0.0"
+export const USER_SETTINGS_MODULE_VERSION = "2.0.0"
 
 export { UserSettingsDialog } from "./UserSettingsDialog"
 export type { UserSettingsDialogProps } from "./UserSettingsDialog"

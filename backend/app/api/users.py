@@ -16,7 +16,7 @@ from app.core.database import get_db
 from app.core.user_auth import clear_invite_if_fully_activated, generate_avatar_seed
 from app.models.user import User
 from app.models.employee import Employee
-from app.schemas.user import UserCreate, UserUpdate, UserOut, UserPasswordSetup
+from app.schemas.user import UserCreate, UserUpdate, UserOut
 from app.api.deps import get_current_user, CurrentUser
 from app.services import session_service
 
@@ -257,7 +257,7 @@ async def update_user(
             payload.password.encode("utf-8"), bcrypt.gensalt()
         ).decode("utf-8")
         user.password_changed_at = _utcnow()
-        # Симметрия с setup-password: clear invite только при password + TG
+        # invite_code сбрасываем только при password + TG (clear_if_fully)
         clear_invite_if_fully_activated(user)
         # Admin/other-user password change: revoke all of that user's sessions.
         await session_service.revoke_all(
@@ -396,43 +396,6 @@ async def generate_invite_code(
         "invite_url": None,
         "authentik_linked": bool(user.authentik_sub),
     }
-
-
-@router.post("/me/setup-password")
-async def setup_my_password(
-    payload: UserPasswordSetup,
-    current_user: CurrentUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    # Ищем пользователя по current_user.username
-    result = await db.execute(
-        select(User).where(User.username == current_user.username, User.is_deleted == False)
-    )
-    db_user = result.scalars().first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    
-    # Хешируем пароль
-    password_hash = bcrypt.hashpw(payload.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    db_user.password_hash = password_hash
-    db_user.password_changed_at = _utcnow()
-    # invite_code сбрасываем только при password + TG (clear_if_fully)
-    clear_invite_if_fully_activated(db_user)
-    db.add(db_user)
-    # R9: revoke other sessions if current sid known, else all.
-    if current_user.session_id is not None:
-        await session_service.revoke_others(
-            db,
-            user_id=db_user.id,
-            current_session_id=current_user.session_id,
-            reason="password_change",
-        )
-    else:
-        await session_service.revoke_all(
-            db, user_id=db_user.id, reason="password_change"
-        )
-    await db.commit()
-    return {"status": "ok"}
 
 
 class AvatarSeedUpdate(BaseModel):

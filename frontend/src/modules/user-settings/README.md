@@ -12,7 +12,7 @@
 | --------------- | ----------------------------------------------------------------- |
 | Профиль         | аватар (seed-пикер), логин (копирование), роль, полное имя, email |
 | Внешний вид     | тема (system/light/dark, мгновенный apply), язык (ru/en)          |
-| Безопасность    | блок SSO/IdP (deep-link), локальный пароль + индикатор надёжности |
+| Безопасность    | блок SSO/IdP (deep-link) с источниками входа                     |
 | Сессии          | активные сеансы (отзыв, «завершить другие»), история входов       |
 
 Возможности: dirty-guard при закрытии, skeleton-загрузка, подтверждения
@@ -82,7 +82,6 @@ const api = createHttpAdapter({
 | getProfile            | `GET /auth/me`                           |
 | updateProfile         | `PATCH /users/me/profile`                |
 | updateAvatar          | `PATCH /users/me/avatar`                 |
-| setPassword           | `POST /users/me/setup-password`          |
 | getIdpLinks           | `GET /idp/links`                         |
 | listSessions          | `GET /auth/sessions`                     |
 | revokeSession         | `DELETE /auth/sessions/{id}`             |
@@ -104,6 +103,6 @@ user-settings/
 │   ├── adapter.ts            — интерфейс UserSettingsApi
 │   └── http-adapter.ts       — fetch-реализация (без axios)
 ├── i18n/                     — ru (source of truth), en, deep-merge
-├── lib/                      — datetime (Intl), device, password, avatar-seed
+├── lib/                      — datetime (Intl), device, avatar-seed
 └── components/               — панели, AvatarPickerDialog, AvatarArt, ui-bits
 ```

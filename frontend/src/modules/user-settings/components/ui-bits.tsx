@@ -149,7 +149,7 @@ export function SaveBar({
   )
 }
 
-/** Цветная «пилюля» статуса (пароль задан / текущий сеанс / …). */
+/** Цветная «пилюля» статуса (текущий сеанс / …). */
 export function StatusPill({
   tone = "muted",
   icon: Icon,

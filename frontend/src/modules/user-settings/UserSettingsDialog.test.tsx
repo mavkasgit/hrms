@@ -14,8 +14,6 @@ const profile: UserProfile = {
   avatar_seed: "abc12345",
   locale: "ru",
   theme: "system",
-  has_password: true,
-  password_changed_at: "2026-07-01T10:00:00Z",
 }
 
 function createApi(overrides: Partial<UserSettingsApi> = {}): UserSettingsApi {
@@ -23,7 +21,6 @@ function createApi(overrides: Partial<UserSettingsApi> = {}): UserSettingsApi {
     getProfile: vi.fn(async () => profile),
     updateProfile: vi.fn(async (patch) => ({ ...profile, ...patch })),
     updateAvatar: vi.fn(async (seed) => ({ avatar_seed: seed })),
-    setPassword: vi.fn(async () => undefined),
     getIdpLinks: vi.fn(async () => ({
       oidc_enabled: false,
       user_settings_url: null,
@@ -118,6 +115,33 @@ describe("UserSettingsDialog", () => {
 
     expect(await screen.findByText("ivan")).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Сессии" })).toBeNull()
+  })
+
+  it("в «Безопасности» показывает только SSO-карточку, без формы пароля", async () => {
+    const api = createApi({
+      getIdpLinks: vi.fn(async () => ({
+        oidc_enabled: true,
+        user_settings_url: "https://sso.example.com/settings",
+      })),
+    })
+    renderDialog(api)
+    expect(await screen.findByText("ivan")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Безопасность" }))
+
+    // SSO-карточка с источниками входа
+    expect(
+      await screen.findByText("Единый вход (SSO)"),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Открыть настройки входа" }),
+    ).toBeTruthy()
+
+    // Формы установки/смены локального пароля больше нет
+    expect(screen.queryByText("Установить пароль")).toBeNull()
+    expect(screen.queryByText("Сменить пароль")).toBeNull()
+    expect(screen.queryByLabelText("Новый пароль")).toBeNull()
+    expect(screen.queryByLabelText("Подтверждение пароля")).toBeNull()
   })
 
   it("применяет переопределения словаря (dict override)", async () => {
