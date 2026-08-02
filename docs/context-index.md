@@ -7,3 +7,4 @@
 | [deployment.md](./deployment.md) | Деплой | Настройка Docker Compose, прокси-сервера Nginx и env-файлов |
 | [testing-guide.md](./testing-guide.md) | Тестирование | Запуск сквозных UI, API и доменных тестов на Playwright |
 | [agents.md](./agents.md) | Справочник агентов | Реестр портов, список субагентов и правила разработки |
+| [adr/](./adr/) | Архитектурные решения | ADR-0001: SSO-only — без локальных паролей |
