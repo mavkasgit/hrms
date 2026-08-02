@@ -22,10 +22,7 @@ LOGIN_METHODS = frozenset(
     {
         "password",
         "invite",
-        "telegram_widget",
-        "telegram_bot",
         "oidc",
-        "oidc_telegram",  # OIDC via Authentik Telegram Source (claim telegram_id present)
         "break_glass",
     }
 )

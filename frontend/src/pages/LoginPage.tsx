@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { Loader2, LogIn, Shield } from "lucide-react"
 import { consumeAuthErrorForLogin } from "@/shared/api/axios"
-import { TelegramIcon } from "@/shared/ui/icons"
 import {
   fetchOidcConfig,
   startOidcLogin,
@@ -24,7 +23,6 @@ export function LoginPage() {
       oidcConfig.authorization_url &&
       oidcConfig.client_id
   )
-  const telegramPrimary = Boolean(oidcEnabled && oidcConfig?.telegram_primary)
 
   useEffect(() => {
     const saved = consumeAuthErrorForLogin()
@@ -167,26 +165,15 @@ export function LoginPage() {
               type="button"
               onClick={() => void handleOidcLogin()}
               disabled={loading || oidcStarting}
-              className={
-                telegramPrimary
-                  ? "w-full flex items-center justify-center gap-2 bg-[#2AABEE] hover:bg-[#229ED9] disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
-                  : "w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
-              }
+              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded-xl transition-colors cursor-pointer text-sm"
             >
               {oidcStarting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
-              ) : telegramPrimary ? (
-                <TelegramIcon className="h-5 w-5" />
               ) : (
                 <Shield className="h-4 w-4" />
               )}
-              {telegramPrimary ? "Войти через Telegram" : "Войти через единый вход"}
+              Войти через единый вход
             </button>
-            {telegramPrimary && (
-              <p className="text-center text-xs text-slate-500">
-                Единый вход для HRMS и KTM-2000 (Authentik)
-              </p>
-            )}
           </div>
         )}
 

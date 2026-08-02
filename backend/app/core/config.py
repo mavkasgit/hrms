@@ -70,33 +70,12 @@ class Settings(BaseSettings):
 
     ALGORITHM: str = "HS256"
 
-    # Telegram Login (bot deep-link + QR)
-    TELEGRAM_BOT_TOKEN: str = ""
-    TELEGRAM_BOT_USERNAME: str = ""
-    TELEGRAM_ALLOW_JIT: bool = False
-    TELEGRAM_DEFAULT_ROLE: str = "viewer"
-    TELEGRAM_BOT_CHALLENGE_TTL_SECONDS: int = 300
-    TELEGRAM_AUTH_DATE_MAX_AGE_SECONDS: int = 600
-    TELEGRAM_WEBHOOK_SECRET: str = ""  # X-Telegram-Bot-Api-Secret-Token expected value
-    # Dev local: pull /start via getUpdates (no public webhook / tunnel needed).
-    # Requires TELEGRAM_BOT_TOKEN + TELEGRAM_BOT_USERNAME. Real Telegram app confirms.
-    TELEGRAM_UPDATES_POLLING: bool = True
-    # Public URL of HRMS app — used for "Open HRMS" inline button in bot reply.
-    # Defaults to the Vite dev origin; override per env for staging/prod.
-    TELEGRAM_PUBLIC_APP_URL: str = "http://localhost:5171"
-    # When True, bot sends a friendly confirmation message + inline "Open HRMS"
-    # button right after /start <token>. Disable for silent test mode.
-    TELEGRAM_BOT_REPLY_ENABLED: bool = True
-    # Public telegram auth endpoints rate limit (widget + bot challenge create/poll)
-    TELEGRAM_RATE_LIMIT_REQUESTS: int = 30
-    TELEGRAM_RATE_LIMIT_WINDOW_SECONDS: int = 60
-
     # Sessions / login audit (hybrid JWT + user_sessions)
     TRUSTED_PROXY_COUNT: int = 1  # env TRUSTED_PROXY_COUNT; XFF peel from the right
     SESSION_LAST_SEEN_THROTTLE_SECONDS: int = 300
     LOGIN_EVENTS_RETENTION_DAYS: int = 90  # default window for list_login_events queries
 
-    # OIDC / Authentik bridge (A3) — dual-run; false = local password/invite/TG only
+    # OIDC / Authentik bridge (A3) — dual-run; false = local password/invite only
     AUTH_OIDC_ENABLED: bool = False
     AUTH_OIDC_ISSUER: str | None = None  # e.g. http://192.168.x.x:9000/application/o/hrms/
     AUTH_OIDC_CLIENT_ID: str | None = None
@@ -112,10 +91,8 @@ class Settings(BaseSettings):
     AUTH_OIDC_TOKEN_URL: str | None = None
     AUTH_OIDC_JWKS_URL: str | None = None
     AUTH_OIDC_END_SESSION_URL: str | None = None
-    # Align with TELEGRAM_ALLOW_JIT: no auto-create local User unless true
+    # JIT-создание локального User при первом OIDC-входе (иначе 403)
     AUTH_OIDC_ALLOW_JIT: bool = False
-    # TG1: when true + OIDC enabled, FE prefers Telegram SSO (Authentik TG Source) CTA
-    AUTH_OIDC_TELEGRAM_PRIMARY: bool = False
     # Phase-3: SSO-only mode (blocks password & invite login; redirect to Authentik SSO)
     AUTH_SSO_ONLY: bool = False
     AUTH_OIDC_LOGIN_HINT_ENABLED: bool = True
@@ -160,10 +137,6 @@ class Settings(BaseSettings):
             ip = env_lan_ip() or detect_lan_ip() or "localhost"
             port = 8081 if self.ENV == "prod" else (8080 if self.ENV == "test" else 5171)
             self.APP_PUBLIC_URL = f"http://{ip}:{port}"
-            
-        # Разрешение TELEGRAM_PUBLIC_APP_URL
-        if self.TELEGRAM_PUBLIC_APP_URL == "auto":
-            self.TELEGRAM_PUBLIC_APP_URL = self.APP_PUBLIC_URL
             
         # Разрешение AUTH_OIDC_REDIRECT_URI
         if self.AUTH_OIDC_REDIRECT_URI == "auto":

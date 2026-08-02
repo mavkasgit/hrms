@@ -213,9 +213,6 @@ function isCredentialLoginUrl(url: string | undefined): boolean {
     url.includes("/auth/login") ||
     url.includes("/auth/break-glass/login") ||
     url.includes("/auth/invite/login") ||
-    url.includes("/auth/telegram/widget") ||
-    // poll challenge: 401 = bad poll_secret, не logout
-    url.includes("/auth/telegram/bot/challenge") ||
     // OIDC code exchange failure — stay on callback, don't loop logout
     url.includes("/auth/oidc/callback")
   )

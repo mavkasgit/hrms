@@ -38,7 +38,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5171,
-    // COOP: same-origin breaks Telegram Login popup; allow popups for OIDC widget
+    // COOP: same-origin-allow-popups keeps popup flows working alongside SSO redirects
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     },

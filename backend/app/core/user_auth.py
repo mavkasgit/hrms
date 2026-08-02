@@ -21,12 +21,12 @@ def has_local_password(user: User) -> bool:
 
 def clear_invite_if_fully_activated(user: User) -> bool:
     """
-    Сбросить invite_code только когда заданы и пароль, и Telegram.
+    Сбросить invite_code, когда задан локальный пароль.
 
     invite_code — маркер незавершённого онбординга (код ещё действует,
-    пока нет полного набора факторов).
+    пока нет локального фактора входа).
     """
-    if has_local_password(user) and user.telegram_id is not None:
+    if has_local_password(user):
         if user.invite_code is not None:
             user.invite_code = None
             return True

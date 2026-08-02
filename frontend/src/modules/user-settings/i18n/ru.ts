@@ -59,7 +59,7 @@ export const ru = {
     description: "Способы входа в систему",
     idpTitle: "Единый вход (SSO)",
     idpDescription:
-      "Telegram, MFA и способы входа настраиваются в системе единого входа.",
+      "MFA и способы входа настраиваются в системе единого входа.",
     idpOpen: "Открыть настройки входа",
   },
   sessions: {
@@ -118,10 +118,7 @@ export const ru = {
   loginMethods: {
     password: "Пароль",
     invite: "Инвайт",
-    telegram_widget: "Telegram",
-    telegram_bot: "Telegram-бот",
     oidc: "Единый вход",
-    oidc_telegram: "Telegram (SSO)",
   } as Record<string, string>,
 }
 

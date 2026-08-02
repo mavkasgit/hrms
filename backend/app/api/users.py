@@ -27,24 +27,6 @@ def _utcnow() -> datetime:
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-async def _ensure_telegram_id_free(
-    db: AsyncSession,
-    telegram_id: int,
-    *,
-    exclude_user_id: int | None = None,
-) -> None:
-    """Reject if telegram_id already linked to another active user."""
-    q = select(User).where(User.telegram_id == telegram_id, User.is_deleted == False)
-    if exclude_user_id is not None:
-        q = q.where(User.id != exclude_user_id)
-    existing = await db.execute(q)
-    if existing.scalars().first():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Этот Telegram ID уже привязан к другому пользователю",
-        )
-
-
 async def _ensure_phone_free(
     db: AsyncSession,
     phone: str,
@@ -120,17 +102,11 @@ async def create_user(
         else SSO_BYPASS_HASH
     )
 
-    telegram_id = payload.telegram_id
-    if telegram_id is not None:
-        await _ensure_telegram_id_free(db, int(telegram_id))
-
     phone = (payload.phone or "").strip() or None
     if phone is not None:
         await _ensure_phone_free(db, phone)
 
     invite_code = payload.invite_code
-    if telegram_id is not None:
-        invite_code = None
 
     # App SoT for roles: при OIDC роль назначит IdP при первом входе (fail-closed).
     if settings.AUTH_OIDC_ENABLED:
@@ -145,8 +121,6 @@ async def create_user(
         employee_id=payload.employee_id,
         password_hash=password_hash,
         password_changed_at=_utcnow() if has_local_password else None,
-        telegram_id=telegram_id,
-        telegram_username=payload.telegram_username,
         phone=phone,
         invite_code=invite_code,
         avatar_seed=generate_avatar_seed(),
@@ -220,26 +194,12 @@ async def update_user(
             )
         user.role = payload.role
 
-    # Telegram / phone link (field present in JSON, including null → clear)
+    # Phone link (field present in JSON, including null → clear)
     fields_set = payload.model_fields_set
-    if "telegram_id" in fields_set:
-        if payload.telegram_id is None:
-            user.telegram_id = None
-            user.telegram_username = None
-        else:
-            tg_id = int(payload.telegram_id)
-            if tg_id != user.telegram_id:
-                await _ensure_telegram_id_free(db, tg_id, exclude_user_id=user.id)
-            user.telegram_id = tg_id
-            clear_invite_if_fully_activated(user)
-
     if "invite_code" in fields_set:
         user.invite_code = payload.invite_code
         # Нельзя выдать инвайт уже полностью активированному аккаунту
         clear_invite_if_fully_activated(user)
-
-    if "telegram_username" in fields_set:
-        user.telegram_username = payload.telegram_username
 
     if "phone" in fields_set:
         if payload.phone is None or not str(payload.phone).strip():
@@ -257,7 +217,7 @@ async def update_user(
             payload.password.encode("utf-8"), bcrypt.gensalt()
         ).decode("utf-8")
         user.password_changed_at = _utcnow()
-        # invite_code сбрасываем только при password + TG (clear_if_fully)
+        # invite_code сбрасываем при наличии локального пароля (clear_if_fully)
         clear_invite_if_fully_activated(user)
         # Admin/other-user password change: revoke all of that user's sessions.
         await session_service.revoke_all(
@@ -301,8 +261,7 @@ async def delete_user(
         
     user.is_deleted = True
     user.deleted_at = func.now()
-    # Free telegram/phone identity for re-link after soft-delete (M3).
-    user.telegram_id = None
+    # Free phone identity for re-link after soft-delete (M3).
     user.phone = None
     user.phone_verified_at = None
     await db.commit()

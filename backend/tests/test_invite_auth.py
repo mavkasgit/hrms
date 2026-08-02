@@ -2,8 +2,6 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from app.main import app
 from app.models.user import User
-from app.repositories.user_repository import UserRepository
-from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
@@ -58,12 +56,12 @@ async def test_invite_login_flow(db_session: AsyncSession, async_client: AsyncCl
     assert resp.status_code == 410
 
 
-async def test_link_telegram_keeps_invite_until_password(db_session: AsyncSession, create_employee):
-    # link_telegram без пароля оставляет invite_code (онбординг не завершён)
+async def test_invite_kept_until_password(db_session: AsyncSession, create_employee):
+    # Без локального пароля invite_code остаётся (онбординг не завершён)
     employee = await create_employee()
     user = User(
-        username="tg_link_test_user",
-        full_name="ТГ Линк Тест",
+        username="invite_keep_test_user",
+        full_name="Инвайт Тест",
         role="viewer",
         password_hash="sso_bypass_hash",
         invite_code="123456",
@@ -73,11 +71,9 @@ async def test_link_telegram_keeps_invite_until_password(db_session: AsyncSessio
     db_session.add(user)
     await db_session.commit()
 
-    repo = UserRepository()
-    await repo.link_telegram(db_session, user, telegram_id=88888888)
-    await db_session.commit()
+    from app.core.user_auth import clear_invite_if_fully_activated
 
-    assert user.telegram_id == 88888888
+    assert clear_invite_if_fully_activated(user) is False
     assert user.invite_code == "123456"
 
     # После установки пароля invite сбрасывается
@@ -86,7 +82,6 @@ async def test_link_telegram_keeps_invite_until_password(db_session: AsyncSessio
 
     user.password_hash = bcrypt.hashpw(b"secret", bcrypt.gensalt()).decode("utf-8")
     user.password_changed_at = datetime.now(timezone.utc)
-    from app.core.user_auth import clear_invite_if_fully_activated
 
     clear_invite_if_fully_activated(user)
     db_session.add(user)

@@ -57,7 +57,7 @@ export const en: UserSettingsDict = {
     description: "Sign-in methods",
     idpTitle: "Single sign-on (SSO)",
     idpDescription:
-      "Telegram, MFA and sign-in methods are managed in the SSO system.",
+      "MFA and sign-in methods are managed in the SSO system.",
     idpOpen: "Open sign-in settings",
   },
   sessions: {
@@ -116,9 +116,6 @@ export const en: UserSettingsDict = {
   loginMethods: {
     password: "Password",
     invite: "Invite",
-    telegram_widget: "Telegram",
-    telegram_bot: "Telegram bot",
     oidc: "Single sign-on",
-    oidc_telegram: "Telegram (SSO)",
   },
 }

@@ -1,7 +1,6 @@
 from enum import Enum
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -32,12 +31,6 @@ class User(Base):
         ),
         # Partial unique: soft-deleted rows do not block re-link / JIT (M3).
         Index(
-            "ix_users_telegram_id_active",
-            "telegram_id",
-            unique=True,
-            postgresql_where=text("is_deleted = false"),
-        ),
-        Index(
             "ix_users_phone_active",
             "phone",
             unique=True,
@@ -63,9 +56,7 @@ class User(Base):
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
     employee = relationship("Employee")
 
-    # Telegram / phone auth identity (uniqueness via partial indexes above)
-    telegram_id = Column(BigInteger, nullable=True, index=True)
-    telegram_username = Column(String(100), nullable=True)
+    # Phone auth identity (uniqueness via partial index above)
     phone = Column(String(32), nullable=True, index=True)
     phone_verified_at = Column(DateTime(timezone=True), nullable=True)
     # Multiavatar seed: случайный при создании, далее — только явная смена в профиле.
