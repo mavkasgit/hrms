@@ -382,7 +382,7 @@ async def test_profile_locale_theme_local(async_client, db_session: AsyncSession
         app.dependency_overrides.pop(get_current_user, None)
 
 
-async def test_me_second_call_within_ttl_skips_pull(async_client, db_session: AsyncSession):
+async def test_me_second_call_within_ttl_skips_pull(async_client, db_session: AsyncSession, idp_api_on):
     import uuid as uuid_mod
     from unittest.mock import patch, AsyncMock
     from app.api.deps import get_current_user, CurrentUser
@@ -427,7 +427,7 @@ async def test_me_second_call_within_ttl_skips_pull(async_client, db_session: As
         app.dependency_overrides.pop(get_current_user, None)
 
 
-async def test_me_refresh_forces_pull(async_client, db_session: AsyncSession):
+async def test_me_refresh_forces_pull(async_client, db_session: AsyncSession, idp_api_on):
     import uuid as uuid_mod
     from unittest.mock import patch, AsyncMock
     from app.api.deps import get_current_user, CurrentUser
@@ -472,7 +472,7 @@ async def test_me_refresh_forces_pull(async_client, db_session: AsyncSession):
         app.dependency_overrides.pop(get_current_user, None)
 
 
-async def test_me_ttl_zero_always_pulls(async_client, db_session: AsyncSession, monkeypatch):
+async def test_me_ttl_zero_always_pulls(async_client, db_session: AsyncSession, monkeypatch, idp_api_on):
     import uuid as uuid_mod
     from unittest.mock import patch, AsyncMock
     from app.api.deps import get_current_user, CurrentUser
@@ -521,7 +521,7 @@ async def test_me_ttl_zero_always_pulls(async_client, db_session: AsyncSession, 
         app.dependency_overrides.pop(get_current_user, None)
 
 
-async def test_me_stale_cache_pulls(async_client, db_session: AsyncSession):
+async def test_me_stale_cache_pulls(async_client, db_session: AsyncSession, idp_api_on):
     import uuid as uuid_mod
     from datetime import datetime, timezone, timedelta
     from unittest.mock import patch, AsyncMock

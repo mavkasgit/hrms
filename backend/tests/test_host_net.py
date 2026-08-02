@@ -24,7 +24,17 @@ def test_resolve_explicit_beats_detect():
         )
 
 
-def test_resolve_auto_uses_detect():
+_ENV_LAN_IP_KEYS = ("OPS_PUBLIC_IP", "OPS_HOST_LAN_IP", "HOST_LAN_IP", "SERVER_IP")
+
+
+def _clear_env_lan_ips(monkeypatch) -> None:
+    # Изоляция от окружения машины: env_lan_ip() читает эти переменные раньше detect
+    for key in _ENV_LAN_IP_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_resolve_auto_uses_detect(monkeypatch):
+    _clear_env_lan_ips(monkeypatch)
     host_net.detect_lan_ip.cache_clear()
     with patch.object(host_net, "detect_lan_ip", return_value="10.20.30.40"):
         # re-patch cached function: clear after patching
@@ -35,6 +45,7 @@ def test_resolve_auto_uses_detect():
 
 
 def test_resolve_env_lan_ip(monkeypatch):
+    _clear_env_lan_ips(monkeypatch)
     host_net.detect_lan_ip.cache_clear()
     monkeypatch.setenv("HOST_LAN_IP", "172.17.10.12")
     with patch.object(host_net, "detect_lan_ip", return_value="10.0.0.1"):
