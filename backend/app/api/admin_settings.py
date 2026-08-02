@@ -27,16 +27,11 @@ router = APIRouter(prefix="/admin/settings", tags=["admin-settings"])
 
 
 # Ключи, значения которых маскируются на чтении (последние 4 символа видны).
-SENSITIVE_KEYS: frozenset[str] = frozenset({"telegram.bot_token"})
+SENSITIVE_KEYS: frozenset[str] = frozenset()
 
 # Известные ключи с человекочитаемым описанием. Неизвестные ключи принимаются,
 # но без описания — это расширяемая точка для будущих настроек.
-KNOWN_KEYS: dict[str, str] = {
-    "telegram.bot_token": (
-        "Токен Telegram-бота (Bot API). Используется для Login Widget, "
-        "QR-логина, вебхуков и отправки сообщений. Пустая строка → fallback на .env."
-    ),
-}
+KNOWN_KEYS: dict[str, str] = {}
 
 
 class SystemSettingItem(BaseModel):

@@ -90,10 +90,9 @@ API: seed employee
 | # | Долг | Статус |
 |---|------|--------|
 | 11 | Backups restore | open — destructive; backend tests |
-| 12 | Live Telegram QR | open — external; pytest mocks |
-| 13 | Dashboard deep | open — shallow optional |
-| 14 | Multi-worker full **ui** suite | ✅ 2026-07-16 — `npm run test:e2e:ui:parallel` (file-level, `PW_WORKERS=2`); default serial |
-| 15 | CI full **ui** + OnlyOffice job | ✅ 2026-07-16 — `.github/workflows/e2e-ui-nightly.yml` (schedule + dispatch) |
+| 12 | Dashboard deep | open — shallow optional |
+| 13 | Multi-worker full **ui** suite | ✅ 2026-07-16 — `npm run test:e2e:ui:parallel` (file-level, `PW_WORKERS=2`); default serial |
+| 14 | CI full **ui** + OnlyOffice job | ✅ 2026-07-16 — `.github/workflows/e2e-ui-nightly.yml` (schedule + dispatch) |
 
 ### Техдолг оболочки — **сделано 2026-07-16**
 
@@ -255,7 +254,7 @@ git worktree remove C:\Users\user\VibeCoding\hrms-e2e
 ## 8. Следующий шаг (для агента / человека)
 
 1. **P0 + P1 закрыты** (2026-07-16).  
-2. Дальше — **опционально P2 / техдолг**: backups, live TG QR, dashboard deep, multi-worker ui, CI full ui+OO; POM dead methods; inline selectors; apiOps helpers.  
+2. Дальше — **опционально P2 / техдолг**: backups, dashboard deep, multi-worker ui, CI full ui+OO; POM dead methods; inline selectors; apiOps helpers.  
 3. Локально: `npm run test:e2e:smoke` (+ `test:e2e:ui` при OO-сценариях).  
 4. Не смешивать с backend pytest/xdist — они уже отдельно на main.
 

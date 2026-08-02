@@ -17,10 +17,6 @@ export class LoginPage {
     this.ssoButton = page.getByRole('button', { name: 'Войти через единый вход' })
   }
 
-  get ssoTelegramPrimaryButton(): Locator {
-    return this.page.getByRole('button', { name: 'Войти через Telegram' })
-  }
-
   async goto() {
     await this.page.goto('/login?password=1')
     await expect(this.heading).toBeVisible({ timeout: 15_000 })
@@ -42,12 +38,7 @@ export class LoginPage {
   }
 
   async startOidcSso() {
-    const sso = this.page.getByRole('button', { name: 'Войти через единый вход' })
-    if (await sso.isVisible().catch(() => false)) {
-      await sso.click()
-      return
-    }
-    await this.page.getByRole('button', { name: 'Войти через Telegram' }).click()
+    await this.ssoButton.click()
   }
 
   async getToken(): Promise<string | null> {

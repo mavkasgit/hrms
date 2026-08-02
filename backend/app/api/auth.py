@@ -92,7 +92,7 @@ async def _resolve_user_id(db: AsyncSession, current_user: CurrentUser) -> int:
 async def oidc_config() -> OidcConfigResponse:
     """
     Public OIDC client config for FE (authorize URL + PKCE params).
-    When disabled: ``enabled=false`` and null fields (password/TG login unchanged).
+    When disabled: ``enabled=false`` and null fields (password login unchanged).
     """
     return OidcConfigResponse(**OidcAuthService.public_config())
 
@@ -447,9 +447,6 @@ async def get_me(
             "email": None,
             "locale": "ru",
             "theme": "system",
-            "has_telegram": False,
-            "telegram_id": None,
-            "telegram_username": None,
             "invite_code": None,
             "avatar_seed": "emergency",
             "authentik_linked": False,
@@ -519,7 +516,6 @@ async def get_me(
                 except Exception:
                     pass
 
-    has_telegram = user.telegram_id is not None
     return {
         "username": user.username,
         "role": user.role,
@@ -527,9 +523,6 @@ async def get_me(
         "email": email_out,
         "locale": user.locale,
         "theme": user.theme,
-        "has_telegram": has_telegram,
-        "telegram_id": user.telegram_id,
-        "telegram_username": user.telegram_username,
         "invite_code": user.invite_code,
         "avatar_seed": user.avatar_seed,
         "authentik_linked": bool(user.authentik_sub),

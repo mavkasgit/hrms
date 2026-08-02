@@ -23,7 +23,6 @@ UI: **http://localhost:9000** (HTTPS: `9443`).
 
 - [`README.md`](../../../authentik/README.md) — compose, ports, secrets
 - [`BLUEPRINT.md`](../../../authentik/BLUEPRINT.md) — OIDC apps `hrms` / `ktm2000`
-- [`TELEGRAM.md`](../../../authentik/TELEGRAM.md) — Telegram Source
 
 Приложения настраивают issuer:
 

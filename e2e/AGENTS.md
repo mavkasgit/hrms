@@ -112,13 +112,12 @@ Hardcoded JWT / `extraHTTPHeaders` Authorization — **удалены** (E4).
 **Правила:**
 
 1. CI smoke **не** поднимает Authentik и **не** ставит `E2E_OIDC=1`.
-2. `setup/auth.setup.ts` — **только** form password (+ dev «Войти как Admin» fallback). OIDC/TG Widget в setup **запрещены**.
-3. Telegram Login Widget **не** автоматизируется в e2e (хрупко, нужен public FQDN).
+2. `setup/auth.setup.ts` — **только** form password (+ dev «Войти как Admin» fallback). OIDC в setup **запрещён**.
 
 **Локальный OIDC:**
 
 1. Поднять IdP: sibling repo `C:\Users\user\VibeCoding\authentik` (compose / docs там).
-2. В HRMS backend: `AUTH_OIDC_ENABLED` (и связанные `AUTH_OIDC_*`, client, issuer); опционально `AUTH_OIDC_TELEGRAM_PRIMARY` → CTA «Войти через Telegram» вместо «Войти через единый вход».
+2. В HRMS backend: `AUTH_OIDC_ENABLED` (и связанные `AUTH_OIDC_*`, client, issuer).
 3. Запуск opt-in suite:
 
 ```bash

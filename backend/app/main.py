@@ -40,7 +40,6 @@ from app.api.statement_types import router as statement_types_router
 from app.api.contract_history import router as contract_history_router
 from app.api.users import router as users_router
 from app.api.auth import router as auth_router
-from app.api.telegram_auth import router as telegram_auth_router
 from app.api.work_schedules import router as work_schedules_router
 from app.api.timesheet import router as timesheet_router
 from app.api.admin_settings import router as admin_settings_router
@@ -172,7 +171,6 @@ app.include_router(statement_types_router, prefix="/api")
 app.include_router(contract_history_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
-app.include_router(telegram_auth_router, prefix="/api")
 app.include_router(work_schedules_router, prefix="/api")
 app.include_router(timesheet_router, prefix="/api")
 app.include_router(admin_settings_router, prefix="/api")

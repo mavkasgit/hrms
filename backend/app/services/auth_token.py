@@ -1,4 +1,4 @@
-"""Shared JWT access-token helper for password, SSO and Telegram login."""
+"""Shared JWT access-token helper for password and SSO login."""
 
 import time
 from uuid import UUID

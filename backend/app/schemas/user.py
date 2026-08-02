@@ -25,9 +25,6 @@ class UserCreate(UserBase):
     # Опциональный пароль для запасного входа без SSO.
     # Если не передан — пользователь может входить только через SSO KTM-2000.
     password: str | None = Field(None, min_length=4, max_length=128)
-    # Admin pre-link for Telegram bot/widget login.
-    telegram_id: int | None = None
-    telegram_username: str | None = None
     phone: str | None = Field(None, max_length=32)
     invite_code: str | None = None
 
@@ -36,9 +33,6 @@ class UserUpdate(BaseModel):
     full_name: str | None = Field(None, min_length=2, max_length=255)
     role: str | None = Field(None, max_length=50)
     employee_id: int | None = None
-    # Presence in payload (incl. null) controls link/unlink via model_fields_set.
-    telegram_id: int | None = None
-    telegram_username: str | None = None
     phone: str | None = Field(None, max_length=32)
     invite_code: str | None = None
     # Опциональный пароль для резервного входа без SSO.
@@ -59,8 +53,6 @@ class UserOut(UserBase):
     id: int
     created_at: datetime
     employee_name: str | None = None
-    telegram_id: int | None = None
-    telegram_username: str | None = None
     phone: str | None = None
     phone_verified_at: datetime | None = None
     invite_code: str | None = None

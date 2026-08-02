@@ -12,8 +12,6 @@ class OidcConfigResponse(BaseModel):
     redirect_uri: str | None = None
     scopes: str | None = None
     issuer: str | None = None
-    # TG1: FE prefers «Войти через Telegram» SSO CTA when true
-    telegram_primary: bool = False
     login_hint_enabled: bool = True
     sso_only: bool = False
 

@@ -102,8 +102,8 @@ export function SettingsPage() {
               </h3>
               <p className="text-sm text-muted-foreground mb-3">
                 {oidcEnabled
-                  ? "Доступ и IdP: каталог в Authentik, группы hrms-admin / hrms-viewer. Telegram/MFA — только в IdP."
-                  : "Локальные учётные записи HRMS: логин/пароль и роли (без in-app Telegram/invite)."}
+                  ? "Доступ и IdP: каталог в Authentik, группы hrms-admin / hrms-viewer. MFA — только в IdP."
+                  : "Локальные учётные записи HRMS: логин/пароль и роли (без in-app invite)."}
               </p>
             </div>
           </div>
