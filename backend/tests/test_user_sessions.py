@@ -171,8 +171,7 @@ async def test_revoke_others_keeps_current(async_client: AsyncClient, db_session
     assert claims_a["sid"] != claims_b["sid"]
 
     rev = await async_client.delete(
-        "/api/auth/sessions",
-        params={"scope": "others"},
+        "/api/auth/sessions/others",
         headers=_auth(token_a),
     )
     assert rev.status_code == 204

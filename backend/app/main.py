@@ -38,7 +38,6 @@ from app.api.notification_types import router as notification_types_router
 from app.api.statements import router as statements_router
 from app.api.statement_types import router as statement_types_router
 from app.api.contract_history import router as contract_history_router
-from app.api.users import router as users_router
 from app.api.auth import router as auth_router
 from app.api.work_schedules import router as work_schedules_router
 from app.api.timesheet import router as timesheet_router
@@ -169,7 +168,6 @@ app.include_router(notification_types_router, prefix="/api")
 app.include_router(statements_router, prefix="/api")
 app.include_router(statement_types_router, prefix="/api")
 app.include_router(contract_history_router, prefix="/api")
-app.include_router(users_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(work_schedules_router, prefix="/api")
 app.include_router(timesheet_router, prefix="/api")

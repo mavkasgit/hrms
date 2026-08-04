@@ -77,16 +77,16 @@ const api = createHttpAdapter({
 
 ## Контракт бэкенда (эндпоинты по умолчанию)
 
-| Метод адаптера        | HTTP                                     |
-| --------------------- | ---------------------------------------- |
-| getProfile            | `GET /auth/me`                           |
-| updateProfile         | `PATCH /users/me/profile`                |
-| updateAvatar          | `PATCH /users/me/avatar`                 |
-| getIdpLinks           | `GET /idp/links`                         |
-| listSessions          | `GET /auth/sessions`                     |
-| revokeSession         | `DELETE /auth/sessions/{id}`             |
-| revokeOtherSessions   | `DELETE /auth/sessions?scope=others`     |
-| listLoginEvents       | `GET /auth/login-events?limit=N`         |
+| Метод адаптера        | HTTP                                    |
+| --------------------- | --------------------------------------- |
+| getProfile            | `GET /auth/me`                          |
+| updateProfile         | `PATCH /auth/me/profile`                |
+| updateAvatar          | `PATCH /auth/me/avatar`                 |
+| getIdpLinks           | `GET /auth/me/links`                    |
+| listSessions          | `GET /auth/sessions`                    |
+| revokeSession         | `DELETE /auth/sessions/{id}`            |
+| revokeOtherSessions   | `DELETE /auth/sessions/others`          |
+| listLoginEvents       | `GET /auth/me/login-events?limit=N`     |
 
 Любой путь переопределяется через `createHttpAdapter({ endpoints })`.
 

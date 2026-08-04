@@ -132,7 +132,7 @@ async def test_avatar_local_only_without_sub(async_client, db_session: AsyncSess
             new_callable=AsyncMock,
         ) as push:
             res = await async_client.patch(
-                "/api/users/me/avatar",
+                "/api/auth/me/avatar",
                 json={"avatar_seed": "deadbeef"},
                 headers=_auth(),
             )
@@ -169,7 +169,7 @@ async def test_avatar_pushes_to_authentik(async_client, db_session: AsyncSession
             ),
         ) as push:
             res = await async_client.patch(
-                "/api/users/me/avatar",
+                "/api/auth/me/avatar",
                 json={"avatar_seed": "cafebabe"},
                 headers=_auth(),
             )
@@ -207,7 +207,7 @@ async def test_profile_name_push(async_client, db_session: AsyncSession, idp_api
             ),
         ) as push:
             res = await async_client.patch(
-                "/api/users/me/profile",
+                "/api/auth/me/profile",
                 json={"full_name": "New Name"},
                 headers=_auth(),
             )
@@ -346,7 +346,7 @@ async def test_profile_bad_theme_validation(async_client, db_session: AsyncSessi
     app.dependency_overrides[get_current_user] = override_user
     try:
         res = await async_client.patch(
-            "/api/users/me/profile",
+            "/api/auth/me/profile",
             json={"theme": "neon"},
             headers=_auth(),
         )
@@ -370,7 +370,7 @@ async def test_profile_locale_theme_local(async_client, db_session: AsyncSession
     app.dependency_overrides[get_current_user] = override_user
     try:
         res = await async_client.patch(
-            "/api/users/me/profile",
+            "/api/auth/me/profile",
             json={"locale": "ru", "theme": "light"},
             headers=_auth(),
         )

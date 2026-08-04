@@ -68,15 +68,20 @@ def _access_from_groups(groups: list[str]) -> str:
     return "none"
 
 
+def _idp_links_data() -> dict:
+    """Deep-links payload (общий для /idp/links и каноничного /auth/me/links)."""
+    return {
+        "oidc_enabled": bool(settings.AUTH_OIDC_ENABLED),
+        "user_settings_url": ak.user_settings_url(),
+    }
+
+
 @router.get("/links", response_model=IdpLinksOut)
 async def get_idp_links(
     _current_user: CurrentUser = Depends(get_current_user),
 ) -> IdpLinksOut:
     """Deep-links for profile (any authenticated user). No Admin API token required."""
-    return IdpLinksOut(
-        oidc_enabled=bool(settings.AUTH_OIDC_ENABLED),
-        user_settings_url=ak.user_settings_url(),
-    )
+    return IdpLinksOut(**_idp_links_data())
 
 
 @router.get("/config", response_model=IdpConfigOut)

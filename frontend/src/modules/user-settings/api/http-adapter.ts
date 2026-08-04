@@ -28,13 +28,13 @@ export interface HttpAdapterEndpoints {
 
 const DEFAULT_ENDPOINTS: HttpAdapterEndpoints = {
   getProfile: "/auth/me",
-  updateProfile: "/users/me/profile",
-  updateAvatar: "/users/me/avatar",
-  idpLinks: "/idp/links",
+  updateProfile: "/auth/me/profile",
+  updateAvatar: "/auth/me/avatar",
+  idpLinks: "/auth/me/links",
   sessions: "/auth/sessions",
   session: (id) => `/auth/sessions/${encodeURIComponent(id)}`,
-  revokeOthers: "/auth/sessions?scope=others",
-  loginEvents: "/auth/login-events",
+  revokeOthers: "/auth/sessions/others",
+  loginEvents: "/auth/me/login-events",
 }
 
 export interface HttpAdapterOptions {

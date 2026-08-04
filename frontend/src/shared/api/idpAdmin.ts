@@ -25,6 +25,6 @@ export async function fetchIdpConfig(): Promise<IdpConfig> {
 }
 
 export async function fetchIdpLinks(): Promise<IdpLinks> {
-  const { data } = await api.get<IdpLinks>("/idp/links")
+  const { data } = await api.get<IdpLinks>("/auth/me/links")
   return data
 }
