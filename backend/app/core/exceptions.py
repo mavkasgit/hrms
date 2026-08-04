@@ -5,6 +5,11 @@ class HRMSException(Exception):
         self.status_code = status_code
         super().__init__(self.message)
 
+    @property
+    def detail(self) -> str:
+        """Совместимость с HTTPException-стилем доступа (exc.detail)."""
+        return self.message
+
 
 class NotFoundError(HRMSException):
     def __init__(self, message: str, error_code: str = "not_found"):

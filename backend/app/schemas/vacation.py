@@ -10,8 +10,8 @@ class VacationCreate(BaseModel):
     end_date: date
     vacation_type: str = Field(..., min_length=1, max_length=50)
     order_date: Optional[date] = None
-    order_number: Optional[str] = Field(None, max_length=50)
-    comment: Optional[str] = Field(None, max_length=500)
+    order_number: Optional[str] = Field(default=None, max_length=50)
+    comment: Optional[str] = Field(default=None, max_length=500)
     preview_id: Optional[str] = None
     edited_html: Optional[str] = None
     draft_id: Optional[str] = None
@@ -90,8 +90,8 @@ class HolidayCreate(BaseModel):
 class VacationRecallRequest(BaseModel):
     recall_date: date
     order_date: date
-    order_number: Optional[str] = Field(None, max_length=50)
-    comment: Optional[str] = Field(None, max_length=500)
+    order_number: Optional[str] = Field(default=None, max_length=50)
+    comment: Optional[str] = Field(default=None, max_length=500)
     preview_id: Optional[str] = None
     edited_html: Optional[str] = None
     draft_id: Optional[str] = None
@@ -114,13 +114,13 @@ class VacationRecallResponse(BaseModel):
 class VacationExtensionRequest(BaseModel):
     vacation_id: int
     order_date: date
-    order_number: Optional[str] = Field(None, max_length=50)
+    order_number: Optional[str] = Field(default=None, max_length=50)
     # Период продления (если не указан - рассчитывается legacy-режимом по больничному)
-    start_date: Optional[date] = Field(None, description="Начало периода продления")
-    end_date: Optional[date] = Field(None, description="Конец периода продления")
+    start_date: Optional[date] = Field(default=None, description="Начало периода продления")
+    end_date: Optional[date] = Field(default=None, description="Конец периода продления")
     sick_start_date: date
     sick_end_date: date
-    comment: Optional[str] = Field(None, max_length=500)
+    comment: Optional[str] = Field(default=None, max_length=500)
     draft_id: Optional[str] = None
 
 
@@ -140,15 +140,15 @@ class VacationExtensionResponse(BaseModel):
 class VacationPostponeRequest(BaseModel):
     vacation_id: int
     order_date: date
-    order_number: Optional[str] = Field(None, max_length=50)
+    order_number: Optional[str] = Field(default=None, max_length=50)
     # Опционально: диапазон внутри отпуска (если не указан - берется весь отпуск)
-    start_date: Optional[date] = Field(None, description="Начало диапазона внутри отпуска (если не указано - начало отпуска)")
-    end_date: Optional[date] = Field(None, description="Конец диапазона внутри отпуска (если не указано - конец отпуска)")
+    start_date: Optional[date] = Field(default=None, description="Начало диапазона внутри отпуска (если не указано - начало отпуска)")
+    end_date: Optional[date] = Field(default=None, description="Конец диапазона внутри отпуска (если не указано - конец отпуска)")
     postponed_days: Optional[int] = Field(
-        None,
+        default=None,
         description="Количество дней для переноса (опционально; при отсутствии считается по выбранному диапазону)",
     )
-    comment: Optional[str] = Field(None, max_length=500)
+    comment: Optional[str] = Field(default=None, max_length=500)
     draft_id: Optional[str] = None
 
 

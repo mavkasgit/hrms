@@ -5,13 +5,15 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class OrderCreate(BaseModel):
-    employee_id: Optional[int] = Field(None, ge=0)
+    employee_id: Optional[int] = Field(default=None, ge=0)
     order_type_id: int = Field(..., gt=0)
     order_date: date
-    order_number: Optional[str] = Field(None, max_length=50)
+    order_number: Optional[str] = Field(default=None, max_length=50)
     notes: Optional[str] = None
     extra_fields: Optional[dict[str, Any]] = None
     draft_id: Optional[str] = None
+    preview_id: Optional[str] = None
+    edited_html: Optional[str] = None
 
 
 class OrderResponse(BaseModel):
@@ -42,6 +44,17 @@ class OrderListResponse(BaseModel):
     total_pages: int
 
 
+class TemplateInfo(BaseModel):
+    order_type: str
+    filename: str | None = None
+    exists: bool = False
+    size: int | None = None
+
+
+class TemplateListResponse(BaseModel):
+    templates: list[TemplateInfo]
+
+
 class OrderSettingsResponse(BaseModel):
     orders_path: str
     templates_path: str
@@ -59,7 +72,7 @@ class OrderSyncResponse(BaseModel):
 
 
 class OrderUpdate(BaseModel):
-    order_number: str | None = Field(None, max_length=50)
+    order_number: str | None = Field(default=None, max_length=50)
     order_date: date | None = None
     notes: str | None = None
     extra_fields: dict[str, Any] | None = None
@@ -81,7 +94,7 @@ class GroupOrderCreate(BaseModel):
     """Generic schema for creating any group order draft."""
     order_type_code: str  # "vacation_unpaid_group", "weekend_call_group", etc.
     order_date: date
-    order_number: str | None = Field(None, max_length=50)
+    order_number: str | None = Field(default=None, max_length=50)
     employees: list[dict[str, Any]] = Field(..., min_length=1)
     # Type-specific fields (optional, used by specific order types)
     vacation_start: date | None = None
@@ -113,7 +126,7 @@ class VacationUnpaidGroupEmployeeCreate(BaseModel):
 
 class VacationUnpaidGroupOrderCreate(BaseModel):
     order_date: date
-    order_number: str | None = Field(None, max_length=50)
+    order_number: str | None = Field(default=None, max_length=50)
     vacation_start: date
     employees: list[VacationUnpaidGroupEmployeeCreate] = Field(..., min_length=1)
 
@@ -133,7 +146,7 @@ class WeekendCallGroupEmployeeCreate(BaseModel):
 
 class WeekendCallGroupOrderCreate(BaseModel):
     order_date: date
-    order_number: str | None = Field(None, max_length=50)
+    order_number: str | None = Field(default=None, max_length=50)
     mode: str  # "single" or "range"
     call_date: date | None = None
     call_date_start: date | None = None

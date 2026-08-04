@@ -12,25 +12,25 @@ class EmployeeBase(BaseModel):
     position_id: Optional[int] = None
     hire_date: Optional[date] = None
     birth_date: Optional[date] = None
-    gender: Optional[str] = Field(None, max_length=1)
+    gender: Optional[str] = Field(default=None, max_length=1)
     citizenship: bool = True
     residency: bool = True
     pensioner: bool = False
-    payment_form: Optional[str] = Field(None, max_length=50)
+    payment_form: Optional[str] = Field(default=None, max_length=50)
     rate: Optional[float] = None
-    employment_type: Optional[str] = Field(None, max_length=50)
+    employment_type: Optional[str] = Field(default=None, max_length=50)
     contract_start: Optional[date] = None
     contract_end: Optional[date] = None
-    contract_number: Optional[str] = Field(None, max_length=50)
-    personal_number: Optional[str] = Field(None, max_length=50)
-    insurance_number: Optional[str] = Field(None, max_length=50)
-    passport_number: Optional[str] = Field(None, max_length=50)
+    contract_number: Optional[str] = Field(default=None, max_length=50)
+    personal_number: Optional[str] = Field(default=None, max_length=50)
+    insurance_number: Optional[str] = Field(default=None, max_length=50)
+    passport_number: Optional[str] = Field(default=None, max_length=50)
     additional_vacation_days: int = 0
     transfers: Optional[list[dict]] = []
 
 
 class EmployeeCreate(EmployeeBase):
-    tab_number: Optional[int] = Field(None, gt=0)
+    tab_number: Optional[int] = Field(default=None, gt=0)
 
     @field_validator("birth_date")
     @classmethod
@@ -54,25 +54,25 @@ class EmployeeCreate(EmployeeBase):
 
 
 class EmployeeUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     tab_number: Optional[int] = None
     department_id: Optional[int] = None
     position_id: Optional[int] = None
     hire_date: Optional[date] = None
     birth_date: Optional[date] = None
-    gender: Optional[str] = Field(None, max_length=1)
+    gender: Optional[str] = Field(default=None, max_length=1)
     citizenship: Optional[bool] = None
     residency: Optional[bool] = None
     pensioner: Optional[bool] = None
-    payment_form: Optional[str] = Field(None, max_length=50)
+    payment_form: Optional[str] = Field(default=None, max_length=50)
     rate: Optional[float] = None
-    employment_type: Optional[str] = Field(None, max_length=50)
+    employment_type: Optional[str] = Field(default=None, max_length=50)
     contract_start: Optional[date] = None
     contract_end: Optional[date] = None
-    contract_number: Optional[str] = Field(None, max_length=50)
-    personal_number: Optional[str] = Field(None, max_length=50)
-    insurance_number: Optional[str] = Field(None, max_length=50)
-    passport_number: Optional[str] = Field(None, max_length=50)
+    contract_number: Optional[str] = Field(default=None, max_length=50)
+    personal_number: Optional[str] = Field(default=None, max_length=50)
+    insurance_number: Optional[str] = Field(default=None, max_length=50)
+    passport_number: Optional[str] = Field(default=None, max_length=50)
     additional_vacation_days: Optional[int] = None
     transfers: Optional[list[dict]] = None
 
@@ -98,7 +98,7 @@ class EmployeeUpdate(BaseModel):
 
 
 class EmployeeDismissal(BaseModel):
-    dismissal_reason: Optional[str] = Field(None, max_length=255)
+    dismissal_reason: Optional[str] = Field(default=None, max_length=255)
 
 
 class DepartmentInfo(BaseModel):

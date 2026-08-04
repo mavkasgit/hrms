@@ -106,6 +106,6 @@ class VacationPlanResponse(VacationPlanBase):
 class VacationPlanSummary(BaseModel):
     employee_id: int
     employee_name: str
-    department_id: int
+    department_id: Optional[int]
     months: dict[int, Optional[str]]  # month -> plan_count
     total_plan_count: str

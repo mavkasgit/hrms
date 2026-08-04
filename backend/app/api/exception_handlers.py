@@ -5,6 +5,7 @@ from app.core.exceptions import HRMSException
 
 
 async def hrms_exception_handler(request: Request, exc: HRMSException):
+    # exc гарантированно HRMSException (регистрация add_exception_handler по этому типу)
     return JSONResponse(
         status_code=exc.status_code,
         content={

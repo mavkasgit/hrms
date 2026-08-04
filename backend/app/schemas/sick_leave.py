@@ -9,7 +9,7 @@ class SickLeaveCreate(BaseModel):
     employee_id: int = Field(..., gt=0)
     start_date: date
     end_date: date
-    comment: Optional[str] = Field(None, max_length=500)
+    comment: Optional[str] = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
     def validate_dates(self):

@@ -6,9 +6,9 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class WorkScheduleEntryBase(BaseModel):
     work_date: date
-    shift_type_code: Optional[str] = Field(None, max_length=20)
+    shift_type_code: Optional[str] = Field(default=None, max_length=20)
     planned_hours_override: Optional[float] = None
-    note: Optional[str] = Field(None, max_length=255)
+    note: Optional[str] = Field(default=None, max_length=255)
 
 
 class WorkScheduleEntryCreate(WorkScheduleEntryBase):
@@ -16,7 +16,7 @@ class WorkScheduleEntryCreate(WorkScheduleEntryBase):
 
 
 class WorkScheduleEntryUpdate(BaseModel):
-    shift_type_code: Optional[str] = Field(None, max_length=20)
+    shift_type_code: Optional[str] = Field(default=None, max_length=20)
     planned_hours_override: Optional[float] = None
     note: Optional[str] = None
 
@@ -75,7 +75,7 @@ class PartialEntryItem(BaseModel):
 
     employee_id: int
     work_date: date
-    shift_type_code: Optional[str] = Field(None, max_length=20)
+    shift_type_code: Optional[str] = Field(default=None, max_length=20)
     planned_hours_override: Optional[float] = None
 
 

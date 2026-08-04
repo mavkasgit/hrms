@@ -14,7 +14,7 @@ class QuickOption(BaseModel):
 class OrderTypeFieldSchema(BaseModel):
     key: str = Field(..., min_length=1, max_length=100)
     label: str = Field(..., min_length=1, max_length=200)
-    displayName: str | None = Field(None, max_length=100)
+    displayName: str | None = Field(default=None, max_length=100)
     type: str = Field(..., pattern="^(text|date|number|textarea|select)$")
     required: bool = False
     enabled: bool = True
@@ -36,10 +36,10 @@ class OrderTypeBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     is_active: bool = True
     show_in_orders_page: bool = True
-    template_filename: str | None = Field(None, max_length=255)
+    template_filename: str | None = Field(default=None, max_length=255)
     field_schema: list[OrderTypeFieldSchema] = Field(default_factory=list)
     filename_pattern: str | None = None
-    letter: str | None = Field(None, max_length=1)
+    letter: str | None = Field(default=None, max_length=1)
 
     @field_validator("code")
     @classmethod
@@ -59,7 +59,7 @@ class OrderTypeBase(BaseModel):
 
 
 class OrderTypeCreate(OrderTypeBase):
-    letter: str = Field(..., pattern="^[лк]$")
+    letter: str | None = Field(default=None, pattern="^[лк]$")
 
     @field_validator("letter")
     @classmethod
@@ -70,12 +70,12 @@ class OrderTypeCreate(OrderTypeBase):
 
 
 class OrderTypeUpdate(BaseModel):
-    name: str | None = Field(None, min_length=1, max_length=200)
+    name: str | None = Field(default=None, min_length=1, max_length=200)
     is_active: bool | None = None
     show_in_orders_page: bool | None = None
     field_schema: list[OrderTypeFieldSchema] | None = None
     filename_pattern: str | None = None
-    letter: str | None = Field(None, max_length=1)
+    letter: str | None = Field(default=None, max_length=1)
 
 
 class OrderTypeResponse(BaseModel):

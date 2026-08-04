@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 import traceback
 import time
 import asyncio
+from typing import Any, cast
 
 
 from fastapi import FastAPI, Request
@@ -129,7 +130,9 @@ async def check_write_access_middleware(request: Request, call_next):
     response = await call_next(request)
     return response
 
-app.add_exception_handler(HRMSException, hrms_exception_handler)
+# FastAPI регистрирует handler по классу исключения (HRMSException),
+# но сигнатура типа ожидает Exception — расширяем тип без изменения поведения.
+app.add_exception_handler(HRMSException, cast(Any, hrms_exception_handler))
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
