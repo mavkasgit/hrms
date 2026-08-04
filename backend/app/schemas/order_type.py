@@ -59,7 +59,9 @@ class OrderTypeBase(BaseModel):
 
 
 class OrderTypeCreate(OrderTypeBase):
-    letter: str | None = Field(default=None, pattern="^[лк]$")
+    # Обязательная литера при создании; тип намеренно сужен vs базы (str vs str | None).
+    # type: ignore[reportIncompatibleVariableOverride] — рантайм не затрагивается.
+    letter: str = Field(..., pattern="^[лк]$")  # type: ignore[reportIncompatibleVariableOverride]
 
     @field_validator("letter")
     @classmethod
