@@ -65,7 +65,7 @@ def detect_lan_ip() -> str | None:
 
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            ip = info[4][0]
+            ip = str(info[4][0])
             if ip and not ip.startswith("127.") and ip not in candidates:
                 candidates.append(ip)
     except OSError:
@@ -73,7 +73,7 @@ def detect_lan_ip() -> str | None:
 
     try:
         for info in socket.getaddrinfo(None, 0, socket.AF_INET, socket.SOCK_DGRAM):
-            ip = info[4][0]
+            ip = str(info[4][0])
             if ip and not ip.startswith("127.") and ip not in candidates:
                 candidates.append(ip)
     except OSError:
