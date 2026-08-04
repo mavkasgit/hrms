@@ -1,6 +1,9 @@
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, func
+from datetime import datetime
+from typing import Optional
+
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
@@ -8,16 +11,16 @@ from app.models.base import Base
 class StatementType(Base):
     __tablename__ = "statement_types"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    code = Column(String(100), nullable=False, unique=True, index=True)
-    name = Column(String(200), nullable=False, unique=True)
-    is_active = Column(Boolean, nullable=False, default=True, server_default="true", index=True)
-    template_filename = Column(String(255), nullable=True)
-    display_name = Column(String(500), nullable=True)
-    field_schema = Column(JSON, nullable=False, default=list, server_default="[]")
-    filename_pattern = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true", index=True)
+    template_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    display_name: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    field_schema: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default="[]")
+    filename_pattern: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),

@@ -1,6 +1,9 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, ForeignKey, Boolean
+import datetime
+from typing import Optional
+
+from sqlalchemy import Integer, String, Date, DateTime, ForeignKey, Boolean
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
@@ -8,21 +11,21 @@ from app.models.base import Base
 class PositionVacationConfig(Base):
     __tablename__ = "position_vacation_config"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    position = Column(String(100), nullable=False, unique=True, index=True)
-    days = Column(Integer, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    position: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    days: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class Holiday(Base):
     __tablename__ = "holidays"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    date = Column(Date, nullable=False, unique=True, index=True)
-    name = Column(String(200))
-    year = Column(Integer, nullable=False, index=True)
-    is_working_day = Column(Boolean, default=False, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[datetime.date] = mapped_column(Date, nullable=False, unique=True, index=True)
+    name: Mapped[Optional[str]] = mapped_column(String(200))
+    year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    is_working_day: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 def get_default_holidays(year: int) -> list[dict]:

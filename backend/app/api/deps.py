@@ -1,4 +1,5 @@
 import time
+from typing import cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, status
@@ -13,6 +14,13 @@ from app.services import session_service
 from app.services.session_service import SessionInactiveError
 
 class CurrentUser(str):
+    # Атрибуты устанавливаются в __new__; аннотации — для статической типизации (pyright).
+    username: str
+    role: str | None
+    full_name: str | None
+    session_id: UUID | None
+    is_break_glass: bool
+
     def __new__(
         cls,
         username: str,
@@ -266,7 +274,7 @@ async def get_current_user_or_onlyoffice(
                 return getattr(self.req, name)
 
         wrapped_request = _RequestWithAuthHeader(request, f"Bearer {query_token}")
-        return await get_current_user(wrapped_request, db)
+        return await get_current_user(cast(Request, wrapped_request), db)
 
     # 4. Иначе проверяем как стандартный токен пользователя
     return await get_current_user(request, db)

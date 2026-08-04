@@ -1,9 +1,10 @@
+from datetime import datetime
 from enum import Enum
+from typing import Optional
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    Column,
     DateTime,
     ForeignKey,
     Index,
@@ -11,7 +12,7 @@ from sqlalchemy import (
     String,
     text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.models.base import Base
@@ -38,28 +39,28 @@ class User(Base):
         ),
     )
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    username = Column(String(100), unique=True, nullable=False, index=True)
-    role = Column(String(50), nullable=False, default=UserRole.VIEWER.value)
-    full_name = Column(String(255), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(50), nullable=False, default=UserRole.VIEWER.value)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
+    employee_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("employees.id"), nullable=True)
     employee = relationship("Employee")
 
     # Multiavatar seed: случайный при создании, далее — только явная смена в профиле.
     # NULL → на фронте пустая заглушка. До 64 ASCII (8 hex).
-    avatar_seed = Column(String(64), nullable=True)
+    avatar_seed: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # Unified profile cache (SoT = Authentik attributes)
-    locale = Column(String(16), nullable=True)  # ru | en
-    theme = Column(String(16), nullable=True)  # system | light | dark
+    locale: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)  # ru | en
+    theme: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)  # system | light | dark
     # Authentik / OIDC subject (stable UUID from IdP); link for SSO bridge
-    authentik_sub = Column(String(255), nullable=True, index=True)
-    profile_synced_at = Column(DateTime(timezone=True), nullable=True)
+    authentik_sub: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    profile_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    is_deleted = Column(Boolean, default=False, nullable=False, index=True)
-    is_active = Column(Boolean, default=True, nullable=False, server_default=text("true"))
-    deleted_at = Column(DateTime(timezone=True))
-    deleted_by = Column(String(100))
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default=text("true"))
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    deleted_by: Mapped[Optional[str]] = mapped_column(String(100))
 

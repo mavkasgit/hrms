@@ -1,6 +1,9 @@
 """Replay-защита OIDC back-channel logout_token (jti одноразовый, OIDC BCP)."""
 
-from sqlalchemy import Column, DateTime, String
+from datetime import datetime
+
+from sqlalchemy import DateTime, String
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
@@ -10,6 +13,6 @@ class UsedLogoutJti(Base):
 
     __tablename__ = "used_logout_jti"
 
-    jti = Column(String(255), primary_key=True)
+    jti: Mapped[str] = mapped_column(String(255), primary_key=True)
     # exp из logout_token — после этого момента replay невозможен, строку можно удалить
-    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)

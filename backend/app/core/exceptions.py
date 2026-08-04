@@ -17,7 +17,7 @@ class EmployeeNotFoundError(NotFoundError):
 
 
 class OrderNotFoundError(NotFoundError):
-    def __init__(self, order_id: int):
+    def __init__(self, order_id: int | str):
         super().__init__(f"Приказ с ID {order_id} не найден", "order_not_found")
 
 
