@@ -30,9 +30,10 @@ async def test_contract_extension_updates_contract_end(db_session, create_employ
     from app.repositories.employee_repository import EmployeeRepository
     repo = EmployeeRepository()
     updated_employee = await repo.get_by_id(db_session, employee.id)
+    assert updated_employee is not None
 
     assert updated_employee.contract_end == date(2026, 12, 31)
-    assert order.extra_fields.get("old_contract_end") == "2025-12-31"
+    assert (order.extra_fields or {}).get("old_contract_end") == "2025-12-31"
 
 
 async def test_contract_extension_without_new_end(db_session, create_employee):
@@ -56,6 +57,7 @@ async def test_contract_extension_without_new_end(db_session, create_employee):
     from app.repositories.employee_repository import EmployeeRepository
     repo = EmployeeRepository()
     updated_employee = await repo.get_by_id(db_session, employee.id)
+    assert updated_employee is not None
 
     assert updated_employee.contract_end == date(2025, 6, 30)
 
@@ -82,8 +84,9 @@ async def test_contract_extension_sequential(db_session, create_employee):
     from app.repositories.employee_repository import EmployeeRepository
     repo = EmployeeRepository()
     updated_employee = await repo.get_by_id(db_session, employee.id)
+    assert updated_employee is not None
     assert updated_employee.contract_end == date(2026, 12, 31)
-    assert order1.extra_fields.get("old_contract_end") == "2025-12-31"
+    assert (order1.extra_fields or {}).get("old_contract_end") == "2025-12-31"
 
     # Второе продление
     order2 = await order_service.create_order(
@@ -97,8 +100,9 @@ async def test_contract_extension_sequential(db_session, create_employee):
     )
 
     updated_employee = await repo.get_by_id(db_session, employee.id)
+    assert updated_employee is not None
     assert updated_employee.contract_end == date(2027, 12, 31)
-    assert order2.extra_fields.get("old_contract_end") == "2026-12-31"
+    assert (order2.extra_fields or {}).get("old_contract_end") == "2026-12-31"
 
 
 async def test_delete_contract_extension_restores_contract_end(db_session, create_employee, create_order_type, create_order):
@@ -127,4 +131,5 @@ async def test_delete_contract_extension_restores_contract_end(db_session, creat
     await order_service.hard_delete_order(db_session, order_id)
 
     restored_employee = await repo.get_by_id(db_session, employee.id)
+    assert restored_employee is not None
     assert restored_employee.contract_end == date(2025, 12, 31)

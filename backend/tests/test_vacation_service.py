@@ -87,6 +87,7 @@ async def test_create_vacation_uses_holiday_adjusted_days_and_auto_use(
     assert stored_vacation.comment == "integration-create"
     assert result["order_id"] == stored_vacation.order_id
     assert result["order_number"] is not None
+    assert auto_use_days.await_args is not None
     assert auto_use_days.await_args.args == (
         db_session, employee.id, 4,
         employee.hire_date, employee.additional_vacation_days or 0,

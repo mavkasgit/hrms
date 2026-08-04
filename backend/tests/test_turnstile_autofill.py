@@ -62,6 +62,7 @@ async def test_autofill_fills_manual_layer(db_session, create_employee):
         db_session, emp.id, 2026, 7, with_entries=True
     )
     assert entry is not None
+    assert entry is not None
     assert entry.entries[0].shift_type_code == "day"
 
 
@@ -86,6 +87,7 @@ async def test_autofill_does_not_overwrite_manual(db_session, create_employee):
     entry = await work_schedule_service.get_schedule_by_employee_period(
         db_session, emp.id, 2026, 7, with_entries=True
     )
+    assert entry is not None
     assert entry.entries[0].shift_type_code == "vacation"
 
 
@@ -102,6 +104,7 @@ async def test_autofill_night_shift(db_session, create_employee):
     entry = await work_schedule_service.get_schedule_by_employee_period(
         db_session, emp.id, 2026, 7, with_entries=True
     )
+    assert entry is not None
     assert entry.entries[0].shift_type_code == "night"
 
 

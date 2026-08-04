@@ -743,7 +743,7 @@ async def test_backchannel_logout_revokes_sessions(
         resp = await backchannel_logout(logout_token=token, db=db_session)
     assert resp.status_code == 200
     assert resp.headers.get("cache-control") == "no-store"
-    body = json.loads(resp.body)
+    body = json.loads(bytes(resp.body))
     assert body["status"] == "ok"
     assert body["revoked"] == 2
     active = await session_service.list_sessions(db_session, user_id=user.id)
@@ -758,7 +758,7 @@ async def test_backchannel_logout_unknown_sub_noop(
     with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
         resp = await backchannel_logout(logout_token=token, db=db_session)
     assert resp.status_code == 200
-    body = json.loads(resp.body)
+    body = json.loads(bytes(resp.body))
     assert body == {"status": "ok", "revoked": 0}
 
 
@@ -841,7 +841,7 @@ async def test_backchannel_logout_revokes_only_matching_sid(
     with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
         resp = await backchannel_logout(logout_token=token, db=db_session)
     assert resp.status_code == 200
-    body = json.loads(resp.body)
+    body = json.loads(bytes(resp.body))
     assert body["revoked"] == 1
 
     active = await session_service.list_sessions(db_session, user_id=user.id)
@@ -889,7 +889,7 @@ async def test_backchannel_logout_no_sid_falls_back_to_revoke_all(
     fake = _FakeAsyncClient()
     with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
         resp = await backchannel_logout(logout_token=token, db=db_session)
-    assert json.loads(resp.body)["revoked"] == 2
+    assert json.loads(bytes(resp.body))["revoked"] == 2
     assert await session_service.list_sessions(db_session, user_id=user.id) == []
 
     revoke_events = [
@@ -921,7 +921,7 @@ async def test_backchannel_logout_replay_rejected(
     fake = _FakeAsyncClient()
     with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
         resp = await backchannel_logout(logout_token=token, db=db_session)
-        assert json.loads(resp.body)["revoked"] == 1
+        assert json.loads(bytes(resp.body))["revoked"] == 1
         # Replay: тот же самый токен второй раз
         with pytest.raises(HTTPException) as ei:
             await backchannel_logout(logout_token=token, db=db_session)
@@ -949,7 +949,7 @@ async def test_backchannel_logout_unknown_sid_revokes_nothing(
     fake = _FakeAsyncClient()
     with patch("app.services.oidc_auth_service.httpx.AsyncClient", return_value=fake):
         resp = await backchannel_logout(logout_token=token, db=db_session)
-    assert json.loads(resp.body)["revoked"] == 0
+    assert json.loads(bytes(resp.body))["revoked"] == 0
     active = await session_service.list_sessions(db_session, user_id=user.id)
     assert len(active) == 1
 

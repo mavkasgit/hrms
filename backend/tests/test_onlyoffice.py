@@ -1,6 +1,7 @@
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 import os
 import time
@@ -8,15 +9,31 @@ import time
 import pytest
 from docx import Document
 from jose import jwt
+from fastapi import Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import HRMSException
 from app.api.orders import print_order_pdf
+from app.models.employee import Employee
+from app.models.order_type import OrderType
 from app.schemas.order import OrderCreate
 from app.services.onlyoffice_service import OnlyOfficeService
 from app.services.order_draft_service import OrderDraftService
 from app.services.order_print_service import OrderPrintService, order_print_service
 from app.services.order_service import order_service
+
+
+def _emp(**kw: Any) -> Employee:
+    return cast(Employee, SimpleNamespace(**kw))
+
+
+def _ot(**kw: Any) -> OrderType:
+    return cast(OrderType, SimpleNamespace(**kw))
+
+
+def _db() -> AsyncSession:
+    return cast(AsyncSession, object())
 
 
 def test_onlyoffice_config_print_allowed(monkeypatch, tmp_path):
@@ -125,8 +142,8 @@ async def test_order_draft_service_creates_docx(monkeypatch, tmp_path):
 
     draft = await service.create_draft(
         OrderCreate(employee_id=1, order_type_id=2, order_date=date.today(), order_number="1"),
-        SimpleNamespace(name="Иванов Иван Иванович"),
-        SimpleNamespace(code="test", name="Тест"),
+        _emp(name="Иванов Иван Иванович"),
+        _ot(code="test", name="Тест"),
     )
 
     assert draft["draft_id"]
@@ -162,8 +179,8 @@ async def test_order_draft_metadata_content(monkeypatch, tmp_path):
             notes="тест",
             extra_fields={"vacation_start": "2026-08-10"},
         ),
-        SimpleNamespace(name="Петров П.П."),
-        SimpleNamespace(code="vacation_paid", name="Отпуск"),
+        _emp(name="Петров П.П."),
+        _ot(code="vacation_paid", name="Отпуск"),
         user_id="admin-user",
     )
 
@@ -207,8 +224,8 @@ async def test_order_draft_metadata_failure_rolls_back_docx(monkeypatch, tmp_pat
     with pytest.raises(OSError, match="disk full"):
         await service.create_draft(
             OrderCreate(employee_id=1, order_type_id=2, order_date=date.today(), order_number="1"),
-            SimpleNamespace(name="Иванов"),
-            SimpleNamespace(code="test", name="Тест"),
+            _emp(name="Иванов"),
+            _ot(code="test", name="Тест"),
         )
 
     # Docx не должен остаться
@@ -254,8 +271,8 @@ async def test_generate_document_from_draft_keeps_draft(monkeypatch, tmp_path):
             order_number="1",
             draft_id=draft_id,
         ),
-        SimpleNamespace(name="Иванов Иван Иванович"),
-        SimpleNamespace(code="test", name="Тест", filename_pattern="final.docx"),
+        _emp(name="Иванов Иван Иванович"),
+        _ot(code="test", name="Тест", filename_pattern="final.docx"),
         tmp_path,
     )
 
@@ -475,7 +492,7 @@ async def test_order_print_pdf_endpoint_returns_inline_file(monkeypatch, tmp_pat
     monkeypatch.setattr(order_service, "get_by_id", fake_get_by_id)
     monkeypatch.setattr(order_print_service, "get_or_create_pdf", fake_get_or_create_pdf)
 
-    response = await print_order_pdf(order_id=1, db=object(), current_user="admin")
+    response = await print_order_pdf(order_id=1, db=_db(), current_user="admin")
 
     assert response.media_type == "application/pdf"
     assert response.headers["content-disposition"].startswith("inline;")
@@ -492,7 +509,7 @@ async def test_order_print_pdf_endpoint_404_when_file_missing(monkeypatch, tmp_p
     monkeypatch.setattr(order_service, "get_by_id", fake_get_by_id)
 
     with pytest.raises(HRMSException) as exc_info:
-        await print_order_pdf(order_id=1, db=object(), current_user="admin")
+        await print_order_pdf(order_id=1, db=_db(), current_user="admin")
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.error_code == "order_file_missing"
@@ -517,7 +534,7 @@ async def test_order_print_pdf_endpoint_propagates_conversion_error(monkeypatch,
     monkeypatch.setattr(order_print_service, "get_or_create_pdf", fake_get_or_create_pdf)
 
     with pytest.raises(HRMSException) as exc_info:
-        await print_order_pdf(order_id=1, db=object(), current_user="admin")
+        await print_order_pdf(order_id=1, db=_db(), current_user="admin")
 
     assert exc_info.value.status_code == 502
     assert exc_info.value.error_code == "order_pdf_convert_failed"
@@ -535,7 +552,7 @@ async def test_get_current_user_or_onlyoffice_valid_onlyoffice_token(monkeypatch
     headers = {"Authorization": f"Bearer {token}"}
     mock_request = SimpleNamespace(headers=headers, method="GET", query_params={})
 
-    result = await get_current_user_or_onlyoffice(request=mock_request, db=object())
+    result = await get_current_user_or_onlyoffice(request=cast(Request, mock_request), db=_db())
     assert result == "onlyoffice_server"
 
 
@@ -551,7 +568,7 @@ async def test_get_current_user_or_onlyoffice_fallback_to_user(monkeypatch):
     mock_request = SimpleNamespace(headers=headers, method="GET", query_params={})
 
     with pytest.raises(HTTPException) as exc_info:
-        await get_current_user_or_onlyoffice(request=mock_request, db=object())
+        await get_current_user_or_onlyoffice(request=cast(Request, mock_request), db=_db())
     
     assert exc_info.value.status_code == 401
 
@@ -571,7 +588,7 @@ async def test_get_current_user_or_onlyoffice_query_token(monkeypatch):
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await get_current_user_or_onlyoffice(request=mock_request, db=object())
+        await get_current_user_or_onlyoffice(request=cast(Request, mock_request), db=_db())
     
     assert exc_info.value.status_code == 401
 

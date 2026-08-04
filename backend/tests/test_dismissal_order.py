@@ -32,9 +32,11 @@ async def test_dismissal_order_archives_employee(db_session, create_employee):
     from app.repositories.employee_repository import EmployeeRepository
     repo = EmployeeRepository()
     archived_employee = await repo.get_by_id(db_session, employee.id)
+    assert archived_employee is not None
 
     assert archived_employee.is_dismissed is True
     assert archived_employee.dismissal_date == date(2026, 5, 6)
+    assert archived_employee.dismissal_reason is not None
     assert "Приказ" in archived_employee.dismissal_reason
     assert order is not None
 
@@ -65,6 +67,7 @@ async def test_delete_dismissal_order_restores_employee(db_session, create_emplo
     await order_service.hard_delete_order(db_session, order_id)
 
     restored_employee = await repo.get_by_id(db_session, employee.id)
+    assert restored_employee is not None
     assert restored_employee.is_dismissed is False
     assert restored_employee.dismissal_date is None
     assert restored_employee.dismissal_reason is None
@@ -87,6 +90,6 @@ async def test_non_dismissal_order_does_not_archive_employee(db_session, create_
     from app.repositories.employee_repository import EmployeeRepository
     repo = EmployeeRepository()
     fetched_employee = await repo.get_by_id(db_session, employee.id)
-
+    assert fetched_employee is not None
     assert fetched_employee.is_dismissed is False
     assert fetched_employee.dismissal_date is None

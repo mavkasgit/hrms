@@ -176,6 +176,7 @@ async def test_avatar_pushes_to_authentik(async_client, db_session: AsyncSession
             assert res.status_code == 200
             assert res.json()["avatar_seed"] == "cafebabe"
             push.assert_awaited_once()
+            assert push.await_args is not None
             assert push.await_args.args[0] == sub
     finally:
         app.dependency_overrides.pop(get_current_user, None)
@@ -215,6 +216,7 @@ async def test_profile_name_push(async_client, db_session: AsyncSession, idp_api
             body = res.json()
             assert body["full_name"] == "New Name"
             push.assert_awaited_once()
+            assert push.await_args is not None
             assert push.await_args.kwargs.get("full_name") == "New Name"
     finally:
         app.dependency_overrides.pop(get_current_user, None)

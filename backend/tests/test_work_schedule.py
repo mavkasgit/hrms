@@ -69,6 +69,7 @@ async def test_approve_does_not_block_set_entry(db_session, create_employee):
     await work_schedule_service.approve_schedule(db_session, schedule.id, "boss")
 
     refreshed = await work_schedule_service.get_schedule(db_session, schedule.id, with_entries=False)
+    assert refreshed is not None
     assert refreshed.is_approved is True
     assert refreshed.approved_by == "boss"
 
@@ -111,6 +112,7 @@ async def test_approve_does_not_block_delete_entry(db_session, create_employee):
     # Удаление записи разрешено
     await work_schedule_service.delete_entry(db_session, entry.id)
     refreshed = await work_schedule_service.get_schedule(db_session, schedule.id, with_entries=True)
+    assert refreshed is not None
     assert len(refreshed.entries) == 0
 
 
@@ -219,6 +221,8 @@ async def test_partial_bulk_cross_month(db_session, create_employee):
     # Записи распределены по графикам по дате
     july = await work_schedule_service.get_schedule(db_session, s_july.id, with_entries=True)
     aug = await work_schedule_service.get_schedule(db_session, s_aug.id, with_entries=True)
+    assert july is not None
+    assert aug is not None
     assert len(july.entries) == 2
     assert len(aug.entries) == 2
 

@@ -14,6 +14,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="module")
 def _build_workedjournal_bytes(title: str = 'Отчет "УРВ"', department: str = "Участок", period: str = "2025-07-01 - 2025-07-03") -> bytes:
     workbook = openpyxl.Workbook()
     sheet = workbook.active
+    assert sheet is not None
 
     # Row 1: title
     sheet.append([title, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None])
@@ -92,6 +93,7 @@ async def test_parse_workedjournal_handles_garbled_title():
 async def test_parse_workedjournal_empty_file_raises():
     workbook = openpyxl.Workbook()
     sheet = workbook.active
+    assert sheet is not None
     buffer = io.BytesIO()
     workbook.save(buffer)
 

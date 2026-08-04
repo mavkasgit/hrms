@@ -21,7 +21,7 @@ import os
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import AsyncIterator, Callable, Literal
+from typing import AsyncIterator, Awaitable, Callable, Literal
 
 import pytest
 import pytest_asyncio
@@ -316,7 +316,7 @@ async def db_session(
 
 
 @pytest.fixture
-def create_department(db_session: AsyncSession) -> Callable[..., Department]:
+def create_department(db_session: AsyncSession) -> Callable[..., Awaitable[Department]]:
     async def _create(**overrides) -> Department:
         department = Department(
             name=overrides.pop("name", f"Department-{uuid.uuid4().hex[:8]}"),
@@ -336,7 +336,7 @@ def create_department(db_session: AsyncSession) -> Callable[..., Department]:
 
 
 @pytest.fixture
-def create_position(db_session: AsyncSession) -> Callable[..., Position]:
+def create_position(db_session: AsyncSession) -> Callable[..., Awaitable[Position]]:
     async def _create(**overrides) -> Position:
         position = Position(
             name=overrides.pop("name", f"Position-{uuid.uuid4().hex[:8]}"),
@@ -356,9 +356,9 @@ def create_position(db_session: AsyncSession) -> Callable[..., Position]:
 @pytest.fixture
 def create_employee(
     db_session: AsyncSession,
-    create_department: Callable[..., Department],
-    create_position: Callable[..., Position],
-) -> Callable[..., Employee]:
+    create_department: Callable[..., Awaitable[Department]],
+    create_position: Callable[..., Awaitable[Position]],
+) -> Callable[..., Awaitable[Employee]]:
     async def _create(**overrides) -> Employee:
         department = overrides.pop("department", None)
         position = overrides.pop("position", None)
@@ -386,7 +386,7 @@ def create_employee(
 
 
 @pytest.fixture
-def create_order_type(db_session: AsyncSession) -> Callable[..., OrderType]:
+def create_order_type(db_session: AsyncSession) -> Callable[..., Awaitable[OrderType]]:
     async def _create(**overrides) -> OrderType:
         order_type = OrderType(
             code=overrides.pop("code", f"order_type_{uuid.uuid4().hex[:8]}"),
@@ -408,9 +408,9 @@ def create_order_type(db_session: AsyncSession) -> Callable[..., OrderType]:
 @pytest.fixture
 def create_order(
     db_session: AsyncSession,
-    create_employee: Callable[..., Employee],
-    create_order_type: Callable[..., OrderType],
-) -> Callable[..., Order]:
+    create_employee: Callable[..., Awaitable[Employee]],
+    create_order_type: Callable[..., Awaitable[OrderType]],
+) -> Callable[..., Awaitable[Order]]:
     async def _create(**overrides) -> Order:
         employee = overrides.pop("employee", None)
         order_type = overrides.pop("order_type_obj", None)
@@ -440,8 +440,8 @@ def create_order(
 @pytest.fixture
 def create_vacation(
     db_session: AsyncSession,
-    create_employee: Callable[..., Employee],
-) -> Callable[..., Vacation]:
+    create_employee: Callable[..., Awaitable[Employee]],
+) -> Callable[..., Awaitable[Vacation]]:
     async def _create(**overrides) -> Vacation:
         employee = overrides.pop("employee", None)
         if employee is None and "employee_id" not in overrides:
@@ -468,8 +468,8 @@ def create_vacation(
 @pytest.fixture
 def create_vacation_period(
     db_session: AsyncSession,
-    create_employee: Callable[..., Employee],
-) -> Callable[..., VacationPeriod]:
+    create_employee: Callable[..., Awaitable[Employee]],
+) -> Callable[..., Awaitable[VacationPeriod]]:
     async def _create(**overrides) -> VacationPeriod:
         employee = overrides.pop("employee", None)
         if employee is None and "employee_id" not in overrides:

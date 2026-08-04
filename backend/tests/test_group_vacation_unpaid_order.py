@@ -125,7 +125,7 @@ async def test_create_vacation_unpaid_group_order(db_session, create_employee, c
     # допускается fallback «без шаблона»; с шаблоном — ФИО сотрудников.
     from docx import Document
 
-    doc = Document(docx_path)
+    doc = Document(str(docx_path))
     full_text = "\n".join(p.text for p in doc.paragraphs)
     for table in doc.tables:
         for row in table.rows:

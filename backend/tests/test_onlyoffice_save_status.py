@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import time
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from jose import jwt
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import HRMSException
 from app.services.onlyoffice_save_tracker import OnlyOfficeSaveTracker, onlyoffice_save_tracker
 from app.services.onlyoffice_service import OnlyOfficeService
+
+
+def _db() -> AsyncSession:
+    return cast(AsyncSession, object())
 
 
 @pytest.fixture(autouse=True)
@@ -300,7 +306,7 @@ async def test_order_callback_userdata_marks_persisted(monkeypatch, tmp_path):
     mock_request.headers = {}
 
     response = await oo_api.order_onlyoffice_callback(
-        order_id=42, request=mock_request, db=object(), current_user="onlyoffice_server"
+        order_id=42, request=mock_request, db=_db(), current_user="onlyoffice_server"
     )
     assert response == {"error": 0}
 
@@ -329,7 +335,7 @@ async def test_order_callback_status_7_marks_failed(monkeypatch):
     mock_request.headers = {}
 
     response = await oo_api.order_onlyoffice_callback(
-        order_id=1, request=mock_request, db=object(), current_user="onlyoffice_server"
+        order_id=1, request=mock_request, db=_db(), current_user="onlyoffice_server"
     )
     assert response == {"error": 0}
 
@@ -426,19 +432,19 @@ async def test_save_status_endpoint_unknown_pending_persisted(monkeypatch):
     monkeypatch.setattr(oo_api.order_service, "get_by_id", fake_get_by_id)
 
     unknown = await oo_api.order_onlyoffice_save_status(
-        order_id=1, save_id="nope", db=object(), current_user="admin"
+        order_id=1, save_id="nope", db=_db(), current_user="admin"
     )
     assert unknown["state"] == "unknown"
 
     await onlyoffice_save_tracker.register("pend-1", "order", 1)
     pending = await oo_api.order_onlyoffice_save_status(
-        order_id=1, save_id="pend-1", db=object(), current_user="admin"
+        order_id=1, save_id="pend-1", db=_db(), current_user="admin"
     )
     assert pending["state"] == "pending"
 
     await onlyoffice_save_tracker.mark_persisted("pend-1", oo_status=6, file_mtime=99)
     persisted = await oo_api.order_onlyoffice_save_status(
-        order_id=1, save_id="pend-1", db=object(), current_user="admin"
+        order_id=1, save_id="pend-1", db=_db(), current_user="admin"
     )
     assert persisted["state"] == "persisted"
     assert persisted["file_mtime"] == 99

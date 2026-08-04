@@ -19,6 +19,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="module")
 def _build_excel_bytes(headers: list[str], rows: list[list[object]]) -> bytes:
     workbook = openpyxl.Workbook()
     sheet = workbook.active
+    assert sheet is not None
     sheet.append(headers)
     for row in rows:
         sheet.append(row)

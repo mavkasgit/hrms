@@ -19,6 +19,7 @@ def _build_workedjournal_bytes(employees_data: list[dict], period: str = "2025-0
     """
     workbook = openpyxl.Workbook()
     sheet = workbook.active
+    assert sheet is not None
     sheet.append([f"Отчет УРВ", None] + [None] * 15)
     sheet.append([f"Подразделение: 'Цех'", None] + [None] * 15)
     sheet.append([period, None] + [None] * 15)

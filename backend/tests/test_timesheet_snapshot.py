@@ -64,8 +64,10 @@ async def test_snapshot_contains_approved_values_not_current(
 
     snapshots = timesheet_snapshot_service.list_snapshots(emp.id)
     path = timesheet_snapshot_service.resolve_snapshot(emp.id, snapshots[0]["file_name"])
+    assert path is not None
     wb = load_workbook(path, read_only=True)
     ws = wb.active
+    assert ws is not None
 
     rows = list(ws.iter_rows(values_only=True))
     assert rows[0][0] == "Дата"
@@ -104,6 +106,7 @@ async def test_generate_xlsx_hours_summary(create_employee, db_session):
 
     wb = load_workbook(io.BytesIO(content), read_only=True)
     ws = wb.active
+    assert ws is not None
     rows = list(ws.iter_rows(values_only=True))
     assert len(rows) == 33  # заголовок + 31 день + итог
     assert rows[0][0] == "Дата"
