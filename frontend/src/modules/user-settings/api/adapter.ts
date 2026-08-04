@@ -16,8 +16,12 @@ import type {
  * нет listSessions → раздел «Сессии» скрыт, и т.д.
  */
 export interface UserSettingsApi {
-  /** Текущий профиль (GET /auth/me и аналоги). */
-  getProfile(): Promise<UserProfile>
+  /**
+   * Текущий профиль (GET /auth/me и аналоги).
+   * `refresh=true` → добавить ?refresh=1 (принудительная синхронизация с IdP,
+   * обходя TTL-кэш бэкенда). Диалог всегда открывает и перечитывает с refresh.
+   */
+  getProfile(refresh?: boolean): Promise<UserProfile>
 
   /** Частичное обновление профиля. Возвращает актуальный снимок полей. */
   updateProfile(patch: ProfilePatch): Promise<Partial<UserProfile>>

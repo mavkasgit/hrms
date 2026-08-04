@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "core": {
-    "frontend/src/modules/user-settings/UserSettingsDialog.tsx": "3324f5d6e52b07df435fcfc276243d4f84600e84566bf84e6d91f6b95f35d844",
+    "frontend/src/modules/user-settings/UserSettingsDialog.tsx": "ada5f1ed431a0590d0f16e273464990d0aca4ac53cb03c7d800c8866401489a6",
     "frontend/src/modules/user-settings/components/ProfilePanel.tsx": "a5ddb489445c6076bf66944446d68f4ae8fe39fb95db8727bfb13b7da53f5a5b",
     "frontend/src/modules/user-settings/components/AppearancePanel.tsx": "8298cfe952f1bd6e50957d94f212c34f3d7b320e2bb6570f05d430e1ed89dc65",
     "frontend/src/modules/user-settings/components/SecurityPanel.tsx": "235b48cda1c85e25869327cd77ab502188f1021ee159bc912252244b8db7b3f5",

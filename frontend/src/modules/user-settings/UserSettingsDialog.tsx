@@ -105,7 +105,9 @@ export function UserSettingsDialog({
 
   const refreshProfile = useCallback(async (): Promise<UserProfile | null> => {
     try {
-      const next = await api.getProfile()
+      // refresh=1: при открытии и после сохранения синхронизируем профиль с IdP,
+      // не дожидаясь TTL-кэша бэкенда (мгновенный перенос между приложениями).
+      const next = await api.getProfile(true)
       setProfile(next)
       callbacks?.onProfileUpdated?.(next)
       return next

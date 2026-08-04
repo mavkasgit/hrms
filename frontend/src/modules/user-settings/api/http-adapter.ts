@@ -103,7 +103,11 @@ export function createHttpAdapter(options: HttpAdapterOptions = {}): UserSetting
   }
 
   return {
-    getProfile: () => request<UserProfile>("GET", ep.getProfile),
+    getProfile: (refresh?: boolean) =>
+      request<UserProfile>(
+        "GET",
+        refresh ? `${ep.getProfile}?refresh=1` : ep.getProfile,
+      ),
 
     updateProfile: (patch: ProfilePatch) =>
       request<Partial<UserProfile>>("PATCH", ep.updateProfile, patch),

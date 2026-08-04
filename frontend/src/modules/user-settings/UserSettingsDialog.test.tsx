@@ -52,7 +52,8 @@ function renderDialog(api: UserSettingsApi = createApi()) {
 
 describe("UserSettingsDialog", () => {
   it("загружает профиль и показывает все разделы навигации", async () => {
-    renderDialog()
+    const api = createApi()
+    renderDialog(api)
 
     expect(await screen.findByText("ivan")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Профиль" })).toBeTruthy()
@@ -63,6 +64,21 @@ describe("UserSettingsDialog", () => {
     expect(
       screen.getByRole("heading", { name: "Профиль" }),
     ).toBeTruthy()
+    // Мгновенная синхронизация: при открытии запрашиваем refresh=1
+    expect(api.getProfile).toHaveBeenCalledWith(true)
+  })
+
+  it("перечитывает профиль с refresh=1 после сохранения", async () => {
+    const api = createApi()
+    renderDialog(api)
+    expect(await screen.findByText("ivan")).toBeTruthy()
+
+    const nameInput = screen.getByLabelText("Полное имя")
+    fireEvent.change(nameInput, { target: { value: "Новое Имя" } })
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }))
+
+    await waitFor(() => expect(api.updateProfile).toHaveBeenCalled())
+    await waitFor(() => expect(api.getProfile).toHaveBeenLastCalledWith(true))
   })
 
   it("переключается на раздел «Сессии» и показывает активные сеансы", async () => {

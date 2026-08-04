@@ -16,8 +16,10 @@ import type {
  * Пути — единый каноничный контракт /auth/me/*.
  */
 export const hrmsUserSettingsApi: UserSettingsApi = {
-  async getProfile(): Promise<UserProfile> {
-    const { data } = await api.get<UserProfile>("/auth/me")
+  async getProfile(refresh?: boolean): Promise<UserProfile> {
+    const { data } = await api.get<UserProfile>("/auth/me", {
+      params: refresh ? { refresh: 1 } : undefined,
+    })
     return data
   },
 
