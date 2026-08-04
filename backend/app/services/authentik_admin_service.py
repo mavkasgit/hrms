@@ -1,74 +1,47 @@
 """
-Authentik Admin API proxy (SSO-D).
+Authentik Admin API proxy (SSO-D) — тонкая обёртка над authentik_client.
 
-Token lives only in backend settings (AUTHENTIK_API_TOKEN).
-Manages membership in fixed groups: hrms-admin, hrms-viewer.
-
-Authentik 2024+/2026.x endpoints used:
-- GET  /api/v3/core/users/
-- GET  /api/v3/core/users/{pk}/
-- GET  /api/v3/core/groups/?name=
-- POST /api/v3/core/groups/{uuid}/add_user/     body: {"pk": <user_pk>}
-- POST /api/v3/core/groups/{uuid}/remove_user/  body: {"pk": <user_pk>}
+Общий сетевой слой (httpx, заголовки, обработка ошибок, резолв origin) живёт в
+``app.services.authentik_client`` (канон, копируется между приложениями).
+Здесь остаётся HRMS-специфика: фиксированные группы hrms-admin/hrms-viewer,
+листинг/управление пользователями и deep-link URL-ы. Публичный контракт модуля
+(is_idp_admin_enabled, _request, AuthentikAdminError, …) сохранён для
+потребителей (deep-links, admin-прокси).
 """
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-import httpx
+from app.services.authentik_client import (
+    AuthentikAdminError,
+    _request,
+    is_idp_admin_enabled,
+    public_base_url,
+    resolved_authentik_api_origin,
+)
 
-from app.core.config import settings
-from app.core.host_net import resolve_authentik_origin
+__all__ = [
+    "AccessLevel",
+    "AuthentikAdminError",
+    "HRMS_ACCESS_GROUPS",
+    "HRMS_ADMIN_GROUP",
+    "HRMS_VIEWER_GROUP",
+    "admin_url",
+    "is_idp_admin_enabled",
+    "list_idp_users",
+    "ops_url",
+    "public_base_url",
+    "resolved_authentik_api_origin",
+    "set_user_access",
+    "user_settings_url",
+]
 
 HRMS_ADMIN_GROUP = "hrms-admin"
 HRMS_VIEWER_GROUP = "hrms-viewer"
 HRMS_ACCESS_GROUPS = (HRMS_ADMIN_GROUP, HRMS_VIEWER_GROUP)
 
 AccessLevel = Literal["admin", "viewer", "none"]
-
-
-class AuthentikAdminError(Exception):
-    """Upstream IdP / configuration error for admin proxy."""
-
-    def __init__(self, message: str, *, status_code: int | None = None):
-        super().__init__(message)
-        self.message = message
-        self.status_code = status_code
-
-
-def resolved_authentik_api_origin() -> str | None:
-    """Admin API base origin — explicit URL or auto LAN IP (no hardcoded host)."""
-    return resolve_authentik_origin(
-        settings.AUTHENTIK_API_URL,
-        fallback_issuer=settings.AUTH_OIDC_ISSUER,
-    )
-
-
-def is_idp_admin_enabled() -> bool:
-    """OIDC on + resolvable API origin + non-empty token."""
-    if not settings.AUTH_OIDC_ENABLED:
-        return False
-    url = resolved_authentik_api_origin()
-    token = (settings.AUTHENTIK_API_TOKEN or "").strip()
-    return bool(url and token)
-
-
-def public_base_url() -> str | None:
-    """Public Authentik origin for deep-links (no trailing slash).
-
-    ``auto`` / empty → detect host LAN IP (or HOST_LAN_IP env). Never hardcode office IP.
-    """
-    origin = resolve_authentik_origin(
-        settings.AUTHENTIK_PUBLIC_URL,
-        fallback_issuer=settings.AUTH_OIDC_ISSUER,
-    )
-    if origin:
-        return origin
-    return resolve_authentik_origin(
-        settings.AUTHENTIK_API_URL,
-        fallback_issuer=settings.AUTH_OIDC_ISSUER,
-    )
 
 
 def user_settings_url() -> str | None:
@@ -92,67 +65,6 @@ def ops_url() -> str | None:
     if not p.scheme or not p.hostname:
         return None
     return f"{p.scheme}://{p.hostname}:9010"
-
-
-def _api_base() -> str:
-    raw = resolved_authentik_api_origin()
-    if not raw:
-        raise AuthentikAdminError(
-            "AUTHENTIK_API_URL is not configured and LAN IP could not be detected",
-            status_code=503,
-        )
-    raw = raw.rstrip("/")
-    if raw.endswith("/api/v3"):
-        return raw
-    return f"{raw}/api/v3"
-
-
-def _headers() -> dict[str, str]:
-    token = (settings.AUTHENTIK_API_TOKEN or "").strip()
-    if not token:
-        raise AuthentikAdminError("AUTHENTIK_API_TOKEN is not configured", status_code=503)
-    return {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
-
-
-async def _request(
-    method: str,
-    path: str,
-    *,
-    params: dict[str, Any] | None = None,
-    json_body: dict[str, Any] | None = None,
-) -> Any:
-    base = _api_base()
-    url = f"{base}{path}" if path.startswith("/") else f"{base}/{path}"
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.request(
-                method,
-                url,
-                headers=_headers(),
-                params=params,
-                json=json_body,
-            )
-    except httpx.HTTPError as exc:
-        raise AuthentikAdminError(f"Authentik unreachable: {exc}", status_code=502) from exc
-
-    if resp.status_code >= 400:
-        detail = resp.text[:500] if resp.text else resp.reason_phrase
-        # Pass through client errors (e.g. email uniqueness 400) for profile writes
-        code = resp.status_code if 400 <= resp.status_code < 500 else 502
-        raise AuthentikAdminError(
-            f"Authentik API error {resp.status_code}: {detail}",
-            status_code=code,
-        )
-    if resp.status_code == 204 or not resp.content:
-        return None
-    try:
-        return resp.json()
-    except ValueError as exc:
-        raise AuthentikAdminError("Invalid JSON from Authentik", status_code=502) from exc
 
 
 async def _resolve_group_uuid(name: str) -> str:
@@ -350,5 +262,3 @@ async def set_user_access(user_pk: int, access_level: AccessLevel) -> dict[str, 
         "groups": groups,
         "access_level": access_level,
     }
-
-

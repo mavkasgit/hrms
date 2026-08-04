@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "core": {
     "frontend/src/modules/user-settings/UserSettingsDialog.tsx": "3324f5d6e52b07df435fcfc276243d4f84600e84566bf84e6d91f6b95f35d844",
     "frontend/src/modules/user-settings/components/ProfilePanel.tsx": "a5ddb489445c6076bf66944446d68f4ae8fe39fb95db8727bfb13b7da53f5a5b",
@@ -14,7 +14,8 @@
     "frontend/src/modules/user-settings/lib/datetime.ts": "babdf4df13e68ab18cd0dd029f4c46191e1b56de2145aadbc972e5cc68c4a723",
     "frontend/src/modules/user-settings/lib/device.ts": "46a842d5ff8855a7246dcde9200909b111b95f216f2136d79d778e9f5f17978a",
     "frontend/src/modules/user-settings/i18n/ru.ts": "fc2328738e062411a926d5d9346809e4bc12616df7694dc4067a7e2a97772d7a",
-    "backend/app/services/unified_profile_service.py": "c27bfadb470b90c2125a7cd9f09a500a7c8ba14dc19f55d40b4446855bb822c6"
+    "backend/app/services/authentik_client.py": "a24660ad004c2896f9ed58a9b6bbad6b30258893f0af70634f71ee044979b289",
+    "backend/app/services/unified_profile_service.py": "f33b7c800625ec4449736b02e79129bba8a5ee7b746301a81ed5ec6882f1fb85"
   },
   "exceptions": [
     "backend/app/core/host_net.py",

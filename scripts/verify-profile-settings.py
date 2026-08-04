@@ -50,6 +50,7 @@ CORE_GLOBS = [
 ]
 
 BACKEND_PROFILE_GLOBS = [
+    "backend/app/services/authentik_client.py",
     "backend/app/services/unified_profile_service.py",
 ]
 

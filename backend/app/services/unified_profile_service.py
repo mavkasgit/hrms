@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import settings
-from app.services.authentik_admin_service import AuthentikAdminError, _request, is_idp_admin_enabled
+from app.services.authentik_client import AuthentikAdminError, _request, is_idp_admin_enabled
 
 logger = logging.getLogger(__name__)
 
