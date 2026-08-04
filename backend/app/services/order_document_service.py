@@ -6,13 +6,14 @@ from pathlib import Path
 from typing import Any
 
 from docx import Document
+from docx.document import Document as DocumentType
 from docx.shared import RGBColor
 
 from app.core.config import settings
 from app.core.paths import storage_key, storage_path
 from app.models.employee import Employee
 from app.models.order_type import OrderType
-from app.schemas.order import OrderCreate
+from app.schemas.order import OrderCreate, VacationUnpaidGroupOrderCreate
 from app.services.template_replacements import (
     build_document_replacements,
     build_order_replacements,
@@ -186,7 +187,7 @@ def _render_repeat_block_in_table_rows(
 
 
 def _render_body_level_block_between_markers(
-    doc: Document,
+    doc: DocumentType,
     start_paragraph: Any,
     end_paragraph: Any,
     rows_replacements: list[dict[str, str]],
@@ -239,7 +240,7 @@ def _render_body_level_block_between_markers(
 
 
 def _render_repeat_block(
-    doc: Document,
+    doc: DocumentType,
     start_marker: str,
     end_marker: str,
     rows_replacements: list[dict[str, str]],
@@ -321,7 +322,7 @@ def _replace_placeholders_in_element(element: Any, replacements: dict[str, str])
 async def generate_document(
     order_number: str,
     data: OrderCreate,
-    employee: Employee,
+    employee: Employee | None,
     order_type: OrderType,
     year_dir: Path,
 ) -> tuple[str, str]:
@@ -390,7 +391,7 @@ def _build_employee_replacements(idx: int, emp: Employee, extra: dict[str, str])
 
 async def render_vacation_unpaid_group_docx(
     order_number: str,
-    data: "VacationUnpaidGroupOrderCreate",
+    data: Any,  # SimpleNamespace из черновика (duck-typed)
     order_type: OrderType,
     employee_rows: list[dict],
     output_path: Path | None = None,
@@ -491,7 +492,7 @@ async def generate_group_document(
 
 async def generate_weekend_call_group_document(
     order_number: str,
-    data: "WeekendCallGroupOrderCreate",
+    data: Any,  # SimpleNamespace из черновика (duck-typed)
     order_type: OrderType,
     year_dir: Path,
     employee_rows: list[dict],
@@ -610,7 +611,7 @@ async def _build_document(
     data: OrderCreate,
     employee: Employee | None,
     order_type: OrderType,
-) -> tuple[Document, dict[str, str]]:
+) -> tuple[DocumentType, dict[str, str]]:
     template_path = get_template_path(order_type)
 
     if template_path.exists():

@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from docx import Document
+from docx.document import Document as DocumentType
 
 from app.core.config import settings
 
 
-def render_docx_placeholders(doc: Document, replacements: dict[str, str]) -> None:
+def render_docx_placeholders(doc: DocumentType, replacements: dict[str, str]) -> None:
     """Replace placeholders in a DOCX document.
 
     Walks paragraphs in the document body and all table cells, applying
@@ -84,7 +85,7 @@ def _replace_in_runs(runs: list[Any], key_map: list[dict], value: str) -> None:
         run.text = "".join(chars)
 
 
-async def load_template_or_create_blank(template_path: Path) -> Document:
+async def load_template_or_create_blank(template_path: Path) -> DocumentType:
     """Load a DOCX template if it exists, otherwise create a blank document."""
     if template_path.exists():
         return await asyncio.wait_for(

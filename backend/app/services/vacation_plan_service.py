@@ -15,7 +15,7 @@ class VacationPlanService:
 
     async def create_or_update(
         self, db: AsyncSession, data: dict
-    ) -> VacationPlanResponse:
+    ) -> Optional[VacationPlanResponse]:
         plan = await self._repo.create_or_update(db, data)
         if not plan:
             return None

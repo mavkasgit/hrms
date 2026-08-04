@@ -246,6 +246,7 @@ class TimesheetImportService:
 
         manual_matches: Dict[int, Employee] = {}
         unmatched_assignments = unmatched_assignments or {}
+        emp_by_id: Dict[int, Employee] = {}
         if unmatched_assignments:
             emp_ids = list(set(unmatched_assignments.values()))
             if emp_ids:

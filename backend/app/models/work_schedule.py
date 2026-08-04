@@ -34,9 +34,9 @@ class WorkSchedule(Base):
     approved_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     approved_at: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
-    created_at = Column(Date, nullable=False, default=date.today)
+    created_at: Mapped[Optional[date]] = mapped_column(Date, nullable=False, default=date.today)
     created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    updated_at = Column(Date, nullable=True)
+    updated_at: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     updated_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     employee: Mapped["Employee"] = relationship("Employee", back_populates="work_schedules")

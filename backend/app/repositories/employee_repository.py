@@ -38,11 +38,11 @@ class EmployeeRepository:
         gender: Optional[str] = None,
         rate_type: Optional[str] = None,
         concurrent_employment_type: Optional[List[str]] = None,
-        status: str = "active",
+        status: Optional[str] = "active",
         page: int = 1,
         per_page: int = 20,
         sort_by: Optional[str] = None,
-        sort_order: str = "asc",
+        sort_order: Optional[str] = "asc",
     ) -> tuple[list[Employee], int]:
         conditions = []
 
@@ -71,11 +71,11 @@ class EmployeeRepository:
         if concurrent_employment_type and len(concurrent_employment_type) > 0:
             conditions.append(Employee.employment_type.in_(concurrent_employment_type))
 
-        where_clause = and_(*conditions) if conditions else True
+        where_clause = and_(*conditions)
 
         count_query = select(func.count(Employee.id)).where(where_clause)
         total_result = await db.execute(count_query)
-        total = total_result.scalar()
+        total = total_result.scalar() or 0
 
         sort_column = getattr(Employee, sort_by, Employee.name) if sort_by else Employee.name
         order_expr = sort_column.asc() if sort_order == "asc" else sort_column.desc()

@@ -1,6 +1,6 @@
-from datetime import date
+from datetime import date, datetime, time
 from typing import Optional, List, Tuple
-from sqlalchemy import select, func
+from sqlalchemy import select, func, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sick_leave import SickLeave, SickLeaveStatus
@@ -92,7 +92,7 @@ class SickLeaveRepository:
             if hasattr(sick_leave, field) and value is not None:
                 setattr(sick_leave, field, value)
 
-        sick_leave.updated_at = date.today()
+        sick_leave.updated_at = datetime.combine(date.today(), time.min)
         await db.commit()
         await db.refresh(sick_leave)
         return sick_leave

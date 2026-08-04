@@ -52,7 +52,7 @@ class OrderCleanupService:
         if not order:
             raise OrderNotFoundError(order_id)
 
-        employee = await self.employee_repo.get_by_id(db, order.employee_id)
+        employee = await self.employee_repo.get_by_id(db, order.employee_id) if order.employee_id else None
 
         # Get order type code
         order_type_code = order.order_type.code if getattr(order, "order_type", None) else None
@@ -128,14 +128,14 @@ class OrderCleanupService:
         closure_ids = [row[0] for row in closure_ids_result.all()]
 
         # 2. Находим все транзакции, подлежащие удалению
+        tx_conditions = [
+            VacationPeriodTransaction.original_order_id == order_id,
+            VacationPeriodTransaction.adjustment_order_id == order_id,
+        ]
+        if closure_ids:
+            tx_conditions.append(VacationPeriodTransaction.manual_closure_id.in_(closure_ids))
         tx_ids_result = await db.execute(
-            select(VacationPeriodTransaction.id).where(
-                or_(
-                    VacationPeriodTransaction.original_order_id == order_id,
-                    VacationPeriodTransaction.adjustment_order_id == order_id,
-                    VacationPeriodTransaction.manual_closure_id.in_(closure_ids) if closure_ids else False,
-                )
-            )
+            select(VacationPeriodTransaction.id).where(or_(*tx_conditions))
         )
         tx_ids = [row[0] for row in tx_ids_result.all()]
 
@@ -158,14 +158,14 @@ class OrderCleanupService:
         to_delete_ids = [row[0] for row in to_delete_result.all()]
 
         # 6. Находим корректировки, подлежащие удалению
+        adj_conditions = [
+            VacationAdjustment.original_order_id == order_id,
+            VacationAdjustment.adjustment_order_id == order_id,
+        ]
+        if to_delete_ids:
+            adj_conditions.append(VacationAdjustment.vacation_id.in_(to_delete_ids))
         adj_ids_result = await db.execute(
-            select(VacationAdjustment.id).where(
-                or_(
-                    VacationAdjustment.original_order_id == order_id,
-                    VacationAdjustment.adjustment_order_id == order_id,
-                    VacationAdjustment.vacation_id.in_(to_delete_ids) if to_delete_ids else False,
-                )
-            )
+            select(VacationAdjustment.id).where(or_(*adj_conditions))
         )
         adj_ids = [row[0] for row in adj_ids_result.all()]
 

@@ -70,6 +70,7 @@ class TimesheetSnapshotService:
         """
         wb = Workbook()
         ws = wb.active
+        assert ws is not None
         ws.title = "Табель"
 
         header_font = Font(bold=True, color="FFFFFF")

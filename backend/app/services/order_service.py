@@ -18,7 +18,7 @@ from app.repositories.employee_repository import EmployeeRepository
 from app.repositories.order_repository import OrderRepository
 from app.repositories.order_type_repository import OrderTypeRepository
 from app.repositories.vacation_repository import vacation_repository as _vacation_repo
-from app.schemas.order import OrderCreate, OrderUpdate
+from app.schemas.order import OrderCreate, OrderUpdate, VacationUnpaidGroupOrderCreate, WeekendCallGroupOrderCreate
 
 from app.services.order_cleanup_service import OrderCleanupService
 from app.services.order_document_service import (
@@ -99,7 +99,7 @@ class OrderService:
         page: int = 1,
         per_page: int = 20,
         sort_by: Optional[str] = None,
-        sort_order: str = "desc",
+        sort_order: Optional[str] = "desc",
         year: Optional[int] = None,
         order_type_code: Optional[str] = None,
         order_letter: Optional[str] = None,
@@ -266,7 +266,7 @@ class OrderService:
     ) -> Order:
         # Подготавливаем extra_fields для продления контракта
         extra_fields = data.extra_fields
-        if order_type.code == "contract_extension" and data.extra_fields:
+        if employee and order_type.code == "contract_extension" and data.extra_fields:
             new_end = data.extra_fields.get("new_contract_end") or data.extra_fields.get("contract_new_end")
             if new_end:
                 extra_fields = dict(data.extra_fields)
@@ -298,7 +298,6 @@ class OrderService:
                     new_position_id = int(new_position_id)
                 if isinstance(new_position_id, int):
                     from app.models.position import Position
-                    from sqlalchemy import select
                     pos_result = await db.execute(select(Position).where(Position.id == new_position_id))
                     pos = pos_result.scalar_one_or_none()
                     if pos:
@@ -677,6 +676,7 @@ class OrderService:
             return date.fromisoformat(val) if val else None
 
         order_date = to_date(payload["order_date"])
+        assert order_date is not None
 
         # Load employees
         employee_rows = []
@@ -701,6 +701,7 @@ class OrderService:
         # Dispatch by order_type_code
         if order_type_code == "vacation_unpaid_group":
             common_start = to_date(payload["vacation_start"])
+            assert common_start is not None
 
             # Check overlaps and prepare rows
             for row in employee_rows:
@@ -722,10 +723,12 @@ class OrderService:
             mode = payload.get("mode", "single")
             if mode == "single":
                 call_start = to_date(payload["call_date"])
+                assert call_start is not None
                 call_end = call_start
             else:
                 call_start = to_date(payload["call_date_start"])
                 call_end = to_date(payload["call_date_end"])
+                assert call_start is not None and call_end is not None
             call_days = (call_end - call_start).days + 1
 
             for row in employee_rows:
@@ -765,17 +768,32 @@ class OrderService:
             emp = row["employee"]
 
             # Compute vacation_start/vacation_end for OrderEmployee based on type
+            emp_vacation_start: date
+            emp_vacation_end: date
             if order_type_code == "vacation_unpaid_group":
                 emp_vacation_start = date.fromisoformat(payload["vacation_start"])
-                emp_vacation_end = row["vacation_end"]
+                vacation_end_value = row["vacation_end"]
+                assert vacation_end_value is not None
+                emp_vacation_end = vacation_end_value
             elif order_type_code == "weekend_call_group":
                 mode = payload.get("mode", "single")
                 if mode == "single":
-                    emp_vacation_start = to_date(payload["call_date"])
-                    emp_vacation_end = emp_vacation_start
+                    call_start_value = to_date(payload["call_date"])
+                    assert call_start_value is not None
+                    emp_vacation_start = call_start_value
+                    emp_vacation_end = call_start_value
                 else:
-                    emp_vacation_start = to_date(payload["call_date_start"])
-                    emp_vacation_end = to_date(payload["call_date_end"])
+                    call_start_value = to_date(payload["call_date_start"])
+                    call_end_value = to_date(payload["call_date_end"])
+                    assert call_start_value is not None and call_end_value is not None
+                    emp_vacation_start = call_start_value
+                    emp_vacation_end = call_end_value
+            else:
+                raise HRMSException(
+                    f"Неподдерживаемый тип группового приказа: {order_type_code}",
+                    "unsupported_group_type",
+                    status_code=400,
+                )
 
             await db.execute(
                 sa_insert(OrderEmployee).values(
@@ -945,10 +963,28 @@ class OrderService:
 
         return order
 
+    # === Templates ===
+    def list_all_templates(self) -> list[dict[str, Any]]:
+        """Возвращает список доступных шаблонов приказов и их наличие на диске."""
+        from pathlib import Path as _Path
+        from app.utils.file_helpers import ORDER_TYPES, get_template_filename
+
+        templates = []
+        for order_type in ORDER_TYPES:
+            filename = get_template_filename(order_type)
+            file_path = _Path(settings.TEMPLATES_PATH) / filename if filename else None
+            templates.append({
+                "order_type": order_type,
+                "filename": filename,
+                "exists": bool(file_path and file_path.exists()),
+                "size": file_path.stat().st_size if file_path and file_path.exists() else None,
+            })
+        return templates
+
     # === Serialization ===
     def _serialize_order(self, order: Order) -> dict[str, Any]:
         from sqlalchemy import inspect as sa_inspect
-        from sqlalchemy.orm.attributes import LoaderCallableStatus
+        from sqlalchemy.orm.base import LoaderCallableStatus
 
         state = sa_inspect(order)
         loaded = state.attrs

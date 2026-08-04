@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import and_, extract, func, or_, select
@@ -18,13 +18,13 @@ class OrderRepository:
         page: int = 1,
         per_page: int = 20,
         sort_by: Optional[str] = None,
-        sort_order: str = "desc",
+        sort_order: Optional[str] = "desc",
         year: Optional[int] = None,
         order_type_code: Optional[str] = None,
         order_letter: Optional[str] = None,
         employee_id: Optional[int] = None,
-        date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
         order_number: Optional[str] = None,
     ) -> tuple[list[Order], int]:
         conditions = [Order.is_deleted == False]
@@ -71,14 +71,14 @@ class OrderRepository:
         if order_number:
             conditions.append(Order.order_number.ilike(f"%{order_number}%"))
 
-        where_clause = and_(*conditions) if conditions else True
+        where_clause = and_(*conditions)
 
         count_query = select(func.count(Order.id)).select_from(Order)
         for join_model in joins:
             count_query = count_query.join(join_model)
         count_query = count_query.where(where_clause)
         total_result = await db.execute(count_query)
-        total = total_result.scalar()
+        total = total_result.scalar() or 0
 
         sort_column = getattr(Order, sort_by, Order.created_date) if sort_by else Order.created_date
         order_expr = sort_column.asc() if sort_order == "asc" else sort_column.desc()
@@ -114,7 +114,7 @@ class OrderRepository:
         if year:
             conditions.append(extract("year", Order.order_date) == year)
 
-        where_clause = and_(*conditions) if conditions else True
+        where_clause = and_(*conditions)
 
         result = await db.execute(
             select(Order)

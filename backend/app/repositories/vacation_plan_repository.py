@@ -7,7 +7,7 @@ from app.models.vacation_plan import VacationPlan
 
 
 class VacationPlanRepository:
-    async def create_or_update(self, db: AsyncSession, data: dict) -> VacationPlan:
+    async def create_or_update(self, db: AsyncSession, data: dict) -> Optional[VacationPlan]:
         existing = await self.get_by_employee_year_month(
             db, data["employee_id"], data["year"], data["month"]
         )

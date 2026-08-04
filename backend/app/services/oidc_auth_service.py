@@ -17,6 +17,8 @@ import httpx
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
 from jose.backends import RSAKey
+
+assert RSAKey is not None  # cryptography backend (pyright: jose типизирует как Optional)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings

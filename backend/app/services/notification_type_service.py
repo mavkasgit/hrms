@@ -184,7 +184,7 @@ class NotificationTypeService:
         from sqlalchemy import func, select
         from app.models.notification import Notification
         n_count = (await db.execute(select(func.count()).where(Notification.notification_type_id == notification_type_id))).scalar()
-        if n_count > 0:
+        if (n_count or 0) > 0:
             raise HRMSException(
                 "Нельзя удалить тип уведомления, который уже используется",
                 "notification_type_in_use",

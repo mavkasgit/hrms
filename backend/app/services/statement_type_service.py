@@ -206,7 +206,7 @@ class StatementTypeService:
         # Simpler approach: just check relationship
         from app.models.statement import Statement
         stmt_count = (await db.execute(select(func.count()).where(Statement.statement_type_id == statement_type_id))).scalar()
-        if stmt_count > 0:
+        if (stmt_count or 0) > 0:
             raise HRMSException(
                 "Нельзя удалить тип заявления, который уже используется",
                 "statement_type_in_use",

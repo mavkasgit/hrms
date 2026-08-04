@@ -378,6 +378,7 @@ class VacationService:
 
         existing_order = await order_service.get_by_id(db, vacation.order_id) if vacation.order_id else None
         updated = await vacation_repository.update(db, id, update_data)
+        assert updated is not None
 
         recreated_order = None
         if existing_order:
@@ -397,6 +398,7 @@ class VacationService:
                 updated.days_count,
             )
             updated = await vacation_repository.update(db, id, {"order_id": recreated_order.id})
+            assert updated is not None
             await order_service.hard_delete_order(db, existing_order.id)
 
         # Внутреннее уведомление «приказ изменился» (#18): отпуск изменён,
@@ -555,6 +557,7 @@ class VacationService:
         )
 
         updated_vacation = await vacation_repository.get_by_id(db, vacation_id)
+        assert updated_vacation is not None
         await db.commit()
 
         audit_logger.info(
@@ -707,6 +710,7 @@ class VacationService:
         )
 
         updated_vacation = await vacation_repository.get_by_id(db, vacation_id)
+        assert updated_vacation is not None
         await db.commit()
 
         audit_logger.info(
@@ -841,6 +845,7 @@ class VacationService:
         )
 
         updated_vacation = await vacation_repository.get_by_id(db, vacation_id)
+        assert updated_vacation is not None
         await db.commit()
 
         audit_logger.info(

@@ -126,7 +126,7 @@ class VacationPeriodRepository:
         await db.refresh(period)
         return period
 
-    async def add_used_days(self, db: AsyncSession, period_id: int, days: int, order_id: int = None, order_number: str = None) -> None:
+    async def add_used_days(self, db: AsyncSession, period_id: int, days: int, order_id: int | None = None, order_number: str | None = None) -> None:
         """Добавить использованные дни к периоду (автосписание при создании приказа)."""
         import json
         
@@ -179,7 +179,7 @@ class VacationPeriodRepository:
         await db.refresh(period)
         print(f"[add_used_days] flushed and refreshed, period.used_days={period.used_days}")
 
-    async def remove_used_days(self, db: AsyncSession, period_id: int, days: int, order_id: int = None) -> None:
+    async def remove_used_days(self, db: AsyncSession, period_id: int, days: int, order_id: int | None = None) -> None:
         """Уменьшить использованные дни при удалении отпуска."""
         import json
         
@@ -298,19 +298,19 @@ class VacationPeriodRepository:
         period_id: int,
         days_count: int,
         transaction_type: str,
-        order_id: int = None,
-        order_number: str = None,
-        vacation_id: int = None,
-        original_order_id: int = None,
-        adjustment_order_id: int = None,
-        adjustment_id: int = None,
-        manual_closure_id: int = None,
-        reversed_transaction_id: int = None,
+        order_id: int | None = None,
+        order_number: str | None = None,
+        vacation_id: int | None = None,
+        original_order_id: int | None = None,
+        adjustment_order_id: int | None = None,
+        adjustment_id: int | None = None,
+        manual_closure_id: int | None = None,
+        reversed_transaction_id: int | None = None,
         is_reversal: bool = False,
-        source_type: str = None,
-        metadata: dict = None,
-        description: str = None,
-        created_by: str = None,
+        source_type: str | None = None,
+        metadata: dict | None = None,
+        description: str | None = None,
+        created_by: str | None = None,
         recompute_totals: bool = False,
     ) -> VacationPeriodTransaction:
         """Создать запись транзакции для периода."""

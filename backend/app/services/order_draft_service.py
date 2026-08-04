@@ -217,6 +217,7 @@ class OrderDraftService:
             # Compute vacation_end for vacation_unpaid_group
             if order_type_code == "vacation_unpaid_group" and "vacation_start" in payload:
                 vacation_start = to_date(payload["vacation_start"])
+                assert vacation_start is not None
                 row["vacation_end"] = vacation_start + timedelta(days=vacation_days - 1)
 
             employee_rows.append(row)
@@ -253,10 +254,12 @@ class OrderDraftService:
 
             if mode == "single":
                 call_start = to_date(payload["call_date"])
+                assert call_start is not None
                 call_end = call_start
             else:
                 call_start = to_date(payload["call_date_start"])
                 call_end = to_date(payload["call_date_end"])
+                assert call_start is not None and call_end is not None
 
             data = SimpleNamespace(
                 order_date=to_date(payload["order_date"]),

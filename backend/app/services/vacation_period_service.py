@@ -702,6 +702,7 @@ class VacationPeriodService:
             days_to_use = await self.get_effective_vacation_days(db, vacation)
             if days_to_use <= 0:
                 continue
+            assert vacation.order_id is not None
             order = await order_repo.get_by_id(db, vacation.order_id)
             order_number = order.order_number if order else None
             await auto_use_days(
@@ -775,6 +776,7 @@ class VacationPeriodService:
             if days_to_use <= 0:
                 continue
 
+            assert vacation.order_id is not None
             order = await order_repo.get_by_id(db, vacation.order_id)
             order_number = order.order_number if order else None
 
@@ -802,15 +804,15 @@ async def auto_use_days(
     db: AsyncSession,
     employee_id: int,
     days_to_use: int,
-    hire_date: date = None,
+    hire_date: date | None = None,
     additional_days: int = 0,
-    order_id: int = None,
-    order_number: str = None,
-    vacation_id: int = None,
+    order_id: int | None = None,
+    order_number: str | None = None,
+    vacation_id: int | None = None,
     transaction_type: str = "vacation_use",
-    original_order_id: int = None,
-    adjustment_order_id: int = None,
-    adjustment_id: int = None,
+    original_order_id: int | None = None,
+    adjustment_order_id: int | None = None,
+    adjustment_id: int | None = None,
     is_recalc: bool = False,
 ) -> None:
     from dateutil.relativedelta import relativedelta

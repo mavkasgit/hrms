@@ -31,11 +31,11 @@ class EmployeeService:
         gender: Optional[str] = None,
         rate_type: Optional[str] = None,
         concurrent_employment_type: Optional[List[str]] = None,
-        status: str = "active",
+        status: Optional[str] = "active",
         page: int = 1,
         per_page: int = 20,
         sort_by: Optional[str] = None,
-        sort_order: str = "asc",
+        sort_order: Optional[str] = "asc",
     ) -> dict:
         items, total = await repository.get_all(
             db,
@@ -178,6 +178,7 @@ class EmployeeService:
             old_values[key] = getattr(employee, key)
 
         employee = await repository.update(db, employee_id, update_data)
+        assert employee is not None
 
         periods_need_reset = False
 
@@ -302,6 +303,7 @@ class EmployeeService:
         }
 
         employee = await repository.dismiss(db, employee_id, user_id, reason)
+        assert employee is not None
 
         changed_fields = {
             "is_dismissed": {"old": False, "new": True},
@@ -348,6 +350,7 @@ class EmployeeService:
             raise EmployeeNotDismissedError(employee_id)
 
         employee = await repository.restore(db, employee_id, user_id)
+        assert employee is not None
 
         changed_fields = {
             "is_dismissed": {"old": True, "new": False},
@@ -473,7 +476,7 @@ class EmployeeService:
         await self.get_by_id(db, employee_id)
         return await self._check_dismissal_warnings(db, employee_id)
 
-    async def get_departments(self, db: AsyncSession) -> list[str]:
+    async def get_departments(self, db: AsyncSession) -> list[int]:
         return await repository.get_departments(db)
 
     async def _check_dismissal_warnings(self, db: AsyncSession, employee_id: int) -> list[str]:
