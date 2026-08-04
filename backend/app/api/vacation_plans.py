@@ -5,7 +5,7 @@ from io import BytesIO
 from fastapi import APIRouter, Depends, Query, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.core.config import settings
 from app.core.database import get_db
@@ -109,7 +109,7 @@ async def import_vacation_plans(
     current_user: str = Depends(_get_current_user_stub),
 ):
     """Импортирует график отпусков из Excel файла. Если preview_only=True — только парсит и возвращает preview без записи в БД."""
-    if not file.filename.endswith(".xlsx"):
+    if not file.filename or not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Только .xlsx файлы поддерживаются")
 
     try:
@@ -186,6 +186,8 @@ async def import_vacation_plans(
     }
 
     for row in data[header_row_idx + 1:]:
+        if name_col_idx is None:
+            continue
         name_val = row[name_col_idx] if name_col_idx < len(row) else None
         if not name_val:
             continue
@@ -316,7 +318,7 @@ async def import_vacation_plans(
 
         # Mark previous documents as non-current
         await db.execute(
-            Document.__table__.update()
+            update(Document)
             .where(Document.doc_code == "vacation_calendar", Document.is_current == True)
             .values(is_current=False)
         )

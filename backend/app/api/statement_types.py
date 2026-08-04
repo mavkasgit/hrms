@@ -90,7 +90,7 @@ async def analyze_template(
         extract_placeholders_from_docx,
         suggest_field_schema,
     )
-    from app.schemas.order_type import OrderTypeUpdate
+    from app.schemas.order_type import OrderTypeFieldSchema, OrderTypeUpdate
 
     stmt_type = await statement_type_service.get_statement_type(db, statement_type_id)
     template_path = get_template_path(stmt_type)
@@ -101,7 +101,7 @@ async def analyze_template(
     placeholders = extract_placeholders_from_docx(template_path)
     suggested_schema = suggest_field_schema(placeholders)
 
-    update_data = OrderTypeUpdate(field_schema=suggested_schema)
+    update_data = OrderTypeUpdate(field_schema=[OrderTypeFieldSchema(**item) for item in suggested_schema])
     await statement_type_service.update_statement_type(db, statement_type_id, update_data.model_dump(exclude_unset=True))
 
     # Re-fetch and serialize

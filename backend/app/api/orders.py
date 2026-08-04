@@ -1,7 +1,7 @@
 import urllib.parse
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse, HTMLResponse
@@ -26,7 +26,7 @@ class UTF8FileResponse(FileResponse):
         self.utf8_filename = filename
         super().__init__(path=path, filename=filename, media_type=media_type, **kwargs)
 
-    def init_headers(self, headers: dict[str, str] | None = None) -> None:
+    def init_headers(self, headers: Mapping[str, str] | None = None) -> None:
         super().init_headers(headers)
         if self.utf8_filename:
             encoded = urllib.parse.quote(self.utf8_filename)
@@ -541,7 +541,7 @@ async def update_order(
     current_user: str = Depends(_get_current_user_stub),
 ):
     order = await order_service.update_order(db, order_id, data, current_user)
-    return order_service._serialize_order(order)
+    return order
 
 
 @router.delete("/{order_id}")

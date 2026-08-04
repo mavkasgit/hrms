@@ -11,7 +11,7 @@ from app.services.internal_notification_service import internal_notification_ser
 router = APIRouter(prefix="/internal-notifications", tags=["internal-notifications"])
 
 
-from app.api.deps import get_current_user as _get_current_user_stub
+from app.api.deps import CurrentUser, get_current_user as _get_current_user_stub
 
 
 class InternalNotificationResponse(BaseModel):
@@ -39,7 +39,7 @@ async def list_internal_notifications(
     limit: int = 50,
     only_unclosed: bool = False,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     """Список уведомлений текущего пользователя: незакрытые первыми."""
     user_ids = await internal_notification_service.user_ids_by_username(
@@ -64,7 +64,7 @@ async def list_internal_notifications(
 async def mark_internal_notification_read(
     notification_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     user_ids = await internal_notification_service.user_ids_by_username(
         db, [current_user.username if hasattr(current_user, "username") else str(current_user)]
@@ -80,7 +80,7 @@ async def mark_internal_notification_read(
 async def close_internal_notification(
     notification_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     """Закрыть уведомление — оно исчезает и больше не вернётся после
     перезагрузки страницы или входа с другой машины (#18)."""

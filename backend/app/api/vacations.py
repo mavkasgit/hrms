@@ -368,7 +368,7 @@ async def get_active_vacations(
             "order_id": v.order_id,
             "order_number": v.order.order_number if getattr(v, "order", None) else None,
         }
-        for v in active
+        for v in items
     ]
 
 

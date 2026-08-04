@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -224,9 +224,9 @@ async def create_employee(
     )
     emp = result.scalar_one()
     response = EmployeeResponse.model_validate(emp)
-    data = response.model_dump()
-    data["contract_number_locked"] = await _get_contract_number_locked(db, employee.id)
-    return data
+    result_data = response.model_dump()
+    result_data["contract_number_locked"] = await _get_contract_number_locked(db, employee.id)
+    return result_data
 
 
 @router.put("/{employee_id}", response_model=EmployeeResponse)

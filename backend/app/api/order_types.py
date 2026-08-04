@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.schemas.order_type import (
     OrderTypeCreate,
+    OrderTypeFieldSchema,
     OrderTypeListResponse,
     OrderTypeResponse,
     OrderTypeUpdate,
@@ -112,7 +113,7 @@ async def analyze_template(
     suggested_schema = suggest_field_schema(placeholders)
 
     # Update field_schema
-    update_data = OrderTypeUpdate(field_schema=suggested_schema)
+    update_data = OrderTypeUpdate(field_schema=[OrderTypeFieldSchema(**item) for item in suggested_schema])
     await order_service.update_order_type(db, order_type_id, update_data)
 
     return await order_service.get_order_type(db, order_type_id)

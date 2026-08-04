@@ -1,4 +1,4 @@
-from datetime import date
+import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 class NotificationCreate(BaseModel):
     title: str
     number: Optional[str] = None
-    date: date
+    date: datetime.date
     employee_id: Optional[int] = None
     notification_type_id: Optional[int] = None
     content: Optional[str] = None
@@ -35,7 +35,7 @@ class NotificationCreate(BaseModel):
 class NotificationUpdate(BaseModel):
     title: Optional[str] = None
     number: Optional[str] = None
-    date: Optional[date] = None
+    date: Optional[datetime.date] = None
     employee_id: Optional[int] = None
     notification_type_id: Optional[int] = None
     content: Optional[str] = None
@@ -46,7 +46,7 @@ class NotificationResponse(BaseModel):
     id: int
     title: str
     number: Optional[str]
-    date: date
+    date: datetime.date
     employee_id: Optional[int]
     employee_name: Optional[str] = None
     notification_type_id: Optional[int] = None
@@ -119,8 +119,8 @@ async def get_notifications(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=1000),
     number: Optional[str] = Query(None),
-    date_from: Optional[date] = Query(None),
-    date_to: Optional[date] = Query(None),
+    date_from: Optional[datetime.date] = Query(None),
+    date_to: Optional[datetime.date] = Query(None),
     employee_id: Optional[int] = Query(None),
     notification_type_id: Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),

@@ -90,7 +90,7 @@ async def analyze_template(
         extract_placeholders_from_docx,
         suggest_field_schema,
     )
-    from app.schemas.order_type import OrderTypeUpdate
+    from app.schemas.order_type import OrderTypeFieldSchema, OrderTypeUpdate
 
     n_type = await notification_type_service.get_notification_type(db, notification_type_id)
     template_path = get_template_path(n_type)
@@ -101,7 +101,7 @@ async def analyze_template(
     placeholders = extract_placeholders_from_docx(template_path)
     suggested_schema = suggest_field_schema(placeholders)
 
-    update_data = OrderTypeUpdate(field_schema=suggested_schema)
+    update_data = OrderTypeUpdate(field_schema=[OrderTypeFieldSchema(**item) for item in suggested_schema])
     await notification_type_service.update_notification_type(db, notification_type_id, update_data.model_dump(exclude_unset=True))
 
     # Re-fetch and serialize

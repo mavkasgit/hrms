@@ -274,8 +274,8 @@ async def _safe_record_break_glass_event(
     event_type: str,
     success: bool,
     username_attempted: str,
-    ip_address: str,
-    user_agent: str,
+    ip_address: str | None,
+    user_agent: str | None,
     session_id: UUID | None = None,
     details: dict | None = None,
 ):

@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import Optional
 import io
 import os
+from datetime import date as date_type
 
 from app.core.database import get_db
 from app.core.logging import get_audit_logger
@@ -144,7 +145,7 @@ async def import_excel(
     current_user: str = Depends(_get_current_user_stub),
 ):
     """Парсит Excel файл и возвращает информацию о листах и preview."""
-    if not file.filename.endswith((".xlsx", ".xls")):
+    if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="Только .xlsx или .xls файлы")
 
     content = await file.read()
@@ -193,19 +194,28 @@ async def import_excel_preview(
 
     preview = []
     for row in rows[:5]:  # Первые 5 для preview
-        name_val = row[get_col(name)] if name and get_col(name) is not None else ""
+        name_idx = get_col(name)
+        name_val = row[name_idx] if name_idx is not None else ""
         if not name_val:
             continue
 
+        tab_number_idx = get_col(tab_number)
+        department_idx = get_col(department)
+        position_idx = get_col(position)
+        hire_date_idx = get_col(hire_date)
+        birth_date_idx = get_col(birth_date)
+        gender_idx = get_col(gender)
+        additional_days_idx = get_col(additional_vacation_days)
+
         preview.append({
             "name": name_val.strip(),
-            "tab_number": row[get_col(tab_number)] if tab_number and get_col(tab_number) is not None else None,
-            "department": row[get_col(department)] if department and get_col(department) is not None else None,
-            "position": row[get_col(position)] if position and get_col(position) is not None else None,
-            "hire_date": row[get_col(hire_date)] if hire_date and get_col(hire_date) is not None else None,
-            "birth_date": row[get_col(birth_date)] if birth_date and get_col(birth_date) is not None else None,
-            "gender": row[get_col(gender)] if gender and get_col(gender) is not None else None,
-            "additional_vacation_days": row[get_col(additional_vacation_days)] if additional_vacation_days and get_col(additional_vacation_days) is not None else None,
+            "tab_number": row[tab_number_idx] if tab_number_idx is not None else None,
+            "department": row[department_idx] if department_idx is not None else None,
+            "position": row[position_idx] if position_idx is not None else None,
+            "hire_date": row[hire_date_idx] if hire_date_idx is not None else None,
+            "birth_date": row[birth_date_idx] if birth_date_idx is not None else None,
+            "gender": row[gender_idx] if gender_idx is not None else None,
+            "additional_vacation_days": row[additional_days_idx] if additional_days_idx is not None else None,
         })
 
     return {"preview": preview, "total_rows": total_rows}
@@ -264,14 +274,14 @@ async def import_excel_confirm(
         val = row[idx]
         return str(val).strip() if val else None
 
-    def parse_date(val: Optional[str]) -> Optional[object]:
+    def parse_date(val: Optional[str]) -> Optional[date_type]:
         """Parse date string and return datetime.date object (not string)."""
         if not val:
             return None
-        from datetime import datetime, date
-        
+        from datetime import datetime as datetime_cls
+
         # If already a date object, return it
-        if isinstance(val, date):
+        if isinstance(val, date_type):
             return val
         
         # Convert to string
@@ -286,14 +296,14 @@ async def import_excel_confirm(
             if excel_date > 59:
                 excel_date -= 1
             from datetime import timedelta
-            return date(1899, 12, 31) + timedelta(days=excel_date)
+            return date_type(1899, 12, 31) + timedelta(days=excel_date)
         except (ValueError, OverflowError):
             pass
         
         # Try common date formats
         for fmt in ["%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d", "%d-%m-%Y"]:
             try:
-                return datetime.strptime(val_str, fmt).date()
+                return datetime_cls.strptime(val_str, fmt).date()
             except ValueError:
                 continue
         

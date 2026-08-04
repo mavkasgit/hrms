@@ -97,7 +97,8 @@ async def get_departments_graph(db: AsyncSession = Depends(get_db)):
     emp_by_dept: dict[int, list[Employee]] = {}
     all_emp_ids = []
     for emp in employees:
-        emp_by_dept.setdefault(emp.department_id, []).append(emp)
+        if emp.department_id is not None:
+            emp_by_dept.setdefault(emp.department_id, []).append(emp)
         all_emp_ids.append(emp.id)
 
     # 3. Загружаем теги сотрудников

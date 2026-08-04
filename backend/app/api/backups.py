@@ -372,7 +372,8 @@ def _write_table_exports_to_zip(
     exports: list[dict[str, str]] = []
     tables = _get_all_tables(db_name)
     workbook = Workbook()
-    workbook.remove(workbook.active)
+    if workbook.active is not None:
+        workbook.remove(workbook.active)
     worksheet_titles: set[str] = set()
     total = max(len(tables), 1)
     for index, table_name in enumerate(tables, start=1):
@@ -443,6 +444,7 @@ def _extract_storage_dirs_from_archive(zip_path: Path, target_root: Path) -> Non
                     continue
                 normalized = info.filename.replace("\\", "/")
                 storage_name = None
+                relative_name = ""
                 for prefix, name in allowed_prefixes.items():
                     if normalized.startswith(prefix):
                         storage_name = name

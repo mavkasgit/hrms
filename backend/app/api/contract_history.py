@@ -132,7 +132,7 @@ async def get_contract_registry(
     total = total_result.scalar() or 0
 
     # Paginated results (only if per_page is provided)
-    if per_page is not None:
+    if per_page is not None and page is not None:
         offset = (page - 1) * per_page
         query = query.offset(offset).limit(per_page)
         total_pages = max(1, (total + per_page - 1) // per_page)

@@ -12,6 +12,15 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 from app.api.deps import get_current_user as _get_current_user_stub
 
 
+def _parse_department_id(department: Optional[str]) -> Optional[int]:
+    if department is None:
+        return None
+    try:
+        return int(department)
+    except (ValueError, TypeError):
+        return None
+
+
 @router.get("/dashboard")
 async def get_dashboard_stats(
     department: Optional[str] = Query(None),
@@ -19,7 +28,7 @@ async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    return await AnalyticsService.get_dashboard_stats(db, department, gender)
+    return await AnalyticsService.get_dashboard_stats(db, _parse_department_id(department), gender)
 
 
 @router.get("/birthdays")
@@ -39,7 +48,7 @@ async def get_contract_expiring(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    return await AnalyticsService.get_contract_expiring(db, department, gender)
+    return await AnalyticsService.get_contract_expiring(db, _parse_department_id(department), gender)
 
 
 @router.get("/departments")
@@ -49,4 +58,4 @@ async def get_department_distribution(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    return await AnalyticsService.get_department_distribution(db, department, gender)
+    return await AnalyticsService.get_department_distribution(db, _parse_department_id(department), gender)
