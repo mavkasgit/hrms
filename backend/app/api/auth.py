@@ -557,10 +557,10 @@ async def update_my_avatar(
                 user.full_name = remote.full_name
             user.profile_synced_at = _utcnow()
         except AuthentikAdminError as exc:
-            code = exc.status_code or 502
-            if code == 404:
-                code = 404
-            raise HTTPException(status_code=code, detail=exc.message) from exc
+            raise HTTPException(
+                status_code=exc.status_code or 502,
+                detail=exc.message,
+            ) from exc
     else:
         user.avatar_seed = payload.avatar_seed
 
@@ -672,13 +672,13 @@ async def get_me_links(
     _current_user: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """IdP deep-links для профиля (каноничный путь). Любой авторизованный пользователь."""
-    from app.api.idp_admin import _idp_links_data
+    from app.services.authentik_admin_service import idp_links_data
 
-    return _idp_links_data()
+    return idp_links_data()
 
 
 @router.get("/me/login-events", response_model=list[LoginEventOut])
-async def list_my_login_events_v2(
+async def list_me_login_events(
     limit: int = Query(default=50, ge=1, le=200),
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

@@ -34,7 +34,7 @@ jobs:
         run: pip install -r requirements.txt
       - name: Verify profile-settings manifest (strict)
         working-directory: .
-        run: python scripts/verify-profile-settings.py --strict
+        run: python scripts/verify-profile-settings.py verify --strict
       - name: pytest xdist
         env:
           # App Settings load repo .env.dev (DATABASE_URL :5435). Override for GHA

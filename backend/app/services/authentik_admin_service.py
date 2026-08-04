@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from app.core.config import settings
 from app.services.authentik_client import (
     AuthentikAdminError,
     _request,
@@ -28,6 +29,7 @@ __all__ = [
     "HRMS_ADMIN_GROUP",
     "HRMS_VIEWER_GROUP",
     "admin_url",
+    "idp_links_data",
     "is_idp_admin_enabled",
     "list_idp_users",
     "ops_url",
@@ -42,6 +44,14 @@ HRMS_VIEWER_GROUP = "hrms-viewer"
 HRMS_ACCESS_GROUPS = (HRMS_ADMIN_GROUP, HRMS_VIEWER_GROUP)
 
 AccessLevel = Literal["admin", "viewer", "none"]
+
+
+def idp_links_data() -> dict:
+    """Deep-links payload профиля (общий для /auth/me/links и /idp/links)."""
+    return {
+        "oidc_enabled": bool(settings.AUTH_OIDC_ENABLED),
+        "user_settings_url": user_settings_url(),
+    }
 
 
 def user_settings_url() -> str | None:

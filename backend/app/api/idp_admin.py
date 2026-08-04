@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 from app.api.deps import CurrentUser, get_current_user
 from app.core.config import settings
 from app.services import authentik_admin_service as ak
-
 router = APIRouter(prefix="/idp", tags=["idp"])
 
 
@@ -68,20 +67,12 @@ def _access_from_groups(groups: list[str]) -> str:
     return "none"
 
 
-def _idp_links_data() -> dict:
-    """Deep-links payload (общий для /idp/links и каноничного /auth/me/links)."""
-    return {
-        "oidc_enabled": bool(settings.AUTH_OIDC_ENABLED),
-        "user_settings_url": ak.user_settings_url(),
-    }
-
-
 @router.get("/links", response_model=IdpLinksOut)
 async def get_idp_links(
     _current_user: CurrentUser = Depends(get_current_user),
 ) -> IdpLinksOut:
     """Deep-links for profile (any authenticated user). No Admin API token required."""
-    return IdpLinksOut(**_idp_links_data())
+    return IdpLinksOut(**ak.idp_links_data())
 
 
 @router.get("/config", response_model=IdpConfigOut)

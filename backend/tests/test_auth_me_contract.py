@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid as uuid_mod
+from contextlib import asynccontextmanager
 
 import pytest
 import pytest_asyncio
@@ -38,6 +39,20 @@ def _auth():
     return {"Authorization": "Bearer admin"}
 
 
+@asynccontextmanager
+async def _logged_in_as(username: str):
+    """Подмена текущего пользователя на время запроса(ов) в тесте."""
+
+    async def override():
+        return CurrentUser(username, role="admin", full_name="Local Name")
+
+    app.dependency_overrides[get_current_user] = override
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
 async def _make_user(
     db: AsyncSession,
     *,
@@ -69,45 +84,29 @@ async def test_me_links_returns_data(async_client, db_session: AsyncSession, oid
     uname = f"links_{uuid_mod.uuid4().hex[:8]}"
     await _make_user(db_session, username=uname)
 
-    async def override_user():
-        return CurrentUser(uname, role="admin", full_name="Local Name")
-
-    app.dependency_overrides[get_current_user] = override_user
-    try:
+    async with _logged_in_as(uname):
         res = await async_client.get("/api/auth/me/links", headers=_auth())
         assert res.status_code == 200
         data = res.json()
         assert data["oidc_enabled"] is True
         assert data["user_settings_url"] == "http://localhost:9000/if/user/"
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
 
 
 async def test_me_login_events_returns_data(async_client, db_session: AsyncSession):
     uname = f"ev_{uuid_mod.uuid4().hex[:8]}"
     await _make_user(db_session, username=uname)
 
-    async def override_user():
-        return CurrentUser(uname, role="admin", full_name="Local Name")
-
-    app.dependency_overrides[get_current_user] = override_user
-    try:
+    async with _logged_in_as(uname):
         res = await async_client.get("/api/auth/me/login-events", headers=_auth())
         assert res.status_code == 200
         assert isinstance(res.json(), list)
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
 
 
 async def test_me_profile_and_avatar_patch(async_client, db_session: AsyncSession):
     uname = f"pt_{uuid_mod.uuid4().hex[:8]}"
     await _make_user(db_session, username=uname)
 
-    async def override_user():
-        return CurrentUser(uname, role="admin", full_name="Local Name")
-
-    app.dependency_overrides[get_current_user] = override_user
-    try:
+    async with _logged_in_as(uname):
         profile = await async_client.patch(
             "/api/auth/me/profile",
             json={"full_name": "Updated", "theme": "dark", "locale": "en"},
@@ -126,8 +125,6 @@ async def test_me_profile_and_avatar_patch(async_client, db_session: AsyncSessio
         )
         assert avatar.status_code == 200
         assert avatar.json()["avatar_seed"] == "deadbeef"
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
 
 
 async def test_old_paths_removed(async_client, db_session: AsyncSession):
@@ -135,11 +132,7 @@ async def test_old_paths_removed(async_client, db_session: AsyncSession):
     uname = f"old_{uuid_mod.uuid4().hex[:8]}"
     await _make_user(db_session, username=uname)
 
-    async def override_user():
-        return CurrentUser(uname, role="admin", full_name="Local Name")
-
-    app.dependency_overrides[get_current_user] = override_user
-    try:
+    async with _logged_in_as(uname):
         assert (await async_client.patch(
             "/api/users/me/profile",
             json={"full_name": "X"},
@@ -155,5 +148,3 @@ async def test_old_paths_removed(async_client, db_session: AsyncSession):
             params={"scope": "others"},
             headers=_auth(),
         )).status_code >= 400
-    finally:
-        app.dependency_overrides.pop(get_current_user, None)
