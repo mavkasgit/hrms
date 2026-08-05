@@ -1,11 +1,30 @@
 from datetime import date, datetime, time
-from typing import Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import select, func, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sick_leave import SickLeave, SickLeaveStatus
 from app.models.employee import Employee
 from app.models.department import Department
+
+
+def _count_unique_days(intervals: List[Tuple[date, date]]) -> int:
+    """Количество уникальных дней по списку периодов (склейка пересекающихся)."""
+    if not intervals:
+        return 0
+
+    intervals = sorted(intervals)
+    total = 0
+    current_start, current_end = intervals[0]
+    for start, end in intervals[1:]:
+        if start <= current_end:
+            if end > current_end:
+                current_end = end
+        else:
+            total += (current_end - current_start).days + 1
+            current_start, current_end = start, end
+    total += (current_end - current_start).days + 1
+    return total
 
 
 class SickLeaveRepository:
@@ -116,13 +135,17 @@ class SickLeaveRepository:
     ) -> Optional[SickLeave]:
         """
         Проверить пересечение с активными больничными.
-        Условие пересечения: (StartA <= EndB) и (EndA >= StartB)
+
+        Строгое условие: пересечением считаются только периоды с реальной
+        общей внутренней частью. Соседние периоды (конец одного == начало
+        другого) и однодневный больничный на границе не пересекаются.
+        Условие пересечения: (StartA < EndB) и (EndA > StartB)
         """
         query = select(SickLeave).where(
             SickLeave.employee_id == employee_id,
             SickLeave.status == SickLeaveStatus.ACTIVE,
-            SickLeave.start_date <= end_date,
-            SickLeave.end_date >= start_date,
+            SickLeave.start_date < end_date,
+            SickLeave.end_date > start_date,
         )
 
         if exclude_id:
@@ -134,22 +157,19 @@ class SickLeaveRepository:
     async def get_total_sick_days(
         self, db: AsyncSession, employee_id: int, year: int
     ) -> int:
-        """Получить общее количество дней больничных за год (только активные)."""
-        query = select(
-            func.sum(
-                func.date_part("day", SickLeave.end_date)
-                - func.date_part("day", SickLeave.start_date)
-                + 1
-            )
-        ).where(
+        """Количество уникальных дней больничных за год (только активные).
+
+        День, принадлежащий двум больничным, считается один раз.
+        """
+        query = select(SickLeave).where(
             SickLeave.employee_id == employee_id,
             SickLeave.status == SickLeaveStatus.ACTIVE,
             func.extract("year", SickLeave.start_date) == year,
         )
 
         result = await db.execute(query)
-        total = result.scalar()
-        return int(total) if total else 0
+        leaves = list(result.scalars().all())
+        return _count_unique_days([(sl.start_date, sl.end_date) for sl in leaves])
 
     async def get_employees_summary(
         self,
@@ -159,24 +179,19 @@ class SickLeaveRepository:
     ) -> List[dict]:
         """
         Получить сводку по больничным для всех сотрудников.
+
         Возвращает список словарей с информацией о сотруднике и статистике.
+        total_sick_days — уникальные дни (день, принадлежащий двум больничным,
+        считается один раз).
         """
-        # Базовый запрос
         query = (
             select(
                 Employee.id,
                 Employee.name,
                 Employee.tab_number,
                 Department.name.label("department"),
-                func.count(SickLeave.id).label("sick_leaves_count"),
-                func.coalesce(
-                    func.sum(
-                        func.date_part("day", SickLeave.end_date)
-                        - func.date_part("day", SickLeave.start_date)
-                        + 1
-                    ),
-                    0,
-                ).label("total_sick_days"),
+                SickLeave.start_date,
+                SickLeave.end_date,
             )
             .outerjoin(
                 SickLeave,
@@ -196,22 +211,34 @@ class SickLeaveRepository:
                 | (Employee.tab_number.cast(String).ilike(f"%{search_query}%"))
             )
 
-        query = query.group_by(
-            Employee.id, Employee.name, Employee.tab_number, Department.name
-        )
-        query = query.order_by(Employee.name)
+        query = query.order_by(Employee.name, SickLeave.start_date)
 
         result = await db.execute(query)
         rows = result.fetchall()
 
-        return [
-            {
-                "employee_id": row.id,
-                "employee_name": row.name,
-                "tab_number": row.tab_number,
-                "department": row.department,
-                "total_sick_days": int(row.total_sick_days),
-                "sick_leaves_count": row.sick_leaves_count,
-            }
-            for row in rows
-        ]
+        by_employee: Dict[int, Dict[str, Any]] = {}
+        for row in rows:
+            entry = by_employee.setdefault(
+                row.id,
+                {
+                    "employee_id": row.id,
+                    "employee_name": row.name,
+                    "tab_number": row.tab_number,
+                    "department": row.department,
+                    "total_sick_days": 0,
+                    "sick_leaves_count": 0,
+                    "_intervals": [],
+                },
+            )
+            if row.start_date is not None:
+                entry["sick_leaves_count"] += 1
+                entry["_intervals"].append((row.start_date, row.end_date))
+
+        summary: List[Dict[str, Any]] = []
+        for entry in by_employee.values():
+            intervals = entry.pop("_intervals")
+            entry["total_sick_days"] = _count_unique_days(intervals)
+            summary.append(entry)
+
+        summary.sort(key=lambda e: e["employee_name"])
+        return summary
