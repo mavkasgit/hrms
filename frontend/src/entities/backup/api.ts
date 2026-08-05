@@ -1,4 +1,5 @@
 import api from "@/shared/api/axios"
+import { downloadFile } from "@/shared/api/download"
 import type { BackupInfo, BackupJob, BackupPreview, BackupRestoreRequest } from "./types"
 
 export async function fetchBackupConfig(): Promise<{ db_name: string; auto_enabled: boolean; time_of_day: string }> {
@@ -36,8 +37,8 @@ export async function fetchCurrentPreview(): Promise<BackupPreview> {
   return data
 }
 
-export function downloadBackupUrl(filename: string): string {
-  return `${import.meta.env.VITE_API_URL || "/api"}/backups/${filename}/download`
+export async function downloadBackup(filename: string): Promise<void> {
+  await downloadFile(`/backups/${filename}/download`, filename).catch(() => {})
 }
 
 export async function previewBackup(filename: string): Promise<BackupPreview> {

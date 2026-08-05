@@ -26,6 +26,7 @@ import type { OrderType } from "@/entities/order/types"
 import { TemplateVariablesCatalog } from "@/features/template-variables-catalog/TemplateVariablesCatalog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs"
 import { useQueryClient } from "@tanstack/react-query"
+import { downloadTemplate as downloadOrderTypeTemplate } from "@/entities/order/api"
 import { downloadStatementTypeTemplate } from "@/entities/statement/api"
 import {
   useStatementTypes,
@@ -64,7 +65,6 @@ interface DocType {
 }
 
 export function TemplatesPage() {
-  const API_BASE = import.meta.env.VITE_API_URL || "/api"
   const { data: orderTypes = [], isLoading, error } = useAllOrderTypes()
   const { data: variables = [] } = useTemplateVariables()
   const deleteMutation = useDeleteOrderType()
@@ -183,7 +183,7 @@ export function TemplatesPage() {
             emptyMessage="Типы приказов не найдены"
             onEditRow={(t) => { setEditingOrderType(t as unknown as OrderType); setFormOpen(true); }}
             uploadTemplate={(id, file, onSuccess) => uploadMutation.mutate({ orderTypeId: id, file }, { onSuccess })}
-            downloadTemplate={(id) => `${API_BASE}/order-types/${id}/template`}
+            downloadTemplate={(id) => downloadOrderTypeTemplate(id)}
             openPreview={openPreview}
             openEdit={openEdit}
             grouped
@@ -198,7 +198,7 @@ export function TemplatesPage() {
             emptyMessage="Типы уведомлений не найдены"
             onEditRow={(t) => { setEditingNotifType(t as unknown as DocType); setNotifFormOpen(true); }}
             uploadTemplate={(id, file, onSuccess) => uploadNotifTemplate.mutate({ id, file }, { onSuccess })}
-            downloadTemplate={(id) => `${API_BASE}/notification-types/${id}/template`}
+            downloadTemplate={(id) => downloadNotificationTypeTemplate(id)}
             openPreview={(id) => window.open(`/templates/notification/${id}/view`, "_blank", "noopener,noreferrer")}
             openEdit={(id) => window.open(`/templates/notification/${id}/edit`, "_blank", "noopener,noreferrer")}
           />
@@ -212,7 +212,7 @@ export function TemplatesPage() {
             emptyMessage="Типы заявлений не найдены"
             onEditRow={(t) => { setEditingStmtType(t as unknown as DocType); setStmtFormOpen(true); }}
             uploadTemplate={(id, file, onSuccess) => uploadStmtTemplate.mutate({ id, file }, { onSuccess })}
-            downloadTemplate={(id) => `${API_BASE}/statement-types/${id}/template`}
+            downloadTemplate={(id) => downloadStatementTypeTemplate(id)}
             openPreview={(id) => window.open(`/templates/statement/${id}/view`, "_blank", "noopener,noreferrer")}
             openEdit={(id) => window.open(`/templates/statement/${id}/edit`, "_blank", "noopener,noreferrer")}
           />
@@ -237,7 +237,7 @@ export function TemplatesPage() {
         onDownloadTemplate={(id) => {
           const ot = orderTypes.find((o) => o.id === id)
           if (!ot?.template_exists) return
-          window.open(`${API_BASE}/order-types/${id}/template`, "_blank")
+          downloadOrderTypeTemplate(id)
         }}
         onUploadTemplate={(id, file, onSuccess) => uploadMutation.mutate({ orderTypeId: id, file }, { onSuccess })}
         onDeleteTemplate={(id) => setDeleteTemplateDialog({ open: true, orderTypeId: id })}

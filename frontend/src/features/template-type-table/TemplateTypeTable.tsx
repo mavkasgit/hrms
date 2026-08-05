@@ -29,7 +29,7 @@ interface TemplateTypeTableProps {
   emptyMessage: string
   onEditRow: (t: TemplateTypeItem) => void
   uploadTemplate: (id: number, file: File, onSuccess: () => void) => void
-  downloadTemplate: (id: number) => string
+  downloadTemplate: (id: number) => void
   openPreview?: (id: number) => void
   openEdit?: (id: number) => void
   grouped?: boolean
@@ -46,7 +46,7 @@ function getOrderCategory(code: string, showInOrders: boolean): string {
 function ActionButtons({ item, uploadTemplate, downloadTemplate, openPreview, openEdit }: {
   item: TemplateTypeItem
   uploadTemplate: (id: number, file: File, onSuccess: () => void) => void
-  downloadTemplate: (id: number) => string
+  downloadTemplate: (id: number) => void
   openPreview?: (id: number) => void
   openEdit?: (id: number) => void
 }) {
@@ -78,7 +78,7 @@ function ActionButtons({ item, uploadTemplate, downloadTemplate, openPreview, op
         </Button>
       </label>
       {item.template_exists && (
-        <Button variant="ghost" size="icon" title="Скачать шаблон" onClick={() => window.open(downloadTemplate(item.id), "_blank")}>
+        <Button variant="ghost" size="icon" title="Скачать шаблон" onClick={() => downloadTemplate(item.id)}>
           <Download className="h-4 w-4" />
         </Button>
       )}
@@ -90,7 +90,7 @@ function TypeRow({ item, onEditRow, uploadTemplate, downloadTemplate, openPrevie
   item: TemplateTypeItem
   onEditRow: (t: TemplateTypeItem) => void
   uploadTemplate: (id: number, file: File, onSuccess: () => void) => void
-  downloadTemplate: (id: number) => string
+  downloadTemplate: (id: number) => void
   openPreview?: (id: number) => void
   openEdit?: (id: number) => void
   showLetter: boolean

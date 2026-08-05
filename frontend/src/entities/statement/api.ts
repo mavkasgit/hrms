@@ -1,4 +1,5 @@
 import axios from "@/shared/api/axios"
+import { downloadFile } from "@/shared/api/download"
 import type {
   Statement,
   StatementListResponse,
@@ -73,8 +74,8 @@ export function openStatementPrint(statementId: number, target = "_blank") {
   window.open(url, target)
 }
 
-export function downloadStatementDocx(statementId: number) {
-  window.open(`${import.meta.env.VITE_API_URL || "/api"}/statements/${statementId}/download`, "_blank")
+export async function downloadStatementDocx(statementId: number) {
+  await downloadFile(`/statements/${statementId}/download`, `заявление_${statementId}.docx`).catch(() => {})
 }
 
 export async function createStatementDraft(payload: StatementCreate): Promise<{ draft_id: string; statement_id: number }> {
@@ -121,8 +122,8 @@ export async function deleteStatementTypeTemplate(id: number): Promise<void> {
   await axios.delete(`/statement-types/${id}/template`)
 }
 
-export function downloadStatementTypeTemplate(id: number) {
-  window.open(`${import.meta.env.VITE_API_URL || "/api"}/statement-types/${id}/template`, "_blank")
+export async function downloadStatementTypeTemplate(id: number) {
+  await downloadFile(`/statement-types/${id}/template`, `шаблон_${id}.docx`).catch(() => {})
 }
 
 // ─── OnlyOffice for statement type templates ───

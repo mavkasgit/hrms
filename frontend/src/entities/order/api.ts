@@ -1,4 +1,5 @@
 import api from "@/shared/api/axios"
+import { downloadFile } from "@/shared/api/download"
 import type {
   Order,
   OrderCreate,
@@ -91,18 +92,8 @@ export async function createWeekendCallGroupOrder(payload: WeekendCallGroupOrder
   return data
 }
 
-export async function downloadOrder(orderId: number) {
-  const response = await api.get(`/orders/${orderId}/download`, {
-    responseType: "blob",
-  })
-  return response
-}
-
 export async function downloadTemplate(orderTypeId: number) {
-  const response = await api.get(`/order-types/${orderTypeId}/template`, {
-    responseType: "blob",
-  })
-  return response
+  await downloadFile(`/order-types/${orderTypeId}/template`, `шаблон_${orderTypeId}.docx`).catch(() => {})
 }
 
 export async function uploadTemplate(orderTypeId: number, file: File) {

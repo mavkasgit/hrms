@@ -20,6 +20,7 @@ import {
 import { useVacationPeriods, useRecalculateVacationPeriods, useDeleteManualClosureTransaction } from "@/entities/vacation-period"
 import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
 import { VacationPeriodVacationRow } from "@/entities/vacation-period/ui/VacationPeriodVacationRow"
+import { downloadOrderDocx } from "@/entities/order/orderActions"
 
 
 
@@ -102,7 +103,7 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
     window.open(`/orders/${orderId}/view-docx`, "_blank", "noopener,noreferrer")
   }
   const handleOrderDownload = (orderId: number) => {
-    window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
+    downloadOrderDocx(orderId)
   }
 
   if (isLoading) return <div className="px-4 py-3"><Skeleton className="h-20 w-full" /></div>

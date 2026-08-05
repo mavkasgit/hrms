@@ -1,6 +1,7 @@
 import { useState, useRef } from "react"
 import { Upload, Check, Download } from "lucide-react"
 import axios from "@/shared/api/axios"
+import { downloadFile } from "@/shared/api/download"
 import { Button } from "@/shared/ui/button"
 import {
   Dialog,
@@ -67,16 +68,7 @@ export function ImportEmployeesModal({ open, onOpenChange, onImportComplete }: I
 
   const handleDownloadTemplate = async () => {
     try {
-      const resp = await axios.get("/import/excel/template", {
-        responseType: "blob",
-      })
-      const url = window.URL.createObjectURL(new Blob([resp.data]))
-      const link = document.createElement("a")
-      link.href = url
-      link.setAttribute("download", "Шаблон_импорт_сотрудников.xlsx")
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
+      await downloadFile("/import/excel/template", "Шаблон_импорт_сотрудников.xlsx")
     } catch (err) {
       console.error("Download template error:", err)
       alert("Не удалось скачать шаблон")

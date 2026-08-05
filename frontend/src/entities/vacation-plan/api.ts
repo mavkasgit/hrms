@@ -1,4 +1,5 @@
 import api from "@/shared/api/axios"
+import { downloadFile } from "@/shared/api/download"
 import type { VacationPlan, VacationPlanCreate, VacationPlanSummary, VacationPlanUpdate } from "./types"
 
 export async function fetchVacationPlanSummary(year: number): Promise<VacationPlanSummary[]> {
@@ -57,11 +58,8 @@ export async function importVacationPlans(
   return data
 }
 
-export async function downloadVacationPlanTemplate(): Promise<Blob> {
-  const { data } = await api.get("/vacation-plans/import/template", {
-    responseType: "blob",
-  })
-  return data
+export async function downloadVacationPlanTemplate(): Promise<void> {
+  await downloadFile("/vacation-plans/import/template", "Шаблон_график_отпусков.xlsx")
 }
 
 export interface VacationCalendarDocument {
@@ -85,17 +83,10 @@ export async function fetchVacationCalendarList(): Promise<VacationCalendarDocum
 }
 
 export async function downloadVacationCalendar(docId: number, filename?: string): Promise<void> {
-  const { data } = await api.get(`/documents/${VACATION_CALENDAR_DOC_CODE}/${docId}/file`, {
-    responseType: "blob",
-  })
-  const url = window.URL.createObjectURL(new Blob([data]))
-  const link = document.createElement("a")
-  link.href = url
-  link.download = filename || `vacation_calendar_${docId}.xlsx`
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.URL.revokeObjectURL(url)
+  await downloadFile(
+    `/documents/${VACATION_CALENDAR_DOC_CODE}/${docId}/file`,
+    filename || `vacation_calendar_${docId}.xlsx`
+  )
 }
 
 export async function deleteVacationCalendar(docId: number): Promise<void> {

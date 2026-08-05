@@ -39,6 +39,7 @@ import {
   useDeleteBackupsOlderThan,
   useStartBackupJob,
 } from "@/entities/backup/useBackups"
+import { downloadBackup } from "@/entities/backup/api"
 import type { BackupPreview } from "@/entities/backup/types"
 
 function formatBytes(bytes: number): string {
@@ -938,7 +939,7 @@ export function BackupsPage() {
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
-                        onClick={() => window.open(`/api/backups/${b.filename}/download`)}
+                        onClick={() => downloadBackup(b.filename)}
                         title="Скачать"
                       >
                         <Download className="h-4 w-4" />

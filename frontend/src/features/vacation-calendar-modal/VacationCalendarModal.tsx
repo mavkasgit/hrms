@@ -106,15 +106,7 @@ export function VacationCalendarModal({ open, onOpenChange, year, onImportComple
 
   const handleDownloadTemplate = async () => {
     try {
-      const blob = await downloadVacationPlanTemplate()
-      const url = window.URL.createObjectURL(new Blob([blob]))
-      const link = document.createElement("a")
-      link.href = url
-      link.download = "Шаблон_график_отпусков.xlsx"
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
+      await downloadVacationPlanTemplate()
     } catch {
       addToast({ title: "Не удалось скачать шаблон", variant: "destructive" })
     }

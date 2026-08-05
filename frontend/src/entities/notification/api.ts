@@ -1,4 +1,5 @@
 import axios from "@/shared/api/axios"
+import { downloadFile } from "@/shared/api/download"
 import type {
   Notification,
   NotificationListResponse,
@@ -73,8 +74,8 @@ export function openNotificationPrint(notificationId: number, target = "_blank")
   window.open(url, target)
 }
 
-export function downloadNotificationDocx(notificationId: number) {
-  window.open(`${import.meta.env.VITE_API_URL || "/api"}/notifications/${notificationId}/download`, "_blank")
+export async function downloadNotificationDocx(notificationId: number) {
+  await downloadFile(`/notifications/${notificationId}/download`, `уведомление_${notificationId}.docx`).catch(() => {})
 }
 
 export async function createNotificationDraft(payload: NotificationCreate): Promise<{ draft_id: string; notification_id: number }> {
@@ -121,8 +122,8 @@ export async function deleteNotificationTypeTemplate(id: number): Promise<void> 
   await axios.delete(`/notification-types/${id}/template`)
 }
 
-export function downloadNotificationTypeTemplate(id: number) {
-  window.open(`${import.meta.env.VITE_API_URL || "/api"}/notification-types/${id}/template`, "_blank")
+export async function downloadNotificationTypeTemplate(id: number) {
+  await downloadFile(`/notification-types/${id}/template`, `шаблон_${id}.docx`).catch(() => {})
 }
 
 // ─── OnlyOffice for notification type templates ───

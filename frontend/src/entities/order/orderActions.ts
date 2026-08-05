@@ -1,4 +1,5 @@
 import { navigatePrintPlaceholder } from "@/shared/utils/print-window"
+import { downloadFile } from "@/shared/api/download"
 
 /** Keep opener so editor can postMessage success back to the list page. */
 function openEditorWindow(url: string): Window | null {
@@ -28,6 +29,6 @@ export function openOrderPrint(orderId: number, target = "_blank") {
   navigatePrintPlaceholder(target, url)
 }
 
-export function downloadOrderDocx(orderId: number) {
-  window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
+export async function downloadOrderDocx(orderId: number) {
+  await downloadFile(`/orders/${orderId}/download`, `приказ_${orderId}.docx`).catch(() => {})
 }

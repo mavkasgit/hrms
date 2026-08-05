@@ -1,6 +1,5 @@
 import { useState, useRef } from "react"
 import { Upload, X, FileSpreadsheet, Download } from "lucide-react"
-import axios from "@/shared/api/axios"
 import { Button } from "@/shared/ui/button"
 import {
   Dialog,
@@ -10,6 +9,7 @@ import {
   DialogDescription,
 } from "@/shared/ui/dialog"
 import { useImportVacationPlans } from "@/entities/vacation-plan"
+import { downloadVacationPlanTemplate } from "@/entities/vacation-plan/api"
 import type { VacationPlanImportResult } from "@/entities/vacation-plan/api"
 import { useToast } from "@/shared/ui/use-toast"
 
@@ -40,16 +40,7 @@ export function ImportVacationPlansModal({
 
   const handleDownloadTemplate = async () => {
     try {
-      const resp = await axios.get("/vacation-plans/import/template", {
-        responseType: "blob",
-      })
-      const url = window.URL.createObjectURL(new Blob([resp.data]))
-      const link = document.createElement("a")
-      link.href = url
-      link.setAttribute("download", "Шаблон_график_отпусков.xlsx")
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
+      await downloadVacationPlanTemplate()
     } catch (err) {
       console.error("Download template error:", err)
       addToast({ title: "Не удалось скачать шаблон", variant: "destructive" })

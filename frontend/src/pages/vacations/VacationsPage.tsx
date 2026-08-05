@@ -57,7 +57,7 @@ import { EmployeeSearch } from "@/features/employee-search"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
-import { openOrderPrint } from "@/entities/order/orderActions"
+import { openOrderPrint, downloadOrderDocx } from "@/entities/order/orderActions"
 import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import type { OrderCreate } from "@/entities/order/types"
 import { OrderNumberField } from "@/features/OrderNumberField"
@@ -216,7 +216,7 @@ function EmployeeHistoryRow({
   }
 
   const handleOrderDownload = (orderId: number) => {
-    window.open(`${import.meta.env.VITE_API_URL || "/api"}/orders/${orderId}/download`, "_blank")
+    downloadOrderDocx(orderId)
   }
 
   const handleRecalculateConfirm = () => {
