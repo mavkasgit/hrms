@@ -199,7 +199,7 @@ describe("UserSettingsDialog", () => {
     const { onOpenChange } = renderDialog()
     expect(await screen.findByText("ivan")).toBeTruthy()
 
-    fireEvent.click(screen.getByRole("button", { name: /close/i }))
+    fireEvent.click(screen.getByRole("button", { name: /закрыть|close/i }))
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
     expect(
       screen.queryByText("Отменить несохранённые изменения?"),
