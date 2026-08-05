@@ -45,7 +45,7 @@ import {
   useOrderDeletionPreview,
 } from "@/entities/order/useOrders"
 import { useEmployee } from "@/entities/employee/useEmployees"
-import { useCommitOrderDraft, useCreateOrderDraft, useOrderDrafts, useDeleteOrderDraft, useCommitGroupDraft } from "@/entities/order/useOnlyOffice"
+import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
 import { downloadOrderDocx, openOrderEdit, openOrderPrint, openOrderView } from "@/entities/order/orderActions"
 import { failPrintPlaceholder } from "@/shared/utils/print-window"
@@ -55,7 +55,7 @@ import { DocumentModal } from "@/features/document-modal/DocumentModal"
 import { ContractRegistryModal } from "@/pages/ContractRegistryPage"
 import type { Employee } from "@/entities/employee/types"
 import type { Order, OrderType } from "@/entities/order/types"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { getUserAccessLevel } from "@/shared/api/axios"
 import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
@@ -145,7 +145,7 @@ export function OrdersPage() {
   const [collapsed, setCollapsed] = useState(false)
   const [auditLogOpen, setAuditLogOpen] = useState(false)
   const [filterCollapsed, setFilterCollapsed] = useState(true)
-  const [activeTab, setActiveTab] = useState<"all" | "general" | "drafts">("all")
+  const [activeTab, setActiveTab] = useState<"all" | "general">("all")
   const [contractsOpen, setContractsOpen] = useState(false)
   const [contractRegistryOpen, setContractRegistryOpen] = useState(false)
 
@@ -357,6 +357,9 @@ export function OrdersPage() {
   const [extraFieldErrors, setExtraFieldErrors] = useState<Record<string, string>>({})
 
   const orderTypeRef = useRef<HTMLDivElement>(null)
+  // #50: при восстановлении черновика поля приходят из черновика — сброс при
+  // смене типа приказа пропускаем один раз
+  const skipExtraFieldsResetRef = useRef(false)
 
   // Debounce text search fields
   const debouncedOrderNumber = useDebounce(filterOrderNumber, 300)
@@ -544,12 +547,8 @@ export function OrdersPage() {
   const createDraftMutation = useCreateOrderDraft()
   const commitDraftMutation = useCommitOrderDraft()
   const deleteMutation = useDeleteOrder()
-  const { data: draftsList, isLoading: draftsLoading } = useOrderDrafts()
-  const deleteDraftMutation = useDeleteOrderDraft()
-  const commitGroupDraftMutation = useCommitGroupDraft()
 
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)
-  const [deleteDraftId, setDeleteDraftId] = useState<string | null>(null)
   const [showDismissalDialog, setShowDismissalDialog] = useState(false)
 
   const [draftId, setDraftId] = useState<string | null>(null)
@@ -582,10 +581,6 @@ export function OrdersPage() {
       setActiveTab("general")
       return
     }
-    if (tabParam === "drafts") {
-      setActiveTab("drafts")
-      return
-    }
     setActiveTab("all")
   }, [searchParams])
 
@@ -606,6 +601,12 @@ export function OrdersPage() {
 
   // Reset extra fields when order type changes
   useEffect(() => {
+    // При восстановлении черновика (#50) поля уже восстановлены из черновика —
+    // сброс пропускаем один раз
+    if (skipExtraFieldsResetRef.current) {
+      skipExtraFieldsResetRef.current = false
+      return
+    }
     setExtraFields({})
     setExtraFieldErrors({})
   }, [selectedOrderTypeId])
@@ -671,8 +672,15 @@ export function OrdersPage() {
     if (draft.order_type_id) {
       const type = orderTypes.find((t) => t.id === draft.order_type_id && t.is_active)
       if (type) {
+        // #50: при восстановлении не сбрасываем восстановленные поля из-за смены типа
+        if (type.id !== selectedOrderTypeId) skipExtraFieldsResetRef.current = true
         setSelectedOrderTypeId(type.id)
         setOrderTypeSearch(type.name)
+      } else if (orderTypes.length === 0) {
+        // Типы ещё не загрузились — выставляем id по черновику; layout и литера
+        // появятся, когда типы подгрузятся (#50)
+        skipExtraFieldsResetRef.current = true
+        setSelectedOrderTypeId(draft.order_type_id)
       }
     }
     if (draft.order_date) setOrderDate(draft.order_date)
@@ -680,7 +688,7 @@ export function OrdersPage() {
     if (draft.extra_fields && Object.keys(draft.extra_fields).length > 0) {
       setExtraFields(draft.extra_fields)
     }
-  }, [orderTypes])
+  }, [orderTypes, selectedOrderTypeId])
 
   const {
     pendingDraft: recoveryPendingDraft,
@@ -918,9 +926,9 @@ export function OrdersPage() {
   }, [])
 
   const handleTabsChange = (value: string) => {
-    if (value === "all" || value === "general" || value === "drafts") {
+    if (value === "all" || value === "general") {
       setActiveTab(value)
-      navigate(value === "general" ? "/orders?tab=general" : value === "drafts" ? "/orders?tab=drafts" : "/orders")
+      navigate(value === "general" ? "/orders?tab=general" : "/orders")
       return
     }
     if (value === "notifications") {
@@ -963,7 +971,6 @@ export function OrdersPage() {
             <TabsList className="w-full justify-start gap-1 overflow-x-auto">
               <TabsTrigger className="shrink-0" value="all">Все приказы</TabsTrigger>
               <TabsTrigger className="shrink-0" value="general">По основной деятельности</TabsTrigger>
-              <TabsTrigger className="shrink-0" value="drafts">Черновики</TabsTrigger>
               <TabsTrigger className="shrink-0" value="notifications">Уведомления</TabsTrigger>
               <TabsTrigger className="shrink-0" value="statements">Заявления</TabsTrigger>
             </TabsList>
@@ -1736,95 +1743,6 @@ export function OrdersPage() {
         )
       )}
 
-      {/* Drafts table for "drafts" tab */}
-      {activeTab === "drafts" && (
-        draftsLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-full" />
-            ))}
-          </div>
-        ) : !draftsList?.length ? (
-          <EmptyState
-            message="Черновиков нет"
-            description="Создайте приказ — он появится здесь как черновик перед сохранением"
-          />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Тип приказа</TableHead>
-                <TableHead>Сотрудник</TableHead>
-                <TableHead>Дата</TableHead>
-                <TableHead>Номер</TableHead>
-                <TableHead>Создан</TableHead>
-                <TableHead>Статус</TableHead>
-                <TableHead className="text-right">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {draftsList.map((draft) => (
-                <TableRow key={draft.draft_id}>
-                  <TableCell>
-                    <Badge variant="outline">{draft.order_type_name || draft.order_type_code || "—"}</Badge>
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {draft.kind === "group_order"
-                      ? `Групповой приказ — ${draft.group_employee_count || 0} сотрудников`
-                      : draft.employee_name || "—"}
-                  </TableCell>
-                  <TableCell>
-                    {draft.order_date ? formatDate(draft.order_date) : "—"}
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">{draft.order_number || "—"}</TableCell>
-                  <TableCell>
-                    {draft.created_at ? formatDate(draft.created_at) : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{draft.status === "draft" ? "Черновик" : draft.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Редактировать"
-                        onClick={() => openDraftEditorWindow(`/orders/drafts/${draft.draft_id}/edit-docx`)}
-                      >
-                        <FilePen className="h-4 w-4 mr-1" /> Редактировать
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Сохранить как приказ"
-                        onClick={() => {
-                          if (draft.kind === "group_order") {
-                            commitGroupDraftMutation.mutate(draft.draft_id)
-                          } else {
-                            commitDraftMutation.mutate(draft.draft_id)
-                          }
-                        }}
-                      >
-                        <Check className="h-4 w-4 mr-1" /> Сохранить
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Удалить черновик"
-                        className="text-red-500 hover:text-red-700"
-                        onClick={() => setDeleteDraftId(draft.draft_id)}
-                      >
-                        <Trash2 className="h-4 w-4 mr-1" /> Удалить
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )
-      )}
-
       <AlertDialog open={showDismissalDialog} onOpenChange={setShowDismissalDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1852,29 +1770,6 @@ export function OrdersPage() {
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteOrderConfirm} className="bg-red-600 hover:bg-red-700">
               Удалить навсегда
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={deleteDraftId !== null} onOpenChange={(open) => !open && setDeleteDraftId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Удалить черновик?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Черновик будет удалён безвозвратно. Это действие нельзя отменить.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (deleteDraftId) deleteDraftMutation.mutate(deleteDraftId)
-                setDeleteDraftId(null)
-              }}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Удалить
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

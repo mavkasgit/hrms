@@ -115,8 +115,9 @@ export function useOrderFormRecovery({
     if (!hasContent(formState)) return
 
     debounceRef.current = setTimeout(() => {
-      // Если уже есть сохранённый черновик и пользователь не подтвердил перезапись —
-      // запрашиваем подтверждение один раз
+      // Диалог перезаписи запрашиваем только для черновика, который существовал
+      // ДО начала текущего заполнения (снапшот с mount). Черновик, сохранённый
+      // автосейвом этой же сессии, перезаписывается тихо (#49).
       if (existingDraftRef.current && !overwriteConfirmedRef.current && !overwriteCancelledRef.current) {
         setOverwritePrompt(true)
         return
@@ -124,13 +125,26 @@ export function useOrderFormRecovery({
       // После отмены перезаписи не сохраняем (пользователь осознанно отказался)
       if (overwriteCancelledRef.current && !overwriteConfirmedRef.current) return
       writeDraft(formStateRef.current)
-      existingDraftRef.current = readDraft()
     }, DEBOUNCE_MS)
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [formState.employee_id, formState.order_type_id, formState.order_date, formState.order_number, formState.extra_fields])
+
+  // Flush на закрытие/скрытие вкладки (#51): пишем черновик синхронно, чтобы
+  // последний ввод не терялся, если debounce ещё не отработал.
+  useEffect(() => {
+    const handlePageHide = () => {
+      if (!hasContent(formStateRef.current)) return
+      // Те же гейты, что и в debounced автосейве
+      if (existingDraftRef.current && !overwriteConfirmedRef.current && !overwriteCancelledRef.current) return
+      if (overwriteCancelledRef.current && !overwriteConfirmedRef.current) return
+      writeDraft(formStateRef.current)
+    }
+    window.addEventListener("pagehide", handlePageHide)
+    return () => window.removeEventListener("pagehide", handlePageHide)
+  }, [])
 
   const restore = useCallback(() => {
     const draft = pendingDraft ?? readDraft()
@@ -160,7 +174,6 @@ export function useOrderFormRecovery({
     overwriteConfirmedRef.current = true
     setOverwritePrompt(false)
     writeDraft(formStateRef.current)
-    existingDraftRef.current = readDraft()
   }, [])
 
   const cancelOverwrite = useCallback(() => {
