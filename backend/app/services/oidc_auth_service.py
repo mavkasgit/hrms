@@ -281,7 +281,7 @@ class OidcAuthService:
                 # http://localhost:5171/auth/callback → http://localhost:5171/login
                 if "/auth/callback" in redirect:
                     params["post_logout_redirect_uri"] = redirect.replace(
-                        "/auth/callback", "/login?logout=1"
+                        "/auth/callback", "/login"
                     )
         if params:
             sep = "&" if "?" in base else "?"

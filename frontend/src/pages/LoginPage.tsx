@@ -60,27 +60,25 @@ export function LoginPage() {
     }
   }, [])
 
-  const isLogoutAction = typeof window !== "undefined" && window.location.search.includes("logout")
-
   async function handleOidcLogin(forceReauth = false) {
     if (!oidcConfig || !oidcEnabled) return
     setError(null)
     setOidcStarting(true)
     try {
-      await startOidcLogin(oidcConfig, { forceReauth: forceReauth || isLogoutAction })
+      await startOidcLogin(oidcConfig, { forceReauth })
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Ошибка входа через единый вход")
       setOidcStarting(false)
     }
   }
 
-  // Auto-redirect to Authentik when reachable (unless user just logged out)
+  // Auto-redirect to Authentik when reachable
   useEffect(() => {
-    if (!oidcLoaded || !oidcEnabled || oidcUnreachable || oidcAutoStartedRef.current || isLogoutAction) return
+    if (!oidcLoaded || !oidcEnabled || oidcUnreachable || oidcAutoStartedRef.current) return
     oidcAutoStartedRef.current = true
     void handleOidcLogin()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [oidcLoaded, oidcEnabled, oidcUnreachable, isLogoutAction])
+  }, [oidcLoaded, oidcEnabled, oidcUnreachable])
 
   async function handleBreakGlassSubmit(e: React.FormEvent) {
     e.preventDefault()

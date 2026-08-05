@@ -348,7 +348,7 @@ export async function fetchOidcLogoutUrl(): Promise<OidcLogoutUrlResponse> {
       qs.set("id_token_hint", idToken)
       try {
         if (typeof window !== "undefined" && window.location?.origin) {
-          qs.set("post_logout_redirect_uri", `${window.location.origin}/login?logout=1`)
+          qs.set("post_logout_redirect_uri", `${window.location.origin}/login`)
         }
       } catch {
         /* ignore */
