@@ -20,23 +20,28 @@ function todayIso(): string {
 }
 
 describe("DocumentDatePicker", () => {
-  it("показывает предупреждение при будущей дате", () => {
-    render(<DocumentDatePicker value={shiftedIso(30)} onChange={() => {}} label="Дата приказа" />)
+  it("показывает предупреждение при будущей дате если warnIfFuture", () => {
+    render(<DocumentDatePicker value={shiftedIso(30)} onChange={() => {}} label="Дата приказа" warnIfFuture />)
     expect(screen.getByText("Дата указана в будущем")).toBeInTheDocument()
   })
 
+  it("не показывает предупреждение при будущей дате по умолчанию", () => {
+    render(<DocumentDatePicker value={shiftedIso(30)} onChange={() => {}} label="Дата приказа" />)
+    expect(screen.queryByText("Дата указана в будущем")).not.toBeInTheDocument()
+  })
+
   it("не показывает предупреждение при прошедшей дате", () => {
-    render(<DocumentDatePicker value={shiftedIso(-30)} onChange={() => {}} label="Дата приказа" />)
+    render(<DocumentDatePicker value={shiftedIso(-30)} onChange={() => {}} label="Дата приказа" warnIfFuture />)
     expect(screen.queryByText("Дата указана в будущем")).not.toBeInTheDocument()
   })
 
   it("не показывает предупреждение при сегодняшней дате", () => {
-    render(<DocumentDatePicker value={todayIso()} onChange={() => {}} label="Дата приказа" />)
+    render(<DocumentDatePicker value={todayIso()} onChange={() => {}} label="Дата приказа" warnIfFuture />)
     expect(screen.queryByText("Дата указана в будущем")).not.toBeInTheDocument()
   })
 
   it("не показывает предупреждение при пустом значении", () => {
-    render(<DocumentDatePicker value="" onChange={() => {}} label="Дата приказа" />)
+    render(<DocumentDatePicker value="" onChange={() => {}} label="Дата приказа" warnIfFuture />)
     expect(screen.queryByText("Дата указана в будущем")).not.toBeInTheDocument()
   })
 

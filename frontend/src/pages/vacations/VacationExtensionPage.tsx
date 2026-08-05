@@ -166,7 +166,7 @@ export function VacationExtensionPage() {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="flex flex-wrap gap-4">
-                        <div className="w-[130px]"><DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />{errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}</div>
+                        <div className="w-[130px]"><DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} warnIfFuture />{errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}</div>
                         <OrderNumberField value={orderNumber} onChange={setOrderNumber} orderTypeId={extensionOrderType?.id} orderTypes={orderTypes} required error={errors.orderNumber} />
                       </div>
                       <div className="flex flex-wrap gap-4">

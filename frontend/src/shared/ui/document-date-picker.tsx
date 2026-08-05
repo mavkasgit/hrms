@@ -9,6 +9,8 @@ interface DocumentDatePickerProps {
   className?: string
   disabled?: boolean
   autoFocus?: boolean
+  /** Показывать предупреждение при будущей дате (по умолчанию false) */
+  warnIfFuture?: boolean
 }
 
 /** Сегодняшняя дата в локальном часовом поясе (ISO yyyy-mm-dd). */
@@ -23,13 +25,15 @@ function todayIso(): string {
 /**
  * DatePicker для дат приказов/документов.
  * Пассивное предупреждение при будущей дате — не блокирует отправку.
+ * Включается явно через warnIfFuture.
  */
 export function DocumentDatePicker(props: DocumentDatePickerProps) {
-  const isFuture = props.value !== "" && props.value > todayIso()
+  const { warnIfFuture = false, ...datePickerProps } = props
+  const isFuture = warnIfFuture && props.value !== "" && props.value > todayIso()
 
   return (
     <div>
-      <DatePicker {...props} />
+      <DatePicker {...datePickerProps} />
       {isFuture && (
         <p role="status" className="text-xs text-yellow-600 mt-1 whitespace-nowrap">
           Дата указана в будущем

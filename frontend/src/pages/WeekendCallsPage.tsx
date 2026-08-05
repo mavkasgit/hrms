@@ -688,7 +688,7 @@ export function WeekendCallsPage() {
 
               <div className="flex gap-4">
                 <div className="w-[130px]">
-                  <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                  <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} warnIfFuture />
                   {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                 </div>
                 <OrderNumberField
@@ -780,7 +780,7 @@ export function WeekendCallsPage() {
             <div className="grid gap-4">
               <div className="flex gap-4">
                 <div className="w-[130px]">
-                  <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                  <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} warnIfFuture />
                   {groupErrors.orderDate && <p className="text-xs text-red-500 mt-1">{groupErrors.orderDate}</p>}
                 </div>
                 <OrderNumberField

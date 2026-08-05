@@ -1050,7 +1050,7 @@ export function VacationsPage() {
 
               <div className="flex gap-4 items-end">
                 <div className="w-[130px]">
-                  <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                  <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} warnIfFuture />
                   {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                 </div>
                 <OrderNumberField

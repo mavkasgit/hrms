@@ -1020,6 +1020,7 @@ export function OrdersPage() {
                       value={orderDate}
                       onChange={setOrderDate}
                       required
+                      warnIfFuture
                     />
                     {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                   </div>
@@ -1182,6 +1183,7 @@ export function OrdersPage() {
                   value={generalOrderDate}
                   onChange={setGeneralOrderDate}
                   required
+                  warnIfFuture
                 />
                 {generalOrderErrors.orderDate && <p className="text-xs text-red-500 mt-1">{generalOrderErrors.orderDate}</p>}
               </div>

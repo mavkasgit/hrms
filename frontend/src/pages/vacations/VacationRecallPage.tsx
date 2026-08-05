@@ -170,7 +170,7 @@ export function VacationRecallPage() {
                     <div className="space-y-4">
                       <div className="flex flex-wrap gap-4">
                         <div className="w-[130px]">
-                          <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} />
+                          <DocumentDatePicker label="Дата приказа *" value={orderDate} onChange={setOrderDate} warnIfFuture />
                           {errors.orderDate && <p className="text-xs text-red-500 mt-1">{errors.orderDate}</p>}
                         </div>
                         <OrderNumberField value={orderNumber} onChange={setOrderNumber} orderTypeId={recallOrderType?.id} orderTypes={orderTypes} required error={errors.orderNumber} />
