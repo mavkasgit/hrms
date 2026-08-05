@@ -26,8 +26,12 @@ export interface UserSettingsContextValue {
 
   /** Текущий профиль (null — ещё грузится / не загрузился). */
   profile: UserProfile | null
-  /** Перезагрузить профиль с сервера и уведомить хост. */
-  refreshProfile: () => Promise<UserProfile | null>
+  /**
+   * Перезагрузить профиль с сервера и уведомить хост.
+   * `force=true` → getProfile(true) (refresh=1, принудительный pull из IdP,
+   * используется только после смены аватара). Обычный вызов — без форса.
+   */
+  refreshProfile: (force?: boolean) => Promise<UserProfile | null>
 
   /** Применить тему/язык в хосте (optimistic). */
   applyTheme: (theme: UserTheme) => void

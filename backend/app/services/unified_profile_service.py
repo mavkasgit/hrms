@@ -8,6 +8,11 @@ Fields:
   locale      → Authentik user.attributes.profile_locale
   theme       → Authentik user.attributes.profile_theme
 
+Канон user-settings 2.0.0: ФИО/email read-only для пользователя — приложения
+только читают и кэшируют их из IdP и никогда не пишут в Authentik (изменяет
+администратор IdP). Аватар остаётся self-service: bootstrap-push локального
+avatar_seed при пустом удалённом сохраняется.
+
 Link key: local users.authentik_sub == Authentik user.uuid (OIDC sub).
 When AUTHENTIK_API_TOKEN is missing or user has no sub → local-only mode.
 """
@@ -245,6 +250,12 @@ async def sync_local_from_idp(
 ) -> UnifiedProfile | None:
     """
     Pull IdP profile; if IdP avatar empty and local has seed — bootstrap push.
+
+    Канон user-settings 2.0.0: ФИО/email приложения только читают из IdP —
+    локальный full_name/email в Authentik НЕ пишут (это поле администрируется
+    на стороне IdP). Bootstrap-push остаётся только для аватара (avatar_seed):
+    при пустом удалённом аватаре локальный seed проталкивается в IdP, чтобы
+    выбор аватара был согласован между приложениями.
 
     Returns merged snapshot to apply to local cache, or None if no IdP.
     """

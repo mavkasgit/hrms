@@ -182,15 +182,15 @@ async def test_avatar_pushes_to_authentik(async_client, db_session: AsyncSession
         app.dependency_overrides.pop(get_current_user, None)
 
 
-async def test_profile_name_push(async_client, db_session: AsyncSession, idp_api_on):
+async def test_profile_name_blocked_403(async_client, db_session: AsyncSession, idp_api_on):
+    """Канон 2.0.0: PATCH full_name → 403, push в Authentik не вызывается."""
     import uuid as uuid_mod
 
     from app.api.deps import get_current_user, CurrentUser
-    from app.services.unified_profile_service import UnifiedProfile
 
     uname = f"up_name_{uuid_mod.uuid4().hex[:8]}"
     sub = f"sub-{uuid_mod.uuid4().hex}"
-    await _make_user(db_session, username=uname, authentik_sub=sub)
+    await _make_user(db_session, username=uname, full_name="Old", authentik_sub=sub)
 
     async def override_user():
         return CurrentUser(uname, role="admin", full_name="Old")
@@ -200,26 +200,78 @@ async def test_profile_name_push(async_client, db_session: AsyncSession, idp_api
         with patch(
             "app.services.unified_profile_service.push_profile_by_sub",
             new_callable=AsyncMock,
-            return_value=UnifiedProfile(
-                full_name="New Name",
-                avatar_seed="aabbccdd",
-                authentik_pk=1,
-                source="idp",
-            ),
         ) as push:
             res = await async_client.patch(
                 "/api/auth/me/profile",
                 json={"full_name": "New Name"},
                 headers=_auth(),
             )
-            assert res.status_code == 200
-            body = res.json()
-            assert body["full_name"] == "New Name"
-            push.assert_awaited_once()
-            assert push.await_args is not None
-            assert push.await_args.kwargs.get("full_name") == "New Name"
+            assert res.status_code == 403
+            assert "администратор" in res.json()["detail"]
+            push.assert_not_called()
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_sync_local_from_idp_no_name_email_push(idp_api_on):
+    """Bootstrap-push ФИО/email удалён: при пустом удалённом full_name НЕ пишется.
+
+    sync_local_from_idp может писать в Authentik только avatar_seed (bootstrap),
+    никогда full_name/email (канон 2.0.0 — приложения только читают их из IdP).
+    """
+    import uuid as uuid_mod
+    from unittest.mock import patch, AsyncMock
+
+    from app.services import unified_profile_service as ups
+    from app.services.unified_profile_service import UnifiedProfile
+
+    sub = f"sub-{uuid_mod.uuid4().hex}"
+    # Удалённый профиль: полное имя пустое, email пустой, аватар пустой →
+    # bootstrap имеет право протолкнуть ТОЛЬКО avatar_seed.
+    remote = UnifiedProfile(
+        full_name=None,
+        avatar_seed=None,
+        email=None,
+        authentik_pk=1,
+        source="idp",
+    )
+    bootstrapped = UnifiedProfile(
+        full_name=None,
+        avatar_seed="aabbccdd",
+        email=None,
+        authentik_pk=1,
+        source="bootstrap",
+    )
+
+    with (
+        patch(
+            "app.services.unified_profile_service.fetch_profile_by_sub",
+            new_callable=AsyncMock,
+            return_value=remote,
+        ),
+        patch(
+            "app.services.unified_profile_service.push_profile_by_sub",
+            new_callable=AsyncMock,
+            return_value=bootstrapped,
+        ) as push,
+    ):
+        snapshot = await ups.sync_local_from_idp(
+            authentik_sub=sub,
+            local_full_name="Local Name",
+            local_avatar_seed="aabbccdd",
+            local_email="local@example.com",
+        )
+
+    assert snapshot is not None
+    assert snapshot.avatar_seed == "aabbccdd"
+    assert snapshot.source == "bootstrap"
+    # Единственный push — аватар; full_name/email не передаются вообще.
+    push.assert_awaited_once()
+    assert push.await_args is not None
+    assert push.await_args.args[0] == sub
+    assert push.await_args.kwargs.get("avatar_seed") == "aabbccdd"
+    assert "full_name" not in push.await_args.kwargs
+    assert "email" not in push.await_args.kwargs
 
 
 async def test_me_pulls_from_idp(async_client, db_session: AsyncSession, idp_api_on):

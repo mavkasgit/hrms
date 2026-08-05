@@ -1,21 +1,21 @@
 {
-  "version": "1.0.2",
+  "version": "2.0.0",
   "core": {
-    "frontend/src/modules/user-settings/UserSettingsDialog.tsx": "ada5f1ed431a0590d0f16e273464990d0aca4ac53cb03c7d800c8866401489a6",
-    "frontend/src/modules/user-settings/components/ProfilePanel.tsx": "a5ddb489445c6076bf66944446d68f4ae8fe39fb95db8727bfb13b7da53f5a5b",
+    "frontend/src/modules/user-settings/UserSettingsDialog.tsx": "5d0fead26fbc42cd1425d48a3b92d0eb86be216318c1190fb92da01745548874",
+    "frontend/src/modules/user-settings/components/ProfilePanel.tsx": "9a27400da84f7169700b46e90f2c100d1587140b4a4c357be2dcf2ee303d063e",
     "frontend/src/modules/user-settings/components/AppearancePanel.tsx": "8298cfe952f1bd6e50957d94f212c34f3d7b320e2bb6570f05d430e1ed89dc65",
-    "frontend/src/modules/user-settings/components/SecurityPanel.tsx": "235b48cda1c85e25869327cd77ab502188f1021ee159bc912252244b8db7b3f5",
-    "frontend/src/modules/user-settings/components/SessionsPanel.tsx": "53ae09d2c72f01d5e44a37a5791e88589ffed32bc3ba8e6156b817c58d096999",
-    "frontend/src/modules/user-settings/components/AvatarPickerDialog.tsx": "83a6d7540f51a3d0cf893ea40f76af666619f655f499946cf123d30079b3a64b",
+    "frontend/src/modules/user-settings/components/SecurityPanel.tsx": "14be1d2384b1c7419b7d3fce038692c9b3cce4938ced4eb580d989a1189dcd33",
+    "frontend/src/modules/user-settings/components/SessionsPanel.tsx": "490d0d2d93c099393c6837a4cc6cb13c00f616703faa0a2b061d19559e81fcc8",
+    "frontend/src/modules/user-settings/components/AvatarPickerDialog.tsx": "8fbd6c31f986c076093e52020d23df4dd392c1a77bcd5622baecce48d971dc75",
     "frontend/src/modules/user-settings/components/AvatarArt.tsx": "129f556fa14a5578d8232766568f4413b51b2f68e7c90d1c54c9a3f5c65a8a89",
-    "frontend/src/modules/user-settings/types.ts": "7992336cc73ab359854cd7e2a4546a5cae6f099c7cef4ffd58ecdfa87220493c",
-    "frontend/src/modules/user-settings/context.tsx": "b24b897132589361a4534d207c7b50ef1f79e76ac58645885665b33d54a69a31",
+    "frontend/src/modules/user-settings/types.ts": "69e7a2cfce51f358c622f86a7576b4dde5bfc709b71f422c3c19f5c7aad2bf1c",
+    "frontend/src/modules/user-settings/context.tsx": "1995688e6a9287c8111e0becb77ecc412b9b4fa3716cb3bb4458700d12b35d80",
     "frontend/src/modules/user-settings/lib/avatar-seed.ts": "89b6f990a4b78112ac52e5adc4a414bd2121730af5fee155e7871edd121d48be",
     "frontend/src/modules/user-settings/lib/datetime.ts": "babdf4df13e68ab18cd0dd029f4c46191e1b56de2145aadbc972e5cc68c4a723",
     "frontend/src/modules/user-settings/lib/device.ts": "46a842d5ff8855a7246dcde9200909b111b95f216f2136d79d778e9f5f17978a",
-    "frontend/src/modules/user-settings/i18n/ru.ts": "fc2328738e062411a926d5d9346809e4bc12616df7694dc4067a7e2a97772d7a",
+    "frontend/src/modules/user-settings/i18n/ru.ts": "e457f068991147ea21358a0a95b0d529e5cd5392abef00d440ecefc87b4908c9",
     "backend/app/services/authentik_client.py": "a24660ad004c2896f9ed58a9b6bbad6b30258893f0af70634f71ee044979b289",
-    "backend/app/services/unified_profile_service.py": "f33b7c800625ec4449736b02e79129bba8a5ee7b746301a81ed5ec6882f1fb85"
+    "backend/app/services/unified_profile_service.py": "fa0981d6204879f8f8b3de515833e5ab0fb6acbc13fffb8240e47d029b3b005f"
   },
   "exceptions": [
     "backend/app/core/host_net.py",

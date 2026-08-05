@@ -43,10 +43,9 @@
     "test:db:down": "docker compose -f infra/compose/docker-compose.pytest.yml down",
     "test:db:wait": "node scripts/run.js wait-for-postgres hrms-postgres-pytest hrms_user hrms_test 60",
     "test:pytest": "npm run test:db:up && npm run test:db:wait && cross-env HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5436/hrms_test npm run _test:pytest",
-    "test:pytest:fast": "npm run test:db:up && npm run test:db:wait && cross-env HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5436/hrms_test npm run _test:pytest:fast",
+    "test:pytest:fast": "npm run test:pytest",
     "test:pytest:lf": "npm run test:db:up && npm run test:db:wait && cross-env HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5436/hrms_test npm run _test:pytest:lf",
-    "_test:pytest": "cd backend && python -m pytest -q",
-    "_test:pytest:fast": "cd backend && python -m pytest -n auto --dist=loadfile -q",
+    "_test:pytest": "cd backend && python -m pytest -n auto --dist=loadfile -q",
     "_test:pytest:lf": "cd backend && python -m pytest --lf -q",
     "test:e2e": "npx playwright test",
     "test:e2e:smoke": "npx playwright test --project=setup --project=smoke",
@@ -56,7 +55,9 @@
     "test:e2e:oidc": "npx cross-env E2E_OIDC=1 npx playwright test --project=auth e2e/auth/oidc-login.spec.ts",
     "test:e2e:regression": "npx playwright test --project=setup --project=smoke --project=ui --project=api --project=auth",
     "test:e2e:smoke:parallel": "npx cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npx playwright test --project=setup --project=smoke",
-    "test:e2e:ui:parallel": "npx cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npx playwright test --project=setup --project=ui"
+    "test:e2e:ui:parallel": "npx cross-env PW_WORKERS=2 E2E_BROWSER_MODE=managed npx playwright test --project=setup --project=ui",
+    "_test:pytest:full": "cd backend && python -m pytest -q",
+    "test:pytest:full": "npm run test:db:up && npm run test:db:wait && cross-env HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5436/hrms_test npm run _test:pytest:full"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

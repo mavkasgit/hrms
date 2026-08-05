@@ -58,6 +58,7 @@ export const en: UserSettingsDict = {
     idpTitle: "Single sign-on (SSO)",
     idpDescription:
       "MFA and sign-in methods are managed in the SSO system.",
+    idpDashboard: "SSO dashboard",
     idpOpen: "Open sign-in settings",
   },
   sessions: {
@@ -80,6 +81,7 @@ export const en: UserSettingsDict = {
     unknownIp: "IP unknown",
     lastActive: "Active",
     signedIn: "Signed in",
+    lastOfN: "Last {shown} of {total}",
     noteText:
       "If you suspect unauthorized access, revoke other sessions — the session is revoked server-side and sign-in will be required again.",
     historyTitle: "Sign-in history",

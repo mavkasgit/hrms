@@ -2,7 +2,7 @@ import type {
   IdpLinks,
   LoginEvent,
   ProfilePatch,
-  SessionInfo,
+  SessionListResult,
   UserProfile,
 } from "../types"
 import type { UserSettingsApi } from "./adapter"
@@ -119,7 +119,8 @@ export function createHttpAdapter(options: HttpAdapterOptions = {}): UserSetting
 
     getIdpLinks: () => request<IdpLinks>("GET", ep.idpLinks),
 
-    listSessions: () => request<SessionInfo[]>("GET", ep.sessions),
+    listSessions: () =>
+      request<SessionListResult>("GET", ep.sessions),
 
     revokeSession: async (id) => {
       await request<void>("DELETE", ep.session(id))

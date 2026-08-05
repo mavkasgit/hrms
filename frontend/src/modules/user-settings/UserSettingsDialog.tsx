@@ -103,18 +103,22 @@ export function UserSettingsDialog({
     )
   }, [])
 
-  const refreshProfile = useCallback(async (): Promise<UserProfile | null> => {
-    try {
-      // refresh=1: при открытии и после сохранения синхронизируем профиль с IdP,
-      // не дожидаясь TTL-кэша бэкенда (мгновенный перенос между приложениями).
-      const next = await api.getProfile(true)
-      setProfile(next)
-      callbacks?.onProfileUpdated?.(next)
-      return next
-    } catch {
-      return null
-    }
-  }, [api, callbacks])
+  const refreshProfile = useCallback(
+    async (force = false): Promise<UserProfile | null> => {
+      try {
+        // refresh=1 — только после смены аватара: мгновенная синхронизация с IdP,
+        // обходя TTL-кэш бэкенда (перенос выбора между приложениями).
+        // Открытие диалога идёт БЕЗ форса — обычный запрос на кэшированный профиль.
+        const next = await api.getProfile(force)
+        setProfile(next)
+        callbacks?.onProfileUpdated?.(next)
+        return next
+      } catch {
+        return null
+      }
+    },
+    [api, callbacks],
+  )
 
   // Загрузка профиля при открытии; сброс локального состояния.
   useEffect(() => {

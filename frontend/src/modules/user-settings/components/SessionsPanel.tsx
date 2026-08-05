@@ -13,7 +13,7 @@ import {
 import { useUserSettings } from "../context"
 import { formatDateTime, formatRelativeTime } from "../lib/datetime"
 import { detectDeviceKind } from "../lib/device"
-import type { LoginEvent, SessionInfo } from "../types"
+import type { LoginEvent, SessionInfo, SessionListResult } from "../types"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,7 +53,7 @@ type ConfirmState =
 export function SessionsPanel() {
   const { api, dict, notify, onLogoutRequest } = useUserSettings()
 
-  const [sessions, setSessions] = useState<SessionInfo[]>([])
+  const [list, setList] = useState<SessionListResult>({ sessions: [], total: 0 })
   const [events, setEvents] = useState<LoginEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
@@ -61,6 +61,8 @@ export function SessionsPanel() {
   const [revokingId, setRevokingId] = useState<string | null>(null)
   const [confirmState, setConfirmState] = useState<ConfirmState>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
+
+  const { sessions, total } = list
 
   const intl = dict.meta.intl
   const methodLabel = (m: string | null | undefined) =>
@@ -71,11 +73,11 @@ export function SessionsPanel() {
     setSessionsError(null)
     setEventsError(null)
     const [sessionsResult, eventsResult] = await Promise.allSettled([
-      api.listSessions ? api.listSessions() : Promise.resolve([]),
+      api.listSessions ? api.listSessions() : Promise.resolve({ sessions: [], total: 0 }),
       api.listLoginEvents ? api.listLoginEvents(50) : Promise.resolve([]),
     ])
     if (sessionsResult.status === "fulfilled") {
-      setSessions(sessionsResult.value)
+      setList(sessionsResult.value)
     } else {
       setSessionsError(dict.errors.sessions)
     }
@@ -134,6 +136,13 @@ export function SessionsPanel() {
 
   const hasOthers = sessions.some((s) => !s.is_current)
 
+  const shownLabel =
+    !loading && total > 0
+      ? dict.sessions.lastOfN
+          .replace("{shown}", String(sessions.length))
+          .replace("{total}", String(total))
+      : null
+
   return (
     <div className="space-y-4">
       <Card>
@@ -142,9 +151,16 @@ export function SessionsPanel() {
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <MonitorSmartphone className="h-4 w-4" />
             </div>
-            <p className="text-xs text-muted-foreground">
-              {dict.sessions.description}
-            </p>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">
+                {dict.sessions.description}
+              </p>
+              {shownLabel && (
+                <p className="mt-0.5 text-[11px] text-muted-foreground/80">
+                  {shownLabel}
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button

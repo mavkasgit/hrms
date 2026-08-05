@@ -26,10 +26,8 @@ export interface UserProfile {
   theme?: UserTheme | null
 }
 
-/** Патч профиля (только изменённые поля). */
+/** Патч профиля (только изменённые поля). ФИО/email read-only (канон 2.0.0) — не входят. */
 export interface ProfilePatch {
-  full_name?: string
-  email?: string
   locale?: UserLocale
   theme?: UserTheme
 }
@@ -44,6 +42,15 @@ export interface SessionInfo {
   created_at: string
   last_seen_at: string
   is_current: boolean
+}
+
+/**
+ * Ответ GET /auth/sessions (канон user-settings 2.0.0):
+ * последние 10 сессий по last_seen_at DESC + общий счёт активных сессий.
+ */
+export interface SessionListResult {
+  sessions: SessionInfo[]
+  total: number
 }
 
 /** Событие входа (успешное или нет). */
@@ -61,7 +68,10 @@ export interface LoginEvent {
 /** Ссылки на внешний IdP (единый вход), если он настроен. */
 export interface IdpLinks {
   oidc_enabled: boolean
+  /** Настройки входа Authentik: {base}/if/user/#/settings. */
   user_settings_url: string | null
+  /** Дашборд SSO Authentik: {base}/if/user/. */
+  sso_dashboard_url: string | null
 }
 
 /** Уровень уведомления для callbacks.notify. */

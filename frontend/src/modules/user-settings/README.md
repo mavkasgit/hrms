@@ -80,15 +80,21 @@ const api = createHttpAdapter({
 | Метод адаптера        | HTTP                                    |
 | --------------------- | --------------------------------------- |
 | getProfile            | `GET /auth/me`                          |
-| updateProfile         | `PATCH /auth/me/profile`                |
+| updateProfile         | `PATCH /auth/me/profile` (theme/locale; ФИО/email read-only → 403) |
 | updateAvatar          | `PATCH /auth/me/avatar`                 |
 | getIdpLinks           | `GET /auth/me/links`                    |
-| listSessions          | `GET /auth/sessions`                    |
+| listSessions          | `GET /auth/sessions` → `{sessions: [...10], total: N}` |
 | revokeSession         | `DELETE /auth/sessions/{id}`            |
 | revokeOtherSessions   | `DELETE /auth/sessions/others`          |
 | listLoginEvents       | `GET /auth/me/login-events?limit=N`     |
 
 Любой путь переопределяется через `createHttpAdapter({ endpoints })`.
+
+Примечание (канон 2.0.0): `updateProfile` не принимает `full_name`/`email` —
+они read-only и задаются администратором IdP; аватар меняется через
+`updateAvatar` (после него `getProfile(true)` — принудительный pull из IdP).
+`listSessions` возвращает объект `{sessions, total}`, где `sessions` — последние
+10 сессий по активности, а `total` — общее число активных сессий.
 
 ## Структура
 

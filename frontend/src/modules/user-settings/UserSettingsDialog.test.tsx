@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { UserSettingsDialog } from "./UserSettingsDialog"
 import type { UserSettingsApi } from "./api/adapter"
-import type { UserProfile } from "./types"
+import type { SessionListResult, UserProfile } from "./types"
 
 const profile: UserProfile = {
   username: "ivan",
@@ -16,6 +16,19 @@ const profile: UserProfile = {
   theme: "system",
 }
 
+function makeSession(id: string, isCurrent: boolean) {
+  return {
+    id,
+    device_label: `Session ${id}`,
+    ip_address: "10.0.0.1",
+    user_agent: null,
+    login_method: "oidc",
+    created_at: "2026-07-20T09:00:00Z",
+    last_seen_at: "2026-07-20T10:00:00Z",
+    is_current: isCurrent,
+  }
+}
+
 function createApi(overrides: Partial<UserSettingsApi> = {}): UserSettingsApi {
   return {
     getProfile: vi.fn(async () => profile),
@@ -24,19 +37,12 @@ function createApi(overrides: Partial<UserSettingsApi> = {}): UserSettingsApi {
     getIdpLinks: vi.fn(async () => ({
       oidc_enabled: false,
       user_settings_url: null,
+      sso_dashboard_url: null,
     })),
-    listSessions: vi.fn(async () => [
-      {
-        id: "s1",
-        device_label: "Windows · Chrome",
-        ip_address: "10.0.0.1",
-        user_agent: null,
-        login_method: "password",
-        created_at: "2026-07-20T09:00:00Z",
-        last_seen_at: "2026-07-20T10:00:00Z",
-        is_current: true,
-      },
-    ]),
+    listSessions: vi.fn(async (): Promise<SessionListResult> => ({
+      sessions: [makeSession("s1", true)],
+      total: 1,
+    })),
     revokeSession: vi.fn(async () => undefined),
     revokeOtherSessions: vi.fn(async () => undefined),
     listLoginEvents: vi.fn(async () => []),
@@ -64,24 +70,38 @@ describe("UserSettingsDialog", () => {
     expect(
       screen.getByRole("heading", { name: "Профиль" }),
     ).toBeTruthy()
-    // Мгновенная синхронизация: при открытии запрашиваем refresh=1
-    expect(api.getProfile).toHaveBeenCalledWith(true)
+    // Открытие диалога — БЕЗ refresh-форса (TTL-кэш бэкенда)
+    expect(api.getProfile).toHaveBeenCalledWith(false)
   })
 
-  it("перечитывает профиль с refresh=1 после сохранения", async () => {
+  it("показывает ФИО/email как read-only (без формы и SaveBar)", async () => {
+    const api = createApi()
+    renderDialog(api)
+
+    // ФИО видно и в сайдбаре диалога, и в read-only поле
+    expect((await screen.findAllByText("Иван Иванов")).length).toBeGreaterThan(0)
+    expect(screen.getByText("ivan@example.com")).toBeTruthy()
+    // Нет редактируемых полей ввода
+    expect(screen.queryByRole("textbox")).toBeNull()
+    // Нет SaveBar
+    expect(screen.queryByRole("button", { name: "Сохранить" })).toBeNull()
+  })
+
+  it("после смены аватара вызывает getProfile с refresh=1", async () => {
     const api = createApi()
     renderDialog(api)
     expect(await screen.findByText("ivan")).toBeTruthy()
 
-    const nameInput = screen.getByLabelText("Полное имя")
-    fireEvent.change(nameInput, { target: { value: "Новое Имя" } })
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }))
+    // Открываем пикер аватара (аватар остаётся self-service)
+    fireEvent.click(screen.getByRole("button", { name: "Изменить аватар" }))
+    const previews = await screen.findAllByLabelText(/Выбрать аватар/)
+    fireEvent.click(previews[0])
 
-    await waitFor(() => expect(api.updateProfile).toHaveBeenCalled())
+    await waitFor(() => expect(api.updateAvatar).toHaveBeenCalled())
     await waitFor(() => expect(api.getProfile).toHaveBeenLastCalledWith(true))
   })
 
-  it("переключается на раздел «Сессии» и показывает активные сеансы", async () => {
+  it("переключается на раздел «Сессии» и показывает счётчик «последние N из total»", async () => {
     renderDialog()
     expect(await screen.findByText("ivan")).toBeTruthy()
 
@@ -90,35 +110,43 @@ describe("UserSettingsDialog", () => {
     expect(
       await screen.findByRole("heading", { name: "Активные сессии" }),
     ).toBeTruthy()
-    expect(await screen.findByText("Windows · Chrome")).toBeTruthy()
+    expect(await screen.findByText("Session s1")).toBeTruthy()
     expect(screen.getByText("Текущий сеанс")).toBeTruthy()
+    expect(screen.getByText("Последние 1 из 1")).toBeTruthy()
   })
 
-  it("спрашивает подтверждение при закрытии с несохранёнными изменениями", async () => {
+  it("в «Сессиях» показывает максимум 10 из N (последние 10 из 12)", async () => {
+    const sessions = Array.from({ length: 12 }, (_, i) =>
+      makeSession(`s${i}`, i === 0),
+    )
+    const api = createApi({
+      listSessions: vi.fn(async (): Promise<SessionListResult> => ({
+        sessions: sessions.slice(0, 10),
+        total: sessions.length,
+      })),
+    })
+    renderDialog(api)
+    expect(await screen.findByText("ivan")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Сессии" }))
+    expect(await screen.findByText("Последние 10 из 12")).toBeTruthy()
+    // Рендерится только список sessions (10), не все 12
+    expect(screen.getAllByText(/^Session s\d+$/).length).toBe(10)
+    // Кнопка «завершить все остальные» остаётся
+    expect(
+      screen.getByRole("button", { name: "Завершить другие сессии" }),
+    ).toBeTruthy()
+  })
+
+  it("закрывает диалог без подтверждения (read-only форма не «грязнится»)", async () => {
     const { onOpenChange } = renderDialog()
     expect(await screen.findByText("ivan")).toBeTruthy()
 
-    // «Загрязняем» форму имени
-    const nameInput = screen.getByLabelText("Полное имя")
-    fireEvent.change(nameInput, { target: { value: "Новое Имя" } })
-
-    // Пытаемся закрыть диалог крестиком
     fireEvent.click(screen.getByRole("button", { name: /close/i }))
-
-    // Диалог НЕ закрылся — вместо этого подтверждение
-    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
     expect(
-      await screen.findByText("Отменить несохранённые изменения?"),
-    ).toBeTruthy()
-
-    // «Продолжить редактирование» — остаёмся в диалоге
-    fireEvent.click(screen.getByText("Продолжить редактирование"))
-    await waitFor(() =>
-      expect(
-        screen.queryByText("Отменить несохранённые изменения?"),
-      ).toBeNull(),
-    )
-    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+      screen.queryByText("Отменить несохранённые изменения?"),
+    ).toBeNull()
   })
 
   it("скрывает раздел «Сессии», если адаптер не умеет listSessions", async () => {
@@ -133,31 +161,51 @@ describe("UserSettingsDialog", () => {
     expect(screen.queryByRole("button", { name: "Сессии" })).toBeNull()
   })
 
-  it("в «Безопасности» показывает только SSO-карточку, без формы пароля", async () => {
+  it("в «Безопасности» показывает две кнопки SSO с корректными URL", async () => {
     const api = createApi({
       getIdpLinks: vi.fn(async () => ({
         oidc_enabled: true,
-        user_settings_url: "https://sso.example.com/settings",
+        user_settings_url: "https://sso.example.com/if/user/#/settings",
+        sso_dashboard_url: "https://sso.example.com/if/user/",
       })),
     })
-    renderDialog(api)
-    expect(await screen.findByText("ivan")).toBeTruthy()
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null)
+    try {
+      renderDialog(api)
+      expect(await screen.findByText("ivan")).toBeTruthy()
 
-    fireEvent.click(screen.getByRole("button", { name: "Безопасность" }))
+      fireEvent.click(screen.getByRole("button", { name: "Безопасность" }))
 
-    // SSO-карточка с источниками входа
-    expect(
-      await screen.findByText("Единый вход (SSO)"),
-    ).toBeTruthy()
-    expect(
-      screen.getByRole("button", { name: "Открыть настройки входа" }),
-    ).toBeTruthy()
+      const dashboard = await screen.findByRole("button", {
+        name: "Дашборд SSO",
+      })
+      const settings = screen.getByRole("button", {
+        name: "Открыть настройки входа",
+      })
+      expect(dashboard).toBeTruthy()
+      expect(settings).toBeTruthy()
 
-    // Формы установки/смены локального пароля больше нет
-    expect(screen.queryByText("Установить пароль")).toBeNull()
-    expect(screen.queryByText("Сменить пароль")).toBeNull()
-    expect(screen.queryByLabelText("Новый пароль")).toBeNull()
-    expect(screen.queryByLabelText("Подтверждение пароля")).toBeNull()
+      fireEvent.click(dashboard)
+      fireEvent.click(settings)
+      expect(openSpy).toHaveBeenCalledWith(
+        "https://sso.example.com/if/user/",
+        "_blank",
+        "noopener,noreferrer",
+      )
+      expect(openSpy).toHaveBeenCalledWith(
+        "https://sso.example.com/if/user/#/settings",
+        "_blank",
+        "noopener,noreferrer",
+      )
+
+      // Формы установки/смены локального пароля больше нет
+      expect(screen.queryByText("Установить пароль")).toBeNull()
+      expect(screen.queryByText("Сменить пароль")).toBeNull()
+      expect(screen.queryByLabelText("Новый пароль")).toBeNull()
+      expect(screen.queryByLabelText("Подтверждение пароля")).toBeNull()
+    } finally {
+      openSpy.mockRestore()
+    }
   })
 
   it("применяет переопределения словаря (dict override)", async () => {

@@ -31,6 +31,7 @@ class IdpConfigOut(BaseModel):
     idp_admin_enabled: bool
     public_url: str | None = None
     user_settings_url: str | None = None
+    sso_dashboard_url: str | None = None
     admin_url: str | None = None
     ops_url: str | None = None
     groups: list[str] = Field(default_factory=lambda: list(ak.HRMS_ACCESS_GROUPS))
@@ -39,6 +40,7 @@ class IdpConfigOut(BaseModel):
 class IdpLinksOut(BaseModel):
     oidc_enabled: bool
     user_settings_url: str | None = None
+    sso_dashboard_url: str | None = None
 
 
 class IdpUserOut(BaseModel):
@@ -86,6 +88,7 @@ async def get_idp_config(
         idp_admin_enabled=ak.is_idp_admin_enabled(),
         public_url=ak.public_base_url(),
         user_settings_url=ak.user_settings_url(),
+        sso_dashboard_url=ak.sso_dashboard_url(),
         admin_url=ak.admin_url(),
         ops_url=ak.ops_url(),
         groups=list(ak.HRMS_ACCESS_GROUPS),

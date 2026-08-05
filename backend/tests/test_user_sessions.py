@@ -105,11 +105,37 @@ async def test_login_creates_session_and_sid(async_client: AsyncClient, db_sessi
         "/api/auth/sessions", headers=_auth(token)
     )
     assert sessions_resp.status_code == 200
-    sessions = sessions_resp.json()
+    data = sessions_resp.json()
+    assert isinstance(data["sessions"], list)
+    assert data["total"] == len(data["sessions"])
+    sessions = data["sessions"]
     assert len(sessions) >= 1
     current = [s for s in sessions if s.get("is_current")]
     assert len(current) == 1
     assert current[0]["id"] == claims["sid"]
+
+
+async def test_sessions_capped_at_10_with_total(
+    async_client: AsyncClient, db_session
+):
+    """Канон 2.0.0: GET /auth/sessions отдаёт максимум 10 + total (общее число)."""
+    user = await _make_user(db_session)
+
+    # 12 входов → 12 активных сессий
+    token, _ = await _login(db_session, user)
+    for _ in range(11):
+        token, _ = await _login(db_session, user)
+
+    sessions_resp = await async_client.get(
+        "/api/auth/sessions", headers=_auth(token)
+    )
+    assert sessions_resp.status_code == 200
+    data = sessions_resp.json()
+    assert data["total"] == 12
+    assert len(data["sessions"]) == 10
+
+    # Порядок по last_seen_at DESC: самая свежая (текущая) сессия — первая.
+    assert data["sessions"][0]["is_current"] is True
 
 
 async def test_revoke_session_rejects_token(async_client: AsyncClient, db_session):

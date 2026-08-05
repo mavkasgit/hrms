@@ -89,7 +89,8 @@ async def test_me_links_returns_data(async_client, db_session: AsyncSession, oid
         assert res.status_code == 200
         data = res.json()
         assert data["oidc_enabled"] is True
-        assert data["user_settings_url"] == "http://localhost:9000/if/user/"
+        assert data["user_settings_url"] == "http://localhost:9000/if/user/#/settings"
+        assert data["sso_dashboard_url"] == "http://localhost:9000/if/user/"
 
 
 async def test_me_login_events_returns_data(async_client, db_session: AsyncSession):
@@ -107,14 +108,14 @@ async def test_me_profile_and_avatar_patch(async_client, db_session: AsyncSessio
     await _make_user(db_session, username=uname)
 
     async with _logged_in_as(uname):
+        # theme/locale — предпочтения, принимаются (self-service)
         profile = await async_client.patch(
             "/api/auth/me/profile",
-            json={"full_name": "Updated", "theme": "dark", "locale": "en"},
+            json={"theme": "dark", "locale": "en"},
             headers=_auth(),
         )
         assert profile.status_code == 200
         body = profile.json()
-        assert body["full_name"] == "Updated"
         assert body["theme"] == "dark"
         assert body["locale"] == "en"
 
@@ -125,6 +126,48 @@ async def test_me_profile_and_avatar_patch(async_client, db_session: AsyncSessio
         )
         assert avatar.status_code == 200
         assert avatar.json()["avatar_seed"] == "deadbeef"
+
+
+async def test_me_profile_full_name_email_blocked_403(async_client, db_session: AsyncSession):
+    """Канон 2.0.0: ФИО/email read-only — PATCH /auth/me/profile → 403."""
+    uname = f"ro_{uuid_mod.uuid4().hex[:8]}"
+    await _make_user(db_session, username=uname, full_name="Local Name")
+
+    async with _logged_in_as(uname):
+        # full_name в любом виде (даже если значение совпадает) → 403
+        for payload in (
+            {"full_name": "New Name"},
+            {"full_name": "Local Name"},  # совпадает с текущим — всё равно 403
+            {"email": "new@example.com"},
+            {"full_name": "New Name", "theme": "dark"},
+            {"email": "new@example.com", "locale": "ru"},
+        ):
+            res = await async_client.patch(
+                "/api/auth/me/profile",
+                json=payload,
+                headers=_auth(),
+            )
+            assert res.status_code == 403, payload
+            assert "администратор" in res.json()["detail"]
+
+
+async def test_me_profile_avatar_fields_rejected_422(async_client, db_session: AsyncSession):
+    """Канон 2.0.0: аватар меняется ТОЛЬКО через PATCH /auth/me/avatar.
+
+    Поля avatar_seed/clear_avatar в /auth/me/profile больше не принимаются
+    (единый контракт: profile = theme/locale) — Pydantic отдаёт 422.
+    """
+    uname = f"av_{uuid_mod.uuid4().hex[:8]}"
+    await _make_user(db_session, username=uname)
+
+    async with _logged_in_as(uname):
+        for payload in ({"avatar_seed": "deadbeef"}, {"clear_avatar": True}):
+            res = await async_client.patch(
+                "/api/auth/me/profile",
+                json=payload,
+                headers=_auth(),
+            )
+            assert res.status_code == 422, payload
 
 
 async def test_old_paths_removed(async_client, db_session: AsyncSession):

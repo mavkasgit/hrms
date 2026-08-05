@@ -59,14 +59,17 @@ async def test_idp_config_and_links(async_client, oidc_on):
     data = cfg.json()
     assert data["oidc_enabled"] is True
     assert data["idp_admin_enabled"] is True
-    assert data["user_settings_url"] == "http://localhost:9000/if/user/"
+    assert data["user_settings_url"] == "http://localhost:9000/if/user/#/settings"
+    assert data["sso_dashboard_url"] == "http://localhost:9000/if/user/"
     assert data["admin_url"] == "http://localhost:9000/if/admin/"
     assert data["ops_url"] == "http://localhost:9010"
     assert "hrms-admin" in data["groups"]
 
     links = await async_client.get("/api/idp/links", headers=_auth())
     assert links.status_code == 200
-    assert links.json()["user_settings_url"] == "http://localhost:9000/if/user/"
+    links_body = links.json()
+    assert links_body["user_settings_url"] == "http://localhost:9000/if/user/#/settings"
+    assert links_body["sso_dashboard_url"] == "http://localhost:9000/if/user/"
 
 
 async def test_idp_users_mocked(async_client, oidc_on):

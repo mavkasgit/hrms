@@ -14,7 +14,7 @@
  * Tag: @oidc — run: npm run test:e2e:oidc  or
  *   npx playwright test e2e/auth/oidc-login.spec.ts
  */
-import { test, expect, type APIRequestContext } from '@playwright/test'
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { LoginPage } from '../pages/LoginPage'
 
 type OidcConfig = {
@@ -91,6 +91,107 @@ async function requireOidcEnabled(
   return config as OidcConfig
 }
 
+/**
+ * Full IdP login → back in app with localStorage.token.
+ * Skips (never fails) when E2E_OIDC_FULL / credentials are missing or the
+ * Authentik UI flow differs from the default identification → password.
+ */
+async function completeOidcLogin(page: Page): Promise<void> {
+  test.skip(
+    process.env.E2E_OIDC_FULL !== '1',
+    'E2E_OIDC_FULL!=1 — skip full IdP login'
+  )
+
+  const idpUser = process.env.E2E_AUTHENTIK_USER
+  const idpPass = process.env.E2E_AUTHENTIK_PASSWORD
+  test.skip(
+    !idpUser || !idpPass,
+    'E2E_AUTHENTIK_USER / E2E_AUTHENTIK_PASSWORD not set — no secrets in repo; skip full login'
+  )
+
+  const login = new LoginPage(page)
+  await login.goto()
+  await expect(login.ssoButton).toBeVisible({ timeout: 15_000 })
+
+  await Promise.all([
+    page.waitForURL(
+      (url) =>
+        url.host.includes('9000') ||
+        /if\/flow|application\/o/i.test(url.href),
+      { timeout: 20_000 }
+    ),
+    login.startOidcSso(),
+  ])
+
+  // Authentik default flow: identification → password
+  // UI labels (EN): "Email or Username" + "Log in", then "Password" + "Continue"
+  const userField = page
+    .getByRole('textbox', { name: /email or username|username|логин/i })
+    .or(
+      page.locator(
+        'input[name="uidField"], input[name="username"], input[autocomplete="username"]'
+      )
+    )
+    .first()
+  const passField = page
+    .getByRole('textbox', { name: /^password$/i })
+    .or(page.getByLabel(/^password$/i))
+    .or(page.locator('input[type="password"]'))
+    .first()
+
+  await expect(userField).toBeVisible({ timeout: 20_000 })
+  await userField.click()
+  await userField.fill(idpUser!)
+  await userField.press('Enter')
+
+  // Wait for password stage (or soft-skip if Authentik UI flow differs)
+  const passwordShown = await passField
+    .waitFor({ state: 'visible', timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  test.skip(
+    !passwordShown,
+    'Authentik password stage not reached after identification — UI flow mismatch'
+  )
+
+  await passField.click()
+  await passField.fill('')
+  await passField.pressSequentially(idpPass!, { delay: 15 })
+  await expect(passField).toHaveValue(idpPass!, { timeout: 5_000 })
+  await passField.press('Enter')
+
+  // Back to app via /auth/callback → token in localStorage
+  try {
+    await page.waitForURL(
+      (url) =>
+        url.host.includes('5171') &&
+        (url.pathname.includes('/auth/callback') ||
+          (!url.pathname.includes('/if/flow') &&
+            !url.pathname.includes('/login'))),
+      { timeout: 45_000 }
+    )
+  } catch {
+    // Stay on IdP — capture URL for diagnostics then soft-skip (not CI-critical)
+    test.skip(
+      true,
+      `OIDC full login did not return to app (still on ${page.url()}) — check IdP password / user link`
+    )
+  }
+
+  if (page.url().includes('/auth/callback')) {
+    await page.waitForURL(
+      (url) =>
+        !url.pathname.includes('/auth/callback') &&
+        !url.pathname.includes('/login'),
+      { timeout: 30_000 }
+    )
+  }
+
+  await expect(page).not.toHaveURL(/\/login/)
+  const token = await login.getToken()
+  expect(token, 'expected localStorage.token after OIDC full login').toBeTruthy()
+}
+
 test.describe('OIDC / Authentik @auth @oidc', () => {
   test('oidc_config_exposes_authorize @oidc', async ({ request }) => {
     const config = await requireOidcEnabled(request)
@@ -150,107 +251,64 @@ test.describe('OIDC / Authentik @auth @oidc', () => {
   })
 
   test('oidc_full_login @oidc', async ({ page, request }) => {
-    test.skip(
-      process.env.E2E_OIDC_FULL !== '1',
-      'E2E_OIDC_FULL!=1 — skip full IdP login'
-    )
     await requireOidcEnabled(request)
-
-    const idpUser = process.env.E2E_AUTHENTIK_USER
-    const idpPass = process.env.E2E_AUTHENTIK_PASSWORD
-    test.skip(
-      !idpUser || !idpPass,
-      'E2E_AUTHENTIK_USER / E2E_AUTHENTIK_PASSWORD not set — no secrets in repo; skip full login'
-    )
+    await completeOidcLogin(page)
 
     const login = new LoginPage(page)
-    await login.goto()
-    await expect(login.ssoButton).toBeVisible({ timeout: 15_000 })
-
-    await Promise.all([
-      page.waitForURL(
-        (url) =>
-          url.host.includes('9000') ||
-          /if\/flow|application\/o/i.test(url.href),
-        { timeout: 20_000 }
-      ),
-      login.startOidcSso(),
-    ])
-
-    // Authentik default flow: identification → password
-    // UI labels (EN): "Email or Username" + "Log in", then "Password" + "Continue"
-    const idpSubmit = page.getByRole('button', {
-      name: /^(Continue|Log in|Log In|Sign in|Войти|Продолжить)$/i,
-    })
-    const userField = page
-      .getByRole('textbox', { name: /email or username|username|логин/i })
-      .or(
-        page.locator(
-          'input[name="uidField"], input[name="username"], input[autocomplete="username"]'
-        )
-      )
-      .first()
-    const passField = page
-      .getByRole('textbox', { name: /^password$/i })
-      .or(page.getByLabel(/^password$/i))
-      .or(page.locator('input[type="password"]'))
-      .first()
-
-    await expect(userField).toBeVisible({ timeout: 20_000 })
-    await userField.click()
-    await userField.fill(idpUser!)
-    await userField.press('Enter')
-
-    // Wait for password stage (or soft-skip if Authentik UI flow differs)
-    const passwordShown = await passField
-      .waitFor({ state: 'visible', timeout: 15_000 })
-      .then(() => true)
-      .catch(() => false)
-    test.skip(
-      !passwordShown,
-      'Authentik password stage not reached after identification — UI flow mismatch'
-    )
-
-    await passField.click()
-    await passField.fill('')
-    await passField.pressSequentially(idpPass!, { delay: 15 })
-    await expect(passField).toHaveValue(idpPass!, { timeout: 5_000 })
-    await passField.press('Enter')
-
-    // Back to app via /auth/callback → token in localStorage
-    try {
-      await page.waitForURL(
-        (url) =>
-          url.host.includes('5171') &&
-          (url.pathname.includes('/auth/callback') ||
-            (!url.pathname.includes('/if/flow') &&
-              !url.pathname.includes('/login'))),
-        { timeout: 45_000 }
-      )
-    } catch {
-      // Stay on IdP — capture URL for diagnostics then soft-skip (not CI-critical)
-      test.skip(
-        true,
-        `OIDC full login did not return to app (still on ${page.url()}) — check IdP password / user link`
-      )
-    }
-
-    if (page.url().includes('/auth/callback')) {
-      await page.waitForURL(
-        (url) =>
-          !url.pathname.includes('/auth/callback') &&
-          !url.pathname.includes('/login'),
-        { timeout: 30_000 }
-      )
-    }
-
-    await expect(page).not.toHaveURL(/\/login/)
     const token = await login.getToken()
-    expect(token, 'expected localStorage.token after OIDC full login').toBeTruthy()
-
     const payload = decodeJwtPayload(token!)
     if (payload && 'sid' in payload) {
       expect(payload.sid, 'JWT sid claim when present').toBeTruthy()
     }
+  })
+
+  /**
+   * Канон user-settings 2.0.0 для реального OIDC-пользователя: read-only
+   * ФИО/email, счётчик «Последние N из N» и две SSO-кнопки.
+   * Break-glass-админ не покрывает эти ветки (sessions/profile → 400),
+   * поэтому они проверяются только после полного OIDC-логина.
+   */
+  test('oidc_profile_canon_2_0_0 @oidc', async ({ page, request }) => {
+    await requireOidcEnabled(request)
+    await completeOidcLogin(page)
+
+    // Открыть профиль из сайдбара
+    await page.locator('aside').getByText('Настройки профиля').click()
+    const dialog = page.getByRole('dialog')
+    await expect(
+      dialog.getByRole('heading', { name: 'Профиль' }),
+    ).toBeVisible({ timeout: 10_000 })
+
+    // Read-only ФИО/email + hint
+    await expect(
+      dialog.getByRole('heading', { name: 'Личные данные' }),
+    ).toBeVisible()
+    await expect(
+      dialog.getByText(
+        'Единый профиль: имя и аватар синхронизируются через IdP для всех приложений.',
+      ),
+    ).toBeVisible()
+    await expect(dialog.locator('input, textarea, select')).toHaveCount(0)
+
+    // Сессии: счётчик «Последние N из N» виден у реального пользователя
+    await dialog.getByRole('button', { name: 'Сессии' }).click()
+    await expect(
+      dialog.getByRole('heading', { name: 'Активные сессии' }),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(dialog.getByText(/Последние \d+ из \d+/)).toBeVisible({
+      timeout: 15_000,
+    })
+
+    // Безопасность: две SSO-кнопки
+    await dialog.getByRole('button', { name: 'Безопасность' }).click()
+    await expect(
+      dialog.getByRole('heading', { name: 'Единый вход (SSO)' }),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(
+      dialog.getByRole('button', { name: 'Дашборд SSO' }),
+    ).toBeVisible()
+    await expect(
+      dialog.getByRole('button', { name: 'Открыть настройки входа' }),
+    ).toBeVisible()
   })
 })

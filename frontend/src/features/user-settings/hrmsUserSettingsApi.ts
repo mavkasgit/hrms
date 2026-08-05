@@ -2,7 +2,7 @@ import api from "@/shared/api/axios"
 import type {
   IdpLinks,
   LoginEvent,
-  SessionInfo,
+  SessionListResult,
   UserProfile,
   UserSettingsApi,
 } from "@/modules/user-settings"
@@ -44,8 +44,8 @@ export const hrmsUserSettingsApi: UserSettingsApi = {
     return data
   },
 
-  async listSessions(): Promise<SessionInfo[]> {
-    const { data } = await api.get<SessionInfo[]>("/auth/sessions")
+  async listSessions(): Promise<SessionListResult> {
+    const { data } = await api.get<SessionListResult>("/auth/sessions")
     return data
   },
 

@@ -2,7 +2,7 @@ import type {
   IdpLinks,
   LoginEvent,
   ProfilePatch,
-  SessionInfo,
+  SessionListResult,
   UserProfile,
 } from "../types"
 
@@ -19,11 +19,12 @@ export interface UserSettingsApi {
   /**
    * Текущий профиль (GET /auth/me и аналоги).
    * `refresh=true` → добавить ?refresh=1 (принудительная синхронизация с IdP,
-   * обходя TTL-кэш бэкенда). Диалог всегда открывает и перечитывает с refresh.
+   * обходя TTL-кэш бэкенда). Диалог открывается без форса; refresh=1 — только
+   * после смены аватара (AvatarPickerDialog → updateAvatar → getProfile(true)).
    */
   getProfile(refresh?: boolean): Promise<UserProfile>
 
-  /** Частичное обновление профиля. Возвращает актуальный снимок полей. */
+  /** Частичное обновление профиля (theme/locale). Возвращает актуальный снимок. */
   updateProfile(patch: ProfilePatch): Promise<Partial<UserProfile>>
 
   /** Установить (seed) или сбросить (null) аватар. */
@@ -32,8 +33,11 @@ export interface UserSettingsApi {
   /** Deep-links в IdP (SSO). Без метода — блок SSO скрыт. */
   getIdpLinks?(): Promise<IdpLinks>
 
-  /** Активные сессии. Без метода — раздел скрыт. */
-  listSessions?(): Promise<SessionInfo[]>
+  /**
+   * Активные сессии (канон 2.0.0): {sessions: последние 10, total: N}.
+   * Без метода — раздел скрыт.
+   */
+  listSessions?(): Promise<SessionListResult>
 
   /** Отозвать одну сессию. */
   revokeSession?(id: string): Promise<void>

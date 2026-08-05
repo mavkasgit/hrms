@@ -149,9 +149,12 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_sync() -> None:
+def cmd_sync(to_version: str | None = None) -> None:
     manifest = load_manifest()
-    manifest["version"] = bump_version(manifest.get("version", "1.0.0"))
+    version = to_version or bump_version(manifest.get("version", "1.0.0"))
+    if not re.match(r"^\d+\.\d+\.\d+$", version):
+        raise SystemExit(f"Invalid semantic version: {version!r}")
+    manifest["version"] = version
     manifest["core"] = expand_core()
     manifest["exceptions"] = sorted(EXCEPTIONS)
     write_manifest(manifest)
@@ -178,13 +181,18 @@ def main() -> int:
     p_verify.add_argument(
         "--strict", action="store_true", help="exit 1 при любом расхождении (CI)"
     )
-    sub.add_parser("sync", help="перегенерировать хеши + поднять версию")
+    p_sync = sub.add_parser("sync", help="перегенерировать хеши + поднять версию")
+    p_sync.add_argument(
+        "--to",
+        metavar="VERSION",
+        help="явная целевая версия (напр. 2.0.0 для мажора); без флага — patch+1",
+    )
 
     args = parser.parse_args()
     if args.command == "verify":
         return cmd_verify(args)
     if args.command == "sync":
-        cmd_sync()
+        cmd_sync(getattr(args, "to", None))
         return 0
     if args.command == "version":
         cmd_version()

@@ -27,6 +27,7 @@ export type {
   NotifyFn,
   ProfilePatch,
   SessionInfo,
+  SessionListResult,
   UserLocale,
   UserProfile,
   UserSettingsCallbacks,

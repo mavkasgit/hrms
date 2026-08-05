@@ -309,15 +309,20 @@ export async function fetchOidcConfig(): Promise<OidcConfig> {
   return response.json()
 }
 
-/** sessionStorage key: OIDC id_token for Authentik end-session (id_token_hint). */
+/** localStorage key: OIDC id_token for Authentik end-session (id_token_hint).
+ *  localStorage (not sessionStorage): id_token must be readable from any tab,
+ *  e.g. when the app is opened in a new tab via the Authentik dashboard tile —
+ *  sessionStorage is per-tab, so logout there would lose the hint and land on
+ *  Authentik's own "Logout successful" page instead of the app /login.
+ */
 export const OIDC_ID_TOKEN_KEY = "hrms_oidc_id_token"
 
 export function storeOidcIdToken(idToken: string | null | undefined): void {
   try {
     if (idToken) {
-      sessionStorage.setItem(OIDC_ID_TOKEN_KEY, idToken)
+      localStorage.setItem(OIDC_ID_TOKEN_KEY, idToken)
     } else {
-      sessionStorage.removeItem(OIDC_ID_TOKEN_KEY)
+      localStorage.removeItem(OIDC_ID_TOKEN_KEY)
     }
   } catch {
     /* ignore quota / private mode */
@@ -334,7 +339,7 @@ export async function fetchOidcLogoutUrl(): Promise<OidcLogoutUrlResponse> {
     // when logout redirect URIs are registered on the provider.
     let idToken: string | null = null
     try {
-      idToken = sessionStorage.getItem(OIDC_ID_TOKEN_KEY)
+      idToken = localStorage.getItem(OIDC_ID_TOKEN_KEY)
     } catch {
       idToken = null
     }

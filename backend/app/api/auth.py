@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, sta
 from fastapi.responses import JSONResponse
 import bcrypt
 from jose import jwt
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,7 @@ from app.schemas.oidc_auth import (
     OidcConfigResponse,
     OidcLogoutUrlResponse,
 )
-from app.schemas.session import LoginEventOut, SessionOut
+from app.schemas.session import LoginEventOut, MAX_SESSIONS_SHOWN, SessionListOut, SessionOut
 from app.services import session_service
 from app.services.oidc_auth_service import OidcAuthService
 from app.services.session_service import SessionNotFoundError
@@ -50,11 +50,16 @@ class AvatarSeedUpdate(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    """Единый human-profile (SoT Authentik при наличии sub + API token)."""
+    """Human-profile патч (SoT Authentik при наличии sub + API token).
+
+    Канон user-settings 2.0.0: здесь только предпочтения theme/locale.
+    ФИО/email остаются в схеме намеренно — чтобы попытка их изменить
+    давала понятный 403 (а не 422 «неизвестное поле»). Аватар меняется
+    только через отдельный ``PATCH /auth/me/avatar`` (AvatarSeedUpdate).
+    """
+    model_config = ConfigDict(extra="forbid")
+
     full_name: str | None = Field(None, min_length=1, max_length=255)
-    avatar_seed: str | None = Field(None, max_length=64)
-    # True → явно сбросить avatar (отличается от «не передавали поле»)
-    clear_avatar: bool = False
     email: EmailStr | None = None
     locale: Literal["ru", "en"] | None = None
     theme: Literal["system", "light", "dark"] | None = None
@@ -576,20 +581,25 @@ async def update_my_profile(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Обновить display-профиль (имя / email / locale / theme / аватар). SoT = Authentik."""
+    """Обновить display-профиль (locale / theme). SoT = Authentik.
+
+    ФИО и email — read-only для пользователя (канон user-settings 2.0.0):
+    они задаются администратором IdP, приложение только читает и кэширует.
+    Попытка изменить → 403. Аватар редактируется через отдельный
+    ``PATCH /auth/me/avatar``.
+    """
     from app.services import unified_profile_service as ups
     from app.services.authentik_client import AuthentikAdminError
 
     user = await _load_me_user(db, current_user.username)
 
-    has_any = (
-        payload.full_name is not None
-        or payload.clear_avatar
-        or payload.avatar_seed is not None
-        or payload.email is not None
-        or payload.locale is not None
-        or payload.theme is not None
-    )
+    if payload.full_name is not None or payload.email is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Изменение ФИО/email недоступно, обратитесь к администратору",
+        )
+
+    has_any = payload.locale is not None or payload.theme is not None
     if not has_any:
         return {
             "full_name": user.full_name,
@@ -599,18 +609,8 @@ async def update_my_profile(
             "theme": user.theme,
         }
 
-    want_name = payload.full_name.strip() if payload.full_name else None
-    want_email = str(payload.email).strip() if payload.email is not None else None
     want_locale = payload.locale
     want_theme = payload.theme
-    # avatar: clear_avatar → None; avatar_seed set → value; else leave unchanged on IdP
-    avatar_arg: object
-    if payload.clear_avatar:
-        avatar_arg = None
-    elif payload.avatar_seed is not None:
-        avatar_arg = payload.avatar_seed
-    else:
-        avatar_arg = ...
 
     email_out: str | None = None
 
@@ -618,23 +618,16 @@ async def update_my_profile(
         try:
             remote = await ups.push_profile_by_sub(
                 user.authentik_sub,
-                full_name=want_name,
-                avatar_seed=avatar_arg,
-                email=want_email,
                 locale=want_locale,
                 theme=want_theme,
             )
-            if want_name:
-                user.full_name = remote.full_name or want_name
-            if avatar_arg is not ...:
-                user.avatar_seed = remote.avatar_seed
-            elif remote.full_name:
+            if remote.full_name:
                 user.full_name = remote.full_name
             if want_locale is not None:
                 user.locale = remote.locale or want_locale
             if want_theme is not None:
                 user.theme = remote.theme or want_theme
-            email_out = remote.email or want_email
+            email_out = remote.email
             user.profile_synced_at = _utcnow()
         except AuthentikAdminError as exc:
             raise HTTPException(
@@ -642,18 +635,11 @@ async def update_my_profile(
                 detail=exc.message,
             ) from exc
     else:
-        if want_name:
-            user.full_name = want_name
-        if payload.clear_avatar:
-            user.avatar_seed = None
-        elif payload.avatar_seed is not None:
-            user.avatar_seed = payload.avatar_seed
         if want_locale is not None:
             user.locale = want_locale
         if want_theme is not None:
             user.theme = want_theme
         # email: no local column in HRMS — only via IdP
-        email_out = want_email
 
     db.add(user)
     await db.commit()
@@ -687,16 +673,21 @@ async def list_me_login_events(
     return await _list_my_login_events(db, current_user, limit=limit)
 
 
-@router.get("/sessions", response_model=list[SessionOut])
+@router.get("/sessions", response_model=SessionListOut)
 async def list_my_sessions(
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> list[SessionOut]:
-    """Список активных (не отозванных, не истёкших) сессий текущего пользователя."""
+) -> SessionListOut:
+    """Активные сессии текущего пользователя: последние MAX_SESSIONS_SHOWN + total.
+
+    Контракт канона user-settings 2.0.0: ``{sessions: [...по last_seen_at DESC],
+    total: N}``. Сессии берутся отсортированными по активности (репозиторий),
+    клиенту отдаются первые MAX_SESSIONS_SHOWN, total — общее число активных сессий.
+    """
     user_id = await _resolve_user_id(db, current_user)
     sessions = await session_service.list_sessions(db, user_id=user_id)
     current_sid = current_user.session_id
-    return [
+    out = [
         SessionOut(
             id=s.id,
             device_label=s.device_label,
@@ -709,6 +700,7 @@ async def list_my_sessions(
         )
         for s in sessions
     ]
+    return SessionListOut(sessions=out[:MAX_SESSIONS_SHOWN], total=len(out))
 
 
 @router.delete("/sessions/others", status_code=status.HTTP_204_NO_CONTENT)

@@ -51,7 +51,9 @@ export function AvatarPickerDialog({ open, onOpenChange }: AvatarPickerDialogPro
     setError(null)
     try {
       await api.updateAvatar(seed)
-      await refreshProfile()
+      // refresh=1: после смены аватара синхронизируем с IdP немедленно
+      // (обход TTL-кэша бэкенда — выбор должен быть виден во всех приложениях).
+      await refreshProfile(true)
       onOpenChange(false)
     } catch {
       setError(dict.avatar.error)

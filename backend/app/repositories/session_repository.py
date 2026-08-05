@@ -60,7 +60,7 @@ class SessionRepository:
                 UserSession.revoked_at.is_(None),
                 UserSession.expires_at > now,
             )
-            .order_by(UserSession.last_seen_at.desc())
+            .order_by(UserSession.last_seen_at.desc(), UserSession.id.desc())
         )
         return list(result.scalars().all())
 

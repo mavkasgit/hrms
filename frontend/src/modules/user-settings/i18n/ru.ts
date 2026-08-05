@@ -60,6 +60,7 @@ export const ru = {
     idpTitle: "Единый вход (SSO)",
     idpDescription:
       "MFA и способы входа настраиваются в системе единого входа.",
+    idpDashboard: "Дашборд SSO",
     idpOpen: "Открыть настройки входа",
   },
   sessions: {
@@ -82,6 +83,7 @@ export const ru = {
     unknownIp: "IP неизвестен",
     lastActive: "Активность",
     signedIn: "Вход",
+    lastOfN: "Последние {shown} из {total}",
     noteText:
       "При подозрении на несанкционированный доступ завершите чужие сессии — сеанс отзывается на сервере, повторный вход потребует авторизации.",
     historyTitle: "История входов",
