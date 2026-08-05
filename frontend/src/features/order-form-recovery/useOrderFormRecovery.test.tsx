@@ -159,6 +159,26 @@ describe("useOrderFormRecovery", () => {
     expect(result.current.pendingDraft).toBeNull()
   })
 
+  it("pagehide не пересоздаёт черновик сразу после restore", () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(makeDraft()))
+    const { result } = renderHook(() =>
+      useOrderFormRecovery({ formState: formState(), onRestore: vi.fn() })
+    )
+
+    act(() => {
+      result.current.restore()
+    })
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+
+    // Закрываем вкладку сразу после восстановления без новых правок —
+    // черновик не должен возродиться
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"))
+    })
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+  })
+
   it("pagehide пишет черновик синхронно, не дожидаясь debounce", () => {
     renderHook(() => useOrderFormRecovery({ formState: formState(), onRestore: vi.fn() }))
 

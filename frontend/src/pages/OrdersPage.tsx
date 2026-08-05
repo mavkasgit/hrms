@@ -679,7 +679,7 @@ export function OrdersPage() {
       } else if (orderTypes.length === 0) {
         // Типы ещё не загрузились — выставляем id по черновику; layout и литера
         // появятся, когда типы подгрузятся (#50)
-        skipExtraFieldsResetRef.current = true
+        if (draft.order_type_id !== selectedOrderTypeId) skipExtraFieldsResetRef.current = true
         setSelectedOrderTypeId(draft.order_type_id)
       }
     }

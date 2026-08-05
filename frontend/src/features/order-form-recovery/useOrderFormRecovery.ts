@@ -96,6 +96,21 @@ export function useOrderFormRecovery({
   const overwriteCancelledRef = useRef(false)
   const formStateRef = useRef(formState)
   formStateRef.current = formState
+  // Есть ли неперсистённые изменения формы с момента последней записи/восстановления.
+  // pagehide-flush пишет только если что-то изменилось — после «Восстановить»
+  // черновик не должен возрождаться без правок.
+  const dirtyRef = useRef(false)
+  // Подавление: на время, когда restore сам заполняет форму, не помечаем dirty
+  const suppressDirtyRef = useRef(false)
+
+  // Заблокирована ли запись гейтом перезаписи (общий для автосейва и flush).
+  const blockedByOverwriteGate = () => {
+    // Диалог перезаписи — только для черновика, существовавшего ДО текущего заполнения
+    if (existingDraftRef.current && !overwriteConfirmedRef.current && !overwriteCancelledRef.current) return true
+    // После отмены перезаписи не сохраняем (пользователь осознанно отказался)
+    if (overwriteCancelledRef.current && !overwriteConfirmedRef.current) return true
+    return false
+  }
 
   // При монтировании: проверяем наличие сохранённого черновика
   useEffect(() => {
@@ -112,19 +127,25 @@ export function useOrderFormRecovery({
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
 
+    // Изменения, внесённые самим restore, не считаем пользовательским вводом
+    if (suppressDirtyRef.current) {
+      suppressDirtyRef.current = false
+      return
+    }
+
     if (!hasContent(formState)) return
+    dirtyRef.current = true
 
     debounceRef.current = setTimeout(() => {
-      // Диалог перезаписи запрашиваем только для черновика, который существовал
-      // ДО начала текущего заполнения (снапшот с mount). Черновик, сохранённый
-      // автосейвом этой же сессии, перезаписывается тихо (#49).
-      if (existingDraftRef.current && !overwriteConfirmedRef.current && !overwriteCancelledRef.current) {
-        setOverwritePrompt(true)
+      if (blockedByOverwriteGate()) {
+        // Показываем диалог перезаписи только для черновика с прошлой сессии (#49)
+        if (existingDraftRef.current && !overwriteConfirmedRef.current && !overwriteCancelledRef.current) {
+          setOverwritePrompt(true)
+        }
         return
       }
-      // После отмены перезаписи не сохраняем (пользователь осознанно отказался)
-      if (overwriteCancelledRef.current && !overwriteConfirmedRef.current) return
       writeDraft(formStateRef.current)
+      dirtyRef.current = false
     }, DEBOUNCE_MS)
 
     return () => {
@@ -136,11 +157,14 @@ export function useOrderFormRecovery({
   // последний ввод не терялся, если debounce ещё не отработал.
   useEffect(() => {
     const handlePageHide = () => {
+      // Пишем только при неперсистённых изменениях — иначе после «Восстановить»
+      // очищенный черновик тут же возродился бы
+      if (!dirtyRef.current) return
       if (!hasContent(formStateRef.current)) return
       // Те же гейты, что и в debounced автосейве
-      if (existingDraftRef.current && !overwriteConfirmedRef.current && !overwriteCancelledRef.current) return
-      if (overwriteCancelledRef.current && !overwriteConfirmedRef.current) return
+      if (blockedByOverwriteGate()) return
       writeDraft(formStateRef.current)
+      dirtyRef.current = false
     }
     window.addEventListener("pagehide", handlePageHide)
     return () => window.removeEventListener("pagehide", handlePageHide)
@@ -149,11 +173,15 @@ export function useOrderFormRecovery({
   const restore = useCallback(() => {
     const draft = pendingDraft ?? readDraft()
     if (draft) {
+      // Изменения, которые restore внесёт в форму, не должны помечаться как
+      // пользовательский ввод (иначе pagehide возродит очищенный черновик)
+      suppressDirtyRef.current = true
       onRestore(draft)
       // После восстановления очищаем черновик — он больше не нужен
       clearDraft()
       existingDraftRef.current = null
       overwriteConfirmedRef.current = true
+      dirtyRef.current = false
     }
     setPendingDraft(null)
   }, [pendingDraft, onRestore])
@@ -167,6 +195,7 @@ export function useOrderFormRecovery({
     clearDraft()
     existingDraftRef.current = null
     overwriteConfirmedRef.current = true
+    dirtyRef.current = false
     setPendingDraft(null)
   }, [])
 
@@ -174,6 +203,7 @@ export function useOrderFormRecovery({
     overwriteConfirmedRef.current = true
     setOverwritePrompt(false)
     writeDraft(formStateRef.current)
+    dirtyRef.current = false
   }, [])
 
   const cancelOverwrite = useCallback(() => {

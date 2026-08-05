@@ -274,5 +274,13 @@ test.describe('Order form recovery @ui', () => {
     await expect(page.getByLabel(/конец испытательного срока/i)).toHaveValue('15.12.2026', {
       timeout: 10_000,
     })
+
+    // Реальная смена типа приказа сбрасывает восстановленные поля (#50):
+    // hire-поле исчезает, поле transfer не наследует номер hire-контракта
+    await ordersPage.selectOrderTypeByName('Перевод')
+    await expect(page.getByLabel(/конец испытательного срока/i)).not.toBeVisible({
+      timeout: 5_000,
+    })
+    await expect(page.getByPlaceholder('Номер')).toHaveValue('', { timeout: 5_000 })
   })
 })
