@@ -4,6 +4,7 @@ import { cn } from "@/shared/utils/cn"
 import api, { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
 import { HrmsUserSettingsDialog } from "@/features/user-settings/HrmsUserSettingsDialog"
 import { HrmsNotificationBell } from "@/features/notifications"
+import { applyTheme, storeLocale } from "@/shared/lib/profile-prefs"
 import { UserAvatar } from "@/shared/ui/UserAvatar"
 import { getUserSeed } from "@/shared/lib/avatar"
 import {
@@ -92,6 +93,8 @@ export function Sidebar() {
       api.get("/auth/me")
         .then((res) => {
           setCurrentUser(res.data)
+          applyTheme(res.data?.theme)
+          storeLocale(res.data?.locale)
         })
         .catch((err) => {
           console.error("Не удалось перезагрузить данные пользователя:", err)
