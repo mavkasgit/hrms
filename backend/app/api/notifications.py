@@ -200,7 +200,7 @@ async def create_notification(
     return _build_notification_response(notification, employee_name)
 
 
-@router.get("/{notification_id}", response_model=NotificationResponse)
+@router.get("/{notification_id:int}", response_model=NotificationResponse)
 async def get_notification(
     notification_id: int,
     db: AsyncSession = Depends(get_db),
@@ -218,7 +218,7 @@ async def get_notification(
     return _build_notification_response(notification, employee_name)
 
 
-@router.put("/{notification_id}", response_model=NotificationResponse)
+@router.put("/{notification_id:int}", response_model=NotificationResponse)
 async def update_notification(
     notification_id: int,
     data: NotificationUpdate,
@@ -246,7 +246,7 @@ async def update_notification(
     return _build_notification_response(notification, employee_name)
 
 
-@router.delete("/{notification_id}")
+@router.delete("/{notification_id:int}")
 async def delete_notification(
     notification_id: int,
     db: AsyncSession = Depends(get_db),
@@ -260,7 +260,7 @@ async def delete_notification(
     return {"message": "Notification deleted"}
 
 
-@router.get("/{notification_id}/download")
+@router.get("/{notification_id:int}/download")
 async def download_notification(
     notification_id: int,
     db: AsyncSession = Depends(get_db),
@@ -283,7 +283,7 @@ async def download_notification(
 PDF_MEDIA_TYPE = "application/pdf"
 
 
-@router.get("/{notification_id}/print-pdf")
+@router.get("/{notification_id:int}/print-pdf")
 async def print_notification_pdf(
     notification_id: int,
     db: AsyncSession = Depends(get_db),

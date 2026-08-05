@@ -9,7 +9,7 @@ def _route_index(path: str, method: str) -> int:
 
 
 def test_unassign_route_is_checked_before_dynamic_tag_delete_route():
-    dynamic_delete_index = _route_index("/tags/{tag_id}", "DELETE")
+    dynamic_delete_index = _route_index("/tags/{tag_id:int}", "DELETE")
     unassign_index = _route_index("/tags/unassign", "DELETE")
 
     assert unassign_index < dynamic_delete_index

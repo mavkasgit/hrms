@@ -93,7 +93,7 @@ async def create_tag(data: TagCreate, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.get("/{tag_id}", response_model=TagResponse)
+@router.get("/{tag_id:int}", response_model=TagResponse)
 async def get_tag(tag_id: int, db: AsyncSession = Depends(get_db)):
     """Получить тег по ID."""
     result = await db.execute(select(Tag).where(Tag.id == tag_id))
@@ -116,7 +116,7 @@ async def get_tag(tag_id: int, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.patch("/{tag_id}", response_model=TagResponse)
+@router.patch("/{tag_id:int}", response_model=TagResponse)
 async def update_tag(tag_id: int, data: TagUpdate, db: AsyncSession = Depends(get_db)):
     """Обновить тег."""
     result = await db.execute(select(Tag).where(Tag.id == tag_id))
@@ -191,7 +191,7 @@ async def unassign_tag(
     return {"ok": True}
 
 
-@router.delete("/{tag_id}")
+@router.delete("/{tag_id:int}")
 async def delete_tag(tag_id: int, db: AsyncSession = Depends(get_db)):
     """Удалить тег (связи с сотрудниками и подразделениями удаляются каскадно)."""
     result = await db.execute(select(Tag).where(Tag.id == tag_id))
@@ -206,7 +206,7 @@ async def delete_tag(tag_id: int, db: AsyncSession = Depends(get_db)):
     return {"ok": True}
 
 
-@router.get("/{tag_id}/employees")
+@router.get("/{tag_id:int}/employees")
 async def get_tag_employees(tag_id: int, db: AsyncSession = Depends(get_db)):
     """Получить сотрудников с указанным тегом."""
     result = await db.execute(select(Tag).where(Tag.id == tag_id))
@@ -232,7 +232,7 @@ async def get_tag_employees(tag_id: int, db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.get("/{tag_id}/departments")
+@router.get("/{tag_id:int}/departments")
 async def get_tag_departments(tag_id: int, db: AsyncSession = Depends(get_db)):
     """Получить подразделения с указанным тегом."""
     result = await db.execute(select(Tag).where(Tag.id == tag_id))
@@ -260,7 +260,7 @@ async def get_tag_departments(tag_id: int, db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.get("/{tag_id}/usage")
+@router.get("/{tag_id:int}/usage")
 async def get_tag_usage(tag_id: int, db: AsyncSession = Depends(get_db)):
     """Получить количество связей тега перед удалением."""
     result = await db.execute(select(Tag).where(Tag.id == tag_id))

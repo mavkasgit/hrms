@@ -109,7 +109,7 @@ async def get_employees_summary(
     return await vacation_service.get_employees_summary(db, q=q, archive_filter=archive_filter)
 
 
-@router.get("/employees/{employee_id}/history", response_model=EmployeeVacationHistory)
+@router.get("/employees/{employee_id:int}/history", response_model=EmployeeVacationHistory)
 async def get_employee_vacation_history(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
@@ -208,7 +208,7 @@ async def get_all_active_vacations(
     ]
 
 
-@router.get("/{vacation_id}", response_model=VacationResponse)
+@router.get("/{vacation_id:int}", response_model=VacationResponse)
 async def get_vacation(
     vacation_id: int,
     db: AsyncSession = Depends(get_db),
@@ -233,7 +233,7 @@ async def get_vacation(
     }
 
 
-@router.get("/{vacation_id}/deletion-preview", response_model=VacationDeletionPreview)
+@router.get("/{vacation_id:int}/deletion-preview", response_model=VacationDeletionPreview)
 async def get_vacation_deletion_preview(
     vacation_id: int,
     db: AsyncSession = Depends(get_db),
@@ -321,7 +321,7 @@ async def get_vacation_deletion_preview(
     )
 
 
-@router.put("/{vacation_id}", response_model=VacationResponse)
+@router.put("/{vacation_id:int}", response_model=VacationResponse)
 async def update_vacation(
     vacation_id: int,
     data: VacationUpdate,
@@ -334,7 +334,7 @@ async def update_vacation(
     return result
 
 
-@router.delete("/{vacation_id}")
+@router.delete("/{vacation_id:int}")
 async def delete_vacation(
     vacation_id: int,
     db: AsyncSession = Depends(get_db),
@@ -344,7 +344,7 @@ async def delete_vacation(
     return {"message": "Отпуск удалён"}
 
 
-@router.get("/employees/{employee_id}/active", response_model=list[VacationResponse])
+@router.get("/employees/{employee_id:int}/active", response_model=list[VacationResponse])
 async def get_active_vacations(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
@@ -372,7 +372,7 @@ async def get_active_vacations(
     ]
 
 
-@router.post("/{vacation_id}/recall", response_model=VacationRecallResponse)
+@router.post("/{vacation_id:int}/recall", response_model=VacationRecallResponse)
 async def recall_vacation(
     vacation_id: int,
     data: VacationRecallRequest,
@@ -385,7 +385,7 @@ async def recall_vacation(
     return result
 
 
-@router.post("/{vacation_id}/extend", response_model=VacationExtensionResponse)
+@router.post("/{vacation_id:int}/extend", response_model=VacationExtensionResponse)
 async def extend_vacation(
     vacation_id: int,
     data: VacationExtensionRequest,
@@ -398,7 +398,7 @@ async def extend_vacation(
     return result
 
 
-@router.post("/{vacation_id}/postpone", response_model=VacationPostponeResponse)
+@router.post("/{vacation_id:int}/postpone", response_model=VacationPostponeResponse)
 async def postpone_vacation(
     vacation_id: int,
     data: VacationPostponeRequest,

@@ -476,7 +476,7 @@ async def delete_department(
 # Связи подразделений (Links)
 # ============================================================================
 
-@router.post("/{head_id}/links", response_model=DepartmentLinkResponse)
+@router.post("/{head_id:int}/links", response_model=DepartmentLinkResponse)
 async def create_department_link(
     head_id: int,
     data: DepartmentLinkCreate,
@@ -528,7 +528,7 @@ async def create_department_link(
     )
 
 
-@router.delete("/{head_id}/links/{child_id}")
+@router.delete("/{head_id:int}/links/{child_id:int}")
 async def delete_department_link(
     head_id: int,
     child_id: int,
@@ -606,7 +606,7 @@ async def assign_tag_to_department(
     )
 
 
-@router.delete("/{dept_id:int}/tags/{tag_id}")
+@router.delete("/{dept_id:int}/tags/{tag_id:int}")
 async def unassign_tag_from_department(
     dept_id: int,
     tag_id: int,

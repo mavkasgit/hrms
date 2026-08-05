@@ -55,7 +55,7 @@ async def list_work_schedules(
     }
 
 
-@router.get("/{schedule_id}", response_model=WorkScheduleResponse)
+@router.get("/{schedule_id:int}", response_model=WorkScheduleResponse)
 async def get_work_schedule(
     schedule_id: int,
     db: AsyncSession = Depends(get_db),
@@ -105,7 +105,7 @@ async def partial_bulk_set_entries(
     )
 
 
-@router.put("/{schedule_id}", response_model=WorkScheduleResponse)
+@router.put("/{schedule_id:int}", response_model=WorkScheduleResponse)
 async def update_work_schedule(
     schedule_id: int,
     data: WorkScheduleUpdate,
@@ -122,7 +122,7 @@ async def update_work_schedule(
     return WorkScheduleResponse.model_validate(refreshed)
 
 
-@router.post("/{schedule_id}/approve", response_model=WorkScheduleResponse)
+@router.post("/{schedule_id:int}/approve", response_model=WorkScheduleResponse)
 async def approve_work_schedule(
     schedule_id: int,
     db: AsyncSession = Depends(get_db),
@@ -136,7 +136,7 @@ async def approve_work_schedule(
     return WorkScheduleResponse.model_validate(refreshed)
 
 
-@router.post("/{schedule_id}/unapprove", response_model=WorkScheduleResponse)
+@router.post("/{schedule_id:int}/unapprove", response_model=WorkScheduleResponse)
 async def unapprove_work_schedule(
     schedule_id: int,
     db: AsyncSession = Depends(get_db),
@@ -153,7 +153,7 @@ async def unapprove_work_schedule(
 # --- Файловые слепки табеля при утверждении (#17) ---
 
 
-@router.get("/{schedule_id}/snapshots")
+@router.get("/{schedule_id:int}/snapshots")
 async def list_schedule_snapshots(
     schedule_id: int,
     db: AsyncSession = Depends(get_db),
@@ -168,7 +168,7 @@ async def list_schedule_snapshots(
     return {"items": timesheet_snapshot_service.list_snapshots(schedule.employee_id)}
 
 
-@router.get("/{schedule_id}/snapshots/{file_name}")
+@router.get("/{schedule_id:int}/snapshots/{file_name}")
 async def download_schedule_snapshot(
     schedule_id: int,
     file_name: str,
@@ -191,7 +191,7 @@ async def download_schedule_snapshot(
     )
 
 
-@router.delete("/{schedule_id}", status_code=204)
+@router.delete("/{schedule_id:int}", status_code=204)
 async def delete_work_schedule(
     schedule_id: int,
     db: AsyncSession = Depends(get_db),
@@ -208,7 +208,7 @@ async def delete_work_schedule(
 # --- Entries ---
 
 @router.post(
-    "/{schedule_id}/entries",
+    "/{schedule_id:int}/entries",
     response_model=WorkScheduleEntryResponse,
     status_code=201,
 )
@@ -235,7 +235,7 @@ async def set_work_schedule_entry(
 
 
 @router.post(
-    "/{schedule_id}/entries/bulk",
+    "/{schedule_id:int}/entries/bulk",
     response_model=WorkScheduleResponse,
 )
 async def bulk_set_entries(
@@ -257,7 +257,7 @@ async def bulk_set_entries(
 
 
 @router.delete(
-    "/{schedule_id}/entries/{entry_id}",
+    "/{schedule_id:int}/entries/{entry_id:int}",
     status_code=204,
 )
 async def delete_work_schedule_entry(

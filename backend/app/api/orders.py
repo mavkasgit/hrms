@@ -379,7 +379,7 @@ async def get_order_log(
     return await order_service.get_recent(db, limit=100)
 
 
-@router.get("/{order_id}", response_model=OrderResponse)
+@router.get("/{order_id:int}", response_model=OrderResponse)
 async def get_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
@@ -389,7 +389,7 @@ async def get_order(
     return order_service._serialize_order(order)
 
 
-@router.get("/{order_id}/deletion-preview", response_model=OrderDeletionPreview)
+@router.get("/{order_id:int}/deletion-preview", response_model=OrderDeletionPreview)
 async def get_order_deletion_preview(
     order_id: int,
     db: AsyncSession = Depends(get_db),
@@ -489,7 +489,7 @@ async def sync_orders(
     return await order_service.sync_orders(db, year=year)
 
 
-@router.get("/{order_id}/download")
+@router.get("/{order_id:int}/download")
 async def download_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),
@@ -510,7 +510,7 @@ async def download_order(
     )
 
 
-@router.get("/{order_id}/print-pdf")
+@router.get("/{order_id:int}/print-pdf")
 async def print_order_pdf(
     order_id: int,
     db: AsyncSession = Depends(get_db),
@@ -533,7 +533,7 @@ async def print_order_pdf(
     return response
 
 
-@router.put("/{order_id}", response_model=OrderResponse)
+@router.put("/{order_id:int}", response_model=OrderResponse)
 async def update_order(
     order_id: int,
     data: OrderUpdate,
@@ -544,7 +544,7 @@ async def update_order(
     return order
 
 
-@router.delete("/{order_id}")
+@router.delete("/{order_id:int}")
 async def delete_order(
     order_id: int,
     db: AsyncSession = Depends(get_db),

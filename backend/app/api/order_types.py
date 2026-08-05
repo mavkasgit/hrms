@@ -56,7 +56,7 @@ async def create_order_type(
     return await order_service.create_order_type(db, data)
 
 
-@router.put("/{order_type_id}", response_model=OrderTypeResponse)
+@router.put("/{order_type_id:int}", response_model=OrderTypeResponse)
 async def update_order_type(
     order_type_id: int,
     data: OrderTypeUpdate,
@@ -66,7 +66,7 @@ async def update_order_type(
     return await order_service.update_order_type(db, order_type_id, data)
 
 
-@router.delete("/{order_type_id}")
+@router.delete("/{order_type_id:int}")
 async def delete_order_type(
     order_type_id: int,
     db: AsyncSession = Depends(get_db),
@@ -76,7 +76,7 @@ async def delete_order_type(
     return {"message": "Тип приказа удален"}
 
 
-@router.post("/{order_type_id}/template", response_model=OrderTypeResponse)
+@router.post("/{order_type_id:int}/template", response_model=OrderTypeResponse)
 async def upload_template(
     order_type_id: int,
     file: UploadFile = File(...),
@@ -89,7 +89,7 @@ async def upload_template(
     return await order_service.upload_template(db, order_type_id, file.filename, content)
 
 
-@router.post("/{order_type_id}/template/analyze", response_model=OrderTypeResponse)
+@router.post("/{order_type_id:int}/template/analyze", response_model=OrderTypeResponse)
 async def analyze_template(
     order_type_id: int,
     db: AsyncSession = Depends(get_db),
@@ -129,7 +129,7 @@ async def bulk_upload_templates(
     return results
 
 
-@router.delete("/{order_type_id}/template")
+@router.delete("/{order_type_id:int}/template")
 async def delete_template(
     order_type_id: int,
     db: AsyncSession = Depends(get_db),
@@ -139,7 +139,7 @@ async def delete_template(
     return {"message": "Шаблон удален"}
 
 
-@router.get("/{order_type_id}/template")
+@router.get("/{order_type_id:int}/template")
 async def download_template(
     order_type_id: int,
     db: AsyncSession = Depends(get_db),

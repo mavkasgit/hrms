@@ -178,7 +178,7 @@ async def get_departments(
     return {"departments": departments}
 
 
-@router.get("/by-tab/{tab_number}", response_model=EmployeeResponse)
+@router.get("/by-tab/{tab_number:int}", response_model=EmployeeResponse)
 async def get_employee_by_tab(
     tab_number: int,
     db: AsyncSession = Depends(get_db),
@@ -192,7 +192,7 @@ async def get_employee_by_tab(
     return result
 
 
-@router.get("/{employee_id}", response_model=EmployeeResponse)
+@router.get("/{employee_id:int}", response_model=EmployeeResponse)
 async def get_employee(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
@@ -229,7 +229,7 @@ async def create_employee(
     return result_data
 
 
-@router.put("/{employee_id}", response_model=EmployeeResponse)
+@router.put("/{employee_id:int}", response_model=EmployeeResponse)
 async def update_employee(
     employee_id: int,
     data: EmployeeUpdate,
@@ -245,7 +245,7 @@ async def update_employee(
     return result
 
 
-@router.post("/{employee_id}/reset-periods", response_model=EmployeeResponse)
+@router.post("/{employee_id:int}/reset-periods", response_model=EmployeeResponse)
 async def reset_employee_periods(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
@@ -269,7 +269,7 @@ async def reset_employee_periods(
     return data
 
 
-@router.post("/{employee_id}/recalculate-periods", response_model=list[VacationPeriodBalance])
+@router.post("/{employee_id:int}/recalculate-periods", response_model=list[VacationPeriodBalance])
 async def recalculate_employee_periods(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
@@ -278,7 +278,7 @@ async def recalculate_employee_periods(
     return await vacation_period_service.recalculate_periods(db, employee_id)
 
 
-@router.post("/{employee_id}/dismiss")
+@router.post("/{employee_id:int}/dismiss")
 async def dismiss_employee(
     employee_id: int,
     body: Optional[EmployeeDismissal] = None,
@@ -293,7 +293,7 @@ async def dismiss_employee(
     return result
 
 
-@router.post("/{employee_id}/restore", response_model=EmployeeResponse)
+@router.post("/{employee_id:int}/restore", response_model=EmployeeResponse)
 async def restore_employee(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
@@ -307,7 +307,7 @@ async def restore_employee(
     return result
 
 
-@router.get("/{employee_id}/audit-log", response_model=list[EmployeeAuditLogResponse])
+@router.get("/{employee_id:int}/audit-log", response_model=list[EmployeeAuditLogResponse])
 async def get_employee_audit_log(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
@@ -335,7 +335,7 @@ async def get_all_audit_log(
     return result
 
 
-@router.get("/{employee_id}/periods-status")
+@router.get("/{employee_id:int}/periods-status")
 async def get_employee_periods_status(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
@@ -351,7 +351,7 @@ async def get_employee_periods_status(
     return {"mismatch": mismatch}
 
 
-@router.get("/{employee_id}/warnings", response_model=EmployeeWarningsResponse)
+@router.get("/{employee_id:int}/warnings", response_model=EmployeeWarningsResponse)
 async def get_dismissal_warnings(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
@@ -362,7 +362,7 @@ async def get_dismissal_warnings(
 
 
 @router.post(
-    "/{employee_id}/hire-date-adjustments",
+    "/{employee_id:int}/hire-date-adjustments",
     response_model=HireDateAdjustmentResponse,
     status_code=201,
 )
@@ -402,7 +402,7 @@ async def create_hire_date_adjustment(
 
 
 @router.get(
-    "/{employee_id}/hire-date-adjustments",
+    "/{employee_id:int}/hire-date-adjustments",
     response_model=list[HireDateAdjustmentResponse],
 )
 async def list_hire_date_adjustments(
@@ -417,7 +417,7 @@ async def list_hire_date_adjustments(
 
 
 @router.delete(
-    "/{employee_id}/hire-date-adjustments/{adjustment_id}",
+    "/{employee_id:int}/hire-date-adjustments/{adjustment_id:int}",
     status_code=204,
 )
 async def delete_hire_date_adjustment(
@@ -451,7 +451,7 @@ async def delete_hire_date_adjustment(
     await db.commit()
 
 
-@router.get("/{employee_id}/hire-order", response_model=Optional[HireOrderResponse])
+@router.get("/{employee_id:int}/hire-order", response_model=Optional[HireOrderResponse])
 async def get_hire_order(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
@@ -473,7 +473,7 @@ async def get_hire_order(
     return order
 
 
-@router.delete("/{employee_id}", status_code=204)
+@router.delete("/{employee_id:int}", status_code=204)
 async def delete_employee(
     employee_id: int,
     hard: bool = Query(False),

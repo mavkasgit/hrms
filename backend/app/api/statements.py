@@ -198,7 +198,7 @@ async def create_statement(
     return _build_statement_response(statement, employee_name)
 
 
-@router.get("/{statement_id}", response_model=StatementResponse)
+@router.get("/{statement_id:int}", response_model=StatementResponse)
 async def get_statement(
     statement_id: int,
     db: AsyncSession = Depends(get_db),
@@ -216,7 +216,7 @@ async def get_statement(
     return _build_statement_response(statement, employee_name)
 
 
-@router.put("/{statement_id}", response_model=StatementResponse)
+@router.put("/{statement_id:int}", response_model=StatementResponse)
 async def update_statement(
     statement_id: int,
     data: StatementUpdate,
@@ -244,7 +244,7 @@ async def update_statement(
     return _build_statement_response(statement, employee_name)
 
 
-@router.delete("/{statement_id}")
+@router.delete("/{statement_id:int}")
 async def delete_statement(
     statement_id: int,
     db: AsyncSession = Depends(get_db),
@@ -258,7 +258,7 @@ async def delete_statement(
     return {"message": "Statement deleted"}
 
 
-@router.get("/{statement_id}/download")
+@router.get("/{statement_id:int}/download")
 async def download_statement(
     statement_id: int,
     db: AsyncSession = Depends(get_db),
@@ -281,7 +281,7 @@ async def download_statement(
 PDF_MEDIA_TYPE = "application/pdf"
 
 
-@router.get("/{statement_id}/print-pdf")
+@router.get("/{statement_id:int}/print-pdf")
 async def print_statement_pdf(
     statement_id: int,
     db: AsyncSession = Depends(get_db),
