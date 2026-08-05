@@ -184,9 +184,10 @@ async def test_password_login_endpoint_removed(async_client: AsyncClient, db_ses
     token, _ = await _login(db_session, user)
 
     events_resp = await async_client.get(
-        "/api/auth/login-events", headers=_auth(token)
+        "/api/auth/me/login-events", headers=_auth(token)
     )
     assert events_resp.status_code == 200
+    assert "events" in events_resp.json()
 
 
 async def test_revoke_others_keeps_current(async_client: AsyncClient, db_session):

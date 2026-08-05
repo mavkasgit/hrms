@@ -45,15 +45,18 @@ class LoginEventRepository:
         db: AsyncSession,
         user_id: int,
         since: datetime,
-        limit: int = 50,
     ) -> list[UserLoginEvent]:
+        """Все события юзера в окне (since..now), новые сверху.
+
+        Без LIMIT: total считается в маршруте через len(), лимит показа — там же
+        (канон 2.1.0, паритет с сессиями).
+        """
         result = await db.execute(
             select(UserLoginEvent)
             .where(
                 UserLoginEvent.user_id == user_id,
                 UserLoginEvent.created_at >= since,
             )
-            .order_by(UserLoginEvent.created_at.desc())
-            .limit(limit)
+            .order_by(UserLoginEvent.created_at.desc(), UserLoginEvent.id.desc())
         )
         return list(result.scalars().all())

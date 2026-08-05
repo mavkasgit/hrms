@@ -95,12 +95,43 @@ async def test_me_links_returns_data(async_client, db_session: AsyncSession, oid
 
 async def test_me_login_events_returns_data(async_client, db_session: AsyncSession):
     uname = f"ev_{uuid_mod.uuid4().hex[:8]}"
-    await _make_user(db_session, username=uname)
+    user = await _make_user(db_session, username=uname)
 
     async with _logged_in_as(uname):
         res = await async_client.get("/api/auth/me/login-events", headers=_auth())
         assert res.status_code == 200
-        assert isinstance(res.json(), list)
+        body = res.json()
+        assert body["total"] == 0
+        assert body["events"] == []
+
+
+async def test_me_login_events_capped_at_10_with_total(
+    async_client, db_session: AsyncSession
+):
+    """Канон 2.1.0: /auth/me/login-events отдаёт максимум 10 + total (окно 90 дней)."""
+    from app.services import session_service
+
+    uname = f"evcap_{uuid_mod.uuid4().hex[:8]}"
+    user = await _make_user(db_session, username=uname)
+    for _ in range(12):
+        await session_service.record_login_event(
+            db_session,
+            event_type="login_success",
+            success=True,
+            user_id=user.id,
+            username_attempted=uname,
+        )
+    await db_session.commit()
+
+    async with _logged_in_as(uname):
+        res = await async_client.get("/api/auth/me/login-events", headers=_auth())
+        assert res.status_code == 200
+        body = res.json()
+        assert body["total"] == 12
+        assert len(body["events"]) == 10
+        # Самые свежие сверху: id убывают (created_at DESC, tiebreaker id DESC).
+        ids = [e["id"] for e in body["events"]]
+        assert ids == sorted(ids, reverse=True)
 
 
 async def test_me_profile_and_avatar_patch(async_client, db_session: AsyncSession):
@@ -171,7 +202,7 @@ async def test_me_profile_avatar_fields_rejected_422(async_client, db_session: A
 
 
 async def test_old_paths_removed(async_client, db_session: AsyncSession):
-    """Старые пути миграции удалены (404): /users/me/* и ?scope=others."""
+    """Старые пути миграции удалены (404): /users/me/*, /auth/login-events и ?scope=others."""
     uname = f"old_{uuid_mod.uuid4().hex[:8]}"
     await _make_user(db_session, username=uname)
 
@@ -184,6 +215,10 @@ async def test_old_paths_removed(async_client, db_session: AsyncSession):
         assert (await async_client.patch(
             "/api/users/me/avatar",
             json={"avatar_seed": "x"},
+            headers=_auth(),
+        )).status_code == 404
+        assert (await async_client.get(
+            "/api/auth/login-events",
             headers=_auth(),
         )).status_code == 404
         assert (await async_client.delete(

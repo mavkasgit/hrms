@@ -9,6 +9,10 @@ from pydantic import BaseModel
 # (канон user-settings 2.0.0: список не раздувается, счётчик — в total).
 MAX_SESSIONS_SHOWN = 10
 
+# Сколько последних событий входа отдаём в GET /auth/me/login-events
+# (канон user-settings 2.1.0: паритет с сессиями — 10 + total).
+MAX_LOGIN_EVENTS_SHOWN = 10
+
 
 class SessionOut(BaseModel):
     id: UUID
@@ -47,3 +51,15 @@ class LoginEventOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class LoginEventListOut(BaseModel):
+    """GET /auth/me/login-events: последние MAX_LOGIN_EVENTS_SHOWN событий.
+
+    Контракт канона user-settings 2.1.0 (паритет с сессиями): вместо голого
+    списка — объект {events: [...], total: N}, чтобы UI показывал
+    «последние N из total».
+    """
+
+    events: list[LoginEventOut]
+    total: int

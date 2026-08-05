@@ -4,7 +4,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { UserSettingsDialog } from "./UserSettingsDialog"
 import type { UserSettingsApi } from "./api/adapter"
-import type { SessionListResult, UserProfile } from "./types"
+import type {
+  LoginEventListResult,
+  SessionListResult,
+  UserProfile,
+} from "./types"
 
 const profile: UserProfile = {
   username: "ivan",
@@ -29,6 +33,17 @@ function makeSession(id: string, isCurrent: boolean) {
   }
 }
 
+function makeEvent(id: string) {
+  return {
+    id,
+    success: true,
+    ip_address: "10.0.0.1",
+    device_label: `Event ${id}`,
+    login_method: "oidc",
+    created_at: "2026-07-20T10:00:00Z",
+  }
+}
+
 function createApi(overrides: Partial<UserSettingsApi> = {}): UserSettingsApi {
   return {
     getProfile: vi.fn(async () => profile),
@@ -45,7 +60,9 @@ function createApi(overrides: Partial<UserSettingsApi> = {}): UserSettingsApi {
     })),
     revokeSession: vi.fn(async () => undefined),
     revokeOtherSessions: vi.fn(async () => undefined),
-    listLoginEvents: vi.fn(async () => []),
+    listLoginEvents: vi.fn(
+      async (): Promise<LoginEventListResult> => ({ events: [], total: 0 }),
+    ),
     ...overrides,
   }
 }
@@ -136,6 +153,46 @@ describe("UserSettingsDialog", () => {
     expect(
       screen.getByRole("button", { name: "Завершить другие сессии" }),
     ).toBeTruthy()
+  })
+
+  it("в «Истории входов» показывает максимум 10 из N (последние 10 из 12)", async () => {
+    const events = Array.from({ length: 12 }, (_, i) => makeEvent(`e${i}`))
+    const api = createApi({
+      listLoginEvents: vi.fn(
+        async (): Promise<LoginEventListResult> => ({
+          events: events.slice(0, 10),
+          total: events.length,
+        }),
+      ),
+    })
+    renderDialog(api)
+    expect(await screen.findByText("ivan")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Сессии" }))
+    expect(await screen.findByText("Последние 10 из 12")).toBeTruthy()
+    // Рендерится только список events (10), не все 12
+    expect(screen.getAllByText(/Event e\d+/).length).toBe(10)
+  })
+
+  it("скрывает счётчик истории, когда показаны все записи", async () => {
+    const api = createApi({
+      listSessions: vi.fn(
+        async (): Promise<SessionListResult> => ({ sessions: [], total: 0 }),
+      ),
+      listLoginEvents: vi.fn(
+        async (): Promise<LoginEventListResult> => ({
+          events: [makeEvent("e1")],
+          total: 1,
+        }),
+      ),
+    })
+    renderDialog(api)
+    expect(await screen.findByText("ivan")).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Сессии" }))
+    expect(await screen.findByText(/Event e1/)).toBeTruthy()
+    // Счётчик «Последние 1 из 1» — шум, прячем (все записи видны)
+    expect(screen.queryByText("Последние 1 из 1")).toBeNull()
   })
 
   it("закрывает диалог без подтверждения (read-only форма не «грязнится»)", async () => {

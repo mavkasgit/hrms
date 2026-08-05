@@ -89,6 +89,7 @@ export const ru = {
     historyTitle: "История входов",
     historyDescription: "Успешные и неудачные попытки входа (до 90 дней)",
     historyEmpty: "Пока нет записей о входах",
+    historyLastOfN: "Последние {shown} из {total}",
     successLogin: "Успешный вход",
     failedLogin: "Неудачная попытка",
   },

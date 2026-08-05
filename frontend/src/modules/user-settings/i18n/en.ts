@@ -87,6 +87,7 @@ export const en: UserSettingsDict = {
     historyTitle: "Sign-in history",
     historyDescription: "Successful and failed sign-in attempts (up to 90 days)",
     historyEmpty: "No sign-in records yet",
+    historyLastOfN: "Last {shown} of {total}",
     successLogin: "Successful sign-in",
     failedLogin: "Failed attempt",
   },

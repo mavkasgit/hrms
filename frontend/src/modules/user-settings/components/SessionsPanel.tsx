@@ -13,7 +13,7 @@ import {
 import { useUserSettings } from "../context"
 import { formatDateTime, formatRelativeTime } from "../lib/datetime"
 import { detectDeviceKind } from "../lib/device"
-import type { LoginEvent, SessionInfo, SessionListResult } from "../types"
+import type { LoginEventListResult, SessionInfo, SessionListResult } from "../types"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,7 +26,7 @@ import {
   Button,
   Skeleton,
 } from "../ui"
-import { Card, CardHeader, StatusPill } from "./ui-bits"
+import { Card, StatusPill } from "./ui-bits"
 
 function DeviceIcon({ session }: { session: SessionInfo }) {
   const kind = detectDeviceKind(session.device_label, session.user_agent)
@@ -54,7 +54,7 @@ export function SessionsPanel() {
   const { api, dict, notify, onLogoutRequest } = useUserSettings()
 
   const [list, setList] = useState<SessionListResult>({ sessions: [], total: 0 })
-  const [events, setEvents] = useState<LoginEvent[]>([])
+  const [history, setHistory] = useState<LoginEventListResult>({ events: [], total: 0 })
   const [loading, setLoading] = useState(true)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
   const [eventsError, setEventsError] = useState<string | null>(null)
@@ -63,6 +63,7 @@ export function SessionsPanel() {
   const [confirmBusy, setConfirmBusy] = useState(false)
 
   const { sessions, total } = list
+  const { events, total: eventsTotal } = history
 
   const intl = dict.meta.intl
   const methodLabel = (m: string | null | undefined) =>
@@ -74,7 +75,9 @@ export function SessionsPanel() {
     setEventsError(null)
     const [sessionsResult, eventsResult] = await Promise.allSettled([
       api.listSessions ? api.listSessions() : Promise.resolve({ sessions: [], total: 0 }),
-      api.listLoginEvents ? api.listLoginEvents(50) : Promise.resolve([]),
+      api.listLoginEvents
+        ? api.listLoginEvents()
+        : Promise.resolve({ events: [], total: 0 }),
     ])
     if (sessionsResult.status === "fulfilled") {
       setList(sessionsResult.value)
@@ -82,7 +85,7 @@ export function SessionsPanel() {
       setSessionsError(dict.errors.sessions)
     }
     if (eventsResult.status === "fulfilled") {
-      setEvents(eventsResult.value)
+      setHistory(eventsResult.value)
     } else {
       setEventsError(dict.errors.events)
     }
@@ -136,11 +139,16 @@ export function SessionsPanel() {
 
   const hasOthers = sessions.some((s) => !s.is_current)
 
+  const lastOfN = (template: string, shown: number, all: number) =>
+    template.replace("{shown}", String(shown)).replace("{total}", String(all))
+
   const shownLabel =
-    !loading && total > 0
-      ? dict.sessions.lastOfN
-          .replace("{shown}", String(sessions.length))
-          .replace("{total}", String(total))
+    !loading && total > 0 ? lastOfN(dict.sessions.lastOfN, sessions.length, total) : null
+
+  // Счётчик истории: только когда есть скрытые записи (total > показанных).
+  const historyShownLabel =
+    !loading && eventsTotal > events.length
+      ? lastOfN(dict.sessions.historyLastOfN, events.length, eventsTotal)
       : null
 
   return (
@@ -286,11 +294,24 @@ export function SessionsPanel() {
 
       {api.listLoginEvents && (
         <Card>
-          <CardHeader
-            icon={History}
-            title={dict.sessions.historyTitle}
-            description={dict.sessions.historyDescription}
-          />
+          <div className="mb-4 flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <History className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-foreground">
+                {dict.sessions.historyTitle}
+              </h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {dict.sessions.historyDescription}
+              </p>
+              {historyShownLabel && (
+                <p className="mt-0.5 text-[11px] text-muted-foreground/80">
+                  {historyShownLabel}
+                </p>
+              )}
+            </div>
+          </div>
           {eventsError && (
             <p className="mb-3 text-xs text-destructive">{eventsError}</p>
           )}

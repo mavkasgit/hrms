@@ -1,6 +1,6 @@
 import type {
   IdpLinks,
-  LoginEvent,
+  LoginEventListResult,
   ProfilePatch,
   SessionListResult,
   UserProfile,
@@ -45,6 +45,9 @@ export interface UserSettingsApi {
   /** Отозвать все сессии, кроме текущей. */
   revokeOtherSessions?(): Promise<void>
 
-  /** История входов. Без метода — блок скрыт. */
-  listLoginEvents?(limit?: number): Promise<LoginEvent[]>
+  /**
+   * История входов (канон 2.1.0): {events: последние 10, total: N}.
+   * Без метода — блок скрыт.
+   */
+  listLoginEvents?(): Promise<LoginEventListResult>
 }

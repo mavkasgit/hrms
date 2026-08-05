@@ -1,7 +1,7 @@
 import api from "@/shared/api/axios"
 import type {
   IdpLinks,
-  LoginEvent,
+  LoginEventListResult,
   SessionListResult,
   UserProfile,
   UserSettingsApi,
@@ -57,10 +57,10 @@ export const hrmsUserSettingsApi: UserSettingsApi = {
     await api.delete("/auth/sessions/others")
   },
 
-  async listLoginEvents(limit = 50): Promise<LoginEvent[]> {
-    const { data } = await api.get<LoginEvent[]>("/auth/me/login-events", {
-      params: { limit },
-    })
+  async listLoginEvents(): Promise<LoginEventListResult> {
+    const { data } = await api.get<LoginEventListResult>(
+      "/auth/me/login-events",
+    )
     return data
   },
 }

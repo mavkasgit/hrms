@@ -20,7 +20,14 @@ from app.schemas.oidc_auth import (
     OidcConfigResponse,
     OidcLogoutUrlResponse,
 )
-from app.schemas.session import LoginEventOut, MAX_SESSIONS_SHOWN, SessionListOut, SessionOut
+from app.schemas.session import (
+    LoginEventListOut,
+    LoginEventOut,
+    MAX_LOGIN_EVENTS_SHOWN,
+    MAX_SESSIONS_SHOWN,
+    SessionListOut,
+    SessionOut,
+)
 from app.services import session_service
 from app.services.oidc_auth_service import OidcAuthService
 from app.services.session_service import SessionNotFoundError
@@ -663,14 +670,21 @@ async def get_me_links(
     return idp_links_data()
 
 
-@router.get("/me/login-events", response_model=list[LoginEventOut])
+@router.get("/me/login-events", response_model=LoginEventListOut)
 async def list_me_login_events(
-    limit: int = Query(default=50, ge=1, le=200),
     current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> list[LoginEventOut]:
-    """История входов текущего пользователя (каноничный путь /auth/me/*)."""
-    return await _list_my_login_events(db, current_user, limit=limit)
+) -> LoginEventListOut:
+    """История входов текущего пользователя (каноничный путь /auth/me/*).
+
+    Контракт канона user-settings 2.1.0: {events: [...последние 10 по
+    created_at DESC], total: N} — паритет с GET /auth/sessions.
+    """
+    events = await _list_my_login_events(db, current_user)
+    return LoginEventListOut(
+        events=events[:MAX_LOGIN_EVENTS_SHOWN],
+        total=len(events),
+    )
 
 
 @router.get("/sessions", response_model=SessionListOut)
@@ -852,11 +866,9 @@ async def logout(
 async def _list_my_login_events(
     db: AsyncSession,
     current_user: CurrentUser,
-    *,
-    limit: int,
 ) -> list[LoginEventOut]:
     user_id = await _resolve_user_id(db, current_user)
-    events = await session_service.list_login_events(db, user_id=user_id, limit=limit)
+    events = await session_service.list_login_events(db, user_id=user_id)
     out: list[LoginEventOut] = []
     for e in events:
         details = e.details if isinstance(e.details, dict) else {}
@@ -873,13 +885,3 @@ async def _list_my_login_events(
             )
         )
     return out
-
-
-@router.get("/login-events", response_model=list[LoginEventOut])
-async def list_my_login_events(
-    limit: int = Query(default=50, ge=1, le=200),
-    current_user: CurrentUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[LoginEventOut]:
-    """История входов текущего пользователя (обратная совместимость → /auth/me/login-events)."""
-    return await _list_my_login_events(db, current_user, limit=limit)

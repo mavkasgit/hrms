@@ -1,6 +1,6 @@
 import type {
   IdpLinks,
-  LoginEvent,
+  LoginEventListResult,
   ProfilePatch,
   SessionListResult,
   UserProfile,
@@ -130,7 +130,7 @@ export function createHttpAdapter(options: HttpAdapterOptions = {}): UserSetting
       await request<void>("DELETE", ep.revokeOthers)
     },
 
-    listLoginEvents: (limit = 50) =>
-      request<LoginEvent[]>("GET", `${ep.loginEvents}?limit=${limit}`),
+    listLoginEvents: () =>
+      request<LoginEventListResult>("GET", ep.loginEvents),
   }
 }

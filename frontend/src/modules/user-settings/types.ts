@@ -65,6 +65,15 @@ export interface LoginEvent {
   event_type?: string | null
 }
 
+/**
+ * Ответ GET /auth/me/login-events (канон user-settings 2.1.0):
+ * последние 10 событий по created_at DESC + общий счёт в окне ретеншена.
+ */
+export interface LoginEventListResult {
+  events: LoginEvent[]
+  total: number
+}
+
 /** Ссылки на внешний IdP (единый вход), если он настроен. */
 export interface IdpLinks {
   oidc_enabled: boolean

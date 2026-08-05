@@ -24,6 +24,7 @@ export type { UserSettingsDict, UserSettingsDictOverride } from "./i18n"
 export type {
   IdpLinks,
   LoginEvent,
+  LoginEventListResult,
   NotifyFn,
   ProfilePatch,
   SessionInfo,

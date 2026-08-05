@@ -1,19 +1,19 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "core": {
     "frontend/src/modules/user-settings/UserSettingsDialog.tsx": "5d0fead26fbc42cd1425d48a3b92d0eb86be216318c1190fb92da01745548874",
     "frontend/src/modules/user-settings/components/ProfilePanel.tsx": "9a27400da84f7169700b46e90f2c100d1587140b4a4c357be2dcf2ee303d063e",
     "frontend/src/modules/user-settings/components/AppearancePanel.tsx": "8298cfe952f1bd6e50957d94f212c34f3d7b320e2bb6570f05d430e1ed89dc65",
     "frontend/src/modules/user-settings/components/SecurityPanel.tsx": "14be1d2384b1c7419b7d3fce038692c9b3cce4938ced4eb580d989a1189dcd33",
-    "frontend/src/modules/user-settings/components/SessionsPanel.tsx": "490d0d2d93c099393c6837a4cc6cb13c00f616703faa0a2b061d19559e81fcc8",
+    "frontend/src/modules/user-settings/components/SessionsPanel.tsx": "85915ed737d4cba3f29146da0843472c422e9c3ec77e83c71878c7a8f5e65580",
     "frontend/src/modules/user-settings/components/AvatarPickerDialog.tsx": "8fbd6c31f986c076093e52020d23df4dd392c1a77bcd5622baecce48d971dc75",
     "frontend/src/modules/user-settings/components/AvatarArt.tsx": "129f556fa14a5578d8232766568f4413b51b2f68e7c90d1c54c9a3f5c65a8a89",
-    "frontend/src/modules/user-settings/types.ts": "69e7a2cfce51f358c622f86a7576b4dde5bfc709b71f422c3c19f5c7aad2bf1c",
+    "frontend/src/modules/user-settings/types.ts": "dd1f3dd6777711c5bcf7557eac505382211d9e9f4b12086faa8faf9f3757f11b",
     "frontend/src/modules/user-settings/context.tsx": "1995688e6a9287c8111e0becb77ecc412b9b4fa3716cb3bb4458700d12b35d80",
     "frontend/src/modules/user-settings/lib/avatar-seed.ts": "89b6f990a4b78112ac52e5adc4a414bd2121730af5fee155e7871edd121d48be",
     "frontend/src/modules/user-settings/lib/datetime.ts": "babdf4df13e68ab18cd0dd029f4c46191e1b56de2145aadbc972e5cc68c4a723",
     "frontend/src/modules/user-settings/lib/device.ts": "46a842d5ff8855a7246dcde9200909b111b95f216f2136d79d778e9f5f17978a",
-    "frontend/src/modules/user-settings/i18n/ru.ts": "e457f068991147ea21358a0a95b0d529e5cd5392abef00d440ecefc87b4908c9",
+    "frontend/src/modules/user-settings/i18n/ru.ts": "c9e286590f053b7a64bb18d6d52c477fa5b7e421232fe4dd558d998fd87fe014",
     "backend/app/services/authentik_client.py": "a24660ad004c2896f9ed58a9b6bbad6b30258893f0af70634f71ee044979b289",
     "backend/app/services/unified_profile_service.py": "fa0981d6204879f8f8b3de515833e5ab0fb6acbc13fffb8240e47d029b3b005f"
   },

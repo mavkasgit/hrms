@@ -261,7 +261,7 @@ async def test_record_and_list_login_events(db_session: AsyncSession):
         ip_address="9.9.9.9",
         details={"reason": "invalid_credentials"},
     )
-    events = await session_service.list_login_events(db_session, user_id=user.id, limit=50)
+    events = await session_service.list_login_events(db_session, user_id=user.id)
     assert len(events) >= 2
     types = {e.event_type for e in events}
     assert "login_success" in types
