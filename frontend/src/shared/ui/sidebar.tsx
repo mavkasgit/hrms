@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
 import api, { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
 import { HrmsUserSettingsDialog } from "@/features/user-settings/HrmsUserSettingsDialog"
+import { HrmsNotificationBell } from "@/features/notifications"
 import { UserAvatar } from "@/shared/ui/UserAvatar"
 import { getUserSeed } from "@/shared/lib/avatar"
 import {
@@ -209,16 +210,27 @@ export function Sidebar() {
       <div className="p-3 border-t flex flex-col gap-2">
         {currentUser ? (
           <>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setProfileOpen(true)}
+                className="flex flex-1 min-w-0 items-center gap-3 px-3 py-2 rounded-xl text-left hover:bg-accent transition-all group"
+                title="Настройки профиля"
+              >
+                <UserAvatar
+                  seed={getUserSeed(currentUser)}
+                  size={32}
+                  className="group-hover:scale-105 transition-transform"
+                />
+              </button>
+              <HrmsNotificationBell />
+            </div>
             <button
               type="button"
               onClick={() => setProfileOpen(true)}
-              className="flex w-full items-center gap-3 px-3 py-2 rounded-xl text-left hover:bg-accent transition-all group"
+              className="flex w-full items-center gap-3 px-3 py-1.5 rounded-xl text-left hover:bg-accent transition-all group"
+              title="Настройки профиля"
             >
-              <UserAvatar
-                seed={getUserSeed(currentUser)}
-                size={32}
-                className="group-hover:scale-105 transition-transform"
-              />
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-foreground text-sm truncate group-hover:text-primary transition-colors">
                   {currentUser.full_name || "Пользователь"}

@@ -83,8 +83,12 @@ modules/       → Переносимые модули (см. ниже)
   хост-импорты (shadcn) — только через `ui.ts`; данные — через интерфейс
   `UserSettingsApi` (`createHttpAdapter` или своя реализация). Контракт и
   инструкция по переносу — в `modules/user-settings/README.md`.
-- HRMS-обвязка модуля живёт в `features/user-settings/` (адаптер поверх
-  проектного axios + колбэки темы/языка/тостов).
+- `modules/notifications/` — переносимый колокольчик уведомлений (бейдж + попап).
+  Публичный API — только `index.ts`; хост-импорты — только через `ui.ts`;
+  данные — через интерфейс `NotificationsApi`. При обновлении бампай
+  `NOTIFICATIONS_MODULE_VERSION`; сверка копий с KTM — `npm run check:modules`.
+- HRMS-обвязка user-settings живёт в `features/user-settings/`, обвязка
+  notifications — в `features/notifications/` (адаптеры поверх проектного axios).
 - При обновлении модуля бампай `USER_SETTINGS_MODULE_VERSION`.
 
 ---
