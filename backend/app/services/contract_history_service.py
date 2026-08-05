@@ -22,20 +22,37 @@ class ContractHistoryService:
         """Create a contract history record from order data."""
         ef = extra_fields or {}
 
-        contract_start = self._parse_date(
-            ef.get("new_contract_start")
-            or ef.get("hire_date")
-            or ef.get("contract_start")
-        )
-        contract_end = self._parse_date(
-            ef.get("new_contract_end")
-            or ef.get("contract_end")
-        )
-        contract_number = (
-            ef.get("new_contract_number")
-            or ef.get("contract_number")
-            or (getattr(employee, "contract_number", None) if employee else None)
-        )
+        # Резолв полей контракта зависит от типа приказа. Для hire-приказа
+        # автозаполнение фронта подставляет new_contract_start (конец старого контракта
+        # + 1 день), которая перебивала правильную дату приёма — поэтому для hire
+        # new_contract_* НЕ используем.
+        if order_type_code == "hire":
+            contract_start = self._parse_date(
+                ef.get("contract_start")
+                or ef.get("hire_date")
+            )
+            contract_end = self._parse_date(
+                ef.get("contract_end")
+            )
+            contract_number = (
+                ef.get("contract_number")
+                or (getattr(employee, "contract_number", None) if employee else None)
+            )
+        else:
+            contract_start = self._parse_date(
+                ef.get("new_contract_start")
+                or ef.get("hire_date")
+                or ef.get("contract_start")
+            )
+            contract_end = self._parse_date(
+                ef.get("new_contract_end")
+                or ef.get("contract_end")
+            )
+            contract_number = (
+                ef.get("new_contract_number")
+                or ef.get("contract_number")
+                or (getattr(employee, "contract_number", None) if employee else None)
+            )
         # Calculate years for order placeholders (not stored in history)
         contract_years = self._parse_int(
             ef.get("new_contract_years")

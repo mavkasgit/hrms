@@ -388,13 +388,28 @@ class OrderService:
             # Update employee contract dates for hire, new_contract, transfer, and contract_extension
             if order_type.code in ("hire", "new_contract", "transfer", "contract_extension") and employee and extra_fields:
                 from app.services.contract_history_service import ContractHistoryService
-                new_start = ContractHistoryService._parse_date(
-                    extra_fields.get("new_contract_start") or extra_fields.get("hire_date")
-                )
-                new_end = ContractHistoryService._parse_date(
-                    extra_fields.get("new_contract_end") or extra_fields.get("contract_new_end") or extra_fields.get("contract_end")
-                )
-                new_number = extra_fields.get("new_contract_number")
+
+                # Резолв полей контракта зависит от типа приказа: автозаполнение фронта
+                # подставляет new_contract_start = конец старого контракта + 1 день для
+                # ЛЮБОГО типа приказа, включая hire. Для hire она перебивала бы правильную
+                # дату приёма (hire_date/contract_start), поэтому new_contract_* для hire
+                # НЕ используем.
+                if order_type.code == "hire":
+                    new_start = ContractHistoryService._parse_date(
+                        extra_fields.get("contract_start") or extra_fields.get("hire_date")
+                    )
+                    new_end = ContractHistoryService._parse_date(
+                        extra_fields.get("contract_end")
+                    )
+                    new_number = extra_fields.get("contract_number")
+                else:
+                    new_start = ContractHistoryService._parse_date(
+                        extra_fields.get("new_contract_start") or extra_fields.get("hire_date")
+                    )
+                    new_end = ContractHistoryService._parse_date(
+                        extra_fields.get("new_contract_end") or extra_fields.get("contract_new_end") or extra_fields.get("contract_end")
+                    )
+                    new_number = extra_fields.get("new_contract_number")
 
                 # Защита от перезаписи актуального контракта старыми/прошлыми данными
                 # (например, оформление старого приказа приёма для сотрудника, у которого уже
@@ -405,10 +420,14 @@ class OrderService:
                     if employee.contract_end is None or new_end >= employee.contract_end:
                         should_update = True
                     else:
-                        get_audit_logger().info(
-                            "Skipping employee contract update: new_end=%s < current contract_end=%s "
-                            "for employee_id=%s, order_id=%s, order_type=%s",
-                            new_end, employee.contract_end, employee.id, order.id, order_type.code,
+                        # Раньше обновление молча пропускалось (только audit-лог), и пользователь
+                        # не понимал, почему дата контракта не меняется. Прерываем создание
+                        # приказа с понятным сообщением — транзакция откатывается целиком.
+                        raise HRMSException(
+                            f"Дата окончания контракта ({new_end.isoformat()}) раньше текущей "
+                            f"({employee.contract_end.isoformat()}). Контракт сотрудника не обновлён.",
+                            "contract_end_before_current",
+                            status_code=409,
                         )
                 elif employee.contract_end is None and (new_start or new_number):
                     # Дата окончания не указана, но текущего контракта нет — обновляем start/number
