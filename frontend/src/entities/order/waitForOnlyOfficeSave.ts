@@ -3,6 +3,13 @@ import type { OnlyOfficeForceSaveResponse, OnlyOfficeSaveStatusResponse } from "
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
+function makeSaveId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID()
+  }
+  return `save_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+}
+
 export type WaitOnlyOfficeSaveResult = "persisted" | "no_changes"
 
 function formatSaveError(err: unknown, phase: "forcesave" | "save-status"): Error {
@@ -45,7 +52,7 @@ export async function requestAndWaitOnlyOfficeSave(params: {
   pollIntervalMs?: number
   timeoutMs?: number
 }): Promise<WaitOnlyOfficeSaveResult> {
-  const saveId = crypto.randomUUID()
+  const saveId = makeSaveId()
 
   let forceResult: OnlyOfficeForceSaveResponse
   try {

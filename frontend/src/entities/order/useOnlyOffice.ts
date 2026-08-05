@@ -56,6 +56,8 @@ export function useOrderDrafts() {
   return useQuery({
     queryKey: ["order-drafts"],
     queryFn: () => api.fetchOrderDrafts(),
+    // Счётчик черновиков в сайдбаре должен оставаться свежим (#55).
+    refetchInterval: 30_000,
   })
 }
 

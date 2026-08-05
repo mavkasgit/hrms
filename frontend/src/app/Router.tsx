@@ -7,6 +7,7 @@ const DashboardPage = lazy(async () => ({ default: (await import("@/pages/Dashbo
 const EmployeesPage = lazy(async () => ({ default: (await import("@/pages/EmployeesPage")).EmployeesPage }))
 const StructurePage = lazy(async () => ({ default: (await import("@/pages/StructurePage")).StructurePage }))
 const OrdersPage = lazy(async () => ({ default: (await import("@/pages/OrdersPage")).OrdersPage }))
+const DraftsPage = lazy(async () => ({ default: (await import("@/pages/DraftsPage")).DraftsPage }))
 const NotificationsPage = lazy(async () => ({ default: (await import("@/pages/NotificationsPage")).NotificationsPage }))
 const StatementsPage = lazy(async () => ({ default: (await import("@/pages/StatementsPage")).StatementsPage }))
 const VacationsPage = lazy(async () => ({ default: (await import("@/pages/vacations/VacationsPage")).VacationsPage }))
@@ -51,6 +52,7 @@ export const router = createBrowserRouter([
       { path: "employees", element: withSuspense(<EmployeesPage />) },
       { path: "structure", element: withSuspense(<StructurePage />) },
       { path: "orders", element: withSuspense(<OrdersPage />) },
+      { path: "orders/drafts", element: withSuspense(<DraftsPage />) },
       { path: "orders/notifications", element: withSuspense(<NotificationsPage />) },
       { path: "orders/statements", element: withSuspense(<StatementsPage />) },
       { path: "vacations", element: withSuspense(<VacationsPage />) },

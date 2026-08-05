@@ -24,7 +24,7 @@ from app.schemas.order import GroupOrderCreate, OrderCreate
 from app.services.order_document_service import get_template_path
 from app.services.onlyoffice_service import onlyoffice_service
 from app.services.onlyoffice_save_tracker import onlyoffice_save_tracker
-from app.services.order_draft_service import order_draft_service
+from app.services.order_draft_service import normalize_draft_save_status, order_draft_service
 from app.services.order_service import order_service
 from app.services.docx_renderer import load_template_or_create_blank, render_docx_placeholders, build_basic_doc_replacements
 from app.repositories.references_repository import references_repository
@@ -42,6 +42,10 @@ DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingm
 class OnlyOfficeForceSaveRequest(BaseModel):
     document_key: str
     save_id: str | None = None
+
+
+class OnlyOfficeSaveReportRequest(BaseModel):
+    reason: str
 
 
 from app.api.deps import get_current_user as _get_current_user_stub, get_current_user_or_onlyoffice
@@ -186,9 +190,13 @@ async def _run_forcesave(
         await onlyoffice_save_tracker.register(save_id, doc_type, doc_id)
     try:
         command_error = await onlyoffice_service.force_save(document_key, userdata=save_id)
-    except HRMSException:
+    except HRMSException as exc:
         if save_id:
             await onlyoffice_save_tracker.mark_failed(save_id, "onlyoffice_forcesave_failed")
+        if doc_type == "draft":
+            await order_draft_service.update_save_status(
+                str(doc_id), state="error", error=str(exc.detail)
+            )
         raise
     if command_error == 4:
         if save_id:
@@ -369,7 +377,16 @@ async def list_order_drafts(
             "created_by": meta.get("created_by"),
             "created_at": meta.get("created_at"),
             "status": meta.get("status", "draft"),
+            "save_status": normalize_draft_save_status(meta.get("save_status")),
+            "file_name": None,
+            "file_path": None,
         }
+        try:
+            draft_path = order_draft_service.get_draft_path(meta["draft_id"])
+            item["file_name"] = draft_path.name
+            item["file_path"] = str(draft_path)
+        except HRMSException:
+            pass
         # Resolve employee name
         if payload.get("employee_id"):
             emp = await order_service.get_employee_by_id(db, payload["employee_id"])
@@ -522,16 +539,27 @@ async def draft_onlyoffice_callback(
             file_mtime = int(file_path.stat().st_mtime) if file_path.exists() else None
             if userdata:
                 await onlyoffice_save_tracker.mark_persisted(userdata, oo_status=status, file_mtime=file_mtime)
+            await order_draft_service.update_save_status(draft_id, state="saved")
             logger.info("[draft callback] saved successfully draft_id=%s", draft_id)
         except Exception as exc:
             logger.error("[draft callback] failed to save draft_id=%s: %s", draft_id, exc, exc_info=True)
             if userdata:
                 await onlyoffice_save_tracker.mark_failed(userdata, str(exc), oo_status=status)
+            await order_draft_service.update_save_status(draft_id, state="error", error=str(exc))
             return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
     elif status in (2, 3, 6):
+        # No download URL — especially status 3: mark attempt failed when tracked
         if userdata and status == 3:
             await onlyoffice_save_tracker.mark_failed(
                 userdata, "forcesave_callback_status_3_no_url", oo_status=3
+            )
+        if status == 3:
+            await order_draft_service.update_save_status(
+                draft_id, state="error", error="forcesave_callback_status_3_no_url"
+            )
+        else:
+            await order_draft_service.update_save_status(
+                draft_id, state="error", error=f"Нет ссылки на сохранённый файл (status={status})"
             )
     elif status == 7:
         logger.warning("[draft callback] force save error for draft_id=%s", draft_id)
@@ -539,6 +567,9 @@ async def draft_onlyoffice_callback(
             await onlyoffice_save_tracker.mark_failed(
                 userdata, "forcesave_callback_status_7", oo_status=7
             )
+        await order_draft_service.update_save_status(
+            draft_id, state="error", error="forcesave_callback_status_7"
+        )
 
     return {"error": 0}
 
@@ -565,6 +596,21 @@ async def draft_onlyoffice_save_status(
     _ensure_onlyoffice_enabled()
     order_draft_service.get_draft_path(draft_id)
     return await onlyoffice_save_tracker.get(save_id)
+
+
+@router.post("/orders/drafts/{draft_id}/save-report")
+async def draft_onlyoffice_save_report(
+    draft_id: str,
+    data: OnlyOfficeSaveReportRequest,
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Зафиксировать ошибку сохранения, которую увидел клиент (#53)."""
+    _ensure_onlyoffice_enabled()
+    order_draft_service.get_draft_path(draft_id)
+    reason = data.reason.strip()
+    if reason:
+        await order_draft_service.update_save_status(draft_id, state="error", error=reason)
+    return {"message": "ok"}
 
 
 @router.post("/orders/drafts/{draft_id}/commit")

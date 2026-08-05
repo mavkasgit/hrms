@@ -54,6 +54,15 @@ export interface OnlyOfficeSaveStatusResponse {
   error: string | null
 }
 
+export type DraftSaveState = "saved" | "error" | "never"
+
+export interface DraftSaveStatus {
+  state: DraftSaveState
+  last_saved_at: string | null
+  last_error: string | null
+  last_error_at: string | null
+}
+
 export interface DraftListItem {
   draft_id: string
   kind: "single_order" | "group_order"
@@ -67,4 +76,7 @@ export interface DraftListItem {
   created_by: string | null
   created_at: string | null
   status: string
+  save_status: DraftSaveStatus
+  file_name: string | null
+  file_path: string | null
 }

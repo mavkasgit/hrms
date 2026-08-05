@@ -7,6 +7,7 @@ import { HrmsNotificationBell } from "@/features/notifications"
 import { applyTheme, storeLocale } from "@/shared/lib/profile-prefs"
 import { UserAvatar } from "@/shared/ui/user-avatar"
 import { getUserSeed } from "@/shared/lib/avatar"
+import { DraftOrdersNavItem } from "@/features/draft-visibility/DraftOrdersNavItem"
 import {
   ChevronDown,
   ChevronRight,
@@ -134,23 +135,27 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 space-y-1">
-        {topNavItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              )
-            }
-          >
-            <item.icon className="h-4 w-4" />
-            {item.label}
-          </NavLink>
-        ))}
+        {topNavItems.map((item) =>
+          item.to === "/orders" ? (
+            <DraftOrdersNavItem key={item.to} item={item} />
+          ) : (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                )
+              }
+            >
+              <item.icon className="h-4 w-4" />
+              {item.label}
+            </NavLink>
+          )
+        )}
 
         <div className="space-y-1">
           <button

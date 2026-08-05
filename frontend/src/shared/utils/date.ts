@@ -174,3 +174,23 @@ export function formatDateTime(date: Date | string | null, includeSeconds = true
   const formatStr = includeSeconds ? "dd.MM.yyyy, HH:mm:ss" : "dd.MM.yyyy, HH:mm"
   return format(d, formatStr, { locale: ru })
 }
+
+/**
+ * Относительное время по-русски: «только что», «5 мин назад», «3 дн назад».
+ */
+export function timeAgo(date: Date | string | null): string {
+  if (!date) return "—"
+  const d = typeof date === "string" ? new Date(date) : date
+  if (!d || !isValid(d)) return "—"
+  const seconds = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000))
+  if (seconds < 60) return "только что"
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} мин назад`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} ч назад`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days} дн назад`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months} мес назад`
+  return `${Math.floor(months / 12)} г назад`
+}

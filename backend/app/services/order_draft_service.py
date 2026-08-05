@@ -15,9 +15,24 @@ from app.schemas.order import OrderCreate
 from app.services.order_document_service import _build_document, _build_filename
 
 
+def normalize_draft_save_status(save_status: dict[str, Any] | None) -> dict[str, Any]:
+    """Привести сырой блок save_status метаданных к фиксированной форме.
+
+    Отсутствующий блок (старые черновики) трактуется как state=never.
+    """
+    status = save_status or {}
+    return {
+        "state": status.get("state", "never"),
+        "last_saved_at": status.get("last_saved_at"),
+        "last_error": status.get("last_error"),
+        "last_error_at": status.get("last_error_at"),
+    }
+
+
 class OrderDraftService:
     def __init__(self):
         self._drafts_dir = Path(settings.ORDERS_PATH) / ".drafts"
+        self._save_status_lock = asyncio.Lock()
 
     def ensure_drafts_dir(self) -> Path:
         self._drafts_dir.mkdir(parents=True, exist_ok=True)
@@ -55,6 +70,7 @@ class OrderDraftService:
             "created_by": user_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "draft",
+            "save_status": {"state": "never", "last_saved_at": None, "last_error": None, "last_error_at": None},
             "schema_version": 1,
         }
         try:
@@ -140,11 +156,72 @@ class OrderDraftService:
         return self._drafts_dir / f"{draft_id}.json"
 
     def save_draft_metadata(self, draft_id: str, metadata: dict[str, Any]) -> None:
-        """Save draft metadata to .drafts/{draft_id}.json."""
-        self.ensure_drafts_dir()
+        """Save draft metadata to .drafts/{draft_id}.json (atomically)."""
         metadata_path = self.get_metadata_path(draft_id)
-        with open(metadata_path, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=2, default=str)
+        self._write_metadata_atomic(metadata_path, metadata)
+
+    def _read_metadata_unlocked(self, metadata_path: Path) -> dict[str, Any] | None:
+        if not metadata_path.exists():
+            return None
+        with open(metadata_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def _write_metadata_atomic(self, metadata_path: Path, metadata: dict[str, Any]) -> None:
+        """Write metadata via temp file + os.replace so readers never see a torn JSON."""
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = metadata_path.with_name(f".{metadata_path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2, default=str)
+            os.replace(temp_path, metadata_path)
+        finally:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+
+    async def update_save_status(
+        self,
+        draft_id: str,
+        *,
+        state: str,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        """Записать последний исход сохранения в метаданные черновика (#52).
+
+        Состояние «последнее событие побеждает»: ошибка после успеха показывает
+        state=error (но last_saved_at сохраняется), а следующий успешный callback
+        возвращает state=saved. Сериализуется asyncio-lock'ом, пишется атомарно —
+        параллельные callback-и не «затирают» файл.
+        """
+        metadata_path = self.get_metadata_path(draft_id)
+        async with self._save_status_lock:
+            metadata = self._read_metadata_unlocked(metadata_path)
+            if metadata is None:
+                # Черновик без метаданных (удалён/не создан) — сохранять нечего.
+                return normalize_draft_save_status(None)
+            save_status = metadata.get("save_status") or {}
+            now = datetime.now(timezone.utc).isoformat()
+            if state == "saved":
+                save_status["state"] = "saved"
+                save_status["last_saved_at"] = now
+                save_status["last_error"] = None
+                save_status["last_error_at"] = None
+            elif state == "error":
+                save_status["state"] = "error"
+                save_status["last_error"] = error or "Неизвестная ошибка сохранения"
+                save_status["last_error_at"] = now
+            else:
+                raise ValueError(f"Unknown save status state: {state}")
+            metadata["save_status"] = save_status
+            self._write_metadata_atomic(metadata_path, metadata)
+        return save_status
+
+    def read_save_status(self, draft_id: str) -> dict[str, Any]:
+        metadata_path = self.get_metadata_path(draft_id)
+        metadata = self._read_metadata_unlocked(metadata_path)
+        return normalize_draft_save_status(metadata.get("save_status") if metadata else None)
 
     def read_draft_metadata(self, draft_id: str) -> dict[str, Any]:
         """Read draft metadata from .drafts/{draft_id}.json."""
@@ -299,6 +376,7 @@ class OrderDraftService:
             "payload": serializable_payload,
             "created_by": user_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "save_status": {"state": "never", "last_saved_at": None, "last_error": None, "last_error_at": None},
             "schema_version": 1,
         }
         self.save_draft_metadata(draft_id, metadata)

@@ -67,6 +67,11 @@ export async function fetchDraftSaveStatus(draftId: string, saveId: string) {
   return data
 }
 
+export async function reportDraftSaveError(draftId: string, reason: string) {
+  const { data } = await api.post<{ message: string }>(`/orders/drafts/${draftId}/save-report`, { reason })
+  return data
+}
+
 export async function commitOrderDraft(draftId: string) {
   const { data } = await api.post<CommitOrderDraftResponse>(`/orders/drafts/${draftId}/commit`)
   return data

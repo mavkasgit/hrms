@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { useDraftOnlyOfficeConfig } from "@/entities/order/useOnlyOffice"
-import { commitOrderDraft, forceSaveDraft, fetchDraftSaveStatus } from "@/entities/order/onlyofficeApi"
+import { commitOrderDraft, forceSaveDraft, fetchDraftSaveStatus, reportDraftSaveError } from "@/entities/order/onlyofficeApi"
 import { openOrderPrint } from "@/entities/order/orderActions"
 import { requestAndWaitOnlyOfficeSave } from "@/entities/order/waitForOnlyOfficeSave"
 import {
@@ -47,10 +47,17 @@ export function DraftOrderEditorPage() {
         }
 
         // no_changes = уже сохранено autosave/callback — создаём приказ из актуального черновика.
-        await requestAndWaitOnlyOfficeSave({
-          forceSave: (saveId) => forceSaveDraft(draftId, data.document.key, saveId),
-          getStatus: (saveId) => fetchDraftSaveStatus(draftId, saveId),
-        })
+        try {
+          await requestAndWaitOnlyOfficeSave({
+            forceSave: (saveId) => forceSaveDraft(draftId, data.document.key, saveId),
+            getStatus: (saveId) => fetchDraftSaveStatus(draftId, saveId),
+          })
+        } catch (saveErr) {
+          // Провал именно сохранения (не коммита) — фиксируем причину в save_status (#53).
+          const reason = saveErr instanceof Error ? saveErr.message : "Не удалось сохранить документ"
+          void reportDraftSaveError(draftId, reason).catch(() => {})
+          throw saveErr
+        }
 
         beginSave("Создаём приказ…")
         // Коммитим черновик напрямую из окна редактора — родительская страница не нужна (#31).
