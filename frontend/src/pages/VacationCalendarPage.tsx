@@ -10,7 +10,7 @@ import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { Badge } from "@/shared/ui/badge"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import type { SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import {
   Select,

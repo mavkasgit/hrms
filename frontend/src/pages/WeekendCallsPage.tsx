@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
 import { Download, Eye, FilePen, Printer, Trash2, X } from "lucide-react"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
 import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"

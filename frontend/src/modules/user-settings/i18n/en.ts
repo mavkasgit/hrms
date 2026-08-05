@@ -40,6 +40,9 @@ export const en: UserSettingsDict = {
     idpSettings: "Sign-in settings",
     roleAdmin: "Administrator",
     roleViewer: "Employee",
+    breakGlassBadge: "Break Glass",
+    breakGlassHint:
+      "Emergency access: admin rights. Connection to Authentik or the PostgreSQL database may be limited.",
   },
   appearance: {
     title: "Appearance",

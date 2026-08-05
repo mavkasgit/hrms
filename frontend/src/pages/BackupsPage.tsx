@@ -4,7 +4,7 @@ import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { useToast } from "@/shared/ui/use-toast"
 import { cn } from "@/shared/utils/cn"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import {
   Dialog,
   DialogContent,

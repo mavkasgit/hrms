@@ -72,10 +72,19 @@ export function ProfilePanel() {
               </ReadonlyBox>
             </Field>
             <Field label={dict.profile.roleLabel}>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="secondary" className="rounded-lg px-2.5 py-1 text-xs">
                   {roleLabel}
                 </Badge>
+                {profile.is_break_glass && (
+                  <Badge
+                    variant="warning"
+                    title={dict.profile.breakGlassHint}
+                    className="rounded-lg px-2.5 py-1 text-xs"
+                  >
+                    {dict.profile.breakGlassBadge}
+                  </Badge>
+                )}
               </div>
             </Field>
           </div>

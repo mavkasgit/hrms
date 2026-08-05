@@ -8,7 +8,7 @@ const THEME_KEY = "profile_theme"
 
 export function applyTheme(theme: ProfileTheme | string | null | undefined): void {
   if (typeof document === "undefined") return
-  const t = (theme || "system") as ProfileTheme
+  const t = (theme || "light") as ProfileTheme
   const root = document.documentElement
   const prefersDark =
     typeof window !== "undefined" &&

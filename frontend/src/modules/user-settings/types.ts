@@ -24,6 +24,8 @@ export interface UserProfile {
   avatar_seed?: string | null
   locale?: UserLocale | null
   theme?: UserTheme | null
+  /** Аварийный (Break Glass) вход — эфемерная учётка без записи в БД. */
+  is_break_glass?: boolean
 }
 
 /** Патч профиля (только изменённые поля). ФИО/email read-only (канон 2.0.0) — не входят. */

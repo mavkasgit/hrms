@@ -5,7 +5,7 @@ import api, { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
 import { HrmsUserSettingsDialog } from "@/features/user-settings/HrmsUserSettingsDialog"
 import { HrmsNotificationBell } from "@/features/notifications"
 import { applyTheme, storeLocale } from "@/shared/lib/profile-prefs"
-import { UserAvatar } from "@/shared/ui/UserAvatar"
+import { UserAvatar } from "@/shared/ui/user-avatar"
 import { getUserSeed } from "@/shared/lib/avatar"
 import {
   ChevronDown,

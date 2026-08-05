@@ -14,7 +14,7 @@ import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import {

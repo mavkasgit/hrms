@@ -42,6 +42,9 @@ export const ru = {
     idpSettings: "Настройки входа",
     roleAdmin: "Администратор",
     roleViewer: "Сотрудник",
+    breakGlassBadge: "Break Glass",
+    breakGlassHint:
+      "Аварийный вход: права администратора. Связь с Authentik или базой данных PostgreSQL может быть ограничена.",
   },
   appearance: {
     title: "Внешний вид",

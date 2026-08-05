@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import { Plus, Filter, Pencil, Upload, ScrollText, Tag, Building2, Printer, Users } from "lucide-react"
 import { Button } from "@/shared/ui/button"
-import { SortableFilterHeader } from "@/shared/ui/SortableFilterHeader"
+import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import { getUserAccessLevel } from "@/shared/api/axios"

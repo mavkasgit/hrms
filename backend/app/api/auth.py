@@ -446,7 +446,7 @@ async def get_me(
             "full_name": current_user.full_name or "Emergency Access Admin",
             "email": None,
             "locale": "ru",
-            "theme": "system",
+            "theme": "light",
             "avatar_seed": "emergency",
             "authentik_linked": False,
             "profile_sot": "local",

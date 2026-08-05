@@ -21,7 +21,7 @@ export function AppearancePanel() {
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const theme: UserTheme = profile?.theme ?? "system"
+  const theme: UserTheme = profile?.theme ?? "light"
   const locale: UserLocale = profile?.locale ?? "ru"
 
   const themeLabels: Record<UserTheme, string> = {
