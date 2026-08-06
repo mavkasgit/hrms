@@ -16,6 +16,10 @@ def configure_logging():
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
 
+    # Подавить DEBUG-трассировку HTTP-клиентов (httpx/httpcore)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
     # Настроить файловый логгер с ротацией
     file_handler = RotatingFileHandler(
         LOG_FILE,

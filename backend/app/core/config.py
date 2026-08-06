@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
 
-    LOG_LEVEL: str = "DEBUG"
+    LOG_LEVEL: str = "INFO"
     LOG_FILE: str = str(BASE_DIR / "logs" / "hrms.log")
     LOG_MAX_BYTES: int = 50 * 1024 * 1024  # 50 МБ
     LOG_BACKUP_COUNT: int = 5             # 5 файлов = 250 МБ суммарно
