@@ -9,6 +9,9 @@ setup('authenticate as admin → storageState', async ({ page }) => {
   const { password } = getAdminCredentials()
   const login = new LoginPage(page)
 
+  // На dev/test-бэкенде может быть включён OIDC (auto-redirect в Authentik).
+  // Стабим конфиг OIDC как выключенный, чтобы оставалась форма break-glass.
+  await login.stubOidcDisabled()
   await login.goto()
   await login.loginWithBreakGlass(password)
 

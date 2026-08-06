@@ -7,6 +7,7 @@ test.describe('Login @auth', () => {
     const { password } = getAdminCredentials()
     const login = new LoginPage(page)
 
+    await login.stubOidcDisabled()
     await login.goto()
     await login.loginWithBreakGlass(password)
 
@@ -19,6 +20,7 @@ test.describe('Login @auth', () => {
   test('invalid password shows error and stays on login', async ({ page }) => {
     const login = new LoginPage(page)
 
+    await login.stubOidcDisabled()
     await login.goto()
     await login.loginWithBreakGlass('definitely-wrong-password-e2e')
 
