@@ -33,6 +33,8 @@ from app.services.notification_type_service import notification_type_service, ge
 from app.services.statement_type_service import statement_type_service, get_template_path as get_statement_template_path
 from app.api.notifications import NotificationCreate
 from app.api.statements import StatementCreate
+from app.models.notification import Notification
+from app.models.statement import Statement
 
 router = APIRouter(tags=["onlyoffice"])
 
@@ -407,6 +409,129 @@ async def list_order_drafts(
     return result
 
 
+class AllDraftsItem(BaseModel):
+    draft_id: str
+    kind: str
+    title: str | None
+    type_name: str | None
+    number: str | None
+    date: str | None
+    created_at: str | None
+    save_status: dict[str, Any] | None
+    view_url: str
+    edit_url: str
+    list_url: str
+
+
+def _draft_sort_ts(value: str | None):
+    """Парсить created_at (ISO со смещением или без) для устойчивой сортировки."""
+    from datetime import datetime, timezone
+    if not value:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+@router.get("/drafts")
+async def list_all_drafts(
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Объединённый список всех черновиков: приказы, уведомления, заявления."""
+    _ensure_onlyoffice_enabled()
+    items: list[AllDraftsItem] = []
+
+    # Приказы (файловые черновики)
+    for meta in order_draft_service.list_drafts():
+        payload = meta.get("payload", {})
+        draft_id = meta["draft_id"]
+        kind = meta.get("kind")
+        employee_name = None
+        if payload.get("employee_id"):
+            emp = await order_service.get_employee_by_id(db, payload["employee_id"])
+            if emp:
+                employee_name = emp.name
+        if kind == "group_order":
+            title = f"Групповой приказ — {len(payload.get('employees', []))} сотрудников"
+        else:
+            title = employee_name or None
+
+        type_name = meta.get("order_type_code")
+        if meta.get("order_type_code"):
+            try:
+                ot = await order_service.get_order_type_by_code(db, meta["order_type_code"])
+                type_name = ot.name
+            except Exception:
+                pass
+
+        items.append(AllDraftsItem(
+            draft_id=draft_id,
+            kind="order",
+            title=title,
+            type_name=type_name,
+            number=payload.get("order_number"),
+            date=payload.get("order_date"),
+            created_at=meta.get("created_at"),
+            save_status=normalize_draft_save_status(meta.get("save_status")),
+            view_url=f"/orders/drafts/{draft_id}/view-docx",
+            edit_url=f"/orders/drafts/{draft_id}/edit-docx",
+            list_url="/orders/drafts",
+        ))
+
+    # Уведомления (БД, is_draft)
+    notif_result = await db.execute(
+        select(Notification)
+        .options(joinedload(Notification.notification_type), joinedload(Notification.employee))
+        .where(Notification.is_draft.is_(True))
+    )
+    for n in notif_result.unique().scalars().all():
+        title = f"{n.title} — {n.employee.name}" if n.employee else n.title
+        items.append(AllDraftsItem(
+            draft_id=f"notification:{n.id}",
+            kind="notification",
+            title=title,
+            type_name=n.notification_type.name if n.notification_type else None,
+            number=n.number,
+            date=n.date.isoformat() if n.date else None,
+            created_at=n.created_at.isoformat() if n.created_at else None,
+            save_status=None,
+            view_url=f"/notifications/{n.id}/view-docx",
+            edit_url=f"/notifications/{n.id}/edit-docx",
+            list_url="/orders/notifications",
+        ))
+
+    # Заявления (БД, is_draft)
+    stmt_result = await db.execute(
+        select(Statement)
+        .options(joinedload(Statement.statement_type), joinedload(Statement.employee))
+        .where(Statement.is_draft.is_(True))
+    )
+    for s in stmt_result.unique().scalars().all():
+        title = f"{s.title} — {s.employee.name}" if s.employee else s.title
+        items.append(AllDraftsItem(
+            draft_id=f"statement:{s.id}",
+            kind="statement",
+            title=title,
+            type_name=s.statement_type.name if s.statement_type else None,
+            number=s.number,
+            date=s.date.isoformat() if s.date else None,
+            created_at=s.created_at.isoformat() if s.created_at else None,
+            save_status=None,
+            view_url=f"/statements/{s.id}/view-docx",
+            edit_url=f"/statements/{s.id}/edit-docx",
+            list_url="/orders/statements",
+        ))
+
+    # Сортировка: свежие сверху, без даты — в конец
+    items.sort(key=lambda d: _draft_sort_ts(d.created_at), reverse=True)
+    return items
+
+
 @router.post("/orders/drafts")
 async def create_order_draft(
     data: OrderCreate,
@@ -482,6 +607,7 @@ async def _normalize_transfer_draft_fields(db: AsyncSession, data: OrderCreate, 
 async def draft_onlyoffice_config(
     draft_id: str,
     request: Request,
+    mode: str = Query("edit", pattern="^(edit|view)$"),
     current_user: str = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
@@ -493,6 +619,7 @@ async def draft_onlyoffice_config(
         title=file_path.name,
         callback_url=_public_api_url(f"/orders/drafts/{draft_id}/onlyoffice/callback"),
         file_url=_public_api_url(f"/orders/drafts/{draft_id}/file"),
+        mode=mode,
         allow_print=False,
     )
     config["documentServerUrl"] = _document_server_url(request)
@@ -805,7 +932,6 @@ from pathlib import Path
 
 from app.core.paths import notifications_path
 from app.models.employee import Employee
-from app.models.notification import Notification
 
 
 @router.post("/notifications/drafts")
@@ -1015,7 +1141,6 @@ async def notification_onlyoffice_forcesave(
 # ─── Statements OnlyOffice ─────────────────────────────────────────────────────
 
 from app.core.paths import statements_path
-from app.models.statement import Statement
 
 
 @router.post("/statements/drafts")

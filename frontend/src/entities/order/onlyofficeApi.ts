@@ -42,8 +42,10 @@ export async function createOrderDraft(order: OrderCreate) {
   return data
 }
 
-export async function fetchDraftOnlyOfficeConfig(draftId: string) {
-  const { data } = await api.get<OnlyOfficeConfig>(`/orders/drafts/${draftId}/onlyoffice/config`)
+export async function fetchDraftOnlyOfficeConfig(draftId: string, mode: "edit" | "view" = "edit") {
+  const { data } = await api.get<OnlyOfficeConfig>(`/orders/drafts/${draftId}/onlyoffice/config`, {
+    params: { mode },
+  })
   return data
 }
 

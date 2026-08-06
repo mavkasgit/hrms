@@ -17,10 +17,10 @@ export function useCreateOrderDraft() {
   })
 }
 
-export function useDraftOnlyOfficeConfig(draftId: string | null) {
+export function useDraftOnlyOfficeConfig(draftId: string | null, mode: "edit" | "view" = "edit") {
   return useQuery({
-    queryKey: ["onlyoffice-config", "draft", draftId],
-    queryFn: () => api.fetchDraftOnlyOfficeConfig(draftId!),
+    queryKey: ["onlyoffice-config", "draft", draftId, mode],
+    queryFn: () => api.fetchDraftOnlyOfficeConfig(draftId!, mode),
     enabled: !!draftId,
   })
 }

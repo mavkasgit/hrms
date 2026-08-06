@@ -53,7 +53,11 @@ jobs:
       BREAK_GLASS_USER: emergency_admin
       BREAK_GLASS_PASSWORD: dev
       ENV: dev
-      ONLYOFFICE_ENABLED: "false"
+      # OnlyOffice включён, т.к. объединённые черновики (#58–#63) требуют
+      # ONLYOFFICE_ENABLED=true даже без Document Server (создание черновиков,
+      # GET /drafts, read-only конфиг — не требуют DS, только python-docx).
+      ONLYOFFICE_ENABLED: "true"
+      ONLYOFFICE_JWT_SECRET: ci-onlyoffice-secret
       SECRET_KEY: ci-e2e-secret-not-for-prod
       # Frontend (Vite reads VITE_* from process env; no .env.dev in CI)
       VITE_AUTH_MODE: dev

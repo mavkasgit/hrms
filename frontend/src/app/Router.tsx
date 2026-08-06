@@ -88,6 +88,10 @@ export const router = createBrowserRouter([
     element: withSuspense(<DraftOrderEditorPage />),
   },
   {
+    path: "/orders/drafts/:draftId/view-docx",
+    element: withSuspense(<DraftOrderEditorPage />),
+  },
+  {
     path: "/documents/:docCode/:id/view",
     element: withSuspense(<DocumentViewPage />),
   },
