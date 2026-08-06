@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.core.exceptions import EmployeeNotFoundError, HRMSException, OrderNotFoundError, VacationOverlapError
+from app.core.exceptions import (
+    DuplicateVacationForOrderError,
+    EmployeeNotFoundError,
+    HRMSException,
+    OrderNotFoundError,
+    VacationOverlapError,
+)
 from app.core.logging import get_audit_logger
 from app.models.employee import Employee
 from app.models.order import Order
@@ -328,41 +334,7 @@ class OrderService:
         )
 
         # Автоматическое создание записи об отпуске при приказе об отпуске
-        if order_type.code in ("vacation_paid", "vacation_unpaid") and employee and extra_fields:
-            start_val = extra_fields.get("vacation_start")
-            end_val = extra_fields.get("vacation_end")
-            if start_val and end_val:
-                from app.services.contract_history_service import ContractHistoryService
-                start_date = ContractHistoryService._parse_date(start_val)
-                end_date = ContractHistoryService._parse_date(end_val)
-                if start_date and end_date:
-                    from app.repositories.references_repository import references_repository
-                    from app.utils.working_days import calculate_vacation_days, count_holidays_in_range
-                    
-                    holidays = await references_repository.get_holidays_for_year(db, start_date.year)
-                    if end_date.year != start_date.year:
-                        holidays += await references_repository.get_holidays_for_year(db, end_date.year)
-                    
-                    holidays_count = count_holidays_in_range(holidays, start_date, end_date)
-                    days_count = calculate_vacation_days(start_date, end_date, holidays_count)
-                    
-                    if days_count > 0:
-                        from app.models.vacation import Vacation
-                        v_type = "Трудовой" if order_type.code == "vacation_paid" else "Отпуск за свой счет"
-                        
-                        db.add(
-                            Vacation(
-                                employee_id=employee.id,
-                                start_date=start_date,
-                                end_date=end_date,
-                                vacation_type=v_type,
-                                days_count=days_count,
-                                vacation_year=start_date.year,
-                                comment=data.notes,
-                                order_id=order.id,
-                            )
-                        )
-                        await db.flush()
+        await self._create_auto_vacation(db, data, order, employee, order_type, extra_fields)
 
         # Автоматическая архивация сотрудника при приказе об увольнении
         if order_type.code == "dismissal" and employee and not employee.is_dismissed:
@@ -477,6 +449,71 @@ class OrderService:
             },
         )
         return order
+
+    async def _create_auto_vacation(
+        self,
+        db: AsyncSession,
+        data: OrderCreate,
+        order: Order,
+        employee: Employee | None,
+        order_type: OrderType,
+        extra_fields: Optional[dict[str, Any]],
+    ) -> None:
+        """Автозапись отпуска при приказе об отпуске (#64).
+
+        Срабатывает только для приказов об отпуске с указанным периодом и при
+        `skip_auto_vacation=False` (прямое создание из раздела «Приказы»).
+        vacation_service передаёт `skip_auto_vacation=True` и создаёт запись
+        отпуска сам — чтобы один клик в форме не создал дубль.
+        Повторная запись для пары (order, employee) блокируется 409.
+        """
+        if data.skip_auto_vacation:
+            return
+        if order_type.code not in ("vacation_paid", "vacation_unpaid") or not employee or not extra_fields:
+            return
+
+        start_val = extra_fields.get("vacation_start")
+        end_val = extra_fields.get("vacation_end")
+        if not start_val or not end_val:
+            return
+
+        from app.services.contract_history_service import ContractHistoryService
+        start_date = ContractHistoryService._parse_date(start_val)
+        end_date = ContractHistoryService._parse_date(end_val)
+        if not start_date or not end_date:
+            return
+
+        from app.repositories.references_repository import references_repository
+        from app.utils.working_days import calculate_vacation_days, count_holidays_in_range
+
+        holidays = await references_repository.get_holidays_for_year(db, start_date.year)
+        if end_date.year != start_date.year:
+            holidays += await references_repository.get_holidays_for_year(db, end_date.year)
+
+        holidays_count = count_holidays_in_range(holidays, start_date, end_date)
+        days_count = calculate_vacation_days(start_date, end_date, holidays_count)
+        if days_count <= 0:
+            return
+
+        existing = await _vacation_repo.get_by_order_and_employee(db, order.id, employee.id)
+        if existing:
+            raise DuplicateVacationForOrderError(order.order_number)
+
+        v_type = "Трудовой" if order_type.code == "vacation_paid" else "Отпуск за свой счет"
+        # Через репозиторий, чтобы нарушение unique-индекса вернулось 409 (#64).
+        await _vacation_repo.create(
+            db,
+            {
+                "employee_id": employee.id,
+                "start_date": start_date,
+                "end_date": end_date,
+                "vacation_type": v_type,
+                "days_count": days_count,
+                "vacation_year": start_date.year,
+                "comment": data.notes,
+                "order_id": order.id,
+            },
+        )
 
     # === Order update ===
     async def update_order(self, db: AsyncSession, order_id: int, data: OrderUpdate, user_id: str) -> dict[str, Any]:

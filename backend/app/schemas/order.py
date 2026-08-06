@@ -14,6 +14,10 @@ class OrderCreate(BaseModel):
     draft_id: Optional[str] = None
     preview_id: Optional[str] = None
     edited_html: Optional[str] = None
+    # True — пропустить автогенерацию записи отпуска при приказе об отпуске.
+    # Используется vacation_service: там запись отпуска создаётся явно, чтобы
+    # один клик в форме не породил две записи (#64).
+    skip_auto_vacation: bool = False
 
 
 class OrderResponse(BaseModel):

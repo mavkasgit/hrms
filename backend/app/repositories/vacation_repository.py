@@ -2,9 +2,11 @@ from datetime import date
 from typing import Optional, List, Dict, Any
 
 from sqlalchemy import select, func, and_, String, or_, cast
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.exceptions import DuplicateVacationForOrderError
 from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
 from app.models.employee import Employee
@@ -15,8 +17,16 @@ from app.models.tag import EmployeeTag
 class VacationRepository:
     async def create(self, db: AsyncSession, data: dict) -> Vacation:
         vacation = Vacation(**data)
-        db.add(vacation)
-        await db.flush()
+        try:
+            db.add(vacation)
+            await db.flush()
+        except IntegrityError as exc:
+            # Дубль (order_id, employee_id): БД отклоняет вторую запись —
+            # возвращаем понятную 409, а не 500 (#64).
+            constraint = getattr(getattr(exc, "orig", None), "constraint_name", None)
+            if constraint == "uq_vacations_order_employee":
+                raise DuplicateVacationForOrderError() from exc
+            raise
         await db.refresh(vacation)
         return vacation
 
@@ -27,6 +37,23 @@ class VacationRepository:
             .where(Vacation.id == id, Vacation.is_deleted == False)
         )
         return result.scalar_one_or_none()
+
+    async def get_by_order_and_employee(
+        self, db: AsyncSession, order_id: int, employee_id: int
+    ) -> Optional[Vacation]:
+        """Возвращает отпуск по приказу и сотруднику (защита от дублей).
+
+        Смотрим ЛЮБЫЕ строки (включая удалённые), чтобы не разойтись с partial
+        unique index uq_vacations_order_employee, который не фильтрует
+        is_deleted (#64/#67).
+        """
+        result = await db.execute(
+            select(Vacation).where(
+                Vacation.order_id == order_id,
+                Vacation.employee_id == employee_id,
+            )
+        )
+        return result.scalars().first()
 
     async def get_all(
         self,

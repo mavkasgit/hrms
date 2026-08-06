@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import (
+    DuplicateVacationForOrderError,
     EmployeeNotFoundError,
     InsufficientVacationDaysError,
     VacationNotFoundError,
@@ -67,8 +68,19 @@ class VacationService:
                 preview_id=vacation_data.get("preview_id"),
                 edited_html=vacation_data.get("edited_html"),
                 draft_id=vacation_data.get("draft_id"),
+                # Запись отпуска создаётся явно в create_vacation/update_vacation —
+                # автозапись в order_service дала бы дубль (#64).
+                skip_auto_vacation=True,
             ),
         )
+
+    async def _assert_no_vacation_for_order(
+        self, db: AsyncSession, order_id: int, employee_id: int, order_number: str | None
+    ) -> None:
+        """Защита от дублей: не создаём второй отпуск по одному приказу (#64)."""
+        existing = await vacation_repository.get_by_order_and_employee(db, order_id, employee_id)
+        if existing:
+            raise DuplicateVacationForOrderError(order_number)
 
     async def _calculate_actual_days(self, db: AsyncSession, start_date: date, end_date: date) -> int:
         if end_date < start_date:
@@ -250,6 +262,7 @@ class VacationService:
             raise InsufficientVacationDaysError("Нет дней отпуска в выбранном диапазоне")
 
         order = await self._create_linked_order(db, employee_id, data, days_count)
+        await self._assert_no_vacation_for_order(db, order.id, employee_id, order.order_number)
         vacation = await vacation_repository.create(
             db,
             {

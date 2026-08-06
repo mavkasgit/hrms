@@ -41,6 +41,15 @@ class DuplicateTabNumberError(DuplicateError):
         super().__init__(f"Сотрудник с табельным номером {tab_number} уже существует", "duplicate_tab_number")
 
 
+class DuplicateVacationForOrderError(DuplicateError):
+    def __init__(self, order_number: str | None = None):
+        suffix = f" по приказу №{order_number}" if order_number else ""
+        super().__init__(
+            f"Для сотрудника уже существует отпуск{suffix}",
+            "duplicate_vacation_for_order",
+        )
+
+
 class EmployeeAlreadyDismissedError(HRMSException):
     def __init__(self, tab_number: int):
         super().__init__(f"Сотрудник с табельным номером {tab_number} уже уволен", "employee_already_dismissed", status_code=400)
