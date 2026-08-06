@@ -99,6 +99,14 @@ class Settings(BaseSettings):
     AUTH_SSO_ONLY: bool = False
     AUTH_OIDC_LOGIN_HINT_ENABLED: bool = True
 
+    # Авто-сид администратора при старте, если в системе нет ни одного админа
+    # (иначе OIDC-вход падает с 403 oidc_user_not_linked). Созданный пользователь
+    # не имеет пароля и authentik_sub — он активируется при первой привязке
+    # Authentik-пользователя с таким же username/email.
+    ADMIN_SEED_ENABLED: bool = True
+    ADMIN_SEED_USERNAME: str = "admin"
+    ADMIN_SEED_FULL_NAME: str = "Администратор"
+
     # Authentik Admin API proxy (SSO-D) — token never exposed to FE
     # Empty AUTHENTIK_API_TOKEN → IdP admin proxy disabled (deep-links only)
     # AUTHENTIK_*_URL: absolute URL or "auto" (detect host LAN IP at runtime)

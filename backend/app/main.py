@@ -59,6 +59,16 @@ async def lifespan(app: FastAPI):
     from app.services.backup_scheduler import start_backup_scheduler
     backup_scheduler_task = asyncio.create_task(start_backup_scheduler())
 
+    if settings.ADMIN_SEED_ENABLED:
+        try:
+            async with async_session() as db:
+                from app.services.admin_seed_service import ensure_default_admin
+                created = await ensure_default_admin(db)
+                if created is not None:
+                    logger.info("Seeded default admin user: %s", created.username)
+        except Exception:  # noqa: BLE001 — сид не должен валить старт приложения
+            logger.exception("Failed to seed default admin user")
+
     yield
 
     logger.info("Shutting down HRMS application")
