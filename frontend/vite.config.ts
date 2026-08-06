@@ -44,7 +44,10 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8011',
+        // Явный IPv4: на Windows «localhost» резолвится в ::1 и попадает в
+        // тестовый контейнер (hrms-backend-test держит 8011 на IPv6), а не
+        // в локальный dev-бэкенд (0.0.0.0:8011) со свежим кодом.
+        target: 'http://127.0.0.1:8011',
         changeOrigin: true,
       },
       // OnlyOffice proxy — mirrors nginx.conf routing for prod.
