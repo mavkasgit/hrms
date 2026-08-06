@@ -191,6 +191,20 @@ async def test_direct_order_auto_creates_vacation_when_not_skipped(db_session, c
     assert len(vacations) == 1
     assert vacations[0].order_id == order.id
 
+    # Прямой путь списывает дни с периодов, как и форма (#64).
+    from sqlalchemy import func as sa_func, select as sa_select
+
+    from app.models.vacation_period_transaction import VacationPeriodTransaction
+
+    tx_count = (
+        await db_session.execute(
+            sa_select(sa_func.count(VacationPeriodTransaction.id)).where(
+                VacationPeriodTransaction.vacation_id == vacations[0].id
+            )
+        )
+    ).scalar() or 0
+    assert tx_count >= 1
+
 
 async def test_order_with_skip_auto_vacation_creates_no_vacation(db_session, create_employee):
     """skip_auto_vacation=True отключает автозапись отпуска в order_service."""

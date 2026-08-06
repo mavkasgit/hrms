@@ -501,7 +501,7 @@ class OrderService:
 
         v_type = "Трудовой" if order_type.code == "vacation_paid" else "Отпуск за свой счет"
         # Через репозиторий, чтобы нарушение unique-индекса вернулось 409 (#64).
-        await _vacation_repo.create(
+        vacation = await _vacation_repo.create(
             db,
             {
                 "employee_id": employee.id,
@@ -513,6 +513,24 @@ class OrderService:
                 "comment": data.notes,
                 "order_id": order.id,
             },
+        )
+
+        # Списываем дни отпуска с периодов — как при создании через форму.
+        # Иначе «приказ об отпуске из раздела Приказы» создаёт запись, но не
+        # пересчитывает остаток.
+        from app.services.vacation_period_service import auto_use_days
+
+        await auto_use_days(
+            db,
+            employee.id,
+            days_count,
+            employee.hire_date,
+            employee.additional_vacation_days or 0,
+            order.id,
+            order.order_number,
+            vacation_id=vacation.id,
+            transaction_type="vacation_use",
+            original_order_id=order.id,
         )
 
     # === Order update ===

@@ -831,6 +831,13 @@ async def auto_use_days(
             break
 
         total = period.main_days + period.additional_days
+
+        # Списываем только с НЕ закрытых периодов, от старых к новым.
+        # Закрытый период — с явно сохранённым остатком remaining_days
+        # (в т.ч. частично закрытый) или полностью израсходованный.
+        if period.remaining_days is not None or (period.used_days or 0) >= total:
+            continue
+
         remaining = total - (period.used_days or 0)
         if remaining <= 0:
             continue
