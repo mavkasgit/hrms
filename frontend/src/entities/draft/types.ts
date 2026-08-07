@@ -14,4 +14,5 @@ export interface AllDraftItem {
   view_url: string
   edit_url: string
   list_url: string
+  group_employees: { employee_id: number; employee_full_name: string }[] | null
 }

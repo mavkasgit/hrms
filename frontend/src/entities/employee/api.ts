@@ -39,6 +39,9 @@ export async function fetchEmployee(employeeId: number) {
   return data
 }
 
+/** Единый query-key сотрудника — useEmployee и ревалидация черновиков делят кеш. */
+export const employeeQueryKey = (employeeId: number) => ["employee", employeeId] as const
+
 export async function createEmployee(employee: EmployeeCreate) {
   const { data } = await api.post<Employee>("/employees", employee)
   return data

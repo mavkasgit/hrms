@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as api from "./api"
+import type { DraftFormData } from "./api"
 
 export const ALL_DRAFTS_QUERY_KEY = ["all-drafts"] as const
 
@@ -11,6 +12,16 @@ export function useAllDrafts() {
     // Счётчик черновиков в сайдбаре должен оставаться свежим (#55).
     refetchInterval: 30_000,
   })
+}
+
+/** Данные черновика для «Заполнить поля» — однократная загрузка по id из URL. */
+export function useDraftFormData(draftId: string | null): { data: DraftFormData | undefined } {
+  const query = useQuery({
+    queryKey: ["draft-form-data", draftId],
+    queryFn: () => api.fetchDraftFormData(draftId as string),
+    enabled: Boolean(draftId),
+  })
+  return { data: query.data }
 }
 
 /** Удаление по виду черновика с инвалидацией единого списка (#60). */

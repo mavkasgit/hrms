@@ -1,5 +1,11 @@
 import type { Order } from "./types"
 
+/** Поле данных формы для предзаполнения документа (тот же формат у /drafts/{id}/form-data). */
+export interface FormDataField {
+  key: string
+  value: string
+}
+
 export interface OnlyOfficeConfig {
   document: {
     fileType: string
@@ -7,6 +13,7 @@ export interface OnlyOfficeConfig {
     title: string
     url: string
     permissions?: Record<string, boolean>
+    data?: FormDataField[]
   }
   documentType: "word"
   editorConfig: {

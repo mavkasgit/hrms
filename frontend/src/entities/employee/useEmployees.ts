@@ -23,7 +23,7 @@ export function useEmployees(params: {
 
 export function useEmployee(employeeId: number) {
   return useQuery({
-    queryKey: ["employee", employeeId],
+    queryKey: api.employeeQueryKey(employeeId),
     queryFn: () => api.fetchEmployee(employeeId),
     enabled: !!employeeId,
   })
