@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "files": [
+    { "path": "backend/app/services/authentik_client.py", "mode": "content" },
+    { "path": "backend/app/services/unified_profile_service.py", "mode": "content" },
+    { "path": "backend/app/repositories/login_event_repository.py", "mode": "content" },
+    { "path": "scripts/verify-profile-settings.py", "mode": "content" },
+    { "path": "scripts/profile-settings-manifest.json", "mode": "content" },
+    { "path": "scripts/verify-sync.mjs", "mode": "content", "version": true },
+    { "path": "scripts/sync-manifest.json", "mode": "content", "version": true }
+  ]
+}

@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "scripts": {
     "setup": "npm install && npm install --prefix frontend && echo 'Не забудьте установить зависимости Python!'",
-    "predev": "node scripts/ensure-dev-ports.js && npm run docker:dev:up && npm run db:wait && npm run dev:migrate",
+    "verify:sync": "node scripts/verify-sync.mjs --other ../ktm2000",
+    "predev": "npm run verify:sync && node scripts/ensure-dev-ports.js && npm run docker:dev:up && npm run db:wait && npm run dev:migrate",
+    "prebuild": "npm run verify:sync",
     "dev": "concurrently --names \"DB,BACKEND,FRONTEND\" -c \"blue,green,yellow\" \"npm run docker:dev:logs\" \"npm run dev:backend\" \"npm run frontend\"",
     "frontend": "npm --prefix frontend run dev",
     "dev:backend": "node scripts/run.js run-backend",
