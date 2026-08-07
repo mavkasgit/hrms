@@ -280,6 +280,61 @@ async def test_finalize_statement_turns_draft_into_document(db_session, _tmp_sto
     assert disk_path.read_bytes() == b"new"
 
 
+# ── commit: явный переход «черновик → документ» из редактора (#86) ──────────
+
+
+async def test_commit_turns_draft_into_document(db_session, _tmp_storage):
+    notification = await _make_notification(db_session)
+    assert notification.is_draft is True
+
+    await notification_draft_service.commit(db_session, notification.id)
+
+    refreshed = await db_session.get(Notification, notification.id)
+    assert refreshed.is_draft is False
+
+
+async def test_commit_does_not_download_file(db_session, _tmp_storage, monkeypatch):
+    notification = await _make_notification(db_session)
+    assert notification.file_path
+    disk_path = notifications_path(notification.file_path)
+    disk_path.write_bytes(b"old")
+
+    download = AsyncMock()
+    monkeypatch.setattr(onlyoffice_service, "download_and_replace", download)
+
+    await notification_draft_service.commit(db_session, notification.id)
+
+    download.assert_not_awaited()
+    assert disk_path.read_bytes() == b"old"
+    assert (await db_session.get(Notification, notification.id)).is_draft is False
+
+
+async def test_commit_second_call_idempotent(db_session, _tmp_storage):
+    notification = await _make_notification(db_session)
+
+    await notification_draft_service.commit(db_session, notification.id)
+    await notification_draft_service.commit(db_session, notification.id)
+
+    assert (await db_session.get(Notification, notification.id)).is_draft is False
+
+
+async def test_commit_unknown_record_404(db_session, _tmp_storage):
+    with pytest.raises(HRMSException) as exc:
+        await notification_draft_service.commit(db_session, 999_999)
+
+    assert exc.value.status_code == 404
+    assert exc.value.error_code == "notification_not_found"
+
+
+async def test_commit_statement_turns_draft_into_document(db_session, _tmp_storage):
+    statement = await _make_statement(db_session)
+    assert statement.is_draft is True
+
+    await statement_draft_service.commit(db_session, statement.id)
+
+    assert (await db_session.get(Statement, statement.id)).is_draft is False
+
+
 # ── Роутеры ──────────────────────────────────────────────────────────────────
 
 
@@ -471,3 +526,49 @@ async def test_callback_rejects_invalid_token(db_session, _tmp_storage, _enable_
     assert isinstance(response, JSONResponse)
     assert response.status_code == 403
     assert json.loads(bytes(response.body))["error"] == 1
+
+
+async def test_commit_notification_router_flips_draft(db_session, _tmp_storage, _enable_onlyoffice):
+    from app.api import onlyoffice as oo_api
+
+    notification = await _make_notification(db_session)
+    assert notification.is_draft is True
+
+    result = await oo_api.commit_notification_draft(
+        notification_id=notification.id,
+        db=db_session,
+        current_user="admin",
+    )
+
+    assert result == {"message": "ok"}
+    assert (await db_session.get(Notification, notification.id)).is_draft is False
+
+
+async def test_commit_statement_router_flips_draft(db_session, _tmp_storage, _enable_onlyoffice):
+    from app.api import onlyoffice as oo_api
+
+    statement = await _make_statement(db_session)
+    assert statement.is_draft is True
+
+    result = await oo_api.commit_statement_draft(
+        statement_id=statement.id,
+        db=db_session,
+        current_user="admin",
+    )
+
+    assert result == {"message": "ok"}
+    assert (await db_session.get(Statement, statement.id)).is_draft is False
+
+
+async def test_commit_router_404_for_unknown_record(db_session, _tmp_storage, _enable_onlyoffice):
+    from app.api import onlyoffice as oo_api
+
+    with pytest.raises(HRMSException) as exc:
+        await oo_api.commit_notification_draft(
+            notification_id=999_999,
+            db=db_session,
+            current_user="admin",
+        )
+
+    assert exc.value.status_code == 404
+    assert exc.value.error_code == "notification_not_found"

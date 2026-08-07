@@ -891,6 +891,22 @@ async def notification_onlyoffice_forcesave(
     return {"message": "save_requested"}
 
 
+@router.post("/notifications/{notification_id}/commit")
+async def commit_notification_draft(
+    notification_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Явный commit черновика уведомления из редактора (#86): is_draft=False.
+
+    Детерминирован в отличие от callback-финализации: не зависит от того,
+    правил ли пользователь документ (no_changes) — файл уже персистен.
+    """
+    _ensure_onlyoffice_enabled()
+    await notification_draft_service.commit(db, notification_id)
+    return {"message": "ok"}
+
+
 # ─── Statements OnlyOffice ─────────────────────────────────────────────────────
 
 from app.core.paths import statements_path
@@ -995,3 +1011,15 @@ async def statement_onlyoffice_forcesave(
         raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
     await onlyoffice_service.force_save(data.document_key)
     return {"message": "save_requested"}
+
+
+@router.post("/statements/{statement_id}/commit")
+async def commit_statement_draft(
+    statement_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Явный commit черновика заявления из редактора (#86): is_draft=False."""
+    _ensure_onlyoffice_enabled()
+    await statement_draft_service.commit(db, statement_id)
+    return {"message": "ok"}

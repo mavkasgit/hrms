@@ -294,6 +294,21 @@ class DocumentDraftService:
             record.is_draft = False
         await db.commit()
 
+    async def commit(self, db: AsyncSession, record_id: int) -> None:
+        """Явный commit черновика из редактора (#86): снять `is_draft` без скачивания.
+
+        Файл уже персистен — либо без правок (forcesave вернул no_changes),
+        либо скачан callback-ом `finalize`. Идемпотентен: повторный вызов на
+        документе — no-op. Пробрасывает 404, если объект не найден.
+        """
+        cfg = self._config()
+        record = await self._get_record(db, record_id, cfg)
+        if record is None:
+            raise HRMSException("Документ не найден", cfg.not_found_code, status_code=404)
+        if getattr(record, "is_draft", False):
+            record.is_draft = False
+        await db.commit()
+
     async def _get_record(self, db: AsyncSession, record_id: int, cfg: DraftServiceConfig) -> Any:
         return await db.get(cfg.model, record_id)
 
