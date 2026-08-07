@@ -8,8 +8,7 @@
     "prebuild": "node ../scripts/verify-sync.mjs --other ../ktm2000",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
-    "check:modules": "node scripts/check-modules.mjs --other ../../ktm2000/frontend"
+    "test": "vitest run"
   },
   "dependencies": {
     "@multiavatar/multiavatar": "^1.0.7",

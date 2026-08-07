@@ -86,7 +86,8 @@ modules/       → Переносимые модули (см. ниже)
 - `modules/notifications/` — переносимый колокольчик уведомлений (бейдж + попап).
   Публичный API — только `index.ts`; хост-импорты — только через `ui.ts`;
   данные — через интерфейс `NotificationsApi`. При обновлении бампай
-  `NOTIFICATIONS_MODULE_VERSION`; сверка копий с KTM — `npm run check:modules`.
+  `NOTIFICATIONS_MODULE_VERSION`; сверка копий модулей с KTM — `npm run verify:sync`
+  (манифест `scripts/sync-manifest.json`, файлы модулей — в режимах content/version/presence).
 - HRMS-обвязка user-settings живёт в `features/user-settings/`, обвязка
   notifications — в `features/notifications/` (адаптеры поверх проектного axios).
 - При обновлении модуля бампай `USER_SETTINGS_MODULE_VERSION`.

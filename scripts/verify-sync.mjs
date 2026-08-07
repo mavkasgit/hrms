@@ -7,9 +7,11 @@
  * в соседний проект и поднимает версию.
  *
  * Режимы сравнения (поле entry.mode):
- *   - content — байт-эквивалент, переводы строк (CRLF/LF) игнорируются;
- *   - version — совпадение констант *_VERSION (или поля "version" в JSON)
- *               из хостового файла директории (для файла — сам файл).
+ *   - content  — байт-эквивалент, переводы строк (CRLF/LF) игнорируются;
+ *   - version  — совпадение констант *_VERSION (или поля "version" в JSON)
+ *                из хостового файла директории (для файла — сам файл);
+ *   - presence — файл обязан существовать в обоих проектах, содержимое
+ *                может различаться (хостовые файлы модулей, напр. ui.ts).
  * Поле entry.version:true добавляет к content-сравнению сверку версии.
  *
  * Запуск (из корня репозитория):
@@ -19,11 +21,11 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-export const SYNC_VERSION = "1.0.0"
+export const SYNC_VERSION = "1.1.0"
 
 const MANIFEST = "scripts/sync-manifest.json"
 const HOST_NAMES = ["index.ts", "index.tsx", "index.js", "index.jsx", "index.mjs"]
-const MODES = new Set(["content", "version"])
+const MODES = new Set(["content", "version", "presence"])
 const VERSION_RE = /(?:export\s+)?const\s+([A-Z][A-Z0-9_]*_VERSION)\s*=\s*["']([^"']+)["']/g
 
 export function parseArgs(argv) {
@@ -121,6 +123,10 @@ export function run({ root, otherRoot, manifestPath = MANIFEST }) {
     }
     if (!fs.existsSync(thereAbs)) {
       errors.push(`файл есть здесь, но отсутствует у соседа: ${rel}`)
+      continue
+    }
+    if (mode === "presence") {
+      checked++
       continue
     }
     if (mode === "version") {

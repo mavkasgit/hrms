@@ -1,12 +1,174 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "files": [
-    { "path": "backend/app/services/authentik_client.py", "mode": "content" },
-    { "path": "backend/app/services/unified_profile_service.py", "mode": "content" },
-    { "path": "backend/app/repositories/login_event_repository.py", "mode": "content" },
-    { "path": "scripts/verify-profile-settings.py", "mode": "content" },
-    { "path": "scripts/profile-settings-manifest.json", "mode": "content" },
-    { "path": "scripts/verify-sync.mjs", "mode": "content", "version": true },
-    { "path": "scripts/sync-manifest.json", "mode": "content", "version": true }
+    {
+      "path": "backend/app/services/authentik_client.py",
+      "mode": "content"
+    },
+    {
+      "path": "backend/app/services/unified_profile_service.py",
+      "mode": "content"
+    },
+    {
+      "path": "backend/app/repositories/login_event_repository.py",
+      "mode": "content"
+    },
+    {
+      "path": "scripts/verify-profile-settings.py",
+      "mode": "content"
+    },
+    {
+      "path": "scripts/profile-settings-manifest.json",
+      "mode": "content"
+    },
+    {
+      "path": "scripts/verify-sync.mjs",
+      "mode": "content",
+      "version": true
+    },
+    {
+      "path": "scripts/sync-manifest.json",
+      "mode": "content",
+      "version": true
+    },
+    {
+      "path": "frontend/src/features/auth/api/oidcAuth.ts",
+      "mode": "content",
+      "version": true
+    },
+    {
+      "path": "frontend/src/features/auth/pages/OidcCallbackPage.tsx",
+      "mode": "content",
+      "version": true
+    },
+    {
+      "path": "backend/app/services/session_core.py",
+      "mode": "content",
+      "version": true
+    },
+    {
+      "path": "frontend/src/modules/notifications/NotificationsBell.tsx",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/notifications/README.md",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/notifications/types.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/notifications/api/adapter.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/notifications/api/http-adapter.test.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/notifications/api/http-adapter.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/notifications/index.ts",
+      "mode": "version"
+    },
+    {
+      "path": "frontend/src/modules/notifications/ui.ts",
+      "mode": "presence"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/context.tsx",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/README.md",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/types.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/UserSettingsDialog.test.tsx",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/UserSettingsDialog.tsx",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/api/adapter.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/api/http-adapter.test.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/api/http-adapter.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/components/AppearancePanel.tsx",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/components/AvatarArt.tsx",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/components/AvatarPickerDialog.tsx",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/components/ProfilePanel.tsx",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/components/SecurityPanel.tsx",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/components/SessionsPanel.tsx",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/components/ui-bits.tsx",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/i18n/en.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/i18n/index.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/i18n/ru.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/lib/avatar-seed.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/lib/datetime.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/lib/device.ts",
+      "mode": "content"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/index.ts",
+      "mode": "version"
+    },
+    {
+      "path": "frontend/src/modules/user-settings/ui.ts",
+      "mode": "presence"
+    }
   ]
 }
