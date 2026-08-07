@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { useNavigate, useSearchParams } from "react-router-dom"
 import { ChevronDown, ChevronRight, Trash2, FilePen, Filter, Eye, Download, X, Check, Printer } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
@@ -49,8 +48,9 @@ import {
 } from "@/entities/statement/hooks"
 import { openStatementView, openStatementEdit, openStatementPrint, downloadStatementDocx } from "@/entities/statement/api"
 import type { StatementCreate } from "@/entities/statement/types"
-import { useDraftFormData, getFormDataExtraFields, getFormDataInt, getFormDataValue } from "@/entities/draft"
-import { useDraftRecoveryFor } from "@/entities/form-draft"
+import { getFormDataExtraFields, getFormDataInt, getFormDataValue } from "@/entities/draft"
+import type { DraftFormData } from "@/entities/draft"
+import { useDraftRecoveryFor, useFillDraftIdRestore } from "@/entities/form-draft"
 
 import { fetchDraftEmployee } from "@/entities/form-draft"
 
@@ -70,6 +70,22 @@ function statementFormHasContent(state: Omit<StatementFormDraft, "saved_at">): b
     state.statement_number.trim() !== "" ||
     Object.values(state.extra_fields).some((v) => v !== "" && v !== null && v !== undefined)
   )
+}
+
+/**
+ * «Заполнить поля» из попапа черновиков: маппинг form-data серверного черновика
+ * в черновик формы. Черновик другого вида — null (no-op, ничего не трогаем).
+ */
+function mapStatementFillDraft(data: DraftFormData): StatementFormDraft | null {
+  if (data.kind !== "statement") return null
+  return {
+    employee_id: getFormDataInt(data.data, "employee_id"),
+    statement_type_id: getFormDataInt(data.data, "statement_type_id"),
+    statement_date: getFormDataValue(data.data, "date") || new Date().toISOString().split("T")[0],
+    statement_number: getFormDataValue(data.data, "number") || "",
+    extra_fields: getFormDataExtraFields(data.data, ["employee_id", "statement_type_id", "number", "date"]),
+    saved_at: new Date().toISOString(),
+  }
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -182,24 +198,7 @@ export function StatementsSection() {
   })
 
   // «Заполнить поля» из попапа черновиков: /orders/statements?fillDraftId=…
-  const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
-  const fillDraftId = searchParams.get("fillDraftId")
-  const { data: fillFormData } = useDraftFormData(fillDraftId)
-
-  useEffect(() => {
-    if (!fillFormData || fillFormData.kind !== "statement") return
-    recoveryRestoreWith({
-      employee_id: getFormDataInt(fillFormData.data, "employee_id"),
-      statement_type_id: getFormDataInt(fillFormData.data, "statement_type_id"),
-      statement_date: getFormDataValue(fillFormData.data, "date") || new Date().toISOString().split("T")[0],
-      statement_number: getFormDataValue(fillFormData.data, "number") || "",
-      extra_fields: getFormDataExtraFields(fillFormData.data, ["employee_id", "statement_type_id", "number", "date"]),
-      saved_at: new Date().toISOString(),
-    })
-    // Убираем параметр, чтобы повторный вход не перезаполнял форму.
-    navigate("/orders/statements", { replace: true })
-  }, [fillFormData, recoveryRestoreWith, navigate])
+  useFillDraftIdRestore(recoveryRestoreWith, mapStatementFillDraft, "/orders/statements")
 
   const activeFilterCount = useMemo(() => {
     let count = 0

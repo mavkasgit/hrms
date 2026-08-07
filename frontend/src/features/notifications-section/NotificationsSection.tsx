@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { useNavigate, useSearchParams } from "react-router-dom"
 import { ChevronDown, ChevronRight, Download, Eye, Trash2, FilePen, Filter, X, Check, Printer } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
@@ -47,11 +46,12 @@ import {
 } from "@/entities/notification/hooks"
 import { openNotificationView, openNotificationEdit, openNotificationPrint, downloadNotificationDocx } from "@/entities/notification/api"
 import type { NotificationCreate } from "@/entities/notification/types"
-import { useDraftFormData, getFormDataExtraFields, getFormDataInt, getFormDataValue } from "@/entities/draft"
+import { getFormDataExtraFields, getFormDataInt, getFormDataValue } from "@/entities/draft"
+import type { DraftFormData } from "@/entities/draft"
 import { FieldGroup, FieldRenderer } from "@/features/dynamic-form"
 import { getNotificationTypeLayout } from "@/entities/notification/notificationTypeLayouts"
 import { buildEmployeePlaceholders } from "@/features/dynamic-form/autoFillConfig"
-import { fetchDraftEmployee, useDraftRecoveryFor } from "@/entities/form-draft"
+import { fetchDraftEmployee, useDraftRecoveryFor, useFillDraftIdRestore } from "@/entities/form-draft"
 
 interface NotificationFormDraft {
   employee_id: number | null
@@ -69,6 +69,22 @@ function notificationFormHasContent(state: Omit<NotificationFormDraft, "saved_at
     state.notification_number.trim() !== "" ||
     Object.values(state.extra_fields).some((v) => v !== "" && v !== null && v !== undefined)
   )
+}
+
+/**
+ * «Заполнить поля» из попапа черновиков: маппинг form-data серверного черновика
+ * в черновик формы. Черновик другого вида — null (no-op, ничего не трогаем).
+ */
+function mapNotificationFillDraft(data: DraftFormData): NotificationFormDraft | null {
+  if (data.kind !== "notification") return null
+  return {
+    employee_id: getFormDataInt(data.data, "employee_id"),
+    notification_type_id: getFormDataInt(data.data, "notification_type_id"),
+    notification_date: getFormDataValue(data.data, "date") || new Date().toISOString().split("T")[0],
+    notification_number: getFormDataValue(data.data, "number") || "",
+    extra_fields: getFormDataExtraFields(data.data, ["employee_id", "notification_type_id", "number", "date"]),
+    saved_at: new Date().toISOString(),
+  }
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -181,24 +197,7 @@ export function NotificationsSection() {
   })
 
   // «Заполнить поля» из попапа черновиков: /orders/notifications?fillDraftId=…
-  const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
-  const fillDraftId = searchParams.get("fillDraftId")
-  const { data: fillFormData } = useDraftFormData(fillDraftId)
-
-  useEffect(() => {
-    if (!fillFormData || fillFormData.kind !== "notification") return
-    recoveryRestoreWith({
-      employee_id: getFormDataInt(fillFormData.data, "employee_id"),
-      notification_type_id: getFormDataInt(fillFormData.data, "notification_type_id"),
-      notification_date: getFormDataValue(fillFormData.data, "date") || new Date().toISOString().split("T")[0],
-      notification_number: getFormDataValue(fillFormData.data, "number") || "",
-      extra_fields: getFormDataExtraFields(fillFormData.data, ["employee_id", "notification_type_id", "number", "date"]),
-      saved_at: new Date().toISOString(),
-    })
-    // Убираем параметр, чтобы повторный вход не перезаполнял форму.
-    navigate("/orders/notifications", { replace: true })
-  }, [fillFormData, recoveryRestoreWith, navigate])
+  useFillDraftIdRestore(recoveryRestoreWith, mapNotificationFillDraft, "/orders/notifications")
 
   const activeFilterCount = useMemo(() => {
     let count = 0
