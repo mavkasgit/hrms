@@ -29,6 +29,7 @@ from app.schemas.session import (
     SessionOut,
 )
 from app.services import session_service
+from app.services.auth_token import create_access_token as issue_access_token
 from app.services.oidc_auth_service import OidcAuthService
 from app.services.session_service import SessionNotFoundError
 from app.utils.client_ip import get_client_ip
@@ -388,16 +389,13 @@ async def break_glass_login(
 
     # Успешный вход
     session_id = uuid4()
-    token_data = {
-        "sub": username,
-        "username": username,
-        "role": "admin",
-        "hrms_access_level": "admin",
-        "is_break_glass": True,
-        "sid": str(session_id),
-    }
-    secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
-    token = jwt.encode(token_data, secret_key, algorithm=settings.ALGORITHM)
+    token = issue_access_token(
+        username,
+        role="admin",
+        full_name=username,
+        claims={"role": "admin", "is_break_glass": True},
+        session_id=session_id,
+    )
 
     await _safe_record_break_glass_event(
         event_type="login_success",
