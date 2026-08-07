@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useState, useMemo, useCallback } from "react"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
-import { useNavigate, useSearchParams } from "react-router-dom"
 import { Download, Eye, FilePen, Printer, Trash2, X } from "lucide-react"
 import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
@@ -22,7 +21,8 @@ import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
 import type { Order, VacationUnpaidGroupEmployeeCreate } from "@/entities/order/types"
-import { useDraftFormData, getFormDataValue, draftEditorUrl } from "@/entities/draft"
+import { getFormDataValue, draftEditorUrl } from "@/entities/draft"
+import type { DraftFormData } from "@/entities/draft"
 import {
   Tabs,
   TabsList,
@@ -41,6 +41,7 @@ import {
 } from "@/shared/ui/alert-dialog"
 import {
   useDraftRecoveryFor,
+  useFillDraftIdRestore,
 } from "@/entities/form-draft"
 import { fetchDraftEmployee, hydrateDraftEmployees, toDraftEmployeeRefs } from "@/entities/form-draft"
 
@@ -76,6 +77,22 @@ interface UnpaidGroupFormDraft {
 
 function unpaidGroupHasContent(state: Omit<UnpaidGroupFormDraft, "saved_at">): boolean {
   return state.group_vacation_start !== "" || state.employees.length > 0
+}
+
+/**
+ * «Заполнить поля» из попапа черновиков: маппинг form-data серверного черновика
+ * в черновик групповой формы. Только групповой черновик — иначе null.
+ */
+function mapUnpaidGroupFillDraft(data: DraftFormData): UnpaidGroupFormDraft | null {
+  if (!data.is_group) return null
+  const get = (key: string) => getFormDataValue(data.data, key)
+  return {
+    order_date: get("date") ?? "",
+    order_number: get("number") ?? "",
+    group_vacation_start: get("vacation_start") ?? "",
+    employees: data.employees ?? [],
+    saved_at: new Date().toISOString(),
+  }
 }
 
 interface DateRange {
@@ -238,9 +255,6 @@ export function UnpaidLeavesPage() {
   })
 
   const unpaidLeaveType = orderTypes.find((item) => item.code === UNPAID_LEAVE_CODE) ?? null
-
-  // «Заполнить поля» из попапа черновиков / автовосстановление (?recover=1)
-  const [searchParams] = useSearchParams()
 
   useEffect(() => {
     if (!vacationStart || !vacationEnd) return
@@ -446,11 +460,6 @@ export function UnpaidLeavesPage() {
     }
   }
 
-  // «Заполнить поля» из попапа черновиков: /unpaid-leaves?fillDraftId=…
-  const navigate = useNavigate()
-  const fillDraftId = searchParams.get("fillDraftId")
-  const { data: fillFormData } = useDraftFormData(fillDraftId)
-
   const resetGroupForm = () => {
     setGroupEmployees([])
     setGroupVacationStart("")
@@ -493,19 +502,7 @@ export function UnpaidLeavesPage() {
 
   // «Заполнить поля» из попапа черновиков: /unpaid-leaves?fillDraftId=…
   // Тот же маппинг черновика в форму, что и при восстановлении (#28) — через общий хендлер.
-  useEffect(() => {
-    if (!fillFormData || !fillFormData.is_group) return
-    const get = (key: string) => getFormDataValue(fillFormData.data, key)
-    handleGroupRecoveryRestore({
-      order_date: get("date") ?? "",
-      order_number: get("number") ?? "",
-      group_vacation_start: get("vacation_start") ?? "",
-      employees: fillFormData.employees ?? [],
-      saved_at: new Date().toISOString(),
-    })
-    // Убираем параметр, чтобы повторный вход не перезаполнял форму.
-    navigate("/unpaid-leaves", { replace: true })
-  }, [fillFormData, handleGroupRecoveryRestore, navigate])
+  useFillDraftIdRestore(handleGroupRecoveryRestore, mapUnpaidGroupFillDraft, "/unpaid-leaves")
 
   const validateGroup = (): boolean => {
     const nextErrors: Record<string, string> = {}

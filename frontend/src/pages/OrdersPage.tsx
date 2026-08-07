@@ -70,6 +70,7 @@ import { getOrderTypeLayout } from "@/entities/order/orderTypeLayouts"
 import { formatDate } from "@/shared/utils/date"
 import {
   useDraftRecoveryFor,
+  useFillDraftIdRestore,
 } from "@/entities/form-draft"
 import {
   ORDER_FORM_DRAFT_KEY,
@@ -78,9 +79,26 @@ import {
 } from "@/entities/order/formDraft"
 import { ORDER_TYPE_BADGE_COLORS } from "@/entities/order/orderTypeBadge"
 import { fetchDraftEmployee, getFormDraftSlot } from "@/entities/form-draft"
-import { useDraftFormData, getFormDataValue, getFormDataInt, getFormDataExtraFields, draftEditorUrl } from "@/entities/draft"
+import { getFormDataValue, getFormDataInt, getFormDataExtraFields, draftEditorUrl } from "@/entities/draft"
+import type { DraftFormData } from "@/entities/draft"
 
 const GENERAL_ORDER_FORM_DRAFT_KEY = getFormDraftSlot("orders:general").storageKey
+
+/**
+ * «Заполнить поля» из попапа черновиков: маппинг form-data серверного черновика
+ * в черновик формы. Одиночный приказ (kind=order, не групповой) — иначе null.
+ */
+function mapOrderFillDraft(data: DraftFormData): OrderFormDraft | null {
+  if (data.kind !== "order" || data.is_group) return null
+  return {
+    employee_id: getFormDataInt(data.data, "employee_id"),
+    order_type_id: getFormDataInt(data.data, "order_type_id"),
+    order_date: getFormDataValue(data.data, "date") || new Date().toISOString().split("T")[0],
+    order_number: getFormDataValue(data.data, "number") || "",
+    extra_fields: getFormDataExtraFields(data.data, ["employee_id", "order_type_id", "number", "date"]),
+    saved_at: new Date().toISOString(),
+  }
+}
 
 interface GeneralOrderFormDraft {
   general_order_date: string
@@ -729,23 +747,7 @@ export function OrdersPage() {
   }, [searchParams, recoveryRestore])
 
   // «Заполнить поля» из попапа черновиков: /orders?fillDraftId=…
-  // Серверный черновик одиночного приказа — заполняем форму напрямую.
-  const fillDraftId = searchParams.get("fillDraftId")
-  const { data: fillFormData } = useDraftFormData(fillDraftId)
-
-  useEffect(() => {
-    if (!fillFormData || fillFormData.kind !== "order" || fillFormData.is_group) return
-    recoveryRestoreWith({
-      employee_id: getFormDataInt(fillFormData.data, "employee_id"),
-      order_type_id: getFormDataInt(fillFormData.data, "order_type_id"),
-      order_date: getFormDataValue(fillFormData.data, "date") || new Date().toISOString().split("T")[0],
-      order_number: getFormDataValue(fillFormData.data, "number") || "",
-      extra_fields: getFormDataExtraFields(fillFormData.data, ["employee_id", "order_type_id", "number", "date"]),
-      saved_at: new Date().toISOString(),
-    })
-    // Убираем параметр, чтобы повторный вход не перезаполнял форму.
-    navigate("/orders", { replace: true })
-  }, [fillFormData, recoveryRestoreWith, navigate])
+  useFillDraftIdRestore(recoveryRestoreWith, mapOrderFillDraft, "/orders")
 
   const resetGeneralForm = () => {
     setGeneralOrderDate(new Date().toISOString().split("T")[0])

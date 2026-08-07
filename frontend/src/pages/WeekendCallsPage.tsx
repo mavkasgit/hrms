@@ -1,6 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { useNavigate, useSearchParams } from "react-router-dom"
 import { Download, Eye, FilePen, Printer, Trash2, X } from "lucide-react"
 import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
@@ -32,7 +31,8 @@ import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
 import type { Order, WeekendCallGroupEmployeeCreate } from "@/entities/order/types"
-import { useDraftFormData, getFormDataValue, draftEditorUrl } from "@/entities/draft"
+import { getFormDataValue, draftEditorUrl } from "@/entities/draft"
+import type { DraftFormData } from "@/entities/draft"
 import {
   Tabs,
   TabsList,
@@ -41,6 +41,7 @@ import {
 } from "@/shared/ui/tabs"
 import {
   useDraftRecoveryFor,
+  useFillDraftIdRestore,
 } from "@/entities/form-draft"
 import { fetchDraftEmployee, hydrateDraftEmployees, toDraftEmployeeRefs } from "@/entities/form-draft"
 
@@ -86,6 +87,26 @@ function weekendCallGroupHasContent(state: Omit<WeekendCallGroupFormDraft, "save
     state.call_date_end !== "" ||
     state.employees.length > 0
   )
+}
+
+/**
+ * «Заполнить поля» из попапа черновиков: маппинг form-data серверного черновика
+ * в черновик групповой формы. Только групповой черновик — иначе null.
+ */
+function mapWeekendCallGroupFillDraft(data: DraftFormData): WeekendCallGroupFormDraft | null {
+  if (!data.is_group) return null
+  const get = (key: string) => getFormDataValue(data.data, key)
+  const mode = get("mode")
+  return {
+    order_date: get("date") ?? "",
+    order_number: get("number") ?? "",
+    mode: mode === "range" || mode === "single" ? mode : "single",
+    call_date: get("call_date") ?? "",
+    call_date_start: get("call_date_start") ?? "",
+    call_date_end: get("call_date_end") ?? "",
+    employees: data.employees ?? [],
+    saved_at: new Date().toISOString(),
+  }
 }
 
 type CallMode = "single" | "range"
@@ -234,9 +255,6 @@ export function WeekendCallsPage() {
   })
 
   const weekendCallType = orderTypes.find((item) => item.code === WEEKEND_CALL_CODE) ?? null
-
-  // «Заполнить поля» из попапа черновиков / автовосстановление (?recover=1)
-  const [searchParams] = useSearchParams()
 
   const resetForm = () => {
     if (draftId) {
@@ -456,36 +474,8 @@ export function WeekendCallsPage() {
   }
 
   // «Заполнить поля» из попапа черновиков: /weekend-calls?fillDraftId=…
-  const navigate = useNavigate()
-  const fillDraftId = searchParams.get("fillDraftId")
-  const { data: fillFormData } = useDraftFormData(fillDraftId)
-
-  useEffect(() => {
-    if (!fillFormData || !fillFormData.is_group) return
-    const get = (key: string) => getFormDataValue(fillFormData.data, key)
-    setOrderMode("group")
-    const number = get("number")
-    if (number) setOrderNumber(number)
-    const date = get("date")
-    if (date) setOrderDate(date)
-    const mode = get("mode")
-    if (mode === "range" || mode === "single") {
-      setGroupCallMode(mode)
-    }
-    const callDate = get("call_date")
-    if (callDate) setGroupCallDate(callDate)
-    const callDateStart = get("call_date_start")
-    if (callDateStart) setGroupCallDateStart(callDateStart)
-    const callDateEnd = get("call_date_end")
-    if (callDateEnd) setGroupCallDateEnd(callDateEnd)
-    if (fillFormData.employees && fillFormData.employees.length > 0) {
-      hydrateDraftEmployees(queryClient, fillFormData.employees)
-        .then(setGroupEmployees)
-        .catch(() => {})
-    }
-    // Убираем параметр, чтобы повторный вход не перезаполнял форму.
-    navigate("/weekend-calls", { replace: true })
-  }, [fillFormData])
+  // Тот же маппинг черновика в форму, что и при восстановлении (#28) — через общий хендлер.
+  useFillDraftIdRestore(handleGroupRecoveryRestore, mapWeekendCallGroupFillDraft, "/weekend-calls")
 
   const removeGroupEmployee = (employeeId: number) => {
     setGroupEmployees((prev) => prev.filter((e) => e.employee_id !== employeeId))
