@@ -51,7 +51,7 @@ import type { DraftFormData } from "@/entities/draft"
 import { FieldGroup, FieldRenderer } from "@/features/dynamic-form"
 import { getNotificationTypeLayout } from "@/entities/notification/notificationTypeLayouts"
 import { buildEmployeePlaceholders } from "@/features/dynamic-form/autoFillConfig"
-import { fetchDraftEmployee, useDraftRecoveryFor, useFillDraftIdRestore } from "@/entities/form-draft"
+import { revalidateEmployeeAndType, useDraftRecoveryFor, useFillDraftIdRestore } from "@/entities/form-draft"
 
 interface NotificationFormDraft {
   employee_id: number | null
@@ -157,32 +157,22 @@ export function NotificationsSection() {
   const handleNotificationRestore = useCallback((draft: NotificationFormDraft): boolean => {
     // Возврат: изменился ли тип уведомления (его смена сбрасывает extra_fields —
     // хост-сброс после восстановления должен быть пропущен один раз).
-    let typeChanged = false
-    // Перевалидация: сотрудник загружается по id, тип уведомления — из актуального списка
-    if (draft.employee_id) {
-      fetchDraftEmployee(queryClient, draft.employee_id).then((employee) => {
-        if (employee) setSelectedEmployee(employee)
-      })
-    }
-    if (draft.notification_type_id) {
-      const type = notificationTypes.find((t) => t.id === draft.notification_type_id && t.is_active)
-      if (type) {
-        if (type.id !== selectedNotificationTypeId) typeChanged = true
-        setSelectedNotificationTypeId(type.id)
-        setNotificationTypeSearch(type.name)
-      } else if (notificationTypes.length === 0) {
-        // Типы ещё не загрузились — выставляем id по черновику; layout появится позже
-        if (draft.notification_type_id !== selectedNotificationTypeId) typeChanged = true
-        setSelectedNotificationTypeId(draft.notification_type_id)
-      }
-    }
+    const typeChanged = revalidateEmployeeAndType({
+      queryClient,
+      employeeId: draft.employee_id,
+      typeId: draft.notification_type_id,
+      types: notificationTypes,
+      selectedTypeId: selectedNotificationTypeId,
+      setEmployee: setSelectedEmployee,
+      setTypeId: setSelectedNotificationTypeId,
+      setTypeSearch: setNotificationTypeSearch,
+      extraFields: draft.extra_fields,
+      setExtraFields,
+    })
     if (draft.notification_date) setNotificationDate(draft.notification_date)
     if (draft.notification_number) setNotificationNumber(draft.notification_number)
-    if (draft.extra_fields && Object.keys(draft.extra_fields).length > 0) {
-      setExtraFields(draft.extra_fields)
-    }
     return typeChanged
-  }, [notificationTypes, selectedNotificationTypeId])
+  }, [notificationTypes, selectedNotificationTypeId, queryClient])
 
   const {
     clear: recoveryClear,

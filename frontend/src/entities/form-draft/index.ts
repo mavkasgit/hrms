@@ -17,3 +17,8 @@ export type {
   UseDraftRecoveryForResult,
 } from "./useDraftRecoveryFor"
 export { useFillDraftIdRestore } from "./useFillDraftIdRestore"
+export { revalidateEmployeeAndType } from "./revalidateEmployeeAndType"
+export type {
+  RestorableType,
+  RevalidateEmployeeAndTypeParams,
+} from "./revalidateEmployeeAndType"

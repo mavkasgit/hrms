@@ -50,9 +50,7 @@ import { openStatementView, openStatementEdit, openStatementPrint, downloadState
 import type { StatementCreate } from "@/entities/statement/types"
 import { getFormDataExtraFields, getFormDataInt, getFormDataValue } from "@/entities/draft"
 import type { DraftFormData } from "@/entities/draft"
-import { useDraftRecoveryFor, useFillDraftIdRestore } from "@/entities/form-draft"
-
-import { fetchDraftEmployee } from "@/entities/form-draft"
+import { revalidateEmployeeAndType, useDraftRecoveryFor, useFillDraftIdRestore } from "@/entities/form-draft"
 
 interface StatementFormDraft {
   employee_id: number | null
@@ -158,32 +156,22 @@ export function StatementsSection() {
   const handleStatementRestore = useCallback((draft: StatementFormDraft): boolean => {
     // Возврат: изменился ли тип заявления (его смена сбрасывает extra_fields —
     // хост-сброс после восстановления должен быть пропущен один раз).
-    let typeChanged = false
-    // Перевалидация: сотрудник загружается по id, тип заявления — из актуального списка
-    if (draft.employee_id) {
-      fetchDraftEmployee(queryClient, draft.employee_id).then((employee) => {
-        if (employee) setSelectedEmployee(employee)
-      })
-    }
-    if (draft.statement_type_id) {
-      const type = statementTypes.find((t) => t.id === draft.statement_type_id && t.is_active)
-      if (type) {
-        if (type.id !== selectedStatementTypeId) typeChanged = true
-        setSelectedStatementTypeId(type.id)
-        setStatementTypeSearch(type.name)
-      } else if (statementTypes.length === 0) {
-        // Типы ещё не загрузились — выставляем id по черновику; layout появится позже
-        if (draft.statement_type_id !== selectedStatementTypeId) typeChanged = true
-        setSelectedStatementTypeId(draft.statement_type_id)
-      }
-    }
+    const typeChanged = revalidateEmployeeAndType({
+      queryClient,
+      employeeId: draft.employee_id,
+      typeId: draft.statement_type_id,
+      types: statementTypes,
+      selectedTypeId: selectedStatementTypeId,
+      setEmployee: setSelectedEmployee,
+      setTypeId: setSelectedStatementTypeId,
+      setTypeSearch: setStatementTypeSearch,
+      extraFields: draft.extra_fields,
+      setExtraFields,
+    })
     if (draft.statement_date) setStatementDate(draft.statement_date)
     if (draft.statement_number) setStatementNumber(draft.statement_number)
-    if (draft.extra_fields && Object.keys(draft.extra_fields).length > 0) {
-      setExtraFields(draft.extra_fields)
-    }
     return typeChanged
-  }, [statementTypes, selectedStatementTypeId])
+  }, [statementTypes, selectedStatementTypeId, queryClient])
 
   const {
     clear: recoveryClear,

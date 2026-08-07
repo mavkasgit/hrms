@@ -78,7 +78,7 @@ import {
   type OrderFormDraft,
 } from "@/entities/order/formDraft"
 import { ORDER_TYPE_BADGE_COLORS } from "@/entities/order/orderTypeBadge"
-import { fetchDraftEmployee, getFormDraftSlot } from "@/entities/form-draft"
+import { revalidateEmployeeAndType, getFormDraftSlot } from "@/entities/form-draft"
 import { getFormDataValue, getFormDataInt, getFormDataExtraFields, draftEditorUrl } from "@/entities/draft"
 import type { DraftFormData } from "@/entities/draft"
 
@@ -689,34 +689,22 @@ export function OrdersPage() {
   const handleRecoveryRestore = useCallback((draft: OrderFormDraft): boolean => {
     // Возврат: изменился ли тип приказа (его смена сбрасывает extra_fields —
     // хост-сброс после восстановления должен быть пропущен один раз).
-    let typeChanged = false
-    // Перевалидация: сотрудник загружается по id, тип приказа — из актуального списка
-    if (draft.employee_id) {
-      fetchDraftEmployee(queryClient, draft.employee_id).then((employee) => {
-        if (employee) setSelectedEmployee(employee)
-      })
-    }
-    if (draft.order_type_id) {
-      const type = orderTypes.find((t) => t.id === draft.order_type_id && t.is_active)
-      if (type) {
-        // #50: при восстановлении не сбрасываем восстановленные поля из-за смены типа
-        if (type.id !== selectedOrderTypeId) typeChanged = true
-        setSelectedOrderTypeId(type.id)
-        setOrderTypeSearch(type.name)
-      } else if (orderTypes.length === 0) {
-        // Типы ещё не загрузились — выставляем id по черновику; layout и литера
-        // появятся, когда типы подгрузятся (#50)
-        if (draft.order_type_id !== selectedOrderTypeId) typeChanged = true
-        setSelectedOrderTypeId(draft.order_type_id)
-      }
-    }
+    const typeChanged = revalidateEmployeeAndType({
+      queryClient,
+      employeeId: draft.employee_id,
+      typeId: draft.order_type_id,
+      types: orderTypes,
+      selectedTypeId: selectedOrderTypeId,
+      setEmployee: setSelectedEmployee,
+      setTypeId: setSelectedOrderTypeId,
+      setTypeSearch: setOrderTypeSearch,
+      extraFields: draft.extra_fields,
+      setExtraFields,
+    })
     if (draft.order_date) setOrderDate(draft.order_date)
     if (draft.order_number) setOrderNumber(draft.order_number)
-    if (draft.extra_fields && Object.keys(draft.extra_fields).length > 0) {
-      setExtraFields(draft.extra_fields)
-    }
     return typeChanged
-  }, [orderTypes, selectedOrderTypeId])
+  }, [orderTypes, selectedOrderTypeId, queryClient])
 
   const {
     restore: recoveryRestore,
