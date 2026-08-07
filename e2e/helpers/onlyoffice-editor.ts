@@ -138,7 +138,7 @@ export async function saveExistingOrderFromEditor(editor: Page): Promise<void> {
 
 /**
  * Click «Сохранить уведомление» on notification OO editor (`/notifications/:id/edit-docx`).
- * Forcesave only — notification already persisted by POST /notifications/drafts (no order commit).
+ * Forcesave + explicit commit (is_draft=False, #86) — the editor calls POST /notifications/{id}/commit.
  * Path: POST /api/notifications/{id}/onlyoffice/forcesave
  */
 export async function saveNotificationFromEditor(editor: Page): Promise<void> {
@@ -177,6 +177,52 @@ export async function saveNotificationFromEditor(editor: Page): Promise<void> {
   ).toBeTruthy()
 
   // NotificationEditorPage closes after successful save
+  await editor.waitForEvent('close', { timeout: 30_000 }).catch(() => {
+    /* may already be closed or stay open if soft error */
+  })
+}
+
+/**
+ * Click «Сохранить заявление» on statement OO editor (`/statements/:id/edit-docx`).
+ * Forcesave + explicit commit (is_draft=False, #86) — the editor calls POST /statements/{id}/commit.
+ * Path: POST /api/statements/{id}/onlyoffice/forcesave
+ */
+export async function saveStatementFromEditor(editor: Page): Promise<void> {
+  const saveBtn = editor.getByRole('button', { name: 'Сохранить заявление' })
+  await expect(saveBtn).toBeVisible({ timeout: 90_000 })
+
+  await dismissOnlyOfficeDialogs(editor)
+  // OO dialogs may appear shortly after config load
+  await editor.waitForTimeout(1500)
+  await dismissOnlyOfficeDialogs(editor)
+
+  // Editor enables save only after DocsAPI ready
+  await expect(saveBtn).toBeEnabled({ timeout: 90_000 })
+
+  let forceSaveOk = false
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    await dismissOnlyOfficeDialogs(editor)
+    const forcePromise = editor.waitForResponse(
+      (r) =>
+        r.url().includes('/onlyoffice/forcesave') &&
+        r.url().includes('/statements/') &&
+        r.request().method() === 'POST',
+      { timeout: 45_000 }
+    )
+    await saveBtn.click()
+    const forceResp = await forcePromise.catch(() => null)
+    if (forceResp && forceResp.ok()) {
+      forceSaveOk = true
+      break
+    }
+    await editor.waitForTimeout(2000 * attempt)
+  }
+  expect(
+    forceSaveOk,
+    'OnlyOffice forcesave for statement should succeed (is DS on :8085?)'
+  ).toBeTruthy()
+
+  // StatementEditorPage closes after successful save
   await editor.waitForEvent('close', { timeout: 30_000 }).catch(() => {
     /* may already be closed or stay open if soft error */
   })

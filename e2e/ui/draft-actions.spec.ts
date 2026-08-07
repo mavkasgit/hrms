@@ -3,7 +3,7 @@ import { createAuthenticatedRequest } from '../helpers/api-request'
 import {
   dismissOnlyOfficeDialogs,
   saveDraftOrderFromEditor,
-  saveNotificationFromEditor,
+  saveStatementFromEditor,
 } from '../helpers/onlyoffice-editor'
 
 /**
@@ -13,8 +13,8 @@ import {
  * - «Восстановить» открывает редактор (edit-docx) с самим документом;
  * - после «Сохранить приказ» черновик коммитится (эндпоинт выбирается по
  *   флагу группового черновика), исчезает из списка, документ — в реестре;
- * - уведомление: «Восстановить» → «Сохранить уведомление» → finalize через
- *   callback OnlyOffice → черновик исчез, уведомление в списке.
+ * - заявление: «Восстановить» → «Сохранить заявление» → явный commit
+ *   (is_draft=False) → черновик исчез, заявление в списке.
  *
  * Requires: FE, BE, OnlyOffice DS (ONLYOFFICE_PUBLIC_URL, e.g. :8085).
  * Только проект `ui` (ночной прогон с DS).
@@ -215,7 +215,7 @@ test.describe('Draft actions @ui', () => {
     }
   })
 
-  test('@ui draft actions: notification via API → /drafts → «Восстановить» → save → finalized', async ({
+  test('@ui draft actions: statement via API → /drafts → «Восстановить» → save → finalized', async ({
     page,
     apiOps,
     playwright,
@@ -223,76 +223,71 @@ test.describe('Draft actions @ui', () => {
     test.setTimeout(180_000)
 
     const u = apiOps.uid()
-    const empName = `e2e-emp-dact-notif-${u}`
-    const notifNumber = `E2EDN${Date.now().toString().slice(-6)}`
+    const empName = `e2e-emp-dact-stmt-${u}`
+    const stmtNumber = `E2EDS${Date.now().toString().slice(-6)}`
 
     const employee = await apiOps.createEmployee({ name: empName })
     expect(employee.id).toBeGreaterThan(0)
-    const types = await apiOps.getNotificationTypes(true)
-    expect(types.length, 'active notification types must exist').toBeGreaterThan(0)
-    const pick = types[0]
 
     const { request, dispose } = await createAuthenticatedRequest(playwright)
-    let notifId: number | undefined
+    let stmtId: number | undefined
     try {
-      const resp = await request.post(`${API_BASE}/api/notifications/drafts`, {
+      const resp = await request.post(`${API_BASE}/api/statements/drafts`, {
         data: {
-          title: `Уведомление ${notifNumber}`,
-          number: notifNumber,
+          title: `Заявление ${stmtNumber}`,
+          number: stmtNumber,
           date: '2026-01-01',
           employee_id: employee.id,
-          notification_type_id: pick.id,
         },
       })
       expect(resp.status()).toBe(200)
-      notifId = (await resp.json()).notification_id as number
-      expect(notifId, 'notification draft id').toBeTruthy()
-      apiOps.trackNotification(notifId)
+      stmtId = (await resp.json()).statement_id as number
+      expect(stmtId, 'statement draft id').toBeTruthy()
 
       await page.goto('/drafts')
       await expect(page.getByRole('heading', { name: 'Черновики' })).toBeVisible({
         timeout: 30_000,
       })
-      const row = page.locator('tr').filter({ hasText: notifNumber })
+      const row = page.locator('tr').filter({ hasText: stmtNumber })
       await expect(row).toBeVisible({ timeout: 20_000 })
 
-      // «Восстановить» → редактор уведомления (edit-docx) → «Сохранить уведомление».
+      // «Восстановить» → редактор заявления (edit-docx) → «Сохранить заявление».
       const popupPromise = page.waitForEvent('popup', { timeout: 60_000 })
       await row.getByRole('button', { name: 'Восстановить' }).click()
       const editor = await popupPromise
       editor.on('dialog', (d) => d.accept().catch(() => {}))
-      await editor.waitForURL(new RegExp(`/notifications/${notifId}/edit-docx`), {
+      await editor.waitForURL(new RegExp(`/statements/${stmtId}/edit-docx`), {
         timeout: 60_000,
       })
       await editor.waitForResponse(
-        (r) => r.url().includes('/onlyoffice/config') && r.url().includes('/notifications/') && r.ok(),
+        (r) => r.url().includes('/onlyoffice/config') && r.url().includes('/statements/') && r.ok(),
         { timeout: 60_000 }
       )
 
       await dismissOnlyOfficeDialogs(editor)
-      await saveNotificationFromEditor(editor)
+      await saveStatementFromEditor(editor)
 
-      // finalize через callback OnlyOffice → черновик исчез из /drafts.
+      // Явный commit (is_draft=False) → черновик исчез из /drafts.
       await expect
         .poll(
           async () => {
             const resp = await request.get(`${API_BASE}/api/drafts`)
             const drafts = (await resp.json()) as Array<{ draft_id: string }>
-            return !drafts.some((d) => d.draft_id === `notification:${notifId}`)
+            return !drafts.some((d) => d.draft_id === `statement:${stmtId}`)
           },
           { timeout: 30_000, intervals: [2000, 3000, 5000] }
         )
         .toBe(true)
 
-      // Уведомление появилось в списке (is_draft=false).
-      const items = await apiOps.getNotifications({ employee_id: employee.id })
-      const found = items.find(
-        (n) => n.id === notifId || (n.number && String(n.number).includes(notifNumber))
-      )
-      expect(found, 'notification present via API after OO save').toBeTruthy()
+      // Заявление стало документом (is_draft=false).
+      const stmtResp = await request.get(`${API_BASE}/api/statements/${stmtId}`)
+      expect(stmtResp.status()).toBe(200)
+      const stmt = (await stmtResp.json()) as { is_draft: boolean; number?: string | null }
+      expect(stmt.is_draft).toBe(false)
+      expect(stmt.number?.includes(stmtNumber)).toBe(true)
     } finally {
-      if (notifId) {
-        await apiOps.deleteNotification(notifId).catch(() => {})
+      if (stmtId) {
+        await request.delete(`${API_BASE}/api/statements/${stmtId}`).catch(() => {})
       }
       await dispose()
     }
