@@ -11,7 +11,7 @@ import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/ord
 import { timeAgo } from "@/shared/utils/date"
 import { formDraftRecoverUrl, readAllFormDrafts } from "@/entities/form-draft"
 import type { FormDraftEntry } from "@/entities/form-draft"
-import { Eye, FilePen, Trash2 } from "lucide-react"
+import { ClipboardPaste, Eye, FilePen, Loader2, Trash2 } from "lucide-react"
 
 function formatSavedAt(savedAt: string): string {
   return new Date(savedAt).toLocaleString("ru-RU", {
@@ -78,12 +78,14 @@ function DraftBadgeButton({
       </span>
       <div className="flex shrink-0 items-center gap-1">
         <Button
-          size="sm"
+          variant="ghost"
+          size="icon"
           onClick={() => void handleFillFields()}
           disabled={filling}
           title="Заполнить форму создания данными черновика"
+          aria-label="Заполнить"
         >
-          {filling ? "Загрузка..." : "Заполнить"}
+          {filling ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardPaste className="h-4 w-4" />}
         </Button>
         <Button
           size="icon"
@@ -238,12 +240,14 @@ export function DraftOrdersNavItem() {
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <Button
-                        size="sm"
+                        variant="ghost"
+                        size="icon"
                         onClick={() => handleFormRestore(entry)}
                         data-testid="recovery-restore"
                         title="Заполнить форму данными несохранённого заполнения"
+                        aria-label="Заполнить"
                       >
-                        Заполнить
+                        <ClipboardPaste className="h-4 w-4" />
                       </Button>
                       <Button
                         size="icon"

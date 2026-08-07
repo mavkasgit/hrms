@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Eye, FilePen, Trash2 } from "lucide-react"
+import { ClipboardPaste, Eye, FilePen, Loader2, Trash2 } from "lucide-react"
 import { useAllDrafts, useDeleteAllDraft, fillFormFromDraft } from "@/entities/draft"
 import type { AllDraftItem } from "@/entities/draft"
 import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
@@ -317,30 +317,35 @@ export function DraftsPage() {
                       <div className="flex justify-end gap-1">
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon"
                           title="Заполнить форму данными черновика"
+                          aria-label="Заполнить"
                           disabled={fillingId !== null}
                           onClick={() => void handleFill(draft)}
                         >
-                          {fillingId === draft.draft_id ? "Загрузка..." : "Заполнить"}
+                          {fillingId === draft.draft_id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <ClipboardPaste className="h-4 w-4" />
+                          )}
                         </Button>
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon"
                           title="Открыть документ только для чтения"
+                          aria-label="Открыть"
                           onClick={() => openDraftEditorWindow(draft.view_url)}
                         >
                           <Eye className="h-4 w-4" />
-                          <span>Открыть</span>
                         </Button>
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon"
                           title="Восстановить — открыть в редакторе для доработки и сохранения"
+                          aria-label="Восстановить"
                           onClick={() => openDraftEditorWindow(draft.edit_url)}
                         >
                           <FilePen className="h-4 w-4" />
-                          <span>Восстановить</span>
                         </Button>
                         <Button
                           variant="ghost"
