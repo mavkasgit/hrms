@@ -16,3 +16,4 @@ export type {
   UseDraftRecoveryForOptions,
   UseDraftRecoveryForResult,
 } from "./useDraftRecoveryFor"
+export { useFillDraftIdRestore } from "./useFillDraftIdRestore"
