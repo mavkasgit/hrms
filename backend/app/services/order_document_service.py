@@ -14,6 +14,7 @@ from app.core.paths import storage_key, storage_path
 from app.models.employee import Employee
 from app.models.order_type import OrderType
 from app.schemas.order import OrderCreate, VacationUnpaidGroupOrderCreate
+from app.services.docx_renderer import render_docx_placeholders, replace_in_paragraph
 from app.services.template_replacements import (
     build_document_replacements,
     build_order_replacements,
@@ -28,11 +29,6 @@ from app.services.template_replacements import (
 )
 
 MISSING_TEMPLATE_WARNING = "ВНИМАНИЕ: документ сгенерирован без шаблона."
-
-
-def _replace_text_in_paragraph(paragraph: Any, replacements: dict[str, str]) -> None:
-    """Replace placeholders in a paragraph using run coordinate mapping."""
-    _replace_in_paragraph(paragraph, replacements)
 
 
 def _find_block_paragraph_indexes(container: Any, start_marker: str, end_marker: str) -> tuple[int | None, int | None]:
@@ -145,7 +141,7 @@ def _render_repeat_block_in_table_rows(
                         for paragraph_xml in template_tail_xml:
                             new_paragraph_xml = deepcopy(paragraph_xml)
                             start_cell._tc.append(new_paragraph_xml)
-                            _replace_text_in_paragraph(Paragraph(new_paragraph_xml, start_cell), row_replacements)
+                            replace_in_paragraph(Paragraph(new_paragraph_xml, start_cell), row_replacements)
 
                     for paragraph_xml in paragraphs_to_delete:
                         paragraph_xml.getparent().remove(paragraph_xml)
@@ -228,7 +224,7 @@ def _render_body_level_block_between_markers(
 
             tag = new_elem.tag.rsplit("}", 1)[-1]
             if tag == "p":
-                _replace_text_in_paragraph(Paragraph(new_elem, parent), row_replacements)
+                replace_in_paragraph(Paragraph(new_elem, parent), row_replacements)
             elif tag == "tbl":
                 _replace_placeholders_in_element(Table(new_elem, parent), row_replacements)
 
@@ -290,7 +286,7 @@ def _render_repeat_block(
                     # Replace placeholders immediately on the inserted paragraph.
                     # This avoids relying on element identity checks across lxml proxies.
                     inserted_paragraph = Paragraph(new_p_xml, end_p._parent)
-                    _replace_text_in_paragraph(inserted_paragraph, row_replacements)
+                    replace_in_paragraph(inserted_paragraph, row_replacements)
 
             # Remove template paragraphs and markers (use collected elements, not indices)
             for p_elem in paragraphs_to_delete:
@@ -307,7 +303,7 @@ def _replace_placeholders_in_element(element: Any, replacements: dict[str, str])
     """Replace placeholders in a document element (paragraphs and tables)."""
     if hasattr(element, "paragraphs"):
         for paragraph in element.paragraphs:
-            _replace_text_in_paragraph(paragraph, replacements)
+            replace_in_paragraph(paragraph, replacements)
 
     if hasattr(element, "tables"):
         for table in element.tables:
@@ -650,77 +646,14 @@ def _replace_placeholders(target: Any, replacements: dict[str, str]) -> None:
     """Replace placeholders in a Document, Paragraph, or Cell. Dispatches to the appropriate handler."""
     if hasattr(target, "paragraphs") and hasattr(target, "tables"):
         # Document
-        for paragraph in target.paragraphs:
-            _replace_in_paragraph(paragraph, replacements)
-        for table in target.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for paragraph in cell.paragraphs:
-                        _replace_in_paragraph(paragraph, replacements)
+        render_docx_placeholders(target, replacements)
     elif hasattr(target, "paragraphs"):
         # Cell or similar object with paragraphs
         for paragraph in target.paragraphs:
-            _replace_in_paragraph(paragraph, replacements)
+            replace_in_paragraph(paragraph, replacements)
     else:
         # Single Paragraph
-        _replace_in_paragraph(target, replacements)
-
-
-def _replace_in_paragraph(paragraph: Any, replacements: dict[str, str]) -> None:
-    """Replace placeholders in a single paragraph using run coordinate mapping.
-    All replacements are applied in a single pass (right-to-left) so run indices stay valid."""
-    if not paragraph.runs:
-        return
-
-    full_text = paragraph.text
-
-    # Collect all occurrences of all keys
-    occurrences: list[tuple[int, str, str]] = []  # (start_pos, key, value)
-    for key, value in replacements.items():
-        if key not in full_text:
-            continue
-        key_len = len(key)
-        for i in range(len(full_text)):
-            if full_text.startswith(key, i):
-                occurrences.append((i, key, value))
-
-    if not occurrences:
-        return
-
-    # Sort by position descending (right-to-left) so earlier indices stay valid
-    occurrences.sort(key=lambda x: x[0], reverse=True)
-
-    # Build coordinate map once
-    p_map = []
-    for run_idx, run in enumerate(paragraph.runs):
-        for char_idx, char in enumerate(run.text):
-            p_map.append({"run": run_idx, "char": char_idx})
-
-    for start_pos, key, value in occurrences:
-        key_len = len(key)
-        # If the key spans more characters than we have in the map, skip (likely split across runs in a way we can't handle)
-        if start_pos + key_len > len(p_map):
-            continue
-        key_map = p_map[start_pos : start_pos + key_len]
-        _replace_in_runs(paragraph.runs, key_map, value)
-
-
-def _replace_in_runs(runs: list[Any], key_map: list[dict], value: str) -> None:
-    """Apply replacement to the specific runs/characters identified by key_map."""
-    for i, position in enumerate(reversed(key_map), start=1):
-        run_idx = position["run"]
-        char_idx = position["char"]
-        run = runs[run_idx]
-        chars = list(run.text)
-
-        if i < len(key_map):
-            # Not the first character of the key — delete it
-            chars.pop(char_idx)
-        else:
-            # First character (last in reversed order) — replace with value
-            chars[char_idx] = value
-
-        run.text = "".join(chars)
+        replace_in_paragraph(target, replacements)
 
 
 def _extract_extra_dates(extra_fields: dict | None, order_type_code: str) -> list[date] | None:

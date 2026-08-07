@@ -40,7 +40,7 @@ class OrderDraftService(DocumentDraftService):
         self._drafts_dir.mkdir(parents=True, exist_ok=True)
         return self._drafts_dir
 
-    async def create_draft(
+    async def create_draft(  # pyright: ignore[reportIncompatibleMethodOverride] — приказный create намеренно со своей сигнатурой (#80)
         self, data: OrderCreate, employee: Employee | None, order_type: OrderType, user_id: str = "system"
     ) -> dict[str, Any]:
         draft_id = str(uuid.uuid4())

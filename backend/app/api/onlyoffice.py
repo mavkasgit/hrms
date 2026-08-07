@@ -4,27 +4,23 @@ from datetime import date
 import ipaddress
 import json
 import logging
-import uuid
-import shutil
-import asyncio
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import EmployeeNotFoundError, HRMSException
-from app.core.paths import storage_path, storage_root
+from app.core.paths import storage_path
 from app.schemas.order import GroupOrderCreate, OrderCreate
 from app.services.order_document_service import get_template_path
 from app.services.onlyoffice_service import onlyoffice_service
 from app.services.onlyoffice_save_tracker import onlyoffice_save_tracker
 from app.services.order_draft_service import order_draft_service
+from app.services.document_draft_service import notification_draft_service, statement_draft_service
 from app.services.onlyoffice_form_data import (
     draft_form_data as build_draft_form_data,
     notification_form_data as build_notification_form_data,
@@ -33,11 +29,10 @@ from app.services.onlyoffice_form_data import (
 )
 from app.services.unified_drafts_service import unified_drafts_service
 from app.services.order_service import order_service
-from app.services.docx_renderer import load_template_or_create_blank, render_docx_placeholders, build_basic_doc_replacements
 from app.repositories.references_repository import references_repository
 from app.utils.working_days import calculate_vacation_days, count_holidays_in_range
-from app.services.notification_type_service import notification_type_service, get_template_path as get_notification_template_path
-from app.services.statement_type_service import statement_type_service, get_template_path as get_statement_template_path
+from app.services.notification_type_service import notification_type_service
+from app.services.statement_type_service import statement_type_service
 from app.api.notifications import NotificationCreate
 from app.api.statements import StatementCreate
 from app.models.notification import Notification
@@ -790,20 +785,9 @@ async def template_onlyoffice_forcesave(
     return {"message": "save_requested"}
 
 
-from app.services.template_replacements import (
-    build_notification_replacements,
-    build_statement_replacements,
-)
-
-
 # ─── Notifications OnlyOffice ──────────────────────────────────────────────────
 
-import uuid
-import shutil
-from pathlib import Path
-
 from app.core.paths import notifications_path
-from app.models.employee import Employee
 
 
 @router.post("/notifications/drafts")
@@ -814,107 +798,7 @@ async def create_notification_draft(
 ):
     _ensure_onlyoffice_enabled()
     await notification_type_service.ensure_default_notification_types(db)
-
-    notification_type = None
-    if data.notification_type_id is not None:
-        notification_type = await notification_type_service.get_notification_type(db, data.notification_type_id)
-
-    employee = None
-    if data.employee_id is not None:
-        emp_result = await db.execute(
-            select(Employee)
-            .options(joinedload(Employee.position), joinedload(Employee.department))
-            .where(Employee.id == data.employee_id)
-        )
-        employee = emp_result.scalar_one_or_none()
-
-    # Auto-generate number if not provided
-    number = data.number or ""
-    if not number:
-        result = await db.execute(
-            select(Notification.number)
-            .where(Notification.number.isnot(None))
-            .order_by(Notification.id.desc())
-            .limit(1)
-        )
-        last_number = result.scalar_one_or_none()
-        if last_number:
-            import re as _re
-            match = _re.search(r'\d+', last_number)
-            last_num = int(match.group()) if match else 0
-            number = str(last_num + 1)
-        else:
-            number = "1"
-
-    title = data.title or f"Уведомление {notification_type.name if notification_type else ''} {number}"
-    doc_date = data.date
-
-    replacements = build_notification_replacements(
-        title=title,
-        number=number,
-        doc_date=doc_date,
-        employee=employee,
-        notification_type_name=notification_type.name if notification_type else "",
-        notification_type_code=notification_type.code if notification_type else "",
-        extra_fields=data.extra_fields,
-    )
-
-    # Load template or create blank
-    if notification_type and notification_type.template_filename:
-        template_path = get_notification_template_path(notification_type)
-        if template_path.exists():
-            doc = await load_template_or_create_blank(template_path)
-        else:
-            try:
-                from docx import Document
-                doc = Document()
-            except ImportError:
-                raise HRMSException("Шаблон уведомления не найден", "template_not_found", status_code=404)
-    else:
-        notifications_dir = storage_root("NOTIFICATIONS_PATH")
-        default_template = notifications_dir / "template.docx"
-        if default_template.exists():
-            doc = await load_template_or_create_blank(default_template)
-        else:
-            try:
-                from docx import Document
-                doc = Document()
-            except ImportError:
-                raise HRMSException("Шаблон уведомления не найден", "template_not_found", status_code=404)
-
-    render_docx_placeholders(doc, replacements)
-
-    notifications_dir = storage_root("NOTIFICATIONS_PATH")
-    notifications_dir.mkdir(parents=True, exist_ok=True)
-    safe_title = title[:50].replace("/", "_").replace("\\", "_")
-    file_path = notifications_dir / f"{number}_{safe_title}.docx"
-    # Ensure unique filename
-    counter = 1
-    while file_path.exists():
-        file_path = notifications_dir / f"{number}_{safe_title}_{counter}.docx"
-        counter += 1
-
-    await asyncio.wait_for(
-        asyncio.to_thread(doc.save, str(file_path)),
-        timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
-    )
-
-    notification = Notification(
-        title=title,
-        number=number,
-        date=doc_date,
-        employee_id=data.employee_id,
-        notification_type_id=data.notification_type_id,
-        content=data.content,
-        extra_fields=data.extra_fields,
-        file_path=file_path.name,
-        is_draft=True,
-    )
-    db.add(notification)
-    await db.commit()
-    await db.refresh(notification)
-
-    return {"draft_id": str(notification.id), "notification_id": notification.id}
+    return await notification_draft_service.create_draft(db, data)
 
 
 @router.get("/notifications/{notification_id}/onlyoffice/config")
@@ -985,13 +869,9 @@ async def notification_onlyoffice_callback(
 
     if status in (2, 6) and body.get("url"):
         try:
-            notification = await db.get(Notification, notification_id)
-            if notification and notification.file_path:
-                file_path = notifications_path(notification.file_path)
-                await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
-                if notification.is_draft:
-                    notification.is_draft = False
-                    await db.commit()
+            await notification_draft_service.finalize(db, notification_id, str(body["url"]))
+        except HRMSException as exc:
+            return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
         except Exception as exc:
             return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
 
@@ -1024,107 +904,7 @@ async def create_statement_draft(
 ):
     _ensure_onlyoffice_enabled()
     await statement_type_service.ensure_default_statement_types(db)
-
-    statement_type = None
-    if data.statement_type_id is not None:
-        statement_type = await statement_type_service.get_statement_type(db, data.statement_type_id)
-
-    employee = None
-    if data.employee_id is not None:
-        emp_result = await db.execute(
-            select(Employee)
-            .options(joinedload(Employee.position), joinedload(Employee.department))
-            .where(Employee.id == data.employee_id)
-        )
-        employee = emp_result.scalar_one_or_none()
-
-    # Auto-generate number if not provided
-    number = data.number or ""
-    if not number:
-        result = await db.execute(
-            select(Statement.number)
-            .where(Statement.number.isnot(None))
-            .order_by(Statement.id.desc())
-            .limit(1)
-        )
-        last_number = result.scalar_one_or_none()
-        if last_number:
-            import re as _re
-            match = _re.search(r'\d+', last_number)
-            last_num = int(match.group()) if match else 0
-            number = str(last_num + 1)
-        else:
-            number = "1"
-
-    title = data.title or f"Заявление {statement_type.name if statement_type else ''} {number}"
-    doc_date = data.date
-
-    replacements = build_statement_replacements(
-        title=title,
-        number=number,
-        doc_date=doc_date,
-        employee=employee,
-        statement_type_name=statement_type.name if statement_type else "",
-        statement_type_code=statement_type.code if statement_type else "",
-        extra_fields=data.extra_fields,
-    )
-
-    # Load template or create blank
-    if statement_type and statement_type.template_filename:
-        template_path = get_statement_template_path(statement_type)
-        if template_path.exists():
-            doc = await load_template_or_create_blank(template_path)
-        else:
-            try:
-                from docx import Document
-                doc = Document()
-            except ImportError:
-                raise HRMSException("Шаблон заявления не найден", "template_not_found", status_code=404)
-    else:
-        statements_dir = storage_root("STATEMENTS_PATH")
-        default_template = statements_dir / "template.docx"
-        if default_template.exists():
-            doc = await load_template_or_create_blank(default_template)
-        else:
-            try:
-                from docx import Document
-                doc = Document()
-            except ImportError:
-                raise HRMSException("Шаблон заявления не найден", "template_not_found", status_code=404)
-
-    render_docx_placeholders(doc, replacements)
-
-    statements_dir = storage_root("STATEMENTS_PATH")
-    statements_dir.mkdir(parents=True, exist_ok=True)
-    safe_title = title[:50].replace("/", "_").replace("\\", "_")
-    file_path = statements_dir / f"{number}_{safe_title}.docx"
-    # Ensure unique filename
-    counter = 1
-    while file_path.exists():
-        file_path = statements_dir / f"{number}_{safe_title}_{counter}.docx"
-        counter += 1
-
-    await asyncio.wait_for(
-        asyncio.to_thread(doc.save, str(file_path)),
-        timeout=settings.DOCUMENT_GENERATION_TIMEOUT,
-    )
-
-    statement = Statement(
-        title=title,
-        number=number,
-        date=doc_date,
-        employee_id=data.employee_id,
-        statement_type_id=data.statement_type_id,
-        content=data.content,
-        extra_fields=data.extra_fields,
-        file_path=file_path.name,
-        is_draft=True,
-    )
-    db.add(statement)
-    await db.commit()
-    await db.refresh(statement)
-
-    return {"draft_id": str(statement.id), "statement_id": statement.id}
+    return await statement_draft_service.create_draft(db, data)
 
 
 @router.get("/statements/{statement_id}/onlyoffice/config")
@@ -1195,13 +975,9 @@ async def statement_onlyoffice_callback(
 
     if status in (2, 6) and body.get("url"):
         try:
-            statement = await db.get(Statement, statement_id)
-            if statement and statement.file_path:
-                file_path = statements_path(statement.file_path)
-                await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
-                if statement.is_draft:
-                    statement.is_draft = False
-                    await db.commit()
+            await statement_draft_service.finalize(db, statement_id, str(body["url"]))
+        except HRMSException as exc:
+            return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
         except Exception as exc:
             return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
 

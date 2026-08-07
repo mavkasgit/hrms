@@ -20,15 +20,15 @@ def render_docx_placeholders(doc: DocumentType, replacements: dict[str, str]) ->
     replacements using run-coordinate mapping so formatting is preserved.
     """
     for paragraph in doc.paragraphs:
-        _replace_in_paragraph(paragraph, replacements)
+        replace_in_paragraph(paragraph, replacements)
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 for paragraph in cell.paragraphs:
-                    _replace_in_paragraph(paragraph, replacements)
+                    replace_in_paragraph(paragraph, replacements)
 
 
-def _replace_in_paragraph(paragraph: Any, replacements: dict[str, str]) -> None:
+def replace_in_paragraph(paragraph: Any, replacements: dict[str, str]) -> None:
     """Replace placeholders in a single paragraph using run coordinate mapping.
 
     All replacements are applied in a single pass (right-to-left) so run indices stay valid.
