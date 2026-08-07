@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     AUTH_OIDC_END_SESSION_URL: str | None = None
     # JIT-создание локального User при первом OIDC-входе (иначе 403)
     AUTH_OIDC_ALLOW_JIT: bool = False
+    AUTH_OIDC_DEFAULT_ROLE: str = "viewer"
+    # When true, soft-map IdP groups → users.role on link/JIT; default false = app SoT
+    AUTH_OIDC_SYNC_ROLE_FROM_IDP: bool = False
     # SSO-only режим (информационный флаг в /auth/oidc/config): парольные и
     # invite-пути входа удалены (#33/#35/#36), вход — только Authentik SSO.
     AUTH_SSO_ONLY: bool = False
