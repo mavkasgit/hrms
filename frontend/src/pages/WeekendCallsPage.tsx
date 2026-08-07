@@ -32,7 +32,7 @@ import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
 import type { Order, WeekendCallGroupEmployeeCreate } from "@/entities/order/types"
-import { useDraftFormData, getFormDataValue } from "@/entities/draft"
+import { useDraftFormData, getFormDataValue, draftEditorUrl } from "@/entities/draft"
 import {
   Tabs,
   TabsList,
@@ -382,7 +382,7 @@ export function WeekendCallsPage() {
       {
         onSuccess: (draft) => {
           setDraftId(draft.draft_id)
-          const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+          const url = draftEditorUrl(draft.draft_id)
           if (editorWindow && !editorWindow.closed) {
             editorWindow.location.href = url
           } else {

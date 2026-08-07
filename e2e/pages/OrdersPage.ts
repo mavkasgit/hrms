@@ -181,7 +181,7 @@ export class OrdersPage {
     await this.createOrderButton.click()
     const popup = await popupPromise
     await popup.waitForLoadState('domcontentloaded')
-    await popup.waitForURL(/\/orders\/drafts\/[^/]+\/edit-docx/, { timeout: 60_000 })
+    await popup.waitForURL(/\/drafts\/[^/]+\/edit-docx/, { timeout: 60_000 })
     return popup
   }
 

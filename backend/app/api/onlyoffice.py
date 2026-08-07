@@ -687,7 +687,7 @@ async def create_order_group_draft(
 
     return {
         "draft_id": draft["draft_id"],
-        "edit_url": f"/orders/drafts/{draft['draft_id']}/edit-docx",
+        "edit_url": f"/drafts/{draft['draft_id']}/edit-docx",
     }
 
 

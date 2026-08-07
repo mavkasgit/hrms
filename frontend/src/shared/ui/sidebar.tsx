@@ -73,15 +73,8 @@ export function Sidebar({ afterNav }: { afterNav?: ReactNode }) {
     [location.pathname]
   )
 
-  // «Приказы» активны в разделе приказов, но НЕ на странице черновиков (/orders/drafts…).
   const isTopNavActive = (to: string): boolean => {
     const { pathname } = location
-    if (to === "/orders") {
-      return (
-        (pathname === "/orders" || pathname.startsWith("/orders/")) &&
-        !pathname.startsWith("/orders/drafts")
-      )
-    }
     return pathname === to || pathname.startsWith(`${to}/`)
   }
   const [absenceOpen, setAbsenceOpen] = useState(false)

@@ -6,7 +6,7 @@ import { dismissOnlyOfficeDialogs } from '../helpers/onlyoffice-editor'
  * UI: видимость черновиков (#52–#55).
  *
  * Сценарий: черновик создан (API), но не закоммичен → счётчик в сайдбаре,
- * попап с последними черновиками, страница /orders/drafts со статусом сохранения
+ * попап с последними черновиками, страница /drafts со статусом сохранения
  * и причиной ошибки («Ошибка сохранения» после save-report).
  *
  * Requires: FE + BE + OnlyOffice-enabled backend (создание черновика идёт через API;
@@ -15,7 +15,7 @@ import { dismissOnlyOfficeDialogs } from '../helpers/onlyoffice-editor'
 test.describe('Draft visibility @ui', () => {
   test.setTimeout(120_000)
 
-  test('@ui drafts: badge → popup → /orders/drafts with save status', async ({
+  test('@ui drafts: badge → popup → /drafts with save status', async ({
     page,
     apiOps,
     playwright,
@@ -87,7 +87,7 @@ test.describe('Draft visibility @ui', () => {
       await expect(page.getByText(empName, { exact: false }).first()).toBeVisible()
 
       await page.getByRole('link', { name: /Все черновики/ }).click()
-      await expect(page).toHaveURL(/\/orders\/drafts$/)
+      await expect(page).toHaveURL(/\/drafts$/)
       await expect(page.getByRole('heading', { name: 'Черновики' })).toBeVisible()
 
       // Строка с нашим черновиком + статус «Ошибка сохранения».
@@ -144,7 +144,7 @@ test.describe('Draft visibility @ui', () => {
           r.ok(),
         { timeout: 60_000 }
       )
-      await editor.goto(`/orders/drafts/${draftId}/edit-docx`)
+      await editor.goto(`/drafts/${draftId}/edit-docx`)
       await configPromise
       await expect(editor.getByRole('button', { name: 'Сохранить приказ' })).toBeVisible({
         timeout: 90_000,

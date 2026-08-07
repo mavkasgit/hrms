@@ -101,9 +101,9 @@ async def test_list_all_drafts_combines_kinds_and_sorted(db_session, monkeypatch
     assert order.date == "2026-01-01"
     assert order.save_status is not None
     assert order.save_status["state"] == "saved"
-    assert order.view_url == f"/orders/drafts/{DRAFT_ID}/view-docx"
-    assert order.edit_url == f"/orders/drafts/{DRAFT_ID}/edit-docx"
-    assert order.list_url == "/orders/drafts"
+    assert order.view_url == f"/drafts/{DRAFT_ID}/view-docx"
+    assert order.edit_url == f"/drafts/{DRAFT_ID}/edit-docx"
+    assert order.list_url == "/drafts"
 
     notif = by_kind["notification"]
     assert notif.draft_id == f"notification:{notification.id}"

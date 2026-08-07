@@ -8,6 +8,7 @@ import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useExtendVacation } from "@/entities/vacation"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
+import { draftEditorUrl } from "@/entities/draft"
 import { openOrderPrint } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { VacationSelector } from "@/features/VacationSelector"
@@ -131,7 +132,7 @@ export function VacationExtensionPage() {
         setDraftId(draft.draft_id)
         // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
         recoveryClear()
-        const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+        const url = draftEditorUrl(draft.draft_id)
         if (editorWindow && !editorWindow.closed) editorWindow.location.href = url
         else openDraftEditorWindow(url)
       },

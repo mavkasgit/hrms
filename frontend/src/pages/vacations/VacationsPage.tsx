@@ -58,6 +58,7 @@ import { EmployeeSearch } from "@/features/employee-search"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
+import { draftEditorUrl } from "@/entities/draft"
 import { openOrderPrint, downloadOrderDocx } from "@/entities/order/orderActions"
 import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import type { OrderCreate } from "@/entities/order/types"
@@ -784,7 +785,7 @@ export function VacationsPage() {
         setDraftId(draft.draft_id)
         // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
         recoveryClear()
-        const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+        const url = draftEditorUrl(draft.draft_id)
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
         } else {

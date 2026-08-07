@@ -7,6 +7,7 @@ import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
+import { draftEditorUrl } from "@/entities/draft"
 import { openOrderPrint } from "@/entities/order/orderActions"
 import { useHolidays, usePostponeVacation } from "@/entities/vacation"
 import { VacationSelector } from "@/features/VacationSelector"
@@ -209,7 +210,7 @@ export function VacationPostponePage() {
         setDraftId(draft.draft_id)
         // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
         recoveryClear()
-        const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+        const url = draftEditorUrl(draft.draft_id)
         if (editorWindow && !editorWindow.closed) editorWindow.location.href = url
         else openDraftEditorWindow(url)
       },

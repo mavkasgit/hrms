@@ -8,7 +8,7 @@ import { createAuthenticatedRequest } from '../helpers/api-request'
  *
  * Сценарии:
  * - бейдж в сайдбаре = сумма всех трёх видов; попап показывает приказ, уведомление и заявление;
- * - страница /orders/drafts — типовая таблица со всеми видами;
+ * - страница /drafts — типовая таблица со всеми видами;
  * - удаление через диалог подтверждения работает для каждого вида;
  * - просмотр открывается в read-only режиме (без прав редактирования).
  *
@@ -143,7 +143,7 @@ test.describe('Unified drafts @smoke', () => {
 
       // ── Страница «Все черновики»: типовая таблица со всеми видами (#62) ──
       await page.getByRole('link', { name: /Все черновики/ }).click()
-      await expect(page).toHaveURL(/\/orders\/drafts$/)
+      await expect(page).toHaveURL(/\/drafts$/)
       await expect(page.getByRole('heading', { name: 'Черновики' })).toBeVisible()
       for (const name of [empOrder.name, empNotif.name, empStmt.name]) {
         await expect(page.getByText(name, { exact: false }).first()).toBeVisible()
@@ -156,8 +156,106 @@ test.describe('Unified drafts @smoke', () => {
       // Кнопки коммита и «Сначала новые/старые» отсутствуют (#62).
       await expect(page.getByRole('button', { name: 'Сохранить' })).toHaveCount(0)
       await expect(page.getByRole('button', { name: /Сначала новые|Сначала старые/ })).toHaveCount(0)
+
+      // Старый URL /orders/drafts редиректит на отдельный роут /drafts (#69).
+      await page.goto('/orders/drafts')
+      await expect(page).toHaveURL(/\/drafts$/)
+      await expect(page.getByRole('heading', { name: 'Черновики' })).toBeVisible()
     } finally {
       await cleanup()
+    }
+  })
+
+  test('@smoke drafts: employee filter lists individual group members, not aggregates', async ({
+    page,
+    apiOps,
+    playwright,
+  }) => {
+    const u = apiOps.uid()
+    const nameA = `e2e-grp-filt-${u}-a`
+    const nameB = `e2e-grp-filt-${u}-b`
+    const groupNumber = `E2EFG${Date.now().toString().slice(-6)}`
+    const singleNumber = `E2EFS${Date.now().toString().slice(-6)}`
+    const { request, dispose } = await createAuthenticatedRequest(playwright)
+
+    const empA = await apiOps.createEmployee({ name: nameA })
+    const empB = await apiOps.createEmployee({ name: nameB })
+    expect(empA.id).toBeGreaterThan(0)
+    expect(empB.id).toBeGreaterThan(0)
+
+    let groupDraftId: string | undefined
+    let orderDraftId: string | undefined
+    try {
+      // Групповой черновик из двух сотрудников (A и B).
+      const groupResp = await request.post(`${API_BASE}/api/orders/group-drafts`, {
+        data: {
+          order_type_code: 'vacation_unpaid_group',
+          order_date: '2026-01-05',
+          order_number: groupNumber,
+          employees: [
+            { employee_id: empA.id, vacation_days: 1 },
+            { employee_id: empB.id, vacation_days: 1 },
+          ],
+          vacation_start: '2026-01-06',
+        },
+      })
+      expect(groupResp.status()).toBe(200)
+      groupDraftId = (await groupResp.json()).draft_id as string
+      expect(groupDraftId).toBeTruthy()
+
+      // Одиночный черновик на сотрудника A.
+      const typeId = await apiOps.getOrderTypeId({ code: 'transfer', visibleOnly: true })
+      const singleResp = await request.post(`${API_BASE}/api/orders/drafts`, {
+        data: {
+          employee_id: empA.id,
+          order_type_id: typeId,
+          order_date: '2026-01-05',
+          order_number: singleNumber,
+        },
+      })
+      expect(singleResp.status()).toBe(200)
+      orderDraftId = (await singleResp.json()).draft_id as string
+      expect(orderDraftId).toBeTruthy()
+
+      await page.goto('/drafts')
+      await expect(page.getByRole('heading', { name: 'Черновики' })).toBeVisible({
+        timeout: 30_000,
+      })
+      // Групповой черновик виден: главный ряд с агрегатом и подстрока с сотрудником B.
+      const groupRow = page.locator('tr').filter({ hasText: groupNumber })
+      await expect(groupRow.first()).toBeVisible({ timeout: 15_000 })
+      await expect(
+        groupRow.first().getByText('Групповой приказ — 2 сотрудников')
+      ).toBeVisible()
+      await expect(page.getByText(nameB, { exact: true }).first()).toBeVisible()
+
+      // Фильтр колонки «Сотрудник» ищет по конкретным сотрудникам (в т.ч. членам
+      // группового приказа), а не по агрегату «Групповой приказ — N сотрудников».
+      await page.getByRole('button', { name: 'Сотрудник' }).click()
+      const search = page.getByPlaceholder('Поиск...')
+      await expect(search).toBeVisible()
+      await search.fill(nameB)
+      const dropdown = search.locator('..')
+      await expect(dropdown.getByText(nameB, { exact: true })).toBeVisible()
+      await expect(dropdown.getByText(/Групповой приказ/)).toHaveCount(0)
+
+      // Выбираем сотрудника B.
+      await dropdown.getByText(nameB, { exact: true }).click()
+      await page.keyboard.press('Escape')
+
+      // Групповой приказ остаётся (в нём есть B), подстрока показывает только B.
+      await expect(groupRow.first().getByText('Групповой приказ — 2 сотрудников')).toBeVisible()
+      await expect(page.getByText(nameB, { exact: true }).first()).toBeVisible()
+      // Одиночный черновик на A и подстрока A скрыты.
+      await expect(page.getByText(nameA, { exact: true })).toHaveCount(0)
+    } finally {
+      if (groupDraftId) {
+        await request.delete(`${API_BASE}/api/orders/drafts/${groupDraftId}`).catch(() => {})
+      }
+      if (orderDraftId) {
+        await request.delete(`${API_BASE}/api/orders/drafts/${orderDraftId}`).catch(() => {})
+      }
+      await dispose()
     }
   })
 
@@ -171,7 +269,7 @@ test.describe('Unified drafts @smoke', () => {
       await createThreeDrafts(playwright, apiOps, u)
 
     try {
-      await page.goto('/orders/drafts')
+      await page.goto('/drafts')
       await expect(page.getByRole('heading', { name: 'Черновики' })).toBeVisible({
         timeout: 30_000,
       })
@@ -243,9 +341,9 @@ test.describe('Unified drafts @smoke', () => {
           r.ok(),
         { timeout: 30_000 }
       )
-      await page.goto(`/orders/drafts/${orderDraftId}/view-docx`)
+      await page.goto(`/drafts/${orderDraftId}/view-docx`)
       await configPromise
-      await expect(page).toHaveURL(new RegExp(`/orders/drafts/${orderDraftId}/view-docx`))
+      await expect(page).toHaveURL(new RegExp(`/drafts/${orderDraftId}/view-docx`))
       await expect(page.getByRole('button', { name: 'Сохранить приказ' })).toHaveCount(0)
       await expect(page.getByRole('button', { name: /Сохранить и открыть печать/ })).toHaveCount(0)
     } finally {

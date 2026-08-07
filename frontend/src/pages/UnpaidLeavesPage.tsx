@@ -22,7 +22,7 @@ import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
 import type { Order, VacationUnpaidGroupEmployeeCreate } from "@/entities/order/types"
-import { useDraftFormData, getFormDataValue } from "@/entities/draft"
+import { useDraftFormData, getFormDataValue, draftEditorUrl } from "@/entities/draft"
 import {
   Tabs,
   TabsList,
@@ -333,7 +333,7 @@ export function UnpaidLeavesPage() {
           setDraftId(draft.draft_id)
           // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
           recoveryClear()
-          const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+          const url = draftEditorUrl(draft.draft_id)
           if (editorWindow && !editorWindow.closed) {
             editorWindow.location.href = url
           } else {

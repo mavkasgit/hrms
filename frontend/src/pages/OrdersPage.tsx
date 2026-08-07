@@ -78,7 +78,7 @@ import {
 } from "@/entities/order/formDraft"
 import { ORDER_TYPE_BADGE_COLORS } from "@/entities/order/orderTypeBadge"
 import { fetchDraftEmployee, getFormDraftSlot } from "@/entities/form-draft"
-import { useDraftFormData, getFormDataValue, getFormDataInt, getFormDataExtraFields } from "@/entities/draft"
+import { useDraftFormData, getFormDataValue, getFormDataInt, getFormDataExtraFields, draftEditorUrl } from "@/entities/draft"
 
 const GENERAL_ORDER_FORM_DRAFT_KEY = getFormDraftSlot("orders:general").storageKey
 
@@ -812,7 +812,7 @@ export function OrdersPage() {
         setGeneralDraftId(draft.draft_id)
         // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
         generalRecoveryClear()
-        const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+        const url = draftEditorUrl(draft.draft_id)
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
         } else {
@@ -888,7 +888,7 @@ export function OrdersPage() {
         setDraftId(draft.draft_id)
         // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
         recoveryClear()
-        const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+        const url = draftEditorUrl(draft.draft_id)
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
         } else {
@@ -908,7 +908,7 @@ export function OrdersPage() {
       onSuccess: (draft) => {
         setDraftId(draft.draft_id)
         recoveryClear()
-        const url = `/orders/drafts/${draft.draft_id}/edit-docx`
+        const url = draftEditorUrl(draft.draft_id)
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
         } else {

@@ -1,7 +1,17 @@
-import { createBrowserRouter, Navigate } from "react-router-dom"
+import { createBrowserRouter, Navigate, useParams } from "react-router-dom"
 import { Suspense, lazy } from "react"
 import type { ReactNode } from "react"
 import { Layout } from "./Layout"
+import { DRAFTS_ROUTE, draftEditorUrl } from "@/entities/draft/routes"
+
+/**
+ * Редирект старых URL черновиков (/orders/drafts/:id/… → /drafts/:id/…).
+ * Черновики живут на отдельном роуте с момента выделения их из раздела приказов.
+ */
+function DraftRedirect({ mode }: { mode: "edit" | "view" }) {
+  const { draftId } = useParams()
+  return <Navigate to={draftEditorUrl(draftId ?? "", mode)} replace />
+}
 
 const DashboardPage = lazy(async () => ({ default: (await import("@/pages/DashboardPage")).DashboardPage }))
 const EmployeesPage = lazy(async () => ({ default: (await import("@/pages/EmployeesPage")).EmployeesPage }))
@@ -52,7 +62,8 @@ export const router = createBrowserRouter([
       { path: "employees", element: withSuspense(<EmployeesPage />) },
       { path: "structure", element: withSuspense(<StructurePage />) },
       { path: "orders", element: withSuspense(<OrdersPage />) },
-      { path: "orders/drafts", element: withSuspense(<DraftsPage />) },
+      { path: "orders/drafts", element: <Navigate to={DRAFTS_ROUTE} replace /> },
+      { path: "drafts", element: withSuspense(<DraftsPage />) },
       { path: "orders/notifications", element: withSuspense(<NotificationsPage />) },
       { path: "orders/statements", element: withSuspense(<StatementsPage />) },
       { path: "vacations", element: withSuspense(<VacationsPage />) },
@@ -85,10 +96,18 @@ export const router = createBrowserRouter([
   },
   {
     path: "/orders/drafts/:draftId/edit-docx",
-    element: withSuspense(<DraftOrderEditorPage />),
+    element: <DraftRedirect mode="edit" />,
   },
   {
     path: "/orders/drafts/:draftId/view-docx",
+    element: <DraftRedirect mode="view" />,
+  },
+  {
+    path: "/drafts/:draftId/edit-docx",
+    element: withSuspense(<DraftOrderEditorPage />),
+  },
+  {
+    path: "/drafts/:draftId/view-docx",
     element: withSuspense(<DraftOrderEditorPage />),
   },
   {

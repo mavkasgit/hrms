@@ -172,9 +172,9 @@ class UnifiedDraftsService:
                 date=payload.get("order_date"),
                 created_at=meta.get("created_at"),
                 save_status=normalize_draft_save_status(meta.get("save_status")),
-                view_url=f"/orders/drafts/{draft_id}/view-docx",
-                edit_url=f"/orders/drafts/{draft_id}/edit-docx",
-                list_url="/orders/drafts",
+                view_url=f"/drafts/{draft_id}/view-docx",
+                edit_url=f"/drafts/{draft_id}/edit-docx",
+                list_url="/drafts",
                 group_employees=group_employees,
             ))
 

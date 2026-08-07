@@ -73,7 +73,7 @@ async function createGroupDraftOpenEditor(
   )
 
   await editor.waitForLoadState('domcontentloaded')
-  await editor.waitForURL(/\/orders\/drafts\/[^/]+\/edit-docx/, { timeout: 60_000 })
+  await editor.waitForURL(/\/drafts\/[^/]+\/edit-docx/, { timeout: 60_000 })
 
   const draftResp = await draftRespPromise
   const draftBody = await draftResp.json().catch(() => ({} as { draft_id?: string }))

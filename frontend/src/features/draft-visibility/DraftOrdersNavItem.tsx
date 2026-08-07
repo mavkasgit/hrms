@@ -4,7 +4,7 @@ import { cn } from "@/shared/utils/cn"
 import { Badge } from "@/shared/ui/badge"
 import { Button } from "@/shared/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover"
-import { useAllDrafts, restoreDraftFromForm } from "@/entities/draft"
+import { useAllDrafts, restoreDraftFromForm, DRAFTS_ROUTE, isDraftsRoute } from "@/entities/draft"
 import type { AllDraftItem } from "@/entities/draft"
 import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
 import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order/draftSaveStatus"
@@ -107,8 +107,7 @@ export function DraftOrdersNavItem() {
   const dismissedRef = useRef(new Set<string>())
   const navigate = useNavigate()
   const location = useLocation()
-  const isDraftsActive =
-    location.pathname === "/orders/drafts" || location.pathname.startsWith("/orders/drafts/")
+  const isDraftsActive = isDraftsRoute(location.pathname)
 
   useEffect(() => {
     const sync = () => {
@@ -146,7 +145,7 @@ export function DraftOrdersNavItem() {
   return (
     <div className="relative">
       <NavLink
-        to="/orders/drafts"
+        to={DRAFTS_ROUTE}
         className={({ isActive }) =>
           cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
@@ -260,7 +259,7 @@ export function DraftOrdersNavItem() {
           )}
           <div className="border-t p-2">
             <NavLink
-              to="/orders/drafts"
+              to={DRAFTS_ROUTE}
               className="block rounded px-2 py-1.5 text-sm text-primary hover:bg-accent"
               onClick={() => setOpen(false)}
             >
