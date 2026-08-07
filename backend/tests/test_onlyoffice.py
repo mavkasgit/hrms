@@ -95,6 +95,94 @@ def test_onlyoffice_config_contains_signed_token(monkeypatch, tmp_path):
     assert decoded["document"]["url"] == "http://app/api/orders/1/onlyoffice/file"
 
 
+def test_onlyoffice_config_includes_data_array(monkeypatch, tmp_path):
+    """document.data (массив полей) попадает в конфиг и в подписанный JWT."""
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    docx_path = tmp_path / "order.docx"
+    docx_path.write_bytes(b"PK")
+
+    data = [{"key": "order_number", "value": "42-К"}, {"key": "order_date", "value": "2026-08-06"}]
+
+    config = OnlyOfficeService().build_config(
+        doc_type="draft",
+        doc_id="draft-id",
+        file_path=docx_path,
+        title="draft.docx",
+        callback_url="http://app/api/orders/drafts/draft-id/onlyoffice/callback",
+        file_url="http://app/api/orders/drafts/draft-id/file",
+        data=data,
+    )
+
+    assert config["document"]["data"] == data
+    decoded = jwt.decode(config["token"], "test-secret", algorithms=["HS256"])
+    assert decoded["document"]["data"] == data
+
+
+def test_onlyoffice_config_omits_empty_data_array(monkeypatch, tmp_path):
+    """Пустой data-массив не попадает в конфиг."""
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    docx_path = tmp_path / "order.docx"
+    docx_path.write_bytes(b"PK")
+
+    config = OnlyOfficeService().build_config(
+        doc_type="order",
+        doc_id=1,
+        file_path=docx_path,
+        title="order.docx",
+        callback_url="http://app/api/orders/1/onlyoffice/callback",
+        file_url="http://app/api/orders/1/onlyoffice/file",
+        data=[],
+    )
+
+    assert "data" not in config["document"]
+
+
+def test_onlyoffice_form_data_builds_array(monkeypatch):
+    """build_form_data: None и пустые строки пропускаются, list/dict отбрасываются."""
+    from app.services.onlyoffice_form_data import build_form_data
+
+    data = build_form_data({
+        "order_number": "42-К",
+        "order_date": "2026-08-06",
+        "vacation_days": 14,
+        "notes": "",
+        "empty": None,
+        "employees": [{"employee_id": 1}],
+    })
+
+    assert data == [
+        {"key": "order_number", "value": "42-К"},
+        {"key": "order_date", "value": "2026-08-06"},
+        {"key": "vacation_days", "value": "14"},
+    ]
+
+
+def test_onlyoffice_draft_form_data_from_metadata(monkeypatch):
+    """draft_form_data собирает массив из payload метаданных черновика."""
+    from app.services.onlyoffice_form_data import draft_form_data
+
+    data = draft_form_data({
+        "kind": "group_order",
+        "payload": {
+            "order_number": "10-К",
+            "order_date": "2026-08-01",
+            "vacation_start": "2026-09-01",
+            "mode": "single",
+            "call_date": "2026-09-05",
+            "extra_fields": None,
+            "employees": [{"employee_id": 1}, {"employee_id": 2}],
+        },
+    })
+
+    assert data == [
+        {"key": "number", "value": "10-К"},
+        {"key": "date", "value": "2026-08-01"},
+        {"key": "vacation_start", "value": "2026-09-01"},
+        {"key": "mode", "value": "single"},
+        {"key": "call_date", "value": "2026-09-05"},
+    ]
+
+
 def test_onlyoffice_callback_token_validation(monkeypatch):
     monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
     service = OnlyOfficeService()

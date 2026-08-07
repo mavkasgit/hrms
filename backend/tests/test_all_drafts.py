@@ -58,14 +58,14 @@ async def test_list_all_drafts_combines_kinds_and_sorted(db_session, monkeypatch
     }
     monkeypatch.setattr(oo_api.order_draft_service, "list_drafts", lambda: [meta])
     monkeypatch.setattr(
-        oo_api.order_service,
-        "get_employee_by_id",
-        AsyncMock(return_value=SimpleNamespace(name="Иван Петров")),
+        oo_api.unified_drafts_service.employee_repo,
+        "get_by_ids",
+        AsyncMock(return_value={100: SimpleNamespace(id=100, name="Петров Иван Иванович")}),
     )
     monkeypatch.setattr(
-        oo_api.order_service,
-        "get_order_type_by_code",
-        AsyncMock(return_value=SimpleNamespace(name="Перевод")),
+        oo_api.unified_drafts_service.order_type_repo,
+        "list_by_codes",
+        AsyncMock(return_value={"transfer": SimpleNamespace(code="transfer", name="Перевод")}),
     )
 
     notification = Notification(
@@ -95,7 +95,7 @@ async def test_list_all_drafts_combines_kinds_and_sorted(db_session, monkeypatch
 
     order = by_kind["order"]
     assert order.draft_id == DRAFT_ID
-    assert order.title == "Иван Петров"
+    assert order.title == "Петров И.И."
     assert order.type_name == "Перевод"
     assert order.number == "77"
     assert order.date == "2026-01-01"
@@ -148,7 +148,7 @@ async def test_list_all_drafts_notification_title_with_employee(db_session, monk
     from app.api import onlyoffice as oo_api
 
     monkeypatch.setattr(oo_api.order_draft_service, "list_drafts", lambda: [])
-    employee = await create_employee(name="Мария Смирнова")
+    employee = await create_employee(name="Смирнова Мария Петровна")
 
     db_session.add(Notification(
         title="Уведомление о переводе",
@@ -161,8 +161,8 @@ async def test_list_all_drafts_notification_title_with_employee(db_session, monk
     await db_session.flush()
 
     items = await oo_api.list_all_drafts(db=db_session, current_user="admin")
-    # Название документа + ФИО сотрудника (#58).
-    assert items[0].title == "Уведомление о переводе — Мария Смирнова"
+    # Короткое ФИО (Фамилия И.О.) вместо полного — единый стиль со страницей приказов (#58).
+    assert items[0].title == "Смирнова М.П."
 
 
 async def test_list_all_drafts_group_order_title(db_session, monkeypatch):
@@ -184,9 +184,22 @@ async def test_list_all_drafts_group_order_title(db_session, monkeypatch):
     }
     monkeypatch.setattr(oo_api.order_draft_service, "list_drafts", lambda: [meta])
     monkeypatch.setattr(
-        oo_api.order_service,
-        "get_order_type_by_code",
-        AsyncMock(return_value=SimpleNamespace(name="Отпуск без содержания (групп.)")),
+        oo_api.unified_drafts_service.order_type_repo,
+        "list_by_codes",
+        AsyncMock(return_value={
+            "vacation_unpaid_group": SimpleNamespace(
+                code="vacation_unpaid_group", name="Отпуск без содержания (групп.)"
+            )
+        }),
+    )
+    monkeypatch.setattr(
+        oo_api.unified_drafts_service.employee_repo,
+        "get_by_ids",
+        AsyncMock(return_value={
+            1: SimpleNamespace(id=1, name="Сотрудник Номер 1"),
+            2: SimpleNamespace(id=2, name="Сотрудник Номер 2"),
+            3: SimpleNamespace(id=3, name="Сотрудник Номер 3"),
+        }),
     )
 
     items = await oo_api.list_all_drafts(db=db_session, current_user="admin")
@@ -194,6 +207,12 @@ async def test_list_all_drafts_group_order_title(db_session, monkeypatch):
     assert items[0].kind == "order"
     assert items[0].title == "Групповой приказ — 3 сотрудников"
     assert items[0].type_name == "Отпуск без содержания (групп.)"
+    # Каждый сотрудник группового приказа раскрывается в списке (#58).
+    assert items[0].group_employees == [
+        {"employee_id": 1, "employee_full_name": "Сотрудник Номер 1"},
+        {"employee_id": 2, "employee_full_name": "Сотрудник Номер 2"},
+        {"employee_id": 3, "employee_full_name": "Сотрудник Номер 3"},
+    ]
 
 
 async def test_list_all_drafts_defaults_never_for_missing_save_status(db_session, monkeypatch):
@@ -212,6 +231,152 @@ async def test_list_all_drafts_defaults_never_for_missing_save_status(db_session
     assert items[0].save_status is not None
     assert items[0].save_status["state"] == "never"
     assert items[0].title is None
+
+
+async def test_draft_form_data_for_single_order(db_session, monkeypatch):
+    from app.api import onlyoffice as oo_api
+
+    meta = {
+        "draft_id": DRAFT_ID,
+        "kind": "single_order",
+        "order_type_code": "transfer",
+        "payload": {
+            "employee_id": 100,
+            "order_type_id": 7,
+            "order_date": "2026-01-01",
+            "order_number": "77",
+            "notes": None,
+            "extra_fields": {"position": "Инженер"},
+        },
+        "created_at": "2026-08-05T10:00:00+00:00",
+    }
+    monkeypatch.setattr(oo_api.order_draft_service, "read_draft_metadata", lambda _: meta)
+
+    data = await oo_api.draft_form_data(draft_id=DRAFT_ID, db=db_session, current_user="admin")
+    assert data.kind == "order"
+    assert data.is_group is False
+    assert data.order_type_code == "transfer"
+    assert data.employees is None
+    # Поля приходят массивом [{"key", "value"}] — единый формат с конфигом OnlyOffice
+    values = {item["key"]: item["value"] for item in data.data}
+    assert values == {
+        "employee_id": "100",
+        "order_type_id": "7",
+        "number": "77",
+        "date": "2026-01-01",
+        "position": "Инженер",
+    }
+
+
+async def test_draft_form_data_for_group_order(db_session, monkeypatch):
+    from app.api import onlyoffice as oo_api
+
+    meta = {
+        "draft_id": DRAFT_ID,
+        "kind": "group_order",
+        "order_type_code": "vacation_unpaid_group",
+        "payload": {
+            "order_date": "2026-01-01",
+            "order_number": "58/1-к",
+            "vacation_start": "2026-03-01",
+            "employees": [
+                {"employee_id": 1, "vacation_days": 14},
+                {"employee_id": 2, "vacation_days": 10},
+            ],
+        },
+        "created_at": "2026-08-05T10:00:00+00:00",
+    }
+    monkeypatch.setattr(oo_api.order_draft_service, "read_draft_metadata", lambda _: meta)
+
+    data = await oo_api.draft_form_data(draft_id=DRAFT_ID, db=db_session, current_user="admin")
+    assert data.kind == "order"
+    assert data.is_group is True
+    assert data.order_type_code == "vacation_unpaid_group"
+    assert data.employees == [
+        {"employee_id": 1, "vacation_days": 14},
+        {"employee_id": 2, "vacation_days": 10},
+    ]
+    values = {item["key"]: item["value"] for item in data.data}
+    assert values == {
+        "number": "58/1-к",
+        "date": "2026-01-01",
+        "vacation_start": "2026-03-01",
+    }
+
+
+async def test_draft_form_data_for_notification_and_statement(db_session, monkeypatch, create_employee):
+    from app.api import onlyoffice as oo_api
+
+    emp_notif = await create_employee(name="Иванова Мария Петровна")
+    emp_stmt = await create_employee(name="Смирнов Сергей Иванович")
+
+    db_session.add(Notification(
+        title="Уведомление о переводе",
+        number="7",
+        date=date(2026, 1, 2),
+        notification_type_id=None,
+        employee_id=emp_notif.id,
+        extra_fields={"position": "Инженер"},
+        is_draft=True,
+        created_at=datetime(2026, 8, 6, 9, 0, 0),
+    ))
+    db_session.add(Statement(
+        title="Заявление на отпуск",
+        number="3",
+        date=date(2026, 1, 3),
+        statement_type_id=None,
+        employee_id=emp_stmt.id,
+        extra_fields={"reason": "Семейные обстоятельства"},
+        is_draft=True,
+        created_at=datetime(2026, 8, 4, 9, 0, 0),
+    ))
+    await db_session.flush()
+
+    from sqlalchemy import select
+
+    notif = (await db_session.execute(select(Notification).order_by(Notification.id).limit(1))).scalar_one()
+    notif_data = await oo_api.draft_form_data(
+        draft_id=f"notification:{notif.id}",
+        db=db_session,
+        current_user="admin",
+    )
+    assert notif_data.kind == "notification"
+    notif_values = {item["key"]: item["value"] for item in notif_data.data}
+    assert notif_values["number"] == "7"
+    assert notif_values["employee_id"] == str(emp_notif.id)
+    assert notif_values["position"] == "Инженер"
+
+    stmt = (await db_session.execute(select(Statement).order_by(Statement.id).limit(1))).scalar_one()
+    stmt_data = await oo_api.draft_form_data(
+        draft_id=f"statement:{stmt.id}",
+        db=db_session,
+        current_user="admin",
+    )
+    assert stmt_data.kind == "statement"
+    stmt_values = {item["key"]: item["value"] for item in stmt_data.data}
+    assert stmt_values["number"] == "3"
+    assert stmt_values["employee_id"] == str(emp_stmt.id)
+    assert stmt_values["reason"] == "Семейные обстоятельства"
+
+
+async def test_draft_form_data_rejects_unknown_and_non_order_kind(db_session, monkeypatch):
+    from app.core.exceptions import HRMSException
+    from app.api import onlyoffice as oo_api
+
+    # Неизвестный вид
+    monkeypatch.setattr(
+        oo_api.order_draft_service,
+        "read_draft_metadata",
+        lambda _: {"kind": "weird", "payload": {}},
+    )
+    with pytest.raises(HRMSException) as exc:
+        await oo_api.draft_form_data(draft_id=DRAFT_ID, db=db_session, current_user="admin")
+    assert exc.value.status_code == 400
+
+    # Отсутствующий черновик-уведомление
+    with pytest.raises(HRMSException) as exc:
+        await oo_api.draft_form_data(draft_id="notification:999999", db=db_session, current_user="admin")
+    assert exc.value.status_code == 404
 
 
 # ── draft config mode (#59) ──────────────────────────────────────────────────

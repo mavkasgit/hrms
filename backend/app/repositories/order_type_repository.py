@@ -34,6 +34,17 @@ class OrderTypeRepository:
         result = await db.execute(select(OrderType).where(OrderType.name == name))
         return result.scalar_one_or_none()
 
+    async def list_by_codes(self, db: AsyncSession, codes: list[str]) -> dict[str, OrderType]:
+        """Пакетная загрузка типов приказов по кодам — без N+1.
+
+        Возвращает словарь {code: OrderType}; отсутствующие коды просто не попадают в словарь.
+        """
+        codes = list(dict.fromkeys(codes))
+        if not codes:
+            return {}
+        result = await db.execute(select(OrderType).where(OrderType.code.in_(codes)))
+        return {item.code: item for item in result.scalars().all()}
+
     async def create(self, db: AsyncSession, data: dict) -> OrderType:
         order_type = OrderType(**data)
         db.add(order_type)

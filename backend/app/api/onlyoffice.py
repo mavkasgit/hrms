@@ -24,7 +24,14 @@ from app.schemas.order import GroupOrderCreate, OrderCreate
 from app.services.order_document_service import get_template_path
 from app.services.onlyoffice_service import onlyoffice_service
 from app.services.onlyoffice_save_tracker import onlyoffice_save_tracker
-from app.services.order_draft_service import normalize_draft_save_status, order_draft_service
+from app.services.order_draft_service import order_draft_service
+from app.services.onlyoffice_form_data import (
+    draft_form_data as build_draft_form_data,
+    notification_form_data as build_notification_form_data,
+    order_form_data as build_order_form_data,
+    statement_form_data as build_statement_form_data,
+)
+from app.services.unified_drafts_service import unified_drafts_service
 from app.services.order_service import order_service
 from app.services.docx_renderer import load_template_or_create_blank, render_docx_placeholders, build_basic_doc_replacements
 from app.repositories.references_repository import references_repository
@@ -246,6 +253,7 @@ async def order_onlyoffice_config(
         callback_url=_public_api_url(f"/orders/{order_id}/onlyoffice/callback"),
         file_url=_public_api_url(f"/orders/{order_id}/onlyoffice/file"),
         mode=mode,
+        data=build_order_form_data(order),
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config
@@ -362,79 +370,7 @@ async def list_order_drafts(
     current_user: str = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
-    drafts = order_draft_service.list_drafts()
-
-    result = []
-    for meta in drafts:
-        payload = meta.get("payload", {})
-        item = {
-            "draft_id": meta.get("draft_id"),
-            "kind": meta.get("kind"),
-            "order_type_code": meta.get("order_type_code"),
-            "order_number": payload.get("order_number"),
-            "order_date": payload.get("order_date"),
-            "employee_id": payload.get("employee_id"),
-            "employee_name": None,
-            "order_type_name": None,
-            "created_by": meta.get("created_by"),
-            "created_at": meta.get("created_at"),
-            "status": meta.get("status", "draft"),
-            "save_status": normalize_draft_save_status(meta.get("save_status")),
-            "file_name": None,
-            "file_path": None,
-        }
-        try:
-            draft_path = order_draft_service.get_draft_path(meta["draft_id"])
-            item["file_name"] = draft_path.name
-            item["file_path"] = str(draft_path)
-        except HRMSException:
-            pass
-        # Resolve employee name
-        if payload.get("employee_id"):
-            emp = await order_service.get_employee_by_id(db, payload["employee_id"])
-            if emp:
-                item["employee_name"] = emp.name
-        # Resolve order type name
-        if meta.get("order_type_code"):
-            try:
-                ot = await order_service.get_order_type_by_code(db, meta["order_type_code"])
-                item["order_type_name"] = ot.name
-            except Exception:
-                item["order_type_name"] = meta["order_type_code"]
-        # For group drafts, show employee count
-        if meta.get("kind") == "group_order":
-            employees = payload.get("employees", [])
-            item["group_employee_count"] = len(employees)
-        result.append(item)
-    return result
-
-
-class AllDraftsItem(BaseModel):
-    draft_id: str
-    kind: str
-    title: str | None
-    type_name: str | None
-    number: str | None
-    date: str | None
-    created_at: str | None
-    save_status: dict[str, Any] | None
-    view_url: str
-    edit_url: str
-    list_url: str
-
-
-def _draft_sort_ts(value: str | None):
-    """Парсить created_at (ISO со смещением или без) для устойчивой сортировки."""
-    from datetime import datetime, timezone
-    if not value:
-        return datetime.min.replace(tzinfo=timezone.utc)
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return datetime.min.replace(tzinfo=timezone.utc)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed
+    return await unified_drafts_service.list_order_drafts(db)
 
 
 @router.get("/drafts")
@@ -444,92 +380,22 @@ async def list_all_drafts(
 ):
     """Объединённый список всех черновиков: приказы, уведомления, заявления."""
     _ensure_onlyoffice_enabled()
-    items: list[AllDraftsItem] = []
+    return await unified_drafts_service.list_all_drafts(db)
 
-    # Приказы (файловые черновики)
-    for meta in order_draft_service.list_drafts():
-        payload = meta.get("payload", {})
-        draft_id = meta["draft_id"]
-        kind = meta.get("kind")
-        employee_name = None
-        if payload.get("employee_id"):
-            emp = await order_service.get_employee_by_id(db, payload["employee_id"])
-            if emp:
-                employee_name = emp.name
-        if kind == "group_order":
-            title = f"Групповой приказ — {len(payload.get('employees', []))} сотрудников"
-        else:
-            title = employee_name or None
 
-        type_name = meta.get("order_type_code")
-        if meta.get("order_type_code"):
-            try:
-                ot = await order_service.get_order_type_by_code(db, meta["order_type_code"])
-                type_name = ot.name
-            except Exception:
-                pass
+@router.get("/drafts/{draft_id}/form-data")
+async def draft_form_data(
+    draft_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Данные черновика для кнопки «Заполнить поля» (пересоздание документа).
 
-        items.append(AllDraftsItem(
-            draft_id=draft_id,
-            kind="order",
-            title=title,
-            type_name=type_name,
-            number=payload.get("order_number"),
-            date=payload.get("order_date"),
-            created_at=meta.get("created_at"),
-            save_status=normalize_draft_save_status(meta.get("save_status")),
-            view_url=f"/orders/drafts/{draft_id}/view-docx",
-            edit_url=f"/orders/drafts/{draft_id}/edit-docx",
-            list_url="/orders/drafts",
-        ))
-
-    # Уведомления (БД, is_draft)
-    notif_result = await db.execute(
-        select(Notification)
-        .options(joinedload(Notification.notification_type), joinedload(Notification.employee))
-        .where(Notification.is_draft.is_(True))
-    )
-    for n in notif_result.unique().scalars().all():
-        title = f"{n.title} — {n.employee.name}" if n.employee else n.title
-        items.append(AllDraftsItem(
-            draft_id=f"notification:{n.id}",
-            kind="notification",
-            title=title,
-            type_name=n.notification_type.name if n.notification_type else None,
-            number=n.number,
-            date=n.date.isoformat() if n.date else None,
-            created_at=n.created_at.isoformat() if n.created_at else None,
-            save_status=None,
-            view_url=f"/notifications/{n.id}/view-docx",
-            edit_url=f"/notifications/{n.id}/edit-docx",
-            list_url="/orders/notifications",
-        ))
-
-    # Заявления (БД, is_draft)
-    stmt_result = await db.execute(
-        select(Statement)
-        .options(joinedload(Statement.statement_type), joinedload(Statement.employee))
-        .where(Statement.is_draft.is_(True))
-    )
-    for s in stmt_result.unique().scalars().all():
-        title = f"{s.title} — {s.employee.name}" if s.employee else s.title
-        items.append(AllDraftsItem(
-            draft_id=f"statement:{s.id}",
-            kind="statement",
-            title=title,
-            type_name=s.statement_type.name if s.statement_type else None,
-            number=s.number,
-            date=s.date.isoformat() if s.date else None,
-            created_at=s.created_at.isoformat() if s.created_at else None,
-            save_status=None,
-            view_url=f"/statements/{s.id}/view-docx",
-            edit_url=f"/statements/{s.id}/edit-docx",
-            list_url="/orders/statements",
-        ))
-
-    # Сортировка: свежие сверху, без даты — в конец
-    items.sort(key=lambda d: _draft_sort_ts(d.created_at), reverse=True)
-    return items
+    Сборка — в app.services.unified_drafts_service / onlyoffice_form_data
+    (единый источник для конфига OnlyOffice).
+    """
+    _ensure_onlyoffice_enabled()
+    return await unified_drafts_service.get_draft_form_data(db, draft_id)
 
 
 @router.post("/orders/drafts")
@@ -612,6 +478,12 @@ async def draft_onlyoffice_config(
 ):
     _ensure_onlyoffice_enabled()
     file_path = order_draft_service.get_draft_path(draft_id)
+    try:
+        meta = order_draft_service.read_draft_metadata(draft_id)
+        form_data = build_draft_form_data(meta)
+    except HRMSException:
+        # Старые черновики без метаданных открываются без предзаполнения.
+        form_data = []
     config = onlyoffice_service.build_config(
         doc_type="draft",
         doc_id=draft_id,
@@ -621,6 +493,7 @@ async def draft_onlyoffice_config(
         file_url=_public_api_url(f"/orders/drafts/{draft_id}/file"),
         mode=mode,
         allow_print=False,
+        data=form_data or None,
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config
@@ -1071,6 +944,7 @@ async def notification_onlyoffice_config(
         callback_url=_public_api_url(f"/notifications/{notification_id}/onlyoffice/callback"),
         file_url=_public_api_url(f"/notifications/{notification_id}/onlyoffice/file"),
         mode=mode,
+        data=build_notification_form_data(notification),
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config
@@ -1280,6 +1154,7 @@ async def statement_onlyoffice_config(
         callback_url=_public_api_url(f"/statements/{statement_id}/onlyoffice/callback"),
         file_url=_public_api_url(f"/statements/{statement_id}/onlyoffice/file"),
         mode=mode,
+        data=build_statement_form_data(statement),
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config

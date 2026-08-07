@@ -20,6 +20,22 @@ class EmployeeRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_ids(self, db: AsyncSession, employee_ids: list[int]) -> dict[int, Employee]:
+        """Пакетная загрузка сотрудников по id — без N+1.
+
+        Возвращает словарь {id: Employee}. Поведение совпадает с get_by_id:
+        удалённые сотрудники (is_deleted) исключаются.
+        """
+        ids = list(dict.fromkeys(employee_ids))
+        if not ids:
+            return {}
+        result = await db.execute(
+            select(Employee)
+            .options(joinedload(Employee.department), joinedload(Employee.position))
+            .where(Employee.id.in_(ids), Employee.is_deleted == False)
+        )
+        return {emp.id: emp for emp in result.unique().scalars().all()}
+
     async def get_by_tab_number(self, db: AsyncSession, tab_number: int, include_deleted: bool = False) -> Optional[Employee]:
         conditions = [Employee.tab_number == tab_number]
         if not include_deleted:

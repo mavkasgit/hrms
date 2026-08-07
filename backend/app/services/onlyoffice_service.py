@@ -36,6 +36,7 @@ class OnlyOfficeService:
         file_url: str,
         mode: str = "edit",
         allow_print: bool = True,
+        data: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         can_edit = mode == "edit"
         file_type, doc_type_oo = self._get_file_types(file_path)
@@ -70,6 +71,8 @@ class OnlyOfficeService:
             "height": "100%",
             "width": "100%",
         }
+        if data:
+            config["document"]["data"] = data
         config["token"] = jwt.encode(config, settings.ONLYOFFICE_JWT_SECRET, algorithm="HS256")
         return config
 
