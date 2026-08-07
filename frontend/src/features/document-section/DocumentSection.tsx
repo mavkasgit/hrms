@@ -176,6 +176,37 @@ function editorPlaceholderHtml(editorNote: string): string {
   `
 }
 
+/** Collapsible-заголовок карточки (форма создания / фильтры) — общий для обоих блоков. */
+function CollapsibleHeader({
+  collapsed,
+  onToggle,
+  title,
+  trailing,
+  icon,
+}: {
+  collapsed: boolean
+  onToggle: () => void
+  title: React.ReactNode
+  trailing?: React.ReactNode
+  icon?: React.ReactNode
+}) {
+  return (
+    <div
+      className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
+      onClick={onToggle}
+    >
+      {icon}
+      {collapsed ? (
+        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+      ) : (
+        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+      )}
+      {title}
+      {trailing}
+    </div>
+  )
+}
+
 /**
  * Параметризованный раздел создания документов (уведомление / заявление) (#77).
  * Вся логика общая: форма создания, фильтры, таблица, восстановление черновика,
@@ -435,17 +466,11 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
     <div className="space-y-4">
       {/* Create form */}
       <div className="border rounded-lg bg-card">
-        <div
-          className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none"
-          onClick={() => setCollapsed(!collapsed)}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-          <h2 className="text-lg font-semibold">{config.labels.createHeading}</h2>
-        </div>
+        <CollapsibleHeader
+          collapsed={collapsed}
+          onToggle={() => setCollapsed(!collapsed)}
+          title={<h2 className="text-lg font-semibold">{config.labels.createHeading}</h2>}
+        />
 
         {!collapsed && (
           <div className="border-t px-4 py-4">
@@ -594,23 +619,17 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
 
       {/* Filters */}
       <div className="border rounded-lg bg-card">
-        <div
-          className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
-          onClick={() => setFilterCollapsed(!filterCollapsed)}
-        >
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-medium">Фильтры</h2>
-            {activeFilterCount > 0 && (
+        <CollapsibleHeader
+          collapsed={filterCollapsed}
+          onToggle={() => setFilterCollapsed(!filterCollapsed)}
+          icon={<Filter className="h-4 w-4 text-muted-foreground" />}
+          title={<h2 className="text-sm font-medium">Фильтры</h2>}
+          trailing={
+            activeFilterCount > 0 && (
               <Badge variant="secondary" className="text-xs">{activeFilterCount}</Badge>
-            )}
-          </div>
-          {filterCollapsed ? (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
-        </div>
+            )
+          }
+        />
 
         {!filterCollapsed && (
           <div className="border-t px-4 py-4 space-y-4">
