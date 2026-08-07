@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest"
 
 const mockGet = vi.fn()
-vi.mock("@/shared/api/axios", () => ({
+vi.mock("@/shared/api/client", () => ({
   default: { get: (...args: unknown[]) => mockGet(...args) },
 }))
 

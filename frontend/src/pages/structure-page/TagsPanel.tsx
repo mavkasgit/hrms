@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { getUserAccessLevel } from "@/shared/api/axios"
+import { getUserAccessLevel } from "@/shared/api/authHost"
 import { Button } from "@/shared/ui/button"
 
 import { Skeleton } from "@/shared/ui/skeleton"

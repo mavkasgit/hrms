@@ -1,4 +1,4 @@
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 import type { AllDraftItem, AllDraftKind } from "./types"
 import type { FormDataField } from "@/entities/order/onlyofficeTypes"
 

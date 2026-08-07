@@ -2,7 +2,7 @@
  * IdP deep-links (SSO-D). Token never leaves the backend.
  */
 
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 
 export type IdpConfig = {
   oidc_enabled: boolean

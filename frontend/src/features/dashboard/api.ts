@@ -1,4 +1,4 @@
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 import type { DashboardStats, Birthday, ContractExpiring, DepartmentCount, DepartmentPosition } from "./types"
 
 interface FetchParams {

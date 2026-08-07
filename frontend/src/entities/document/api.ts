@@ -1,4 +1,4 @@
-import axios from "@/shared/api/axios"
+import axios from "@/shared/api/client"
 import type { Document, DocumentCurrentResponse } from "./types"
 import type { OnlyOfficeConfig } from "@/entities/order/onlyofficeTypes"
 

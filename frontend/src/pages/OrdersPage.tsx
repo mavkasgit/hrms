@@ -58,7 +58,7 @@ import { ContractRegistryModal } from "@/pages/ContractRegistryPage"
 import type { Employee } from "@/entities/employee/types"
 import type { Order, OrderType } from "@/entities/order/types"
 import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
-import { getUserAccessLevel } from "@/shared/api/axios"
+import { getUserAccessLevel } from "@/shared/api/authHost"
 import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import {

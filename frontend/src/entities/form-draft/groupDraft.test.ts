@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { QueryClient } from "@tanstack/react-query"
 
 const mockGet = vi.fn()
-vi.mock("@/shared/api/axios", () => ({
+vi.mock("@/shared/api/client", () => ({
   default: { get: (...args: unknown[]) => mockGet(...args) },
 }))
 

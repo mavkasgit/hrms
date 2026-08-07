@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { FileText, Cake, ArrowRight, ScrollText, Database, Users } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { GlobalAuditLog } from "@/features/global-audit-log"
-import { fetchOidcConfig } from "@/shared/api/oidcAuth"
+import { fetchOidcConfig } from "@/features/auth/api/oidcAuth"
 
 export function SettingsPage() {
   const navigate = useNavigate()

@@ -26,7 +26,7 @@ import {
 import { DatePicker } from "@/shared/ui/date-picker"
 import { Badge } from "@/shared/ui/badge"
 import { useQuery } from "@tanstack/react-query"
-import apiInstance from "@/shared/api/axios"
+import apiInstance from "@/shared/api/client"
 
 interface AuditLogItem {
   timestamp: string

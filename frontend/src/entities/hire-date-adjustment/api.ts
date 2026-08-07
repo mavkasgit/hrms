@@ -1,4 +1,4 @@
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 import type { HireDateAdjustment, HireDateAdjustmentCreate } from "./types"
 
 export async function createHireDateAdjustment(

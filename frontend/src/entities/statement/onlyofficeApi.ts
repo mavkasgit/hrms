@@ -1,4 +1,4 @@
-import axios from "@/shared/api/axios"
+import axios from "@/shared/api/client"
 
 export async function forceSaveStatement(statementId: number, documentKey: string) {
   const { data } = await axios.post(`/statements/${statementId}/onlyoffice/forcesave`, {

@@ -10,7 +10,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { fetchIdpConfig, type IdpConfig } from "@/shared/api/idpAdmin"
-import { fetchOidcConfig } from "@/shared/api/oidcAuth"
+import { fetchOidcConfig } from "@/features/auth/api/oidcAuth"
 
 /**
  * Страница «Пользователи» после удаления админ-IAM (#35).

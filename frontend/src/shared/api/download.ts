@@ -1,4 +1,4 @@
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 
 /** Извлекает имя файла из Content-Disposition (RFC 5987 filename*=UTF-8'' и filename="..."). */
 export function extractFilenameFromContentDisposition(

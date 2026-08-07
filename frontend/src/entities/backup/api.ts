@@ -1,4 +1,4 @@
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 import { downloadFile } from "@/shared/api/download"
 import type { BackupInfo, BackupJob, BackupPreview, BackupRestoreRequest } from "./types"
 

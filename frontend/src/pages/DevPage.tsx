@@ -4,7 +4,7 @@ import { Input } from "@/shared/ui/input"
 import { Button } from "@/shared/ui/button"
 import { Trash2 } from "lucide-react"
 import { OrderNumberField } from "@/features/OrderNumberField"
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 
 const CELL = "w-16 h-8 text-sm text-center rounded-md border border-input transition-colors"
 

@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui/select"
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 
 interface RegistryEntry {
   order_id: number

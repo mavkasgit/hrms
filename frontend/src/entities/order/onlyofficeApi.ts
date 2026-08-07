@@ -1,4 +1,4 @@
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 import type { GroupOrderCreate, Order, OrderCreate } from "./types"
 import type {
   CommitOrderDraftResponse,

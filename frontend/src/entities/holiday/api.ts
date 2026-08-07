@@ -1,4 +1,4 @@
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 import type { Holiday } from "./types"
 
 export async function fetchHolidays(year: number): Promise<Holiday[]> {

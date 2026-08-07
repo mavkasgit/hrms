@@ -1,4 +1,4 @@
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 import type { VacationPeriod, VacationPeriodAdjust, VacationPeriodBreakdown } from "./types"
 
 export async function fetchVacationPeriods(employeeId: number): Promise<VacationPeriod[]> {

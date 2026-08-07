@@ -8,10 +8,8 @@ import {
   documentEditorSaveToastCopy,
   subscribeDocumentEditorSave,
 } from "@/entities/document/documentEditorSaveChannel"
-import {
-  getUserAccessLevel,
-  AUTH_ERROR_STORAGE_KEY,
-} from "@/shared/api/axios"
+import { getUserAccessLevel } from "@/shared/api/authHost"
+import { clearAuthTokens, getToken, setAuthErrorForLogin } from "@/shared/api/client"
 
 /** Toast on parent list page when OnlyOffice editor window reports successful save. */
 function DocumentEditorSaveListener() {
@@ -34,17 +32,15 @@ export function Layout() {
   if (accessLevel === "no_access") {
     // Сохраняем причину, если токен был, но доступ «no_access» (битый JWT / нет claim).
     try {
-      const hadToken = Boolean(localStorage.getItem("token"))
-      if (hadToken) {
-        sessionStorage.setItem(
-          AUTH_ERROR_STORAGE_KEY,
+      if (Boolean(getToken())) {
+        setAuthErrorForLogin(
           "Нет доступа к системе. Войдите снова или обратитесь к администратору."
         )
       }
     } catch {
       /* ignore */
     }
-    localStorage.removeItem("token")
+    clearAuthTokens()
     return <Navigate to="/login" replace />
   }
 

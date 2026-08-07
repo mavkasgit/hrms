@@ -3,7 +3,7 @@ import { Button } from "@/shared/ui/button"
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
-import { getUserAccessLevel } from "@/shared/api/axios"
+import { getUserAccessLevel } from "@/shared/api/authHost"
 
 import {
   AlertDialog,

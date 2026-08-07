@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import axios from "@/shared/api/axios"
+import axios from "@/shared/api/client"
 import type { TemplateVariable, TemplateVariablesResponse } from "@/entities/order/types"
 
 export async function fetchUnifiedTemplateVariables(docType?: "order" | "notification" | "statement"): Promise<TemplateVariable[]> {

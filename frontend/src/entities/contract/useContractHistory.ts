@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import api from "@/shared/api/axios"
+import api from "@/shared/api/client"
 import type { ContractHistoryListResponse } from "./types"
 
 const CONTRACT_HISTORY_KEYS = {

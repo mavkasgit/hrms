@@ -29,7 +29,7 @@ import {
 import { TemplateActionsBar } from "@/features/template-actions-bar"
 import { FieldGridEditor, type FieldSchemaItem } from "./FieldGridEditor"
 import type { TemplateVariable } from "@/entities/order/types"
-import axios from "@/shared/api/axios"
+import axios from "@/shared/api/client"
 
 interface DocType {
   id: number

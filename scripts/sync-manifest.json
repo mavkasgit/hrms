@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "files": [
     {
       "path": "backend/app/services/authentik_client.py",
@@ -169,6 +169,21 @@
     {
       "path": "frontend/src/modules/user-settings/ui.ts",
       "mode": "presence"
+    },
+    {
+      "path": "frontend/src/features/auth/pages/LoginPage.tsx",
+      "mode": "content",
+      "version": true
+    },
+    {
+      "path": "frontend/src/features/auth/hooks/useAuth.tsx",
+      "mode": "content",
+      "version": true
+    },
+    {
+      "path": "frontend/src/shared/api/client.ts",
+      "mode": "content",
+      "version": true
     }
   ]
 }

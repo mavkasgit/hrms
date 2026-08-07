@@ -1,6 +1,6 @@
 import { useState, useRef } from "react"
 import { Upload, Check, Download } from "lucide-react"
-import axios from "@/shared/api/axios"
+import axios from "@/shared/api/client"
 import { downloadFile } from "@/shared/api/download"
 import { Button } from "@/shared/ui/button"
 import {

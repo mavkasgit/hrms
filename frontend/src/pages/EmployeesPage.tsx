@@ -4,7 +4,7 @@ import { Button } from "@/shared/ui/button"
 import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
-import { getUserAccessLevel } from "@/shared/api/axios"
+import { getUserAccessLevel } from "@/shared/api/authHost"
 
 import { Alert, AlertDescription } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"

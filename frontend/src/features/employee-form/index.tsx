@@ -27,7 +27,7 @@ import { Archive, Trash2, RotateCcw, Building, Briefcase, CalendarClock, FileTex
 import { useDepartments, useCreateDepartment } from "@/entities/department"
 import { usePositions, useCreatePosition } from "@/entities/position"
 import { ComboboxCreate } from "@/shared/ui/combobox-create"
-import { getUserAccessLevel } from "@/shared/api/axios"
+import { getUserAccessLevel } from "@/shared/api/authHost"
 import {
   Select,
   SelectContent,

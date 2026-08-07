@@ -1,7 +1,9 @@
 import { useMemo, useState, useEffect, useCallback, type ReactNode } from "react"
 import { NavLink, useLocation } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
-import api, { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
+import api, { getToken } from "@/shared/api/client"
+import { redirectToKtmLogin } from "@/shared/api/authHost"
+import { useAuth } from "@/features/auth/hooks/useAuth"
 import { HrmsUserSettingsDialog } from "@/features/user-settings/HrmsUserSettingsDialog"
 import { HrmsNotificationBell } from "@/features/notifications"
 import { applyTheme, storeLocale } from "@/shared/lib/profile-prefs"
@@ -68,6 +70,7 @@ const getKtmDashboardURL = () => {
 
 export function Sidebar({ afterNav }: { afterNav?: ReactNode }) {
   const location = useLocation()
+  const { logout } = useAuth()
   const hasActiveAbsenceItem = useMemo(
     () => absenceItems.some((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)),
     [location.pathname]

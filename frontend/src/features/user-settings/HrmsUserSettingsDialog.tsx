@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { logout } from "@/shared/api/axios"
+import { useAuth } from "@/features/auth/hooks/useAuth"
 import { applyTheme, storeLocale } from "@/shared/lib/profile-prefs"
 import { showGlobalToast } from "@/shared/ui/use-toast"
 import {
@@ -25,6 +25,7 @@ export function HrmsUserSettingsDialog({
   onOpenChange,
   onProfileUpdated,
 }: HrmsUserSettingsDialogProps) {
+  const { logout } = useAuth()
   const callbacks = useMemo<UserSettingsCallbacks>(
     () => ({
       onProfileUpdated: (_profile: UserProfile) => onProfileUpdated?.(),
@@ -33,7 +34,7 @@ export function HrmsUserSettingsDialog({
       onLogoutRequest: () => void logout(),
       notify: showGlobalToast,
     }),
-    [onProfileUpdated],
+    [onProfileUpdated, logout],
   )
 
   return (

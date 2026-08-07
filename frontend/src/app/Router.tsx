@@ -34,9 +34,11 @@ const SettingsPage = lazy(async () => ({ default: (await import("@/pages/Setting
 const UsersPage = lazy(async () => ({ default: (await import("@/pages/UsersPage")).UsersPage }))
 const HolidaysPage = lazy(async () => ({ default: (await import("@/pages/HolidaysPage")).HolidaysPage }))
 const BackupsPage = lazy(async () => ({ default: (await import("@/pages/BackupsPage")).BackupsPage }))
-const LoginPage = lazy(async () => ({ default: (await import("@/pages/LoginPage")).LoginPage }))
+const LoginPage = lazy(async () => ({
+  default: (await import("@/features/auth/pages/LoginPage")).LoginPage,
+}))
 const OidcCallbackPage = lazy(async () => ({
-  default: (await import("@/pages/OidcCallbackPage")).OidcCallbackPage,
+  default: (await import("@/features/auth/pages/OidcCallbackPage")).OidcCallbackPage,
 }))
 const DevPage = lazy(async () => ({ default: (await import("@/pages/DevPage")).DevPage }))
 const OrderEditorPage = lazy(async () => ({ default: (await import("@/pages/OrderEditorPage")).OrderEditorPage }))
