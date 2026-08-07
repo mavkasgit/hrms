@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from "react"
+import { useMemo, useState, useEffect, useCallback, type ReactNode } from "react"
 import { NavLink, useLocation } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
 import api, { getToken, logout, redirectToKtmLogin } from "@/shared/api/axios"
@@ -7,7 +7,6 @@ import { HrmsNotificationBell } from "@/features/notifications"
 import { applyTheme, storeLocale } from "@/shared/lib/profile-prefs"
 import { UserAvatar } from "@/shared/ui/user-avatar"
 import { getUserSeed } from "@/shared/lib/avatar"
-import { DraftOrdersNavItem } from "@/features/draft-visibility/DraftOrdersNavItem"
 import {
   ChevronDown,
   ChevronRight,
@@ -67,12 +66,24 @@ const getKtmDashboardURL = () => {
   return `${window.location.protocol}//${window.location.hostname}:9000`
 }
 
-export function Sidebar() {
+export function Sidebar({ afterNav }: { afterNav?: ReactNode }) {
   const location = useLocation()
   const hasActiveAbsenceItem = useMemo(
     () => absenceItems.some((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)),
     [location.pathname]
   )
+
+  // «Приказы» активны в разделе приказов, но НЕ на странице черновиков (/orders/drafts…).
+  const isTopNavActive = (to: string): boolean => {
+    const { pathname } = location
+    if (to === "/orders") {
+      return (
+        (pathname === "/orders" || pathname.startsWith("/orders/")) &&
+        !pathname.startsWith("/orders/drafts")
+      )
+    }
+    return pathname === to || pathname.startsWith(`${to}/`)
+  }
   const [absenceOpen, setAbsenceOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
 
@@ -135,27 +146,23 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 px-3 space-y-1">
-        {topNavItems.map((item) =>
-          item.to === "/orders" ? (
-            <DraftOrdersNavItem key={item.to} item={item} />
-          ) : (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                )
-              }
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </NavLink>
-          )
-        )}
+        {topNavItems.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={() =>
+              cn(
+                "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                isTopNavActive(item.to)
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              )
+            }
+          >
+            <item.icon className="h-4 w-4" />
+            {item.label}
+          </NavLink>
+        ))}
 
         <div className="space-y-1">
           <button
@@ -213,6 +220,7 @@ export function Sidebar() {
             {item.label}
           </NavLink>
         ))}
+        {afterNav}
       </nav>
 
       <div className="p-3 border-t flex flex-col gap-2">

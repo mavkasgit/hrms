@@ -76,24 +76,32 @@ export function NotificationsBell({
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
-          size="icon"
-          className="relative h-9 w-9"
+          className="relative flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium"
           data-testid="notification-bell"
-          title="Колокольчик уведомлений"
-          aria-label="Колокольчик уведомлений"
+          title="Уведомления"
+          aria-label="Уведомления"
         >
-          <Bell className="h-4 w-4" />
-          {unread > 0 && (
-            <span
-              data-testid="notification-bell-count"
-              className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground"
-            >
-              {unread}
-            </span>
-          )}
+          <span className="relative">
+            <Bell className="h-4 w-4" />
+            {unread > 0 && (
+              <span
+                data-testid="notification-bell-count"
+                className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground"
+              >
+                {unread}
+              </span>
+            )}
+          </span>
+          <span>Уведомления</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent side="right" align="start" className="w-[360px] p-0" sideOffset={8}>
+      <PopoverContent
+        side="right"
+        align="start"
+        className="w-[360px] p-0"
+        sideOffset={8}
+        data-testid="notification-popover"
+      >
         <div className="border-b px-4 py-2.5 text-sm font-medium">Уведомления</div>
         <div className="max-h-[420px] overflow-y-auto">
           {loading && items.length === 0 ? (

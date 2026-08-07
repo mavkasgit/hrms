@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import { Navigate, Outlet } from "react-router-dom"
 import { Sidebar } from "@/shared/ui/sidebar"
+import { DraftOrdersNavItem } from "@/features/draft-visibility/DraftOrdersNavItem"
 import { ToastProvider, showGlobalToast } from "@/shared/ui/use-toast"
 import { Toaster } from "@/shared/ui/toaster"
 import {
@@ -52,7 +53,7 @@ export function Layout() {
       <DocumentEditorSaveListener />
       <div className="flex flex-col min-h-screen bg-background">
         <div className="flex flex-1 min-h-0">
-          <Sidebar />
+          <Sidebar afterNav={<DraftOrdersNavItem />} />
           <main className="flex-1 p-6 overflow-auto">
             <Outlet />
           </main>

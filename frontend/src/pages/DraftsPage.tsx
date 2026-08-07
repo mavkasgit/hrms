@@ -1,8 +1,11 @@
-import { useMemo, useState } from "react"
-import { useAllDrafts, useDeleteAllDraft } from "@/entities/draft"
+import { Fragment, useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { Eye, Trash2 } from "lucide-react"
+import { useAllDrafts, useDeleteAllDraft, restoreDraftFromForm } from "@/entities/draft"
 import type { AllDraftItem } from "@/entities/draft"
 import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
 import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order/draftSaveStatus"
+import { ORDER_TYPE_BADGE_COLORS } from "@/entities/order/orderTypeBadge"
 import {
   SortableFilterHeader,
 } from "@/shared/ui/sortable-filter-header"
@@ -45,9 +48,11 @@ const KIND_LABEL: Record<AllDraftItem["kind"], string> = {
 type SortField = "type_name" | "title" | "number" | "date" | "created_at" | "save_status"
 
 export function DraftsPage() {
+  const navigate = useNavigate()
   const { data: drafts, isLoading } = useAllDrafts()
   const deleteMutation = useDeleteAllDraft()
   const [deleteDraftId, setDeleteDraftId] = useState<string | null>(null)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
   const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
   const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
     type_name: new Set(),
@@ -83,7 +88,19 @@ export function DraftsPage() {
   const sortDefs: ColumnSortDef<AllDraftItem, SortField>[] = useMemo(
     () => [
       { field: "type_name", getSortValue: (d) => d.type_name ?? "" },
-      { field: "title", getSortValue: (d) => d.title ?? "" },
+      {
+        field: "title",
+        getSortValue: (d) => {
+          if (d.group_employees && d.group_employees.length > 0) {
+            const names = d.group_employees.map((e) => e.employee_full_name).filter(Boolean)
+            if (names.length > 0) {
+              names.sort((a, b) => a.localeCompare(b, "ru"))
+              return names[0]
+            }
+          }
+          return d.title ?? ""
+        },
+      },
       { field: "number", getSortValue: (d) => d.number ?? "" },
       { field: "date", getSortValue: (d) => d.date ?? "" },
       { field: "created_at", getSortValue: (d) => d.created_at ?? "" },
@@ -100,6 +117,13 @@ export function DraftsPage() {
         [SortField, Set<string>]
       >) {
         if (!selected || selected.size === 0) continue
+        if (field === "title" && d.group_employees && d.group_employees.length > 0) {
+          const hasMatchingEmployee = d.group_employees.some((e) =>
+            selected.has(e.employee_full_name)
+          )
+          if (!hasMatchingEmployee) return false
+          continue
+        }
         if (!selected.has(fieldValue(field, d))) return false
       }
       return true
@@ -116,20 +140,46 @@ export function DraftsPage() {
   })
   const displayDrafts = engineResult.rows
 
-  const uniqueValues = useMemo(
-    () => ({
+  const uniqueValues = useMemo(() => {
+    const employeeNames = new Set<string>()
+    items.forEach((d) => {
+      if (d.group_employees && d.group_employees.length > 0) {
+        d.group_employees.forEach((e) => {
+          if (e.employee_full_name) employeeNames.add(e.employee_full_name)
+        })
+      } else if (d.title) {
+        employeeNames.add(d.title)
+      }
+    })
+    return {
       type_name: [...new Set(items.map((d) => fieldValue("type_name", d)))].sort(),
-      title: [...new Set(items.map((d) => fieldValue("title", d)))].sort(),
+      title: [...employeeNames].sort((a, b) => a.localeCompare(b, "ru")),
       number: [...new Set(items.map((d) => fieldValue("number", d)))].sort(),
       date: [...new Set(items.map((d) => fieldValue("date", d)))].sort(),
       created_at: [...new Set(items.map((d) => fieldValue("created_at", d)))].sort(),
       save_status: [...new Set(items.map((d) => fieldValue("save_status", d)))].sort(),
-    }),
-    [items]
-  )
+    }
+  }, [items])
 
   const setFilter = (field: SortField, selected: Set<string>) =>
     setColumnFilters((prev) => ({ ...prev, [field]: selected }))
+
+  const getDisplayGroupEmployees = (draft: AllDraftItem) => {
+    if (!draft.group_employees) return []
+    const selectedNames = columnFilters.title
+    if (!selectedNames || selectedNames.size === 0) return draft.group_employees
+    return draft.group_employees.filter((e) => selectedNames.has(e.employee_full_name))
+  }
+
+  const handleRestore = async (draft: AllDraftItem) => {
+    if (restoringId) return
+    setRestoringId(draft.draft_id)
+    try {
+      await restoreDraftFromForm(draft.draft_id, navigate)
+    } finally {
+      setRestoringId(null)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -160,8 +210,19 @@ export function DraftsPage() {
               <TableRow>
                 <TableHead>
                   <SortableFilterHeader
+                    field="number"
+                    label="№"
+                    currentSorts={sortConfigs}
+                    onSortChange={handleSort}
+                    values={uniqueValues.number}
+                    selectedValues={columnFilters.number}
+                    onFilterChange={setFilter}
+                  />
+                </TableHead>
+                <TableHead>
+                  <SortableFilterHeader
                     field="type_name"
-                    label="Документ"
+                    label="Тип"
                     currentSorts={sortConfigs}
                     onSortChange={handleSort}
                     values={uniqueValues.type_name}
@@ -172,22 +233,11 @@ export function DraftsPage() {
                 <TableHead>
                   <SortableFilterHeader
                     field="title"
-                    label="Сотрудник / название"
+                    label="Сотрудник"
                     currentSorts={sortConfigs}
                     onSortChange={handleSort}
                     values={uniqueValues.title}
                     selectedValues={columnFilters.title}
-                    onFilterChange={setFilter}
-                  />
-                </TableHead>
-                <TableHead>
-                  <SortableFilterHeader
-                    field="number"
-                    label="Номер"
-                    currentSorts={sortConfigs}
-                    onSortChange={handleSort}
-                    values={uniqueValues.number}
-                    selectedValues={columnFilters.number}
                     onFilterChange={setFilter}
                   />
                 </TableHead>
@@ -229,56 +279,94 @@ export function DraftsPage() {
             </TableHeader>
             <TableBody>
               {displayDrafts.map((draft) => (
-                <TableRow key={draft.draft_id}>
-                  <TableCell>
-                    <Badge variant="outline">{draft.type_name || "—"}</Badge>
-                    <span className="ml-1.5 text-[11px] text-muted-foreground">
-                      {KIND_LABEL[draft.kind]}
-                    </span>
-                  </TableCell>
-                  <TableCell className="font-medium">{draft.title || "—"}</TableCell>
-                  <TableCell className="font-mono text-sm">{draft.number || "—"}</TableCell>
-                  <TableCell>{formatDocDate(draft)}</TableCell>
-                  <TableCell className="whitespace-nowrap">{formatCreated(draft)}</TableCell>
-                  <TableCell>
-                    {draft.save_status ? (
+                <Fragment key={draft.draft_id}>
+                  <TableRow>
+                    <TableCell className="font-mono text-sm">{draft.number || "—"}</TableCell>
+                    <TableCell>
                       <Badge
                         variant="outline"
-                        className={DRAFT_SAVE_STATUS_CLASS[draft.save_status.state]}
-                        title={
-                          draft.save_status.state === "error" && draft.save_status.last_error
-                            ? draft.save_status.last_error
-                            : undefined
-                        }
+                        className={ORDER_TYPE_BADGE_COLORS[draft.type_name || ""] || ""}
                       >
-                        {DRAFT_SAVE_STATUS_LABEL[draft.save_status.state]}
+                        {draft.type_name || "—"}
                       </Badge>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Просмотр (только чтение)"
-                        onClick={() => openDraftEditorWindow(draft.view_url)}
+                      <span className="ml-1.5 text-[11px] text-muted-foreground">
+                        {KIND_LABEL[draft.kind]}
+                      </span>
+                    </TableCell>
+                    <TableCell className="font-medium">{draft.title || "—"}</TableCell>
+                    <TableCell>{formatDocDate(draft)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{formatCreated(draft)}</TableCell>
+                    <TableCell>
+                      {draft.save_status ? (
+                        <Badge
+                          variant="outline"
+                          className={DRAFT_SAVE_STATUS_CLASS[draft.save_status.state]}
+                          title={
+                            draft.save_status.state === "error" && draft.save_status.last_error
+                              ? draft.save_status.last_error
+                              : undefined
+                          }
+                        >
+                          {DRAFT_SAVE_STATUS_LABEL[draft.save_status.state]}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Восстановить форму данными черновика"
+                          disabled={restoringId !== null}
+                          onClick={() => void handleRestore(draft)}
+                        >
+                          {restoringId === draft.draft_id ? "Загрузка..." : "Восстановить"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Открыть"
+                          onClick={() => openDraftEditorWindow(draft.view_url)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Удалить черновик"
+                          className="text-red-500 hover:text-red-700"
+                          onClick={() => setDeleteDraftId(draft.draft_id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                  {(() => {
+                    const employees = getDisplayGroupEmployees(draft)
+                    if (employees.length === 0) return null
+                    return employees.map((emp) => (
+                      <TableRow
+                        key={emp.employee_id}
+                        className="bg-muted/10 hover:bg-muted/20 border-t-0 h-8"
                       >
-                        Просмотр
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        title="Удалить черновик"
-                        className="text-red-500 hover:text-red-700"
-                        onClick={() => setDeleteDraftId(draft.draft_id)}
-                      >
-                        Удалить
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                        <TableCell className="pl-6 py-1 text-muted-foreground font-mono whitespace-nowrap">
+                          ↳ {draft.number || "—"}
+                        </TableCell>
+                        <TableCell className="py-1" />
+                        <TableCell className="py-1">
+                          <div className="font-normal text-sm">{emp.employee_full_name}</div>
+                        </TableCell>
+                        <TableCell className="py-1" />
+                        <TableCell className="py-1" />
+                        <TableCell className="py-1" />
+                        <TableCell className="py-1" />
+                      </TableRow>
+                    ))
+                  })()}
+                </Fragment>
               ))}
             </TableBody>
           </Table>
