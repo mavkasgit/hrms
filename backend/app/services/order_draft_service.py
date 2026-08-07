@@ -12,6 +12,7 @@ from app.core.exceptions import HRMSException
 from app.models.employee import Employee
 from app.models.order_type import OrderType
 from app.schemas.order import OrderCreate
+from app.services.document_draft_service import DocumentDraftService
 from app.services.order_document_service import _build_document, _build_filename
 
 
@@ -29,8 +30,9 @@ def normalize_draft_save_status(save_status: dict[str, Any] | None) -> dict[str,
     }
 
 
-class OrderDraftService:
+class OrderDraftService(DocumentDraftService):
     def __init__(self):
+        super().__init__()
         self._drafts_dir = Path(settings.ORDERS_PATH) / ".drafts"
         self._save_status_lock = asyncio.Lock()
 
@@ -128,27 +130,32 @@ class OrderDraftService:
         except OSError:
             pass
 
-    def delete_draft(self, draft_id: str) -> None:
+    def _cleanup_files(self, record: str) -> None:
+        """Файловая чистка приказа: docx + метаданные JSON + commit-lock (#84).
+
+        Best-effort, как у всех наследников DocumentDraftService: отсутствующий
+        черновик (404), сбой mkdir storage-директории и OSError не роняют
+        удаление. Для приказов «запись» — это draft_id (файловый черновик,
+        DB-строки до commit нет).
+        """
         try:
-            draft_path = self.get_draft_path(draft_id)
-            if draft_path.exists():
-                draft_path.unlink()
+            draft_path = self.get_draft_path(record)
+            draft_path.unlink(missing_ok=True)
         except HRMSException as e:
             if e.status_code != 404:
                 raise
-        except FileNotFoundError:
+        except OSError:
             pass
 
-        metadata_path = self.get_metadata_path(draft_id)
-        if metadata_path.exists():
-            metadata_path.unlink()
+        try:
+            self.get_metadata_path(record).unlink(missing_ok=True)
+        except OSError:
+            pass
 
-        lock_path = self._commit_lock_path(draft_id)
-        if lock_path.exists():
-            try:
-                lock_path.unlink()
-            except FileNotFoundError:
-                pass
+        try:
+            self._commit_lock_path(record).unlink(missing_ok=True)
+        except OSError:
+            pass
 
     def get_metadata_path(self, draft_id: str) -> Path:
         """Get the path to the draft metadata JSON file."""

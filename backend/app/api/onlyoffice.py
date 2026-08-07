@@ -639,13 +639,12 @@ async def commit_order_draft(
     return order_service._serialize_order(order)
 
 
-@router.delete("/orders/drafts/{draft_id}")
+@router.delete("/orders/drafts/{draft_id}", status_code=204)
 async def delete_order_draft(
     draft_id: str,
     current_user: str = Depends(_get_current_user_stub),
 ):
-    order_draft_service.delete_draft(draft_id)
-    return {"message": "Черновик удален"}
+    await order_draft_service.delete_file_only(draft_id)
 
 
 @router.post("/orders/group-drafts")
@@ -706,7 +705,7 @@ async def commit_group_order_draft(
     )
 
     try:
-        order_draft_service.delete_draft(draft_id)
+        await order_draft_service.delete_file_only(draft_id)
     except Exception:
         import logging
         logging.getLogger(__name__).exception("Failed to delete committed group draft %s", draft_id)

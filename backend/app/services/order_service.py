@@ -160,7 +160,7 @@ class OrderService:
         # Draft delete only after successful create (+ TX commit when we own it), like group commit.
         if data.draft_id:
             try:
-                order_draft_service.delete_draft(data.draft_id)
+                await order_draft_service.delete_file_only(data.draft_id)
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception(

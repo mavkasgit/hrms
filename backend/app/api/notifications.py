@@ -15,6 +15,7 @@ from app.core.paths import notifications_path
 from app.models.employee import Employee
 from app.models.notification import Notification
 from app.models.notification_type import NotificationType
+from app.services.document_draft_service import db_draft_document_service
 from app.services.order_print_service import order_print_service
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -246,7 +247,7 @@ async def update_notification(
     return _build_notification_response(notification, employee_name)
 
 
-@router.delete("/{notification_id:int}")
+@router.delete("/{notification_id:int}", status_code=204)
 async def delete_notification(
     notification_id: int,
     db: AsyncSession = Depends(get_db),
@@ -255,9 +256,7 @@ async def delete_notification(
     if not notification:
         raise HTTPException(status_code=404, detail="Notification not found")
 
-    await db.delete(notification)
-    await db.commit()
-    return {"message": "Notification deleted"}
+    await db_draft_document_service.delete(db, notification)
 
 
 @router.get("/{notification_id:int}/download")
