@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { ChevronDown, ChevronRight, Download, Eye, Trash2, FilePen, Filter, X, Check, Printer } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
@@ -45,9 +47,29 @@ import {
 } from "@/entities/notification/hooks"
 import { openNotificationView, openNotificationEdit, openNotificationPrint, downloadNotificationDocx } from "@/entities/notification/api"
 import type { NotificationCreate } from "@/entities/notification/types"
+import { useDraftFormData, getFormDataExtraFields, getFormDataInt, getFormDataValue } from "@/entities/draft"
 import { FieldGroup, FieldRenderer } from "@/features/dynamic-form"
 import { getNotificationTypeLayout } from "@/entities/notification/notificationTypeLayouts"
 import { buildEmployeePlaceholders } from "@/features/dynamic-form/autoFillConfig"
+import { fetchDraftEmployee, useDraftRecoveryFor } from "@/entities/form-draft"
+
+interface NotificationFormDraft {
+  employee_id: number | null
+  notification_type_id: number | null
+  notification_date: string
+  notification_number: string
+  extra_fields: Record<string, string | number>
+  saved_at: string
+}
+
+function notificationFormHasContent(state: Omit<NotificationFormDraft, "saved_at">): boolean {
+  return (
+    state.employee_id !== null ||
+    state.notification_type_id !== null ||
+    state.notification_number.trim() !== "" ||
+    Object.values(state.extra_fields).some((v) => v !== "" && v !== null && v !== undefined)
+  )
+}
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -65,6 +87,7 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export function NotificationsSection() {
+  const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
   const [filterCollapsed, setFilterCollapsed] = useState(true)
 
@@ -106,6 +129,77 @@ export function NotificationsSection() {
 
   const selectedNotificationType = notificationTypes.find(t => t.id === selectedNotificationTypeId) ?? null
 
+  // Восстановление несохранённого заполнения формы (#28)
+  const recoveryFormState = useMemo(() => ({
+    employee_id: selectedEmployee?.id ?? null,
+    notification_type_id: selectedNotificationTypeId,
+    notification_date: notificationDate,
+    notification_number: notificationNumber,
+    extra_fields: extraFields,
+  }), [selectedEmployee, selectedNotificationTypeId, notificationDate, notificationNumber, extraFields])
+
+  const handleNotificationRestore = useCallback((draft: NotificationFormDraft): boolean => {
+    // Возврат: изменился ли тип уведомления (его смена сбрасывает extra_fields —
+    // хост-сброс после восстановления должен быть пропущен один раз).
+    let typeChanged = false
+    // Перевалидация: сотрудник загружается по id, тип уведомления — из актуального списка
+    if (draft.employee_id) {
+      fetchDraftEmployee(queryClient, draft.employee_id).then((employee) => {
+        if (employee) setSelectedEmployee(employee)
+      })
+    }
+    if (draft.notification_type_id) {
+      const type = notificationTypes.find((t) => t.id === draft.notification_type_id && t.is_active)
+      if (type) {
+        if (type.id !== selectedNotificationTypeId) typeChanged = true
+        setSelectedNotificationTypeId(type.id)
+        setNotificationTypeSearch(type.name)
+      } else if (notificationTypes.length === 0) {
+        // Типы ещё не загрузились — выставляем id по черновику; layout появится позже
+        if (draft.notification_type_id !== selectedNotificationTypeId) typeChanged = true
+        setSelectedNotificationTypeId(draft.notification_type_id)
+      }
+    }
+    if (draft.notification_date) setNotificationDate(draft.notification_date)
+    if (draft.notification_number) setNotificationNumber(draft.notification_number)
+    if (draft.extra_fields && Object.keys(draft.extra_fields).length > 0) {
+      setExtraFields(draft.extra_fields)
+    }
+    return typeChanged
+  }, [notificationTypes, selectedNotificationTypeId])
+
+  const {
+    clear: recoveryClear,
+    restoreWith: recoveryRestoreWith,
+    restoreGuardRef,
+    overwriteDialog: recoveryOverwriteDialog,
+  } = useDraftRecoveryFor<NotificationFormDraft>({
+    slot: "notifications",
+    formState: recoveryFormState,
+    hasContent: notificationFormHasContent,
+    onRestore: handleNotificationRestore,
+  })
+
+  // «Заполнить поля» из попапа черновиков: /orders/notifications?fillDraftId=…
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const fillDraftId = searchParams.get("fillDraftId")
+  const { data: fillFormData } = useDraftFormData(fillDraftId)
+
+  useEffect(() => {
+    if (!fillFormData || fillFormData.kind !== "notification") return
+    recoveryRestoreWith({
+      employee_id: getFormDataInt(fillFormData.data, "employee_id"),
+      notification_type_id: getFormDataInt(fillFormData.data, "notification_type_id"),
+      notification_date: getFormDataValue(fillFormData.data, "date") || new Date().toISOString().split("T")[0],
+      notification_number: getFormDataValue(fillFormData.data, "number") || "",
+      extra_fields: getFormDataExtraFields(fillFormData.data, ["employee_id", "notification_type_id", "number", "date"]),
+      saved_at: new Date().toISOString(),
+    })
+    // Убираем параметр, чтобы повторный вход не перезаполнял форму.
+    navigate("/orders/notifications", { replace: true })
+  }, [fillFormData, recoveryRestoreWith, navigate])
+
   const activeFilterCount = useMemo(() => {
     let count = 0
     if (filterEmployee) count++
@@ -133,10 +227,17 @@ export function NotificationsSection() {
     setErrors({})
     setExtraFields({})
     setExtraFieldErrors({})
+    // Очищаем сохранённый черновик формы (#28) — форма сброшена
+    recoveryClear()
   }
 
   // Reset extra fields when type changes
   useEffect(() => {
+    // При восстановлении черновика поля уже восстановлены из черновика — сброс пропускаем один раз
+    if (restoreGuardRef.current) {
+      restoreGuardRef.current = false
+      return
+    }
     setExtraFields({})
     setExtraFieldErrors({})
   }, [selectedNotificationTypeId])
@@ -614,6 +715,9 @@ export function NotificationsSection() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
+      {recoveryOverwriteDialog}
     </div>
   )
 }

@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { ChevronDown, ChevronRight, Trash2, FilePen, Filter, Eye, Download, X, Check, Printer } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
@@ -47,6 +49,28 @@ import {
 } from "@/entities/statement/hooks"
 import { openStatementView, openStatementEdit, openStatementPrint, downloadStatementDocx } from "@/entities/statement/api"
 import type { StatementCreate } from "@/entities/statement/types"
+import { useDraftFormData, getFormDataExtraFields, getFormDataInt, getFormDataValue } from "@/entities/draft"
+import { useDraftRecoveryFor } from "@/entities/form-draft"
+
+import { fetchDraftEmployee } from "@/entities/form-draft"
+
+interface StatementFormDraft {
+  employee_id: number | null
+  statement_type_id: number | null
+  statement_date: string
+  statement_number: string
+  extra_fields: Record<string, string | number>
+  saved_at: string
+}
+
+function statementFormHasContent(state: Omit<StatementFormDraft, "saved_at">): boolean {
+  return (
+    state.employee_id !== null ||
+    state.statement_type_id !== null ||
+    state.statement_number.trim() !== "" ||
+    Object.values(state.extra_fields).some((v) => v !== "" && v !== null && v !== undefined)
+  )
+}
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -64,6 +88,7 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export function StatementsSection() {
+  const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
   const [filterCollapsed, setFilterCollapsed] = useState(true)
 
@@ -105,6 +130,77 @@ export function StatementsSection() {
 
   const selectedStatementType = statementTypes.find(t => t.id === selectedStatementTypeId) ?? null
 
+  // Восстановление несохранённого заполнения формы (#28)
+  const recoveryFormState = useMemo(() => ({
+    employee_id: selectedEmployee?.id ?? null,
+    statement_type_id: selectedStatementTypeId,
+    statement_date: statementDate,
+    statement_number: statementNumber,
+    extra_fields: extraFields,
+  }), [selectedEmployee, selectedStatementTypeId, statementDate, statementNumber, extraFields])
+
+  const handleStatementRestore = useCallback((draft: StatementFormDraft): boolean => {
+    // Возврат: изменился ли тип заявления (его смена сбрасывает extra_fields —
+    // хост-сброс после восстановления должен быть пропущен один раз).
+    let typeChanged = false
+    // Перевалидация: сотрудник загружается по id, тип заявления — из актуального списка
+    if (draft.employee_id) {
+      fetchDraftEmployee(queryClient, draft.employee_id).then((employee) => {
+        if (employee) setSelectedEmployee(employee)
+      })
+    }
+    if (draft.statement_type_id) {
+      const type = statementTypes.find((t) => t.id === draft.statement_type_id && t.is_active)
+      if (type) {
+        if (type.id !== selectedStatementTypeId) typeChanged = true
+        setSelectedStatementTypeId(type.id)
+        setStatementTypeSearch(type.name)
+      } else if (statementTypes.length === 0) {
+        // Типы ещё не загрузились — выставляем id по черновику; layout появится позже
+        if (draft.statement_type_id !== selectedStatementTypeId) typeChanged = true
+        setSelectedStatementTypeId(draft.statement_type_id)
+      }
+    }
+    if (draft.statement_date) setStatementDate(draft.statement_date)
+    if (draft.statement_number) setStatementNumber(draft.statement_number)
+    if (draft.extra_fields && Object.keys(draft.extra_fields).length > 0) {
+      setExtraFields(draft.extra_fields)
+    }
+    return typeChanged
+  }, [statementTypes, selectedStatementTypeId])
+
+  const {
+    clear: recoveryClear,
+    restoreWith: recoveryRestoreWith,
+    restoreGuardRef,
+    overwriteDialog: recoveryOverwriteDialog,
+  } = useDraftRecoveryFor<StatementFormDraft>({
+    slot: "statements",
+    formState: recoveryFormState,
+    hasContent: statementFormHasContent,
+    onRestore: handleStatementRestore,
+  })
+
+  // «Заполнить поля» из попапа черновиков: /orders/statements?fillDraftId=…
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const fillDraftId = searchParams.get("fillDraftId")
+  const { data: fillFormData } = useDraftFormData(fillDraftId)
+
+  useEffect(() => {
+    if (!fillFormData || fillFormData.kind !== "statement") return
+    recoveryRestoreWith({
+      employee_id: getFormDataInt(fillFormData.data, "employee_id"),
+      statement_type_id: getFormDataInt(fillFormData.data, "statement_type_id"),
+      statement_date: getFormDataValue(fillFormData.data, "date") || new Date().toISOString().split("T")[0],
+      statement_number: getFormDataValue(fillFormData.data, "number") || "",
+      extra_fields: getFormDataExtraFields(fillFormData.data, ["employee_id", "statement_type_id", "number", "date"]),
+      saved_at: new Date().toISOString(),
+    })
+    // Убираем параметр, чтобы повторный вход не перезаполнял форму.
+    navigate("/orders/statements", { replace: true })
+  }, [fillFormData, recoveryRestoreWith, navigate])
+
   const activeFilterCount = useMemo(() => {
     let count = 0
     if (filterEmployee) count++
@@ -132,10 +228,17 @@ export function StatementsSection() {
     setErrors({})
     setExtraFields({})
     setExtraFieldErrors({})
+    // Очищаем сохранённый черновик формы (#28) — форма сброшена
+    recoveryClear()
   }
 
   // Reset extra fields when type changes
   useEffect(() => {
+    // При восстановлении черновика поля уже восстановлены из черновика — сброс пропускаем один раз
+    if (restoreGuardRef.current) {
+      restoreGuardRef.current = false
+      return
+    }
     setExtraFields({})
     setExtraFieldErrors({})
   }, [selectedStatementTypeId])
@@ -603,6 +706,9 @@ export function StatementsSection() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
+      {recoveryOverwriteDialog}
     </div>
   )
 }

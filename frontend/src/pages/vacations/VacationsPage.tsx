@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, Fragment } from "react"
+import { useState, useEffect, useMemo, Fragment, useCallback } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { ChevronDown, ChevronRight, X, ScrollText, RefreshCw, Pencil, Printer, FilePen, Cake, FileText } from "lucide-react"
 import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
@@ -68,6 +69,28 @@ import { OrdersRegistryModal } from "@/features/orders-registry/OrdersRegistryMo
 import { formatDate, formatDateTime } from "@/shared/utils/date"
 import type { Employee } from "@/entities/employee/types"
 import type { EmployeeVacationSummary } from "@/entities/vacation/types"
+import {
+  useDraftRecoveryFor,
+} from "@/entities/form-draft"
+import { fetchDraftEmployee } from "@/entities/form-draft"
+
+interface VacationFormDraft {
+  employee_id: number | null
+  start_date: string
+  end_date: string
+  order_date: string
+  order_number: string
+  saved_at: string
+}
+
+function vacationFormHasContent(state: Omit<VacationFormDraft, "saved_at">): boolean {
+  return (
+    state.employee_id !== null ||
+    state.start_date !== "" ||
+    state.end_date !== "" ||
+    state.order_number.trim() !== ""
+  )
+}
 
 const VACATION_ORDER_CODE = "vacation_paid"
 
@@ -619,6 +642,7 @@ type SortField =
   | "hire_date"
 
 export function VacationsPage() {
+  const queryClient = useQueryClient()
   const navigate = useNavigate()
   // --- Form state ---
   const [auditLogOpen, setAuditLogOpen] = useState(false)
@@ -679,7 +703,41 @@ export function VacationsPage() {
     setOrderDate(new Date().toISOString().split("T")[0])
     setErrors({})
     setDraftId(null)
+    // Очищаем сохранённый черновик формы (#28) — форма сброшена
+    recoveryClear()
   }
+
+  // Восстановление несохранённого заполнения формы (#28)
+  const recoveryFormState = useMemo(() => ({
+    employee_id: selectedEmployee?.id ?? null,
+    start_date: startDate,
+    end_date: endDate,
+    order_date: orderDate,
+    order_number: orderNumber,
+  }), [selectedEmployee, startDate, endDate, orderDate, orderNumber])
+
+  const handleRecoveryRestore = useCallback((draft: VacationFormDraft) => {
+    // Перевалидация: сотрудник загружается по id
+    if (draft.employee_id) {
+      fetchDraftEmployee(queryClient, draft.employee_id).then((employee) => {
+        if (employee) setSelectedEmployee(employee)
+      })
+    }
+    if (draft.start_date) setStartDate(draft.start_date)
+    if (draft.end_date) setEndDate(draft.end_date)
+    if (draft.order_date) setOrderDate(draft.order_date)
+    if (draft.order_number) setOrderNumber(draft.order_number)
+  }, [])
+
+  const {
+    clear: recoveryClear,
+    overwriteDialog: recoveryOverwriteDialog,
+  } = useDraftRecoveryFor<VacationFormDraft>({
+    slot: "vacations",
+    formState: recoveryFormState,
+    hasContent: vacationFormHasContent,
+    onRestore: handleRecoveryRestore,
+  })
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
@@ -724,6 +782,8 @@ export function VacationsPage() {
     createDraftMutation.mutate(buildOrderPayload(), {
       onSuccess: (draft) => {
         setDraftId(draft.draft_id)
+        // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
+        recoveryClear()
         const url = `/orders/drafts/${draft.draft_id}/edit-docx`
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
@@ -1496,6 +1556,9 @@ export function VacationsPage() {
 
       {/* --- Orders registry dialog --- */}
       <OrdersRegistryModal open={registryOpen} onOpenChange={setRegistryOpen} year={new Date().getFullYear()} />
+
+      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
+      {recoveryOverwriteDialog}
     </div>
   )
 }

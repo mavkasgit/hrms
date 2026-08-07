@@ -1,4 +1,6 @@
-import { Fragment, useEffect, useState, useMemo } from "react"
+import { Fragment, useEffect, useState, useMemo, useCallback } from "react"
+import { useQueryClient, type QueryClient } from "@tanstack/react-query"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { Download, Eye, FilePen, Printer, Trash2, X } from "lucide-react"
 import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
@@ -20,6 +22,7 @@ import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
 import type { Order, VacationUnpaidGroupEmployeeCreate } from "@/entities/order/types"
+import { useDraftFormData, getFormDataValue } from "@/entities/draft"
 import {
   Tabs,
   TabsList,
@@ -36,8 +39,44 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog"
+import {
+  useDraftRecoveryFor,
+} from "@/entities/form-draft"
+import { fetchDraftEmployee, hydrateDraftEmployees, toDraftEmployeeRefs } from "@/entities/form-draft"
 
 const UNPAID_LEAVE_CODE = "vacation_unpaid"
+
+interface UnpaidLeaveFormDraft {
+  employee_id: number | null
+  order_date: string
+  order_number: string
+  vacation_start: string
+  vacation_end: string
+  vacation_days: string
+  saved_at: string
+}
+
+function unpaidLeaveHasContent(state: Omit<UnpaidLeaveFormDraft, "saved_at">): boolean {
+  return (
+    state.employee_id !== null ||
+    state.order_number.trim() !== "" ||
+    state.vacation_start !== "" ||
+    state.vacation_end !== "" ||
+    state.vacation_days.trim() !== ""
+  )
+}
+
+interface UnpaidGroupFormDraft {
+  order_date: string
+  order_number: string
+  group_vacation_start: string
+  employees: { employee_id: number; vacation_days: number }[]
+  saved_at: string
+}
+
+function unpaidGroupHasContent(state: Omit<UnpaidGroupFormDraft, "saved_at">): boolean {
+  return state.group_vacation_start !== "" || state.employees.length > 0
+}
 
 interface DateRange {
   start: string
@@ -61,6 +100,31 @@ import { formatDate, calculateDaysDifference } from "@/shared/utils/date"
 function calcDays(startDate: string, endDate: string): string {
   const days = calculateDaysDifference(startDate, endDate)
   return days > 0 ? String(days) : ""
+}
+
+function calculateVacationEnd(start: string, days: number): string {
+  if (!start || days <= 0) return ""
+  const [y, m, d] = start.split("-")
+  if (!y || !m || !d) return ""
+  const end = new Date(Number(y), Number(m) - 1, Number(d))
+  if (Number.isNaN(end.getTime())) return ""
+  end.setDate(end.getDate() + days - 1)
+  const ey = end.getFullYear()
+  const em = String(end.getMonth() + 1).padStart(2, "0")
+  const ed = String(end.getDate()).padStart(2, "0")
+  return `${ey}-${em}-${ed}`
+}
+
+async function hydrateGroupEmployees(
+  queryClient: QueryClient,
+  employees: UnpaidGroupFormDraft["employees"],
+  vacationStart: string,
+): Promise<GroupEmployeeRow[]> {
+  const rows = await hydrateDraftEmployees(queryClient, employees)
+  return rows.map((row) => ({
+    ...row,
+    vacation_end_calculated: vacationStart ? calculateVacationEnd(vacationStart, row.vacation_days) : "",
+  }))
 }
 
 function defaultPeriodStartIso(): string {
@@ -138,6 +202,7 @@ function toUnpaidLeaveEntries(order: Order): UnpaidLeaveEntry[] {
 type SortField = "order_number" | "employee_name" | "order_date" | "vacation_period" | "vacation_days"
 
 export function UnpaidLeavesPage() {
+  const queryClient = useQueryClient()
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
   const [orderNumber, setOrderNumber] = useState("")
@@ -174,6 +239,9 @@ export function UnpaidLeavesPage() {
 
   const unpaidLeaveType = orderTypes.find((item) => item.code === UNPAID_LEAVE_CODE) ?? null
 
+  // «Заполнить поля» из попапа черновиков / автовосстановление (?recover=1)
+  const [searchParams] = useSearchParams()
+
   useEffect(() => {
     if (!vacationStart || !vacationEnd) return
     const computed = calcDays(vacationStart, vacationEnd)
@@ -192,7 +260,42 @@ export function UnpaidLeavesPage() {
     setVacationDays("")
     setDraftId(null)
     setErrors({})
+    // Очищаем сохранённый черновик формы (#28) — форма сброшена
+    recoveryClear()
   }
+
+  // Восстановление несохранённого заполнения формы (#28) — одиночная форма
+  const recoveryFormState = useMemo(() => ({
+    employee_id: selectedEmployee?.id ?? null,
+    order_date: orderDate,
+    order_number: orderNumber,
+    vacation_start: vacationStart,
+    vacation_end: vacationEnd,
+    vacation_days: vacationDays,
+  }), [selectedEmployee, orderDate, orderNumber, vacationStart, vacationEnd, vacationDays])
+
+  const handleRecoveryRestore = useCallback((draft: UnpaidLeaveFormDraft) => {
+    if (draft.employee_id) {
+      fetchDraftEmployee(queryClient, draft.employee_id).then((employee) => {
+        if (employee) setSelectedEmployee(employee)
+      })
+    }
+    if (draft.order_date) setOrderDate(draft.order_date)
+    if (draft.order_number) setOrderNumber(draft.order_number)
+    if (draft.vacation_start) setVacationStart(draft.vacation_start)
+    if (draft.vacation_end) setVacationEnd(draft.vacation_end)
+    if (draft.vacation_days) setVacationDays(draft.vacation_days)
+  }, [])
+
+  const {
+    clear: recoveryClear,
+    overwriteDialog: recoveryOverwriteDialog,
+  } = useDraftRecoveryFor<UnpaidLeaveFormDraft>({
+    slot: "unpaid-leaves",
+    formState: recoveryFormState,
+    hasContent: unpaidLeaveHasContent,
+    onRestore: handleRecoveryRestore,
+  })
 
   const validate = (): boolean => {
     const nextErrors: Record<string, string> = {}
@@ -228,6 +331,8 @@ export function UnpaidLeavesPage() {
       {
         onSuccess: (draft) => {
           setDraftId(draft.draft_id)
+          // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
+          recoveryClear()
           const url = `/orders/drafts/${draft.draft_id}/edit-docx`
           if (editorWindow && !editorWindow.closed) {
             editorWindow.location.href = url
@@ -288,19 +393,6 @@ export function UnpaidLeavesPage() {
     setDeleteOrderId(null)
   }
 
-  const calculateVacationEnd = (start: string, days: number): string => {
-    if (!start || days <= 0) return ""
-    const [y, m, d] = start.split("-")
-    if (!y || !m || !d) return ""
-    const end = new Date(Number(y), Number(m) - 1, Number(d))
-    if (Number.isNaN(end.getTime())) return ""
-    end.setDate(end.getDate() + days - 1)
-    const ey = end.getFullYear()
-    const em = String(end.getMonth() + 1).padStart(2, "0")
-    const ed = String(end.getDate()).padStart(2, "0")
-    return `${ey}-${em}-${ed}`
-  }
-
   const addGroupEmployee = (employee: Employee) => {
     if (groupEmployees.some((e) => e.employee_id === employee.id)) return
     const defaultDays = vacationDays ? Number(vacationDays) : 1
@@ -354,13 +446,66 @@ export function UnpaidLeavesPage() {
     }
   }
 
+  // «Заполнить поля» из попапа черновиков: /unpaid-leaves?fillDraftId=…
+  const navigate = useNavigate()
+  const fillDraftId = searchParams.get("fillDraftId")
+  const { data: fillFormData } = useDraftFormData(fillDraftId)
+
   const resetGroupForm = () => {
     setGroupEmployees([])
     setGroupVacationStart("")
     setOrderNumber("")
     setOrderDate(new Date().toISOString().split("T")[0])
     setGroupErrors({})
+    // Очищаем сохранённый черновик групповой формы (#28) — форма сброшена
+    groupRecoveryClear()
   }
+
+  // Восстановление несохранённого заполнения групповой формы (#28)
+  const groupRecoveryFormState = useMemo(() => ({
+    order_date: orderDate,
+    order_number: orderNumber,
+    group_vacation_start: groupVacationStart,
+    employees: toDraftEmployeeRefs(groupEmployees),
+  }), [orderDate, orderNumber, groupVacationStart, groupEmployees])
+
+  const handleGroupRecoveryRestore = useCallback((draft: UnpaidGroupFormDraft) => {
+    setOrderMode("group")
+    if (draft.order_date) setOrderDate(draft.order_date)
+    if (draft.order_number) setOrderNumber(draft.order_number)
+    if (draft.group_vacation_start) setGroupVacationStart(draft.group_vacation_start)
+    if (draft.employees && draft.employees.length > 0) {
+      hydrateGroupEmployees(queryClient, draft.employees, draft.group_vacation_start)
+        .then(setGroupEmployees)
+        .catch(() => {})
+    }
+  }, [])
+
+  const {
+    clear: groupRecoveryClear,
+    overwriteDialog: groupRecoveryOverwriteDialog,
+  } = useDraftRecoveryFor<UnpaidGroupFormDraft>({
+    slot: "unpaid-leaves:group",
+    formState: groupRecoveryFormState,
+    hasContent: unpaidGroupHasContent,
+    onRestore: handleGroupRecoveryRestore,
+  })
+
+  // «Заполнить поля» из попапа черновиков: /unpaid-leaves?fillDraftId=…
+  // Тот же маппинг черновика в форму, что и при восстановлении (#28) — через общий хендлер.
+  useEffect(() => {
+    if (!fillFormData || !fillFormData.is_group) return
+    const get = (key: string) => getFormDataValue(fillFormData.data, key)
+    handleGroupRecoveryRestore({
+      order_date: get("date") ?? "",
+      order_number: get("number") ?? "",
+      group_vacation_start: get("vacation_start") ?? "",
+      employees: fillFormData.employees ?? [],
+      saved_at: new Date().toISOString(),
+    })
+    // Убираем параметр, чтобы повторный вход не перезаполнял форму.
+    navigate("/unpaid-leaves", { replace: true })
+  }, [fillFormData, handleGroupRecoveryRestore, navigate])
 
   const validateGroup = (): boolean => {
     const nextErrors: Record<string, string> = {}
@@ -387,14 +532,13 @@ export function UnpaidLeavesPage() {
         order_date: orderDate,
         order_number: orderNumber,
         vacation_start: groupVacationStart,
-        employees: groupEmployees.map((e) => ({
-          employee_id: e.employee_id,
-          vacation_days: e.vacation_days,
-        })),
+        employees: toDraftEmployeeRefs(groupEmployees),
       },
       {
         onSuccess: (draft) => {
           setGroupDraftId(draft.draft_id)
+          // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
+          groupRecoveryClear()
           const url = draft.edit_url
           if (editorWindow && !editorWindow.closed) {
             editorWindow.location.href = url
@@ -1210,6 +1354,9 @@ export function UnpaidLeavesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Подтверждение перезаписи сохранённого заполнения (#28) — по режиму формы */}
+      {orderMode === "single" && recoveryOverwriteDialog}
+      {orderMode === "group" && groupRecoveryOverwriteDialog}
 
     </div>
   )

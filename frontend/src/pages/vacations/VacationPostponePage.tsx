@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { FilePen, X } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs"
@@ -15,8 +15,29 @@ import { OrderNumberField } from "@/features/OrderNumberField"
 import { formatDate, parseDate, calculateDaysDifference } from "@/shared/utils/date"
 import type { OrderCreate } from "@/entities/order/types"
 import type { Holiday, Vacation } from "@/entities/vacation/types"
+import {
+  useDraftRecoveryFor,
+} from "@/entities/form-draft"
 
 const POSTPONE_ORDER_CODE = "vacation_postpone"
+
+interface VacationPostponeFormDraft {
+  vacation: Vacation | null
+  postpone_start_date: string
+  postpone_end_date: string
+  order_date: string
+  order_number: string
+  saved_at: string
+}
+
+function vacationPostponeHasContent(state: Omit<VacationPostponeFormDraft, "saved_at">): boolean {
+  return (
+    state.vacation !== null ||
+    state.postpone_start_date !== "" ||
+    state.postpone_end_date !== "" ||
+    state.order_number.trim() !== ""
+  )
+}
 
 function calculateDaysWithHolidays(start: string, end: string, holidays: Holiday[]): number {
   const startDate = parseDate(start)
@@ -75,7 +96,43 @@ export function VacationPostponePage() {
     return Number.isFinite(used) ? used : 0
   }, [selectedVacation, selectedPostponedDays])
 
+  // Восстановление несохранённого заполнения формы (#28)
+  const recoveryFormState = useMemo(() => ({
+    vacation: selectedVacation,
+    postpone_start_date: postponeStartDate,
+    postpone_end_date: postponeEndDate,
+    order_date: orderDate,
+    order_number: orderNumber,
+  }), [selectedVacation, postponeStartDate, postponeEndDate, orderDate, orderNumber])
+
+  const handleRecoveryRestore = useCallback((draft: VacationPostponeFormDraft): boolean => {
+    // Возврат true: отпуск всегда перевыставляется, при его смене хост сбрасывает
+    // поля — хост-сброс после восстановления должен быть пропущен один раз.
+    setSelectedVacation(draft.vacation)
+    if (draft.postpone_start_date) setPostponeStartDate(draft.postpone_start_date)
+    if (draft.postpone_end_date) setPostponeEndDate(draft.postpone_end_date)
+    if (draft.order_date) setOrderDate(draft.order_date)
+    if (draft.order_number) setOrderNumber(draft.order_number)
+    return true
+  }, [])
+
+  const {
+    clear: recoveryClear,
+    restoreGuardRef,
+    overwriteDialog: recoveryOverwriteDialog,
+  } = useDraftRecoveryFor<VacationPostponeFormDraft>({
+    slot: "vacations:postpone",
+    formState: recoveryFormState,
+    hasContent: vacationPostponeHasContent,
+    onRestore: handleRecoveryRestore,
+  })
+
   useEffect(() => {
+    // При восстановлении черновика поля уже восстановлены — сброс пропускаем один раз
+    if (restoreGuardRef.current) {
+      restoreGuardRef.current = false
+      return
+    }
     setOrderNumber("")
     setPostponeStartDate("")
     setPostponeEndDate("")
@@ -150,6 +207,8 @@ export function VacationPostponePage() {
     createDraftMutation.mutate(buildOrderPayload(), {
       onSuccess: (draft) => {
         setDraftId(draft.draft_id)
+        // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
+        recoveryClear()
         const url = `/orders/drafts/${draft.draft_id}/edit-docx`
         if (editorWindow && !editorWindow.closed) editorWindow.location.href = url
         else openDraftEditorWindow(url)
@@ -184,6 +243,7 @@ export function VacationPostponePage() {
       setPostponeStartDate("")
       setPostponeEndDate("")
       setDraftId(null)
+      recoveryClear()
       navigate("/vacations")
     } catch {
       setSuccessMessage("Ошибка при создании приказа")
@@ -301,6 +361,7 @@ export function VacationPostponePage() {
                             setPostponeEndDate("")
                             setDraftId(null)
                             setErrors({})
+                            recoveryClear()
                           }}
                           disabled={isPending}
                         >
@@ -374,6 +435,9 @@ export function VacationPostponePage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
+      {recoveryOverwriteDialog}
     </div>
   )
 }

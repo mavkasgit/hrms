@@ -1,4 +1,6 @@
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { Download, Eye, FilePen, Printer, Trash2, X } from "lucide-react"
 import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
@@ -30,14 +32,61 @@ import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import type { Employee } from "@/entities/employee/types"
 import type { Order, WeekendCallGroupEmployeeCreate } from "@/entities/order/types"
+import { useDraftFormData, getFormDataValue } from "@/entities/draft"
 import {
   Tabs,
   TabsList,
   TabsTrigger,
   TabsContent,
 } from "@/shared/ui/tabs"
+import {
+  useDraftRecoveryFor,
+} from "@/entities/form-draft"
+import { fetchDraftEmployee, hydrateDraftEmployees, toDraftEmployeeRefs } from "@/entities/form-draft"
 
 const WEEKEND_CALL_CODE = "weekend_call"
+
+interface WeekendCallFormDraft {
+  employee_id: number | null
+  order_date: string
+  order_number: string
+  mode: CallMode
+  call_date: string
+  call_date_start: string
+  call_date_end: string
+  saved_at: string
+}
+
+function weekendCallHasContent(state: Omit<WeekendCallFormDraft, "saved_at">): boolean {
+  return (
+    state.employee_id !== null ||
+    state.order_number.trim() !== "" ||
+    state.call_date !== "" ||
+    state.call_date_start !== "" ||
+    state.call_date_end !== ""
+  )
+}
+
+interface WeekendCallGroupFormDraft {
+  order_date: string
+  order_number: string
+  mode: CallMode
+  call_date: string
+  call_date_start: string
+  call_date_end: string
+  employees: { employee_id: number; vacation_days: number }[]
+  saved_at: string
+}
+
+function weekendCallGroupHasContent(state: Omit<WeekendCallGroupFormDraft, "saved_at">): boolean {
+  return (
+    state.order_number.trim() !== "" ||
+    state.call_date !== "" ||
+    state.call_date_start !== "" ||
+    state.call_date_end !== "" ||
+    state.employees.length > 0
+  )
+}
 
 type CallMode = "single" | "range"
 
@@ -145,6 +194,7 @@ interface GroupEmployeeRow extends WeekendCallGroupEmployeeCreate {
 type SortField = "order_number" | "employee_name" | "order_date" | "call_date"
 
 export function WeekendCallsPage() {
+  const queryClient = useQueryClient()
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
   const [orderNumber, setOrderNumber] = useState("")
@@ -185,6 +235,9 @@ export function WeekendCallsPage() {
 
   const weekendCallType = orderTypes.find((item) => item.code === WEEKEND_CALL_CODE) ?? null
 
+  // «Заполнить поля» из попапа черновиков / автовосстановление (?recover=1)
+  const [searchParams] = useSearchParams()
+
   const resetForm = () => {
     if (draftId) {
       deleteDraftMutation.mutate(draftId)
@@ -198,7 +251,80 @@ export function WeekendCallsPage() {
     setCallDateEnd("")
     setDraftId(null)
     setErrors({})
+    // Очищаем сохранённый черновик формы (#28) — форма сброшена
+    recoveryClear()
   }
+
+  // Восстановление несохранённого заполнения формы (#28) — одиночная форма
+  const recoveryFormState = useMemo(() => ({
+    employee_id: selectedEmployee?.id ?? null,
+    order_date: orderDate,
+    order_number: orderNumber,
+    mode,
+    call_date: callDate,
+    call_date_start: callDateStart,
+    call_date_end: callDateEnd,
+  }), [selectedEmployee, orderDate, orderNumber, mode, callDate, callDateStart, callDateEnd])
+
+  const handleRecoveryRestore = useCallback((draft: WeekendCallFormDraft) => {
+    if (draft.employee_id) {
+      fetchDraftEmployee(queryClient, draft.employee_id).then((employee) => {
+        if (employee) setSelectedEmployee(employee)
+      })
+    }
+    if (draft.order_date) setOrderDate(draft.order_date)
+    if (draft.order_number) setOrderNumber(draft.order_number)
+    if (draft.mode) setMode(draft.mode)
+    if (draft.call_date) setCallDate(draft.call_date)
+    if (draft.call_date_start) setCallDateStart(draft.call_date_start)
+    if (draft.call_date_end) setCallDateEnd(draft.call_date_end)
+  }, [])
+
+  const {
+    clear: recoveryClear,
+    overwriteDialog: recoveryOverwriteDialog,
+  } = useDraftRecoveryFor<WeekendCallFormDraft>({
+    slot: "weekend-calls",
+    formState: recoveryFormState,
+    hasContent: weekendCallHasContent,
+    onRestore: handleRecoveryRestore,
+  })
+
+  // Восстановление несохранённого заполнения групповой формы (#28)
+  const groupRecoveryFormState = useMemo(() => ({
+    order_date: orderDate,
+    order_number: orderNumber,
+    mode: groupCallMode,
+    call_date: groupCallDate,
+    call_date_start: groupCallDateStart,
+    call_date_end: groupCallDateEnd,
+    employees: toDraftEmployeeRefs(groupEmployees),
+  }), [orderDate, orderNumber, groupCallMode, groupCallDate, groupCallDateStart, groupCallDateEnd, groupEmployees])
+
+  const handleGroupRecoveryRestore = useCallback((draft: WeekendCallGroupFormDraft) => {
+    setOrderMode("group")
+    if (draft.order_date) setOrderDate(draft.order_date)
+    if (draft.order_number) setOrderNumber(draft.order_number)
+    if (draft.mode === "single" || draft.mode === "range") setGroupCallMode(draft.mode)
+    if (draft.call_date) setGroupCallDate(draft.call_date)
+    if (draft.call_date_start) setGroupCallDateStart(draft.call_date_start)
+    if (draft.call_date_end) setGroupCallDateEnd(draft.call_date_end)
+    if (draft.employees && draft.employees.length > 0) {
+      hydrateDraftEmployees(queryClient, draft.employees)
+        .then(setGroupEmployees)
+        .catch(() => {})
+    }
+  }, [])
+
+  const {
+    clear: groupRecoveryClear,
+    overwriteDialog: groupRecoveryOverwriteDialog,
+  } = useDraftRecoveryFor<WeekendCallGroupFormDraft>({
+    slot: "weekend-calls:group",
+    formState: groupRecoveryFormState,
+    hasContent: weekendCallGroupHasContent,
+    onRestore: handleGroupRecoveryRestore,
+  })
 
   const setLastYearPeriod = () => {
     setPeriodMode("calendarYear")
@@ -329,6 +455,38 @@ export function WeekendCallsPage() {
     ])
   }
 
+  // «Заполнить поля» из попапа черновиков: /weekend-calls?fillDraftId=…
+  const navigate = useNavigate()
+  const fillDraftId = searchParams.get("fillDraftId")
+  const { data: fillFormData } = useDraftFormData(fillDraftId)
+
+  useEffect(() => {
+    if (!fillFormData || !fillFormData.is_group) return
+    const get = (key: string) => getFormDataValue(fillFormData.data, key)
+    setOrderMode("group")
+    const number = get("number")
+    if (number) setOrderNumber(number)
+    const date = get("date")
+    if (date) setOrderDate(date)
+    const mode = get("mode")
+    if (mode === "range" || mode === "single") {
+      setGroupCallMode(mode)
+    }
+    const callDate = get("call_date")
+    if (callDate) setGroupCallDate(callDate)
+    const callDateStart = get("call_date_start")
+    if (callDateStart) setGroupCallDateStart(callDateStart)
+    const callDateEnd = get("call_date_end")
+    if (callDateEnd) setGroupCallDateEnd(callDateEnd)
+    if (fillFormData.employees && fillFormData.employees.length > 0) {
+      hydrateDraftEmployees(queryClient, fillFormData.employees)
+        .then(setGroupEmployees)
+        .catch(() => {})
+    }
+    // Убираем параметр, чтобы повторный вход не перезаполнял форму.
+    navigate("/weekend-calls", { replace: true })
+  }, [fillFormData])
+
   const removeGroupEmployee = (employeeId: number) => {
     setGroupEmployees((prev) => prev.filter((e) => e.employee_id !== employeeId))
   }
@@ -343,6 +501,8 @@ export function WeekendCallsPage() {
     setOrderDate(new Date().toISOString().split("T")[0])
     setGroupDraftId(null)
     setGroupErrors({})
+    // Очищаем сохранённый черновик групповой формы (#28) — форма сброшена
+    groupRecoveryClear()
   }
 
   const validateGroup = (): boolean => {
@@ -388,6 +548,8 @@ export function WeekendCallsPage() {
       {
         onSuccess: (draft) => {
           setGroupDraftId(draft.draft_id)
+          // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
+          groupRecoveryClear()
           const url = draft.edit_url
           if (editorWindow && !editorWindow.closed) {
             editorWindow.location.href = url
@@ -1174,6 +1336,10 @@ export function WeekendCallsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
+      {recoveryOverwriteDialog}
+      {groupRecoveryOverwriteDialog}
     </div>
   )
 }

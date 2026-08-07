@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { X, FilePen } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/tabs"
 import { Button } from "@/shared/ui/button"
@@ -15,8 +15,23 @@ import { VacationHistoryAndPeriods } from "@/features/VacationHistoryAndPeriods"
 import { formatDate, parseDate, formatForInput, calculateDaysDifference } from "@/shared/utils/date"
 import type { OrderCreate } from "@/entities/order/types"
 import type { Vacation } from "@/entities/vacation/types"
+import {
+  useDraftRecoveryFor,
+} from "@/entities/form-draft"
 
 const RECALL_ORDER_CODE = "vacation_recall"
+
+interface VacationRecallFormDraft {
+  vacation: Vacation | null
+  recall_date: string
+  order_date: string
+  order_number: string
+  saved_at: string
+}
+
+function vacationRecallHasContent(state: Omit<VacationRecallFormDraft, "saved_at">): boolean {
+  return state.vacation !== null || state.recall_date !== "" || state.order_number.trim() !== ""
+}
 
 export function VacationRecallPage() {
   const navigate = useNavigate()
@@ -41,7 +56,41 @@ export function VacationRecallPage() {
   const { data: startYearHolidays } = useHolidays(startYear)
   const { data: endYearHolidays } = useHolidays(endYear !== startYear ? endYear : undefined)
 
+  // Восстановление несохранённого заполнения формы (#28)
+  const recoveryFormState = useMemo(() => ({
+    vacation: selectedVacation,
+    recall_date: recallDate,
+    order_date: orderDate,
+    order_number: orderNumber,
+  }), [selectedVacation, recallDate, orderDate, orderNumber])
+
+  const handleRecoveryRestore = useCallback((draft: VacationRecallFormDraft): boolean => {
+    // Возврат true: отпуск всегда перевыставляется, при его смене хост сбрасывает
+    // поля — хост-сброс после восстановления должен быть пропущен один раз.
+    setSelectedVacation(draft.vacation)
+    if (draft.recall_date) setRecallDate(draft.recall_date)
+    if (draft.order_date) setOrderDate(draft.order_date)
+    if (draft.order_number) setOrderNumber(draft.order_number)
+    return true
+  }, [])
+
+  const {
+    clear: recoveryClear,
+    restoreGuardRef,
+    overwriteDialog: recoveryOverwriteDialog,
+  } = useDraftRecoveryFor<VacationRecallFormDraft>({
+    slot: "vacations:recall",
+    formState: recoveryFormState,
+    hasContent: vacationRecallHasContent,
+    onRestore: handleRecoveryRestore,
+  })
+
   useEffect(() => {
+    // При восстановлении черновика поля уже восстановлены — сброс пропускаем один раз
+    if (restoreGuardRef.current) {
+      restoreGuardRef.current = false
+      return
+    }
     setRecallDate("")
     setOrderNumber("")
     setErrors({})
@@ -82,6 +131,8 @@ export function VacationRecallPage() {
     createDraftMutation.mutate(buildOrderPayload(), {
       onSuccess: (draft) => {
         setDraftId(draft.draft_id)
+        // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
+        recoveryClear()
         const url = `/orders/drafts/${draft.draft_id}/edit-docx`
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
@@ -111,6 +162,7 @@ export function VacationRecallPage() {
           setRecallDate("")
           setOrderNumber("")
           setDraftId(null)
+          recoveryClear()
           navigate("/vacations")
         },
         onError: () => {
@@ -164,8 +216,7 @@ export function VacationRecallPage() {
                   setDraftId(null)
                 }}
                 showEmployeeColumn={true}
-              >
-                <div className="border rounded-lg bg-card px-6 py-6 mt-4">
+              >                <div className="border rounded-lg bg-card px-6 py-6 mt-4">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="flex flex-wrap gap-4">
@@ -180,7 +231,7 @@ export function VacationRecallPage() {
                         </div>
                       </div>
                       <div className="flex gap-3 pt-2">
-                        <Button variant="outline" onClick={() => { setSelectedVacation(null); setRecallDate(""); setOrderNumber(""); setDraftId(null); setErrors({}) }} disabled={isPending}>Очистить</Button>
+                        <Button variant="outline" onClick={() => { setSelectedVacation(null); setRecallDate(""); setOrderNumber(""); setDraftId(null); setErrors({}); recoveryClear() }} disabled={isPending}>Очистить</Button>
                         {!draftId ? (
                           <Button onClick={handleEditBeforeCreate} disabled={isPending || !selectedVacation}><FilePen className="mr-2 h-4 w-4" />{createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}</Button>
                         ) : (
@@ -251,6 +302,9 @@ export function VacationRecallPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
+      {recoveryOverwriteDialog}
     </div>
   )
 }

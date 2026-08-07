@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen, Search, Filter, Printer, FileText } from "lucide-react"
 import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
@@ -67,18 +68,28 @@ import {
 } from "@/features/dynamic-form"
 import { getOrderTypeLayout } from "@/entities/order/orderTypeLayouts"
 import { formatDate } from "@/shared/utils/date"
-import { useOrderFormRecovery, OrderFormRecoveryBanner } from "@/features/order-form-recovery"
-import type { OrderFormDraft } from "@/features/order-form-recovery"
+import {
+  useDraftRecoveryFor,
+} from "@/entities/form-draft"
+import {
+  ORDER_FORM_DRAFT_KEY,
+  orderFormHasContent,
+  type OrderFormDraft,
+} from "@/entities/order/formDraft"
+import { ORDER_TYPE_BADGE_COLORS } from "@/entities/order/orderTypeBadge"
+import { fetchDraftEmployee, getFormDraftSlot } from "@/entities/form-draft"
+import { useDraftFormData, getFormDataValue, getFormDataInt, getFormDataExtraFields } from "@/entities/draft"
 
-const ORDER_TYPE_BADGE_COLORS: Record<string, string> = {
-  "Прием на работу": "bg-green-100 text-green-800 border-green-200",
-  "Увольнение": "bg-red-100 text-red-800 border-red-200",
-  "Отпуск трудовой": "bg-blue-100 text-blue-800 border-blue-200",
-  "Отпуск за свой счет": "bg-orange-100 text-orange-800 border-orange-200",
-  "Вызов в выходной": "bg-pink-100 text-pink-800 border-pink-200",
-  "Больничный": "bg-purple-100 text-purple-800 border-purple-200",
-  "Перевод": "bg-cyan-100 text-cyan-800 border-cyan-200",
-  "Продление контракта": "bg-yellow-100 text-yellow-800 border-yellow-200",
+const GENERAL_ORDER_FORM_DRAFT_KEY = getFormDraftSlot("orders:general").storageKey
+
+interface GeneralOrderFormDraft {
+  general_order_date: string
+  general_order_number: string
+  saved_at: string
+}
+
+function generalOrderFormHasContent(state: Omit<GeneralOrderFormDraft, "saved_at">): boolean {
+  return state.general_order_number.trim() !== ""
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -123,6 +134,7 @@ function OrderDeletePreview({ orderId }: { orderId: number | null }) {
 }
 
 export function OrdersPage() {
+  const queryClient = useQueryClient()
   const isViewer = getUserAccessLevel() === "viewer"
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -357,9 +369,6 @@ export function OrdersPage() {
   const [extraFieldErrors, setExtraFieldErrors] = useState<Record<string, string>>({})
 
   const orderTypeRef = useRef<HTMLDivElement>(null)
-  // #50: при восстановлении черновика поля приходят из черновика — сброс при
-  // смене типа приказа пропускаем один раз
-  const skipExtraFieldsResetRef = useRef(false)
 
   // Debounce text search fields
   const debouncedOrderNumber = useDebounce(filterOrderNumber, 300)
@@ -603,8 +612,8 @@ export function OrdersPage() {
   useEffect(() => {
     // При восстановлении черновика (#50) поля уже восстановлены из черновика —
     // сброс пропускаем один раз
-    if (skipExtraFieldsResetRef.current) {
-      skipExtraFieldsResetRef.current = false
+    if (restoreGuardRef.current) {
+      restoreGuardRef.current = false
       return
     }
     setExtraFields({})
@@ -646,8 +655,8 @@ export function OrdersPage() {
     setExtraFieldErrors({})
     setExtraFields({})
     setDraftId(null)
-    // Очищаем сохранённый черновик формы (#28) — приказ успешно создан
-    localStorage.removeItem("hrms_order_form_draft")
+    // Очищаем сохранённый черновик формы (#28) — форма сброшена
+    recoveryClear()
   }
 
   // Восстановление несохранённого заполнения формы (#28)
@@ -659,27 +668,27 @@ export function OrdersPage() {
     extra_fields: extraFields,
   }), [selectedEmployee, selectedOrderTypeId, orderDate, orderNumber, extraFields])
 
-  const handleRecoveryRestore = useCallback((draft: OrderFormDraft) => {
+  const handleRecoveryRestore = useCallback((draft: OrderFormDraft): boolean => {
+    // Возврат: изменился ли тип приказа (его смена сбрасывает extra_fields —
+    // хост-сброс после восстановления должен быть пропущен один раз).
+    let typeChanged = false
     // Перевалидация: сотрудник загружается по id, тип приказа — из актуального списка
     if (draft.employee_id) {
-      // useEmployee не подходит для динамического вызова — используем прямой запрос
-      import("@/shared/api/axios").then((mod) => {
-        mod.default.get(`/employees/${draft.employee_id}`).then((res: { data: Employee }) => {
-          setSelectedEmployee(res.data)
-        }).catch(() => { /* сотрудник удалён — пропускаем */ })
+      fetchDraftEmployee(queryClient, draft.employee_id).then((employee) => {
+        if (employee) setSelectedEmployee(employee)
       })
     }
     if (draft.order_type_id) {
       const type = orderTypes.find((t) => t.id === draft.order_type_id && t.is_active)
       if (type) {
         // #50: при восстановлении не сбрасываем восстановленные поля из-за смены типа
-        if (type.id !== selectedOrderTypeId) skipExtraFieldsResetRef.current = true
+        if (type.id !== selectedOrderTypeId) typeChanged = true
         setSelectedOrderTypeId(type.id)
         setOrderTypeSearch(type.name)
       } else if (orderTypes.length === 0) {
         // Типы ещё не загрузились — выставляем id по черновику; layout и литера
         // появятся, когда типы подгрузятся (#50)
-        if (draft.order_type_id !== selectedOrderTypeId) skipExtraFieldsResetRef.current = true
+        if (draft.order_type_id !== selectedOrderTypeId) typeChanged = true
         setSelectedOrderTypeId(draft.order_type_id)
       }
     }
@@ -688,27 +697,97 @@ export function OrdersPage() {
     if (draft.extra_fields && Object.keys(draft.extra_fields).length > 0) {
       setExtraFields(draft.extra_fields)
     }
+    return typeChanged
   }, [orderTypes, selectedOrderTypeId])
 
   const {
-    pendingDraft: recoveryPendingDraft,
     restore: recoveryRestore,
-    dismiss: recoveryDismiss,
-    remove: recoveryRemove,
-    confirmOverwrite: recoveryConfirmOverwrite,
-    overwritePrompt: recoveryOverwritePrompt,
-    cancelOverwrite: recoveryCancelOverwrite,
-  } = useOrderFormRecovery({
+    clear: recoveryClear,
+    restoreWith: recoveryRestoreWith,
+    restoreGuardRef,
+    overwriteDialog: recoveryOverwriteDialog,
+  } = useDraftRecoveryFor<OrderFormDraft>({
+    slot: "orders",
     formState: recoveryFormState,
+    hasContent: orderFormHasContent,
     onRestore: handleRecoveryRestore,
+    // Особый recover-эффект ниже (?fill=1 + вкладка + локальная проверка).
+    autoRestoreOnRecover: false,
   })
+
+  // «Заполнить поля» из попапа черновиков / индикатор формы в сайдбаре:
+  // /orders?recover=1 — восстанавливаем локальный черновик формы.
+  useEffect(() => {
+    const mode = searchParams.get("recover")
+    if (mode !== "1") return
+    // Вкладка «По основной деятельности» восстанавливает свой черновик отдельно.
+    if (searchParams.get("tab") === "general") return
+    // Восстанавливаем только если черновик реально лежит в localStorage —
+    // сайдбар мог удалить его раньше (in-memory pendingDraft при этом устарел).
+    if (!localStorage.getItem(ORDER_FORM_DRAFT_KEY)) return
+    recoveryRestore()
+  }, [searchParams, recoveryRestore])
+
+  // «Заполнить поля» из попапа черновиков: /orders?fillDraftId=…
+  // Серверный черновик одиночного приказа — заполняем форму напрямую.
+  const fillDraftId = searchParams.get("fillDraftId")
+  const { data: fillFormData } = useDraftFormData(fillDraftId)
+
+  useEffect(() => {
+    if (!fillFormData || fillFormData.kind !== "order" || fillFormData.is_group) return
+    recoveryRestoreWith({
+      employee_id: getFormDataInt(fillFormData.data, "employee_id"),
+      order_type_id: getFormDataInt(fillFormData.data, "order_type_id"),
+      order_date: getFormDataValue(fillFormData.data, "date") || new Date().toISOString().split("T")[0],
+      order_number: getFormDataValue(fillFormData.data, "number") || "",
+      extra_fields: getFormDataExtraFields(fillFormData.data, ["employee_id", "order_type_id", "number", "date"]),
+      saved_at: new Date().toISOString(),
+    })
+    // Убираем параметр, чтобы повторный вход не перезаполнял форму.
+    navigate("/orders", { replace: true })
+  }, [fillFormData, recoveryRestoreWith, navigate])
 
   const resetGeneralForm = () => {
     setGeneralOrderDate(new Date().toISOString().split("T")[0])
     setGeneralOrderNumber("")
     setGeneralOrderErrors({})
     setGeneralDraftId(null)
+    // Очищаем сохранённый черновик формы общего приказа (#28) — форма сброшена
+    generalRecoveryClear()
   }
+
+  // Восстановление несохранённого заполнения формы общего приказа (#28)
+  const generalRecoveryFormState = useMemo(() => ({
+    general_order_date: generalOrderDate,
+    general_order_number: generalOrderNumber,
+  }), [generalOrderDate, generalOrderNumber])
+
+  const handleGeneralRecoveryRestore = useCallback((draft: GeneralOrderFormDraft) => {
+    if (draft.general_order_date) setGeneralOrderDate(draft.general_order_date)
+    if (draft.general_order_number) setGeneralOrderNumber(draft.general_order_number)
+  }, [])
+
+  const {
+    restore: generalRecoveryRestore,
+    clear: generalRecoveryClear,
+    overwriteDialog: generalRecoveryOverwriteDialog,
+  } = useDraftRecoveryFor<GeneralOrderFormDraft>({
+    slot: "orders:general",
+    formState: generalRecoveryFormState,
+    hasContent: generalOrderFormHasContent,
+    onRestore: handleGeneralRecoveryRestore,
+    // Особый recover-эффект ниже (привязка к вкладке ?tab=general).
+    autoRestoreOnRecover: false,
+  })
+
+  // Автовосстановление общего приказа из попапа «Черновики»:
+  // /orders?tab=general&recover=1
+  useEffect(() => {
+    if (searchParams.get("recover") !== "1") return
+    if (searchParams.get("tab") !== "general") return
+    if (!localStorage.getItem(GENERAL_ORDER_FORM_DRAFT_KEY)) return
+    generalRecoveryRestore()
+  }, [searchParams, generalRecoveryRestore])
 
   const validateGeneralOrder = (): boolean => {
     const newErrors: Record<string, string> = {}
@@ -731,6 +810,8 @@ export function OrdersPage() {
     createDraftMutation.mutate(buildGeneralOrderPayload(), {
       onSuccess: (draft) => {
         setGeneralDraftId(draft.draft_id)
+        // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
+        generalRecoveryClear()
         const url = `/orders/drafts/${draft.draft_id}/edit-docx`
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
@@ -805,6 +886,8 @@ export function OrdersPage() {
     createDraftMutation.mutate(buildOrderPayload(), {
       onSuccess: (draft) => {
         setDraftId(draft.draft_id)
+        // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
+        recoveryClear()
         const url = `/orders/drafts/${draft.draft_id}/edit-docx`
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
@@ -824,6 +907,7 @@ export function OrdersPage() {
     createDraftMutation.mutate(buildOrderPayload(), {
       onSuccess: (draft) => {
         setDraftId(draft.draft_id)
+        recoveryClear()
         const url = `/orders/drafts/${draft.draft_id}/edit-docx`
         if (editorWindow && !editorWindow.closed) {
           editorWindow.location.href = url
@@ -977,16 +1061,6 @@ export function OrdersPage() {
           </Tabs>
         </div>
       </div>
-
-      {/* Восстановление несохранённого заполнения формы (#28) */}
-      {recoveryPendingDraft && activeTab === "all" && !isViewer && (
-        <OrderFormRecoveryBanner
-          draft={recoveryPendingDraft}
-          onRestore={recoveryRestore}
-          onDismiss={recoveryDismiss}
-          onRemove={recoveryRemove}
-        />
-      )}
 
       {activeTab === "all" && !isViewer && (
       <div className="border rounded-lg bg-card">
@@ -1792,23 +1866,9 @@ export function OrdersPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
-      <AlertDialog open={recoveryOverwritePrompt} onOpenChange={(open) => !open && recoveryCancelOverwrite()}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Перезаписать сохранённое заполнение?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Уже есть несохранённое заполнение формы приказа. Новое заполнение заменит его.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={recoveryCancelOverwrite}>Отмена</AlertDialogCancel>
-            <AlertDialogAction onClick={recoveryConfirmOverwrite}>
-              Перезаписать
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Подтверждение перезаписи сохранённого заполнения (#28) — по вкладке */}
+      {activeTab === "all" && recoveryOverwriteDialog}
+      {activeTab === "general" && generalRecoveryOverwriteDialog}
 
       <GlobalAuditLog open={auditLogOpen} onOpenChange={setAuditLogOpen} initialActionFilter="order" />
 

@@ -1,130 +1,116 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 /**
- * Восстановление несохранённого заполнения формы создания приказа (#28).
+ * Восстановление несохранённого заполнения форм создания документов (#28).
  *
- * Один слот на пользователя/браузер. Заполнение сохраняется debounced
- * в localStorage и переживает перезагрузку/закрытие вкладки.
- * При следующем открытии страницы показывается уведомление с действиями
+ * Единая логика для всех форм (приказ, уведомление, заявление): один слот на
+ * сущность — ключ localStorage передаёт хост. Заполнение сохраняется debounced
+ * в localStorage и переживает перезагрузку/закрытие вкладки. При следующем
+ * открытии страницы показывается уведомление с действиями
  * «Восстановить» / «Не сейчас» / «Удалить».
  */
 
-const STORAGE_KEY = "hrms_order_form_draft"
 const DEBOUNCE_MS = 800
 
-export interface OrderFormDraft {
-  employee_id: number | null
-  order_type_id: number | null
-  order_date: string
-  order_number: string
-  extra_fields: Record<string, string | number>
-  saved_at: string
+export interface UseFormDraftRecoveryOptions<T extends { saved_at: string }> {
+  /** Ключ localStorage, под которым хранится черновик формы. */
+  storageKey: string
+  /** Текущие значения формы (для автосохранения). */
+  formState: Omit<T, "saved_at">
+  /** Есть ли в форме хоть что-то заполненное (чтобы не сохранять пустоту). */
+  hasContent: (state: Omit<T, "saved_at">) => boolean
+  /** Вызывается при восстановлении — хост заполняет форму. */
+  onRestore: (draft: T) => void
 }
 
-interface UseOrderFormRecoveryOptions {
-  /** Текущие значения формы (для автосохранения) */
-  formState: {
-    employee_id: number | null
-    order_type_id: number | null
-    order_date: string
-    order_number: string
-    extra_fields: Record<string, string | number>
-  }
-  /** Вызывается при восстановлении — хост заполняет форму */
-  onRestore: (draft: OrderFormDraft) => void
-}
-
-interface UseOrderFormRecoveryResult {
-  /** Найденный черновик (для показа уведомления) */
-  pendingDraft: OrderFormDraft | null
-  /** Восстановить форму из черновика */
+export interface UseFormDraftRecoveryResult<T extends { saved_at: string }> {
+  /** Найденный черновик. */
+  pendingDraft: T | null
+  /** Восстановить форму из черновика. */
   restore: () => void
-  /** Скрыть уведомление до следующего раза (черновик остаётся) */
-  dismiss: () => void
-  /** Удалить сохранённый черновик */
-  remove: () => void
-  /** Подтвердить перезапись существующего черновика при новом заполнении */
+  /** Очистить черновик после успешного создания документа / сброса формы. */
+  clear: () => void
+  /** Подтвердить перезапись существующего черновика при новом заполнении. */
   confirmOverwrite: () => void
-  /** Нужно ли показать диалог подтверждения перезаписи */
+  /** Нужно ли показать диалог подтверждения перезаписи. */
   overwritePrompt: boolean
-  /** Отменить перезапись (продолжить без сохранения) */
+  /** Отменить перезапись (продолжить без сохранения). */
   cancelOverwrite: () => void
 }
 
-function readDraft(): OrderFormDraft | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as OrderFormDraft
-  } catch {
-    return null
-  }
-}
-
-function writeDraft(state: UseOrderFormRecoveryOptions["formState"]): void {
-  const draft: OrderFormDraft = {
-    ...state,
-    saved_at: new Date().toISOString(),
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(draft))
-}
-
-function clearDraft(): void {
-  localStorage.removeItem(STORAGE_KEY)
-}
-
-/** Есть ли в форме хоть что-то заполненное (кроме даты по умолчанию) */
-function hasContent(state: UseOrderFormRecoveryOptions["formState"]): boolean {
-  return (
-    state.employee_id !== null ||
-    state.order_type_id !== null ||
-    state.order_number.trim() !== "" ||
-    Object.values(state.extra_fields).some((v) => v !== "" && v !== null && v !== undefined)
-  )
-}
-
-export function useOrderFormRecovery({
+export function useFormDraftRecovery<T extends { saved_at: string }>({
+  storageKey,
   formState,
+  hasContent,
   onRestore,
-}: UseOrderFormRecoveryOptions): UseOrderFormRecoveryResult {
-  const [pendingDraft, setPendingDraft] = useState<OrderFormDraft | null>(null)
+}: UseFormDraftRecoveryOptions<T>): UseFormDraftRecoveryResult<T> {
+  const [pendingDraft, setPendingDraft] = useState<T | null>(null)
   const [overwritePrompt, setOverwritePrompt] = useState(false)
-  const dismissedRef = useRef(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const existingDraftRef = useRef<OrderFormDraft | null>(null)
+  const existingDraftRef = useRef<T | null>(null)
   const overwriteConfirmedRef = useRef(false)
   const overwriteCancelledRef = useRef(false)
   const formStateRef = useRef(formState)
   formStateRef.current = formState
+  const hasContentRef = useRef(hasContent)
+  hasContentRef.current = hasContent
   // Есть ли неперсистённые изменения формы с момента последней записи/восстановления.
   // pagehide-flush пишет только если что-то изменилось — после «Восстановить»
   // черновик не должен возрождаться без правок.
   const dirtyRef = useRef(false)
-  // Подавление: на время, когда restore сам заполняет форму, не помечаем dirty
+  // Подавление: на время, когда restore сам заполняет форму, не помечаем dirty.
   const suppressDirtyRef = useRef(false)
 
+  const readDraft = useCallback((): T | null => {
+    try {
+      const raw = localStorage.getItem(storageKey)
+      if (!raw) return null
+      return JSON.parse(raw) as T
+    } catch {
+      return null
+    }
+  }, [storageKey])
+
+  const writeDraft = useCallback(
+    (state: Omit<T, "saved_at">): void => {
+      const draft = { ...state, saved_at: new Date().toISOString() } as T
+      localStorage.setItem(storageKey, JSON.stringify(draft))
+    },
+    [storageKey],
+  )
+
+  const clearDraft = useCallback((): void => {
+    localStorage.removeItem(storageKey)
+  }, [storageKey])
+
   // Заблокирована ли запись гейтом перезаписи (общий для автосейва и flush).
-  const blockedByOverwriteGate = () => {
+  const blockedByOverwriteGate = useCallback((): boolean => {
     // Диалог перезаписи — только для черновика, существовавшего ДО текущего заполнения
     if (existingDraftRef.current && !overwriteConfirmedRef.current && !overwriteCancelledRef.current) return true
     // После отмены перезаписи не сохраняем (пользователь осознанно отказался)
     if (overwriteCancelledRef.current && !overwriteConfirmedRef.current) return true
     return false
-  }
+  }, [])
 
   // При монтировании: проверяем наличие сохранённого черновика
   useEffect(() => {
     const draft = readDraft()
     if (draft) {
       existingDraftRef.current = draft
-      if (!dismissedRef.current) {
-        setPendingDraft(draft)
-      }
+      setPendingDraft(draft)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Debounced автосохранение при изменении формы
+  // Debounced автосохранение при изменении формы. Сравниваем сериализованное
+  // значение формы — не зависим от идентичности объекта formState у хоста.
+  const serialized = JSON.stringify(formState)
+  const prevSerializedRef = useRef<string | null>(null)
+
   useEffect(() => {
+    if (prevSerializedRef.current === serialized) return
+    prevSerializedRef.current = serialized
+
     if (debounceRef.current) clearTimeout(debounceRef.current)
 
     // Изменения, внесённые самим restore, не считаем пользовательским вводом
@@ -133,10 +119,12 @@ export function useOrderFormRecovery({
       return
     }
 
-    if (!hasContent(formState)) return
+    if (!hasContentRef.current(formState)) return
     dirtyRef.current = true
 
     debounceRef.current = setTimeout(() => {
+      // clear()/restore() мог очистить черновик, пока таймер ещё висел — не возрождаем
+      if (!dirtyRef.current) return
       if (blockedByOverwriteGate()) {
         // Показываем диалог перезаписи только для черновика с прошлой сессии (#49)
         if (existingDraftRef.current && !overwriteConfirmedRef.current && !overwriteCancelledRef.current) {
@@ -151,7 +139,8 @@ export function useOrderFormRecovery({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [formState.employee_id, formState.order_type_id, formState.order_date, formState.order_number, formState.extra_fields])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serialized])
 
   // Flush на закрытие/скрытие вкладки (#51): пишем черновик синхронно, чтобы
   // последний ввод не терялся, если debounce ещё не отработал.
@@ -160,7 +149,7 @@ export function useOrderFormRecovery({
       // Пишем только при неперсистённых изменениях — иначе после «Восстановить»
       // очищенный черновик тут же возродился бы
       if (!dirtyRef.current) return
-      if (!hasContent(formStateRef.current)) return
+      if (!hasContentRef.current(formStateRef.current)) return
       // Те же гейты, что и в debounced автосейве
       if (blockedByOverwriteGate()) return
       writeDraft(formStateRef.current)
@@ -168,6 +157,7 @@ export function useOrderFormRecovery({
     }
     window.addEventListener("pagehide", handlePageHide)
     return () => window.removeEventListener("pagehide", handlePageHide)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const restore = useCallback(() => {
@@ -184,27 +174,22 @@ export function useOrderFormRecovery({
       dirtyRef.current = false
     }
     setPendingDraft(null)
-  }, [pendingDraft, onRestore])
+  }, [pendingDraft, readDraft, onRestore, clearDraft])
 
-  const dismiss = useCallback(() => {
-    dismissedRef.current = true
-    setPendingDraft(null)
-  }, [])
-
-  const remove = useCallback(() => {
+  const clear = useCallback(() => {
     clearDraft()
     existingDraftRef.current = null
     overwriteConfirmedRef.current = true
     dirtyRef.current = false
     setPendingDraft(null)
-  }, [])
+  }, [clearDraft])
 
   const confirmOverwrite = useCallback(() => {
     overwriteConfirmedRef.current = true
     setOverwritePrompt(false)
     writeDraft(formStateRef.current)
     dirtyRef.current = false
-  }, [])
+  }, [writeDraft])
 
   const cancelOverwrite = useCallback(() => {
     overwriteCancelledRef.current = true
@@ -214,8 +199,7 @@ export function useOrderFormRecovery({
   return {
     pendingDraft,
     restore,
-    dismiss,
-    remove,
+    clear,
     confirmOverwrite,
     overwritePrompt,
     cancelOverwrite,

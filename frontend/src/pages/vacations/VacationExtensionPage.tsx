@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { X, FilePen } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/shared/ui/tabs"
 import { Button } from "@/shared/ui/button"
@@ -15,8 +15,29 @@ import { VacationHistoryAndPeriods } from "@/features/VacationHistoryAndPeriods"
 import { formatDate, parseDate, calculateDaysDifference, nextDay } from "@/shared/utils/date"
 import type { OrderCreate } from "@/entities/order/types"
 import type { Vacation } from "@/entities/vacation/types"
+import {
+  useDraftRecoveryFor,
+} from "@/entities/form-draft"
 
 const EXTENSION_ORDER_CODE = "vacation_extension"
+
+interface VacationExtensionFormDraft {
+  vacation: Vacation | null
+  period_start: string
+  period_end: string
+  order_date: string
+  order_number: string
+  saved_at: string
+}
+
+function vacationExtensionHasContent(state: Omit<VacationExtensionFormDraft, "saved_at">): boolean {
+  return (
+    state.vacation !== null ||
+    state.period_start !== "" ||
+    state.period_end !== "" ||
+    state.order_number.trim() !== ""
+  )
+}
 
 export function VacationExtensionPage() {
   const navigate = useNavigate()
@@ -35,7 +56,43 @@ export function VacationExtensionPage() {
   const createDraftMutation = useCreateOrderDraft()
   const extendMutation = useExtendVacation()
 
+  // Восстановление несохранённого заполнения формы (#28)
+  const recoveryFormState = useMemo(() => ({
+    vacation: selectedVacation,
+    period_start: periodStart,
+    period_end: periodEnd,
+    order_date: orderDate,
+    order_number: orderNumber,
+  }), [selectedVacation, periodStart, periodEnd, orderDate, orderNumber])
+
+  const handleRecoveryRestore = useCallback((draft: VacationExtensionFormDraft): boolean => {
+    // Возврат true: отпуск всегда перевыставляется, при его смене хост сбрасывает
+    // поля — хост-сброс после восстановления должен быть пропущен один раз.
+    setSelectedVacation(draft.vacation)
+    if (draft.period_start) setPeriodStart(draft.period_start)
+    if (draft.period_end) setPeriodEnd(draft.period_end)
+    if (draft.order_date) setOrderDate(draft.order_date)
+    if (draft.order_number) setOrderNumber(draft.order_number)
+    return true
+  }, [])
+
+  const {
+    clear: recoveryClear,
+    restoreGuardRef,
+    overwriteDialog: recoveryOverwriteDialog,
+  } = useDraftRecoveryFor<VacationExtensionFormDraft>({
+    slot: "vacations:extension",
+    formState: recoveryFormState,
+    hasContent: vacationExtensionHasContent,
+    onRestore: handleRecoveryRestore,
+  })
+
   useEffect(() => {
+    // При восстановлении черновика поля уже восстановлены — сброс пропускаем один раз
+    if (restoreGuardRef.current) {
+      restoreGuardRef.current = false
+      return
+    }
     setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setErrors({}); setDraftId(null)
   }, [selectedVacation?.id])
 
@@ -72,6 +129,8 @@ export function VacationExtensionPage() {
     createDraftMutation.mutate(buildOrderPayload(), {
       onSuccess: (draft) => {
         setDraftId(draft.draft_id)
+        // Данные формы переданы в серверный черновик — локальный черновик больше не нужен
+        recoveryClear()
         const url = `/orders/drafts/${draft.draft_id}/edit-docx`
         if (editorWindow && !editorWindow.closed) editorWindow.location.href = url
         else openDraftEditorWindow(url)
@@ -102,6 +161,7 @@ export function VacationExtensionPage() {
       setSuccessMessage("Продление отпуска оформлено успешно!")
       setTimeout(() => setSuccessMessage(null), 5000)
       setSelectedVacation(null); setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setDraftId(null)
+      recoveryClear()
       navigate("/vacations")
     } catch {
       setSuccessMessage("Ошибка при оформлении продления")
@@ -174,7 +234,7 @@ export function VacationExtensionPage() {
                         <div className="w-[130px]"><DocumentDatePicker label="Конец продления *" value={periodEnd} onChange={setPeriodEnd} />{errors.periodEnd && <p className="text-xs text-red-500 mt-1">{errors.periodEnd}</p>}</div>
                       </div>
                       <div className="flex gap-3 pt-2">
-                        <Button variant="outline" onClick={() => { setSelectedVacation(null); setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setDraftId(null); setErrors({}) }} disabled={isPending}>Очистить</Button>
+                        <Button variant="outline" onClick={() => { setSelectedVacation(null); setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setDraftId(null); setErrors({}); recoveryClear() }} disabled={isPending}>Очистить</Button>
                         {!draftId ? (<Button onClick={handleEditBeforeCreate} disabled={isPending || !selectedVacation}><FilePen className="mr-2 h-4 w-4" />{createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}</Button>) : (<Button onClick={() => void handleCreate()} disabled={isPending || !selectedVacation}>{extendMutation.isPending ? "Оформление..." : "Оформить продление"}</Button>)}
                       </div>
                       {(createDraftMutation.isError || extendMutation.isError) && (<div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-4 py-3">Ошибка при создании приказа</div>)}
@@ -207,6 +267,9 @@ export function VacationExtensionPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
+      {recoveryOverwriteDialog}
     </div>
   )
 }
