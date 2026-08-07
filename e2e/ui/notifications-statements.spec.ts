@@ -29,8 +29,9 @@ test.describe('Notifications / Statements @ui', () => {
       timeout: 20_000,
     })
 
-    // Tab «Уведомления» (custom TabsTrigger → button, not role=tab)
-    await page.getByRole('button', { name: 'Уведомления', exact: true }).click()
+    // Tab «Уведомления» (custom TabsTrigger → button, not role=tab).
+    // Скоупим на main: в сайдбаре есть колокольчик с aria-label="Уведомления".
+    await page.getByRole('main').getByRole('button', { name: 'Уведомления', exact: true }).click()
     await expect(page).toHaveURL(/\/orders\/notifications/)
     await expect(page.getByRole('heading', { name: 'Уведомления', level: 1 })).toBeVisible({
       timeout: 15_000,
@@ -39,7 +40,7 @@ test.describe('Notifications / Statements @ui', () => {
     await expect(page.getByRole('button', { name: 'Создать уведомление' })).toBeVisible()
 
     // Tab «Заявления»
-    await page.getByRole('button', { name: 'Заявления', exact: true }).click()
+    await page.getByRole('main').getByRole('button', { name: 'Заявления', exact: true }).click()
     await expect(page).toHaveURL(/\/orders\/statements/)
     await expect(page.getByRole('heading', { name: 'Заявления', level: 1 })).toBeVisible({
       timeout: 15_000,

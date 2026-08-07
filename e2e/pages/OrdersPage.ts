@@ -81,10 +81,14 @@ export class OrdersPage {
 
     await this.orderTypeInput.click()
     await this.orderTypeInput.fill(typeName)
-    const typeOption = this.page.locator('button').filter({ hasText: typeName }).first()
+    // Точное совпадение по имени типа: «Перевод» не должен зацепить
+    // «О временном переводе работников…» (подстрока) при поиске.
+    const typeOption = this.page
+      .getByRole('button', { name: typeName, exact: true })
+      .first()
     await expect(typeOption).toBeVisible({ timeout: 8_000 })
     await typeOption.click()
-    await expect(typeBlock.getByText(typeName)).toBeVisible({ timeout: 5_000 })
+    await expect(typeBlock.getByText(typeName, { exact: true })).toBeVisible({ timeout: 5_000 })
   }
 
   async fillOrderNumber(num: string) {
