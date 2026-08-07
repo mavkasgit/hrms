@@ -19,7 +19,7 @@ declare module "axios" {
 }
 
 /** Версия auth-shell-модуля — синхронизируется verify-sync (режим content + version). */
-export const AUTH_SHELL_VERSION = "1.0.0"
+export const AUTH_SHELL_VERSION = "1.1.0"
 
 export const API_BASE_URL = authHostConfig.apiBase
 

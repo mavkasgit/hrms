@@ -8,7 +8,7 @@
  */
 import { useState, useEffect, useRef, type FormEvent } from "react"
 import { Navigate } from "react-router-dom"
-import { Loader2, LogIn, Shield } from "lucide-react"
+import { ExternalLink, Loader2, LogIn, Shield } from "lucide-react"
 import { useAuth } from "../hooks/useAuth"
 import {
   API_BASE_URL,
@@ -19,12 +19,14 @@ import {
 import { authHostConfig } from "@/shared/api/authHostConfig"
 import {
   fetchOidcConfig,
+  OIDC_ERROR_CODES,
+  resolveOidcErrorText,
   startOidcLogin,
   type OidcConfig,
 } from "../api/oidcAuth"
 
 /** Версия auth-shell-модуля — синхронизируется verify-sync (режим content + version). */
-export const AUTH_SHELL_VERSION = "1.0.0"
+export const AUTH_SHELL_VERSION = "1.1.0"
 
 export function LoginPage() {
   const { loginWithToken, isAuthenticated, isLoading: authLoading } = useAuth()
@@ -32,6 +34,8 @@ export function LoginPage() {
   const [breakGlassPassword, setBreakGlassPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(() => consumeAuthErrorForLogin())
+  /** Ошибка именно SSO-кнопки (отдельно от break-glass), показывается под кнопкой. */
+  const [oidcError, setOidcError] = useState<string | null>(null)
 
   const [oidcConfig, setOidcConfig] = useState<OidcConfig | null>(null)
   const [oidcLoaded, setOidcLoaded] = useState(false)
@@ -79,13 +83,17 @@ export function LoginPage() {
   }, [])
 
   async function handleOidcLogin() {
-    if (!oidcConfig || !oidcEnabled) return
-    setError(null)
+    setOidcError(null)
     setOidcStarting(true)
     try {
+      if (!oidcConfig) {
+        throw new Error(
+          resolveOidcErrorText({ code: OIDC_ERROR_CODES.OIDC_LOGIN_UNAVAILABLE }).message,
+        )
+      }
       await startOidcLogin(oidcConfig)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Ошибка входа через единый вход")
+      setOidcError(err instanceof Error ? err.message : "Ошибка входа через единый вход")
       setOidcStarting(false)
     }
   }
@@ -212,6 +220,32 @@ export function LoginPage() {
               Единый вход (SSO) отключён. Используйте аварийный доступ.
             </div>
           )}
+
+          <div className="mb-6">
+            <button
+              type="button"
+              onClick={() => void handleOidcLogin()}
+              disabled={oidcStarting}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {oidcStarting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ExternalLink className="h-4 w-4" />
+              )}
+              Открыть единый вход (Authentik)
+            </button>
+            {oidcUnreachable && (
+              <p className="mt-2 text-center text-xs text-slate-400">
+                Если страница не открылась автоматически — перейдите в единый вход вручную.
+              </p>
+            )}
+            {oidcError && (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-600">
+                {oidcError}
+              </div>
+            )}
+          </div>
 
           <form onSubmit={handleBreakGlassSubmit} className="space-y-4">
             <div className="space-y-1">

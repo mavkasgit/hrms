@@ -15,7 +15,7 @@ import { applyTheme, storeLocale } from "@/shared/lib/profile-prefs"
 import { showGlobalToast } from "@/shared/ui/use-toast"
 
 /** Версия auth-shell-модуля — синхронизируется verify-sync (режим content + version). */
-export const AUTH_SHELL_VERSION = "1.0.0"
+export const AUTH_SHELL_VERSION = "1.1.0"
 
 export type AuthErrorText = {
   title: string
