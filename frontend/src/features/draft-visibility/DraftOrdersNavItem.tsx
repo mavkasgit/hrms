@@ -4,7 +4,7 @@ import { cn } from "@/shared/utils/cn"
 import { Badge } from "@/shared/ui/badge"
 import { Button } from "@/shared/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover"
-import { useAllDrafts, restoreDraftFromForm, DRAFTS_ROUTE, isDraftsRoute } from "@/entities/draft"
+import { useAllDrafts, fillFormFromDraft, DRAFTS_ROUTE, isDraftsRoute } from "@/entities/draft"
 import type { AllDraftItem } from "@/entities/draft"
 import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
 import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order/draftSaveStatus"
@@ -37,7 +37,7 @@ function DraftBadgeButton({
     if (filling) return
     setFilling(true)
     try {
-      await restoreDraftFromForm(draft.draft_id, navigate)
+      await fillFormFromDraft(draft.draft_id, navigate)
       onFill()
     } finally {
       setFilling(false)
@@ -45,6 +45,7 @@ function DraftBadgeButton({
   }
 
   const openView = () => openDraftEditorWindow(draft.view_url)
+  const openEdit = () => openDraftEditorWindow(draft.edit_url)
 
   return (
     <div className="flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent">
@@ -77,21 +78,30 @@ function DraftBadgeButton({
       </span>
       <div className="flex shrink-0 items-center gap-1">
         <Button
+          size="sm"
+          onClick={() => void handleFillFields()}
+          disabled={filling}
+          title="Заполнить форму создания данными черновика"
+        >
+          {filling ? "Загрузка..." : "Заполнить"}
+        </Button>
+        <Button
           size="icon"
           variant="ghost"
-          title="Открыть"
+          title="Открыть документ только для чтения"
           onClick={openView}
           aria-label="Открыть"
         >
           <Eye className="h-4 w-4" />
         </Button>
         <Button
-          size="sm"
-          onClick={() => void handleFillFields()}
-          disabled={filling}
-          title="Восстановить форму создания данными черновика"
+          size="icon"
+          variant="ghost"
+          title="Восстановить — открыть в редакторе для доработки и сохранения"
+          onClick={openEdit}
+          aria-label="Восстановить"
         >
-          {filling ? "Загрузка..." : "Восстановить"}
+          <FilePen className="h-4 w-4" />
         </Button>
       </div>
     </div>
@@ -231,9 +241,9 @@ export function DraftOrdersNavItem() {
                         size="sm"
                         onClick={() => handleFormRestore(entry)}
                         data-testid="recovery-restore"
-                        title="Восстановить форму создания данными черновика"
+                        title="Заполнить форму данными несохранённого заполнения"
                       >
-                        Восстановить
+                        Заполнить
                       </Button>
                       <Button
                         size="icon"

@@ -10,6 +10,6 @@ export {
 } from "./api"
 export type { DraftFormData } from "./api"
 export { useAllDrafts, useDeleteAllDraft, useDraftFormData, ALL_DRAFTS_QUERY_KEY } from "./hooks"
-export { restoreDraftFromForm } from "./restoreDraft"
+export { fillFormFromDraft } from "./restoreDraft"
 export { DRAFTS_ROUTE, draftEditorUrl, isDraftsRoute } from "./routes"
 export type { DraftEditorMode } from "./routes"

@@ -9,7 +9,11 @@ export function useAllDrafts() {
   return useQuery({
     queryKey: ALL_DRAFTS_QUERY_KEY,
     queryFn: () => api.fetchAllDrafts(),
-    // Счётчик черновиков в сайдбаре должен оставаться свежим (#55).
+    // Список/счётчик черновиков должны обновляться после сохранения из редактора (#86):
+    // при фокусе вкладки и по таймеру — без отдельных каналов.
+    // staleTime: 0 — чтобы refetchOnWindowFocus реально перезапрашивал (глобальный staleTime=30s).
+    staleTime: 0,
+    refetchOnWindowFocus: true,
     refetchInterval: 30_000,
   })
 }

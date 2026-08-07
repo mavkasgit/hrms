@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Eye, Trash2 } from "lucide-react"
-import { useAllDrafts, useDeleteAllDraft, restoreDraftFromForm } from "@/entities/draft"
+import { Eye, FilePen, Trash2 } from "lucide-react"
+import { useAllDrafts, useDeleteAllDraft, fillFormFromDraft } from "@/entities/draft"
 import type { AllDraftItem } from "@/entities/draft"
 import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
 import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order/draftSaveStatus"
@@ -52,7 +52,7 @@ export function DraftsPage() {
   const { data: drafts, isLoading } = useAllDrafts()
   const deleteMutation = useDeleteAllDraft()
   const [deleteDraftId, setDeleteDraftId] = useState<string | null>(null)
-  const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [fillingId, setFillingId] = useState<string | null>(null)
   const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
   const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
     type_name: new Set(),
@@ -171,13 +171,13 @@ export function DraftsPage() {
     return draft.group_employees.filter((e) => selectedNames.has(e.employee_full_name))
   }
 
-  const handleRestore = async (draft: AllDraftItem) => {
-    if (restoringId) return
-    setRestoringId(draft.draft_id)
+  const handleFill = async (draft: AllDraftItem) => {
+    if (fillingId) return
+    setFillingId(draft.draft_id)
     try {
-      await restoreDraftFromForm(draft.draft_id, navigate)
+      await fillFormFromDraft(draft.draft_id, navigate)
     } finally {
-      setRestoringId(null)
+      setFillingId(null)
     }
   }
 
@@ -318,19 +318,29 @@ export function DraftsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          title="Восстановить форму данными черновика"
-                          disabled={restoringId !== null}
-                          onClick={() => void handleRestore(draft)}
+                          title="Заполнить форму данными черновика"
+                          disabled={fillingId !== null}
+                          onClick={() => void handleFill(draft)}
                         >
-                          {restoringId === draft.draft_id ? "Загрузка..." : "Восстановить"}
+                          {fillingId === draft.draft_id ? "Загрузка..." : "Заполнить"}
                         </Button>
                         <Button
                           variant="ghost"
-                          size="icon"
-                          title="Открыть"
+                          size="sm"
+                          title="Открыть документ только для чтения"
                           onClick={() => openDraftEditorWindow(draft.view_url)}
                         >
                           <Eye className="h-4 w-4" />
+                          <span>Открыть</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Восстановить — открыть в редакторе для доработки и сохранения"
+                          onClick={() => openDraftEditorWindow(draft.edit_url)}
+                        >
+                          <FilePen className="h-4 w-4" />
+                          <span>Восстановить</span>
                         </Button>
                         <Button
                           variant="ghost"

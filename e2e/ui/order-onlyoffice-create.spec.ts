@@ -80,7 +80,7 @@ test.describe('Orders OnlyOffice create @ui', () => {
     // Warm-up dismiss (same sequence as before helper extraction)
     await dismissOnlyOfficeDialogs(editor)
 
-    const { orderId } = await saveDraftOrderFromEditor(editor, page)
+    const { orderId } = await saveDraftOrderFromEditor(editor)
 
     // Verify in registry: reload list, search by number / employee
     await page.goto('/orders')

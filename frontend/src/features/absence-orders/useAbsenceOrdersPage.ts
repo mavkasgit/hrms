@@ -334,10 +334,23 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
   }, [draftId, commitDraftMutation, validate, orderType, selectedEmployee, resetForm])
 
   useEffect(() => {
-    return subscribeDraftOrderSave(draftId, (message) => {
-      handleCommitDraft(Boolean(message.openPrint), message.printWindowName)
+    // Редактор коммитит черновик сам и шлёт сигнал — форма просто сбрасывается (#86).
+    return subscribeDraftOrderSave(draftId, () => {
+      setSelectedEmployee(null)
+      setOrderDate(todayIso())
+      setOrderNumber("")
+      setMode("single")
+      setVacationStart("")
+      setVacationEnd("")
+      setVacationDays("")
+      setCallDate("")
+      setCallDateStart("")
+      setCallDateEnd("")
+      setDraftId(null)
+      setErrors({})
+      recoveryClear()
     })
-  }, [draftId, handleCommitDraft])
+  }, [draftId, recoveryClear])
 
   // ==== Групповая форма ====
   const [groupDraftId, setGroupDraftId] = useState<string | null>(null)
@@ -504,10 +517,12 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
   }, [groupDraftId, commitGroupDraftMutation, resetGroupForm])
 
   useEffect(() => {
+    // Редактор коммитит групповой черновик сам и шлёт сигнал — форма просто сбрасывается (#86).
     return subscribeDraftOrderSave(groupDraftId, () => {
-      handleCommitGroupDraft()
+      setGroupDraftId(null)
+      resetGroupForm()
     })
-  }, [groupDraftId, handleCommitGroupDraft])
+  }, [groupDraftId, resetGroupForm])
 
   // ==== Список и сводка ====
   const [deleteOrderId, setDeleteOrderId] = useState<number | null>(null)

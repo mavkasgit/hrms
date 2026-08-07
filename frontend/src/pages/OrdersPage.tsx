@@ -820,10 +820,11 @@ export function OrdersPage() {
   }
 
   useEffect(() => {
+    // Редактор коммитит черновик сам и шлёт сигнал — форма просто сбрасывается (#86).
     return subscribeDraftOrderSave(generalDraftId, () => {
-      handleGeneralCommitDraft()
+      resetGeneralForm()
     })
-  }, [generalDraftId, generalOrderDate, generalOrderNumber])
+  }, [generalDraftId])
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
@@ -944,10 +945,11 @@ export function OrdersPage() {
   }
 
   useEffect(() => {
-    return subscribeDraftOrderSave(draftId, (message) => {
-      handleCommitDraft(Boolean(message.openPrint), message.printWindowName)
+    // Редактор коммитит черновик сам и шлёт сигнал — форма просто сбрасывается (#86).
+    return subscribeDraftOrderSave(draftId, () => {
+      resetForm()
     })
-  }, [draftId, selectedEmployee, selectedOrderTypeId, orderDate, orderNumber])
+  }, [draftId])
 
   const isPending = createMutation.isPending || createDraftMutation.isPending || commitDraftMutation.isPending
 

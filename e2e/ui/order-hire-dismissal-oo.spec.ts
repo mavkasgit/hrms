@@ -89,7 +89,7 @@ test.describe('Orders hire/dismissal OnlyOffice @ui', () => {
     )
 
     await dismissOnlyOfficeDialogs(editor)
-    const { orderId } = await saveDraftOrderFromEditor(editor, page)
+    const { orderId } = await saveDraftOrderFromEditor(editor)
 
     await page.goto('/orders')
     await expect(ordersPage.heading).toBeVisible({ timeout: 15_000 })
@@ -176,7 +176,7 @@ test.describe('Orders hire/dismissal OnlyOffice @ui', () => {
     )
 
     await dismissOnlyOfficeDialogs(editor)
-    const { orderId } = await saveDraftOrderFromEditor(editor, page)
+    const { orderId } = await saveDraftOrderFromEditor(editor)
 
     // API: order exists (employee may be archived as side effect)
     const items = await apiOps.getOrders({ employee_id: employee.id })

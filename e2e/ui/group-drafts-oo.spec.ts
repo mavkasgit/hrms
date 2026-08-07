@@ -132,7 +132,7 @@ test.describe('Group drafts OnlyOffice @ui', () => {
     expect(draftId || editor.url()).toBeTruthy()
 
     await dismissOnlyOfficeDialogs(editor)
-    const { orderId } = await saveDraftOrderFromEditor(editor, page, {
+    const { orderId } = await saveDraftOrderFromEditor(editor, {
       commitPathIncludes: '/api/orders/group-drafts/',
     })
     expect(orderId).toBeTruthy()
@@ -200,7 +200,7 @@ test.describe('Group drafts OnlyOffice @ui', () => {
     expect(draftId || editor.url()).toBeTruthy()
 
     await dismissOnlyOfficeDialogs(editor)
-    const { orderId } = await saveDraftOrderFromEditor(editor, page, {
+    const { orderId } = await saveDraftOrderFromEditor(editor, {
       commitPathIncludes: '/api/orders/group-drafts/',
     })
     expect(orderId).toBeTruthy()

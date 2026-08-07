@@ -2,7 +2,9 @@ import { useState } from "react"
 import { useParams, useLocation } from "react-router-dom"
 import { Loader2 } from "lucide-react"
 import { useDraftOnlyOfficeConfig } from "@/entities/order/useOnlyOffice"
-import { commitOrderDraft, forceSaveDraft, fetchDraftSaveStatus, reportDraftSaveError } from "@/entities/order/onlyofficeApi"
+import { useDraftCommit } from "@/entities/order/useDraftCommit"
+import { forceSaveDraft, fetchDraftSaveStatus, reportDraftSaveError } from "@/entities/order/onlyofficeApi"
+import { publishDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
 import { openOrderPrint } from "@/entities/order/orderActions"
 import { requestAndWaitOnlyOfficeSave } from "@/entities/order/waitForOnlyOfficeSave"
 import {
@@ -19,6 +21,8 @@ export function DraftOrderEditorPage() {
   const location = useLocation()
   const isViewMode = location.pathname.endsWith("/view-docx")
   const { data, isLoading, error } = useDraftOnlyOfficeConfig(draftId || null, isViewMode ? "view" : "edit")
+  // Commit-эндпоинт выбирается по флагу группового черновика (#86).
+  const { commit } = useDraftCommit(draftId || null)
   const [isSaving, setIsSaving] = useState(false)
   const [isSaveAndPrint, setIsSaveAndPrint] = useState(false)
   const [editorReady, setEditorReady] = useState(false)
@@ -63,12 +67,16 @@ export function DraftOrderEditorPage() {
 
         beginSave("Создаём приказ…")
         // Коммитим черновик напрямую из окна редактора — родительская страница не нужна (#31).
-        const result = await commitOrderDraft(draftId)
+        // Эндпоинт выбирается по флагу группового черновика: групповой или одиночный (#86).
+        const result = await commit()
 
         // duplicate: true — приказ уже создан параллельным коммитом, молча считаем успехом.
         if (openPrint && "id" in result && result.id) {
           openOrderPrint(result.id, printWindowName || "_blank")
         }
+
+        // Сигнал родительской форме приказа — она сбрасывается после успешного commit (#86).
+        publishDraftOrderSave({ draftId, openPrint, printWindowName })
       })
 
       succeedSave()

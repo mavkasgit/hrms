@@ -69,7 +69,7 @@ test.describe('Orders other types OnlyOffice @ui', () => {
     )
 
     await dismissOnlyOfficeDialogs(editor)
-    const { orderId } = await saveDraftOrderFromEditor(editor, page)
+    const { orderId } = await saveDraftOrderFromEditor(editor)
 
     await page.goto('/orders')
     await expect(ordersPage.heading).toBeVisible({ timeout: 15_000 })
@@ -161,7 +161,7 @@ test.describe('Orders other types OnlyOffice @ui', () => {
     )
 
     await dismissOnlyOfficeDialogs(editor)
-    const { orderId } = await saveDraftOrderFromEditor(editor, page)
+    const { orderId } = await saveDraftOrderFromEditor(editor)
 
     // Return to general tab list and API assert
     await page.goto('/orders')

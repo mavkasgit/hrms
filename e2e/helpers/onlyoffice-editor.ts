@@ -24,16 +24,16 @@ export async function dismissOnlyOfficeDialogs(editor: Page): Promise<void> {
 }
 
 /**
- * Click «Сохранить приказ» in draft editor: forcesave (with retry) → parent commit.
+ * Click «Сохранить приказ» in draft editor: forcesave (with retry) → self-commit.
+ * The editor commits the draft itself after forceSave (#31/#86) — the commit
+ * request goes from the editor window, so we wait for it here.
  * @param editor Draft OO popup page
- * @param parentPage Opener page that performs POST .../commit
  * @param options.commitPathIncludes URL substring for commit wait
  *   (default single draft `/api/orders/drafts/`; group: `/api/orders/group-drafts/`)
  * @returns committed order id
  */
 export async function saveDraftOrderFromEditor(
   editor: Page,
-  parentPage: Page,
   options?: { commitPathIncludes?: string }
 ): Promise<{ orderId: number }> {
   const commitPathIncludes = options?.commitPathIncludes ?? '/api/orders/drafts/'
@@ -45,8 +45,8 @@ export async function saveDraftOrderFromEditor(
   await editor.waitForTimeout(1500)
   await dismissOnlyOfficeDialogs(editor)
 
-  // Commit on opener after successful forceSave + postMessage
-  const commitPromise = parentPage.waitForResponse(
+  // Self-commit after successful forceSave — wait on the editor window.
+  const commitPromise = editor.waitForResponse(
     (r) =>
       r.url().includes(commitPathIncludes) &&
       r.url().includes('/commit') &&
