@@ -5,6 +5,7 @@ import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, S
 import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
+import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { DocumentDatePicker } from "@/shared/ui/document-date-picker"
 import { YearFilter } from "@/shared/ui/year-filter"
@@ -108,15 +109,6 @@ interface GeneralOrderFormDraft {
 
 function generalOrderFormHasContent(state: Omit<GeneralOrderFormDraft, "saved_at">): boolean {
   return state.general_order_number.trim() !== ""
-}
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delay)
-    return () => clearTimeout(timer)
-  }, [value, delay])
-  return debounced
 }
 
 function OrderDeletePreview({ orderId }: { orderId: number | null }) {
@@ -389,8 +381,8 @@ export function OrdersPage() {
   const orderTypeRef = useRef<HTMLDivElement>(null)
 
   // Debounce text search fields
-  const debouncedOrderNumber = useDebounce(filterOrderNumber, 300)
-  const debouncedFilterEmployeeId = useDebounce(filterEmployee?.id ?? null, 300)
+  const debouncedOrderNumber = useDebouncedValue(filterOrderNumber, 300)
+  const debouncedFilterEmployeeId = useDebouncedValue(filterEmployee?.id ?? null, 300)
 
   const { data, isLoading, error } = useOrders({
     page: 1,

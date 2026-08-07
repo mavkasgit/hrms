@@ -17,6 +17,7 @@ import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
 import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
+import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
 import {
   Table,
@@ -119,16 +120,6 @@ function transactionPriority(type: string): number {
     case "partial_close": return 6
     default: return 99
   }
-}
-
-// Debounce hook
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delay)
-    return () => clearTimeout(timer)
-  }, [value, delay])
-  return debounced
 }
 
 // Expandable history row
@@ -886,7 +877,7 @@ export function VacationsPage() {
 
   // --- Main table state ---
   const [searchName, setSearchName] = useState("")
-  const debouncedSearch = useDebounce(searchName, 300)
+  const debouncedSearch = useDebouncedValue(searchName, 300)
   const [dismissalFilter, setDismissalFilter] = useState<"active" | "dismissed" | "all">("active")
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
   const [editingAddDays, setEditingAddDays] = useState<number | null>(null)

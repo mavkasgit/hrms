@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { ChevronDown, ChevronRight, Trash2, FilePen, Filter, Eye, Download, X, Check, Printer } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
+import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue"
 import { DatePicker } from "@/shared/ui/date-picker"
 import { Badge } from "@/shared/ui/badge"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
@@ -86,21 +87,6 @@ function mapStatementFillDraft(data: DraftFormData): StatementFormDraft | null {
   }
 }
 
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => setDebounced(value), delay)
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
-  }, [value, delay])
-
-  return debounced
-}
-
 export function StatementsSection() {
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
@@ -124,8 +110,8 @@ export function StatementsSection() {
   const [filterDateTo, setFilterDateTo] = useState("")
   const [filterStatementTypeId, setFilterStatementTypeId] = useState<number | undefined>(undefined)
   const [filterNumber, setFilterNumber] = useState("")
-  const debouncedFilterEmployeeId = useDebounce(filterEmployee?.id ?? null, 300)
-  const debouncedFilterNumber = useDebounce(filterNumber, 300)
+  const debouncedFilterEmployeeId = useDebouncedValue(filterEmployee?.id ?? null, 300)
+  const debouncedFilterNumber = useDebouncedValue(filterNumber, 300)
 
   const { data, isLoading, error, refetch } = useStatements({
     page: 1,
