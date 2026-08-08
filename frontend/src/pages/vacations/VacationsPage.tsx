@@ -85,13 +85,14 @@ interface VacationFormDraft {
   saved_at: string
 }
 
+/**
+ * Есть ли в форме отпуска реальный контент (#87). В триггере участвуют только
+ * поля, которые заполняет пользователь: сотрудник, дата начала, дата конца.
+ * Автоподставленные дата/номер приказа не считаются заполненностью — иначе
+ * подставившийся номер создавал бы устаревший черновик без участия пользователя.
+ */
 function vacationFormHasContent(state: Omit<VacationFormDraft, "saved_at">): boolean {
-  return (
-    state.employee_id !== null ||
-    state.start_date !== "" ||
-    state.end_date !== "" ||
-    state.order_number.trim() !== ""
-  )
+  return state.employee_id !== null || state.start_date !== "" || state.end_date !== ""
 }
 
 const VACATION_ORDER_CODE = "vacation_paid"
@@ -723,7 +724,6 @@ export function VacationsPage() {
 
   const {
     clear: recoveryClear,
-    overwriteDialog: recoveryOverwriteDialog,
   } = useDraftRecoveryFor<VacationFormDraft>({
     slot: "vacations",
     formState: recoveryFormState,
@@ -1548,9 +1548,6 @@ export function VacationsPage() {
 
       {/* --- Orders registry dialog --- */}
       <OrdersRegistryModal open={registryOpen} onOpenChange={setRegistryOpen} year={new Date().getFullYear()} />
-
-      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
-      {recoveryOverwriteDialog}
     </div>
   )
 }

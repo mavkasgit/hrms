@@ -120,7 +120,6 @@ export function VacationPostponePage() {
   const {
     clear: recoveryClear,
     restoreGuardRef,
-    overwriteDialog: recoveryOverwriteDialog,
   } = useDraftRecoveryFor<VacationPostponeFormDraft>({
     slot: "vacations:postpone",
     formState: recoveryFormState,
@@ -436,9 +435,6 @@ export function VacationPostponePage() {
           </TabsContent>
         </Tabs>
       </div>
-
-      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
-      {recoveryOverwriteDialog}
     </div>
   )
 }

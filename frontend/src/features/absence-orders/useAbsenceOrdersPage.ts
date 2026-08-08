@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import type { Dispatch, ReactElement, SetStateAction } from "react"
+import type { Dispatch, SetStateAction } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import type { Employee } from "@/entities/employee/types"
 import type { GroupEmployeeInfo, Order, OrderType } from "@/entities/order/types"
@@ -99,7 +99,6 @@ export interface AbsenceOrdersApi {
   resetForm: () => void
   handleEditBeforeCreate: () => void
   handleCommitDraft: (openPrint?: boolean, printTarget?: string) => void
-  recoveryOverwriteDialog: ReactElement
 
   // Групповая форма
   orderMode: "single" | "group"
@@ -126,7 +125,6 @@ export interface AbsenceOrdersApi {
   resetGroupForm: () => void
   handleCreateGroupDraft: () => void
   handleCommitGroupDraft: () => void
-  groupRecoveryOverwriteDialog: ReactElement
 
   // Список приказов
   employeeFilter: string
@@ -245,7 +243,6 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
 
   const {
     clear: recoveryClear,
-    overwriteDialog: recoveryOverwriteDialog,
   } = useDraftRecoveryFor<SingleFormDraft>({
     slot: config.recoverySlot,
     formState: singleValues,
@@ -400,7 +397,6 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
 
   const {
     clear: groupRecoveryClear,
-    overwriteDialog: groupRecoveryOverwriteDialog,
   } = useDraftRecoveryFor<GroupFormDraft>({
     slot: config.groupRecoverySlot,
     formState: groupFormState,
@@ -710,7 +706,6 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
     resetForm,
     handleEditBeforeCreate,
     handleCommitDraft,
-    recoveryOverwriteDialog,
 
     orderMode,
     setOrderMode,
@@ -736,7 +731,6 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
     resetGroupForm,
     handleCreateGroupDraft,
     handleCommitGroupDraft,
-    groupRecoveryOverwriteDialog,
 
     employeeFilter,
     setEmployeeFilter,

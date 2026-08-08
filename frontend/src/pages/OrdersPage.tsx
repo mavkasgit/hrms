@@ -703,7 +703,6 @@ export function OrdersPage() {
     clear: recoveryClear,
     restoreWith: recoveryRestoreWith,
     restoreGuardRef,
-    overwriteDialog: recoveryOverwriteDialog,
   } = useDraftRecoveryFor<OrderFormDraft>({
     slot: "orders",
     formState: recoveryFormState,
@@ -752,7 +751,6 @@ export function OrdersPage() {
   const {
     restore: generalRecoveryRestore,
     clear: generalRecoveryClear,
-    overwriteDialog: generalRecoveryOverwriteDialog,
   } = useDraftRecoveryFor<GeneralOrderFormDraft>({
     slot: "orders:general",
     formState: generalRecoveryFormState,
@@ -1849,10 +1847,6 @@ export function OrdersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Подтверждение перезаписи сохранённого заполнения (#28) — по вкладке */}
-      {activeTab === "all" && recoveryOverwriteDialog}
-      {activeTab === "general" && generalRecoveryOverwriteDialog}
 
       <GlobalAuditLog open={auditLogOpen} onOpenChange={setAuditLogOpen} initialActionFilter="order" />
 

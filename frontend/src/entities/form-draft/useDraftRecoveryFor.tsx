@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, type MutableRefObject, type ReactElement } from "react"
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react"
 import { useSearchParams } from "react-router-dom"
 import { getFormDraftSlot } from "./slots"
 import { useFormDraftRecovery } from "./useFormDraftRecovery"
-import { FormDraftOverwriteDialog } from "./FormDraftOverwriteDialog"
 
 export interface UseDraftRecoveryForOptions<T extends { saved_at: string }> {
   /** Таргет слота черновика формы (orders, vacations:recall, …). */
@@ -29,8 +28,6 @@ export interface UseDraftRecoveryForResult<T extends { saved_at: string }> {
   restoreWith: (draft: T) => void
   /** Очистить черновик после успешного создания документа / сброса формы. */
   clear: () => void
-  /** Диалог подтверждения перезаписи черновика — рендерится хостом один раз. */
-  overwriteDialog: ReactElement
   /**
    * Флаг «последнее восстановление изменило поле, при смене которого хост
    * сбрасывает форму». Хост читает его в своём эффекте сброса и сбрасывает
@@ -41,9 +38,9 @@ export interface UseDraftRecoveryForResult<T extends { saved_at: string }> {
 
 /**
  * Обёртка над useFormDraftRecovery для одной формы (#28): убирает из страниц
- * повторяющуюся обвязку — резолв storageKey по слоту реестра, автовосстановление
- * по query-параметру слота (?recover=1 / ?recoverGroup=1) и диалог перезаписи.
- * Функционал тот же, правки в одном месте.
+ * повторяющуюся обвязку — резолв storageKey по слоту реестра и автовосстановление
+ * по query-параметру слота (?recover=1 / ?recoverGroup=1). Функционал тот же,
+ * правки в одном месте.
  */
 export function useDraftRecoveryFor<T extends { saved_at: string }>(
   options: UseDraftRecoveryForOptions<T>,
@@ -89,14 +86,6 @@ export function useDraftRecoveryFor<T extends { saved_at: string }>(
     restore,
     restoreWith,
     clear: recovery.clear,
-    overwriteDialog: (
-      <FormDraftOverwriteDialog
-        open={recovery.overwritePrompt}
-        entityLabel={slot.label}
-        onCancel={recovery.cancelOverwrite}
-        onConfirm={recovery.confirmOverwrite}
-      />
-    ),
     restoreGuardRef,
   }
 }

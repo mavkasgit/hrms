@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest"
-import { FORM_DRAFT_SLOTS, formDraftRecoverUrl, getFormDraftSlot, readAllFormDrafts } from "./slots"
+import { FORM_DRAFT_SLOTS, formDraftRecoverUrl, formDraftSlotForRoute, getFormDraftSlot, readAllFormDrafts } from "./slots"
 
 const SLOT_COUNT = 12
 
@@ -55,5 +55,42 @@ describe("readAllFormDrafts", () => {
   it("игнорирует слоты с пустым/битым JSON", () => {
     localStorage.setItem("hrms_order_form_draft", "not json")
     expect(readAllFormDrafts()).toHaveLength(0)
+  })
+})
+
+describe("formDraftSlotForRoute (#87)", () => {
+  it("базовые маршруты однозначно определяют слот", () => {
+    expect(formDraftSlotForRoute("/vacations", "")?.target).toBe("vacations")
+    expect(formDraftSlotForRoute("/vacations/recall", "")?.target).toBe("vacations:recall")
+    expect(formDraftSlotForRoute("/orders/notifications", "")?.target).toBe("notifications")
+    expect(formDraftSlotForRoute("/orders/statements", "")?.target).toBe("statements")
+    expect(formDraftSlotForRoute("/weekend-calls", "")?.target).toBe("weekend-calls")
+  })
+
+  it("неизвестный маршрут возвращает null", () => {
+    expect(formDraftSlotForRoute("/employees", "")).toBeNull()
+    expect(formDraftSlotForRoute("/drafts", "")).toBeNull()
+  })
+
+  it("orders:general определяется по ?tab=general", () => {
+    expect(formDraftSlotForRoute("/orders", "?tab=general")?.target).toBe("orders:general")
+    expect(formDraftSlotForRoute("/orders", "")?.target).toBe("orders")
+    expect(formDraftSlotForRoute("/orders", "?tab=all")?.target).toBe("orders")
+  })
+
+  it("orders с ?recover=1 остаётся слотом orders (не general)", () => {
+    expect(formDraftSlotForRoute("/orders", "?recover=1")?.target).toBe("orders")
+  })
+
+  it("групповой слот отсутствий определяется только по ?recoverGroup=1", () => {
+    expect(formDraftSlotForRoute("/unpaid-leaves", "?recoverGroup=1")?.target).toBe("unpaid-leaves:group")
+    expect(formDraftSlotForRoute("/unpaid-leaves", "")?.target).toBe("unpaid-leaves")
+    expect(formDraftSlotForRoute("/unpaid-leaves", "?recover=1")?.target).toBe("unpaid-leaves")
+    expect(formDraftSlotForRoute("/weekend-calls", "?recoverGroup=1")?.target).toBe("weekend-calls:group")
+  })
+
+  it("совпадение по подстроке пути не засчитывается (/vacations vs /vacations/recall)", () => {
+    expect(formDraftSlotForRoute("/vacations/extension", "")?.target).toBe("vacations:extension")
+    expect(formDraftSlotForRoute("/vacations/postpone", "")?.target).toBe("vacations:postpone")
   })
 })

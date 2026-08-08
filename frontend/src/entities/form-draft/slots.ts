@@ -46,6 +46,44 @@ export function formDraftRecoverUrl(slot: FormDraftSlot): string {
   return `${slot.route}${sep}${param}=1`
 }
 
+/**
+ * Слот заполнения формы для текущего маршрута (#87). Чистая функция: по
+ * pathname и query определяет, какая форма открыта на этой странице, чтобы
+ * попап «Черновики» мог раскрыться и подсветить её строку.
+ *
+ * Приоритет: 1) слот, чей route-query полностью совпал (orders:general при
+ * ?tab=general); 2) слот с нестандартным recoverParam (групповые формы на
+ * страницах отсутствий) при соответствующем query; 3) базовый слот маршрута.
+ * Возвращает null, если маршруту не соответствует ни один слот.
+ */
+export function formDraftSlotForRoute(pathname: string, search: string): FormDraftSlot | null {
+  const params = new URLSearchParams(search)
+  const candidates = FORM_DRAFT_SLOTS.filter((slot) => slot.route.split("?")[0] === pathname)
+  if (candidates.length === 0) return null
+
+  for (const slot of candidates) {
+    const routeQuery = slot.route.split("?")[1]
+    if (!routeQuery) continue
+    const routeParams = new URLSearchParams(routeQuery)
+    let allMatch = true
+    for (const [key, value] of routeParams) {
+      if (params.get(key) !== value) {
+        allMatch = false
+        break
+      }
+    }
+    if (allMatch) return slot
+  }
+
+  for (const slot of candidates) {
+    if (slot.recoverParam && slot.recoverParam !== "recover" && params.get(slot.recoverParam) === "1") {
+      return slot
+    }
+  }
+
+  return candidates.find((slot) => !slot.route.includes("?")) ?? candidates[0]
+}
+
 export interface FormDraftEntry {
   slot: FormDraftSlot
   savedAt: string

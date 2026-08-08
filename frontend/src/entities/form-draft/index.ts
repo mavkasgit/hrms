@@ -2,6 +2,7 @@ export {
   FORM_DRAFT_SLOTS,
   getFormDraftSlot,
   formDraftRecoverUrl,
+  formDraftSlotForRoute,
   readAllFormDrafts,
 } from "./slots"
 export type { FormDraftSlot, FormDraftEntry } from "./slots"

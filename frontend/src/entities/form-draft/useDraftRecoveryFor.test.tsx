@@ -27,6 +27,23 @@ afterEach(() => {
 })
 
 describe("useDraftRecoveryFor", () => {
+  it("из результата убран overwriteDialog — перезапись не подтверждается (#87)", () => {
+    const { result } = renderHook(
+      () =>
+        useDraftRecoveryFor<TestDraft>({
+          slot: "orders",
+          formState: { number: "" },
+          hasContent,
+          onRestore: vi.fn(),
+        }),
+      { wrapper: wrapper(["/"]) },
+    )
+
+    expect(result.current).not.toHaveProperty("overwriteDialog")
+    expect(result.current).toHaveProperty("restore")
+    expect(result.current).toHaveProperty("clear")
+  })
+
   it("авто-восстанавливает форму по ?recover=1, если черновик найден", () => {
     localStorage.setItem(
       ORDER_DRAFT_KEY,

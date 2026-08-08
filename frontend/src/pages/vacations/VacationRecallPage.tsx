@@ -78,7 +78,6 @@ export function VacationRecallPage() {
   const {
     clear: recoveryClear,
     restoreGuardRef,
-    overwriteDialog: recoveryOverwriteDialog,
   } = useDraftRecoveryFor<VacationRecallFormDraft>({
     slot: "vacations:recall",
     formState: recoveryFormState,
@@ -303,9 +302,6 @@ export function VacationRecallPage() {
           </TabsContent>
         </Tabs>
       </div>
-
-      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
-      {recoveryOverwriteDialog}
     </div>
   )
 }

@@ -388,19 +388,6 @@ export function AbsenceOrdersPage({ config }: { config: AbsencePageConfig }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
-      {c.renderOverwriteDialogsByMode ? (
-        <>
-          {api.orderMode === "single" && api.recoveryOverwriteDialog}
-          {api.orderMode === "group" && api.groupRecoveryOverwriteDialog}
-        </>
-      ) : (
-        <>
-          {api.recoveryOverwriteDialog}
-          {api.groupRecoveryOverwriteDialog}
-        </>
-      )}
     </div>
   )
 }

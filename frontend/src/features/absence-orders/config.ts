@@ -282,7 +282,6 @@ export const unpaidLeavesConfig: AbsencePageConfig = {
   summarySecondLabel: "Дней отпуска",
   summaryThirdLabel: "Отпусков",
   summaryAlwaysRender: true,
-  renderOverwriteDialogsByMode: true,
   single: {
     kind: "vacation",
     clearLocalDraftOnCreate: true,
@@ -330,7 +329,6 @@ export const weekendCallsConfig: AbsencePageConfig = {
   summarySecondLabel: "Вызовов",
   summaryThirdLabel: "Дней вызова",
   summaryAlwaysRender: false,
-  renderOverwriteDialogsByMode: false,
   single: {
     kind: "call",
     clearLocalDraftOnCreate: false,

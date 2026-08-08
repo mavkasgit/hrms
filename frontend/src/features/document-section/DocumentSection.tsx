@@ -297,7 +297,6 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
     clear: recoveryClear,
     restoreWith: recoveryRestoreWith,
     restoreGuardRef,
-    overwriteDialog: recoveryOverwriteDialog,
   } = useDraftRecoveryFor<TDraft>({
     slot: config.slot,
     formState: recoveryFormState,
@@ -774,9 +773,6 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
-      {recoveryOverwriteDialog}
     </div>
   )
 }

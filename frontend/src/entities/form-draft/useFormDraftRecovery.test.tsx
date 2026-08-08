@@ -86,81 +86,45 @@ describe("useFormDraftRecovery", () => {
     expect(saved!.extra_fields).toEqual({ contract_number: "ABC-1" })
   })
 
-  it("автосейв текущей сессии не поднимает диалог перезаписи и обновляет черновик", () => {
+  it("автосейв молча перезаписывает пред-сессионное заполнение — никакого промпта (#87)", () => {
+    // Черновик, существовавший ДО загрузки страницы (с прошлой сессии)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(makeDraft()))
     const { result, rerender } = renderHook(
       ({ state }) => setup({ formState: state }),
       { initialProps: { state: formState() } }
     )
 
-    act(() => {
-      vi.advanceTimersByTime(DEBOUNCE_MS)
-    })
-    expect(result.current.overwritePrompt).toBe(false)
-
-    rerender({ state: formState({ extra_fields: { contract_number: "ABC-2" } }) })
-    act(() => {
-      vi.advanceTimersByTime(DEBOUNCE_MS)
-    })
-
-    expect(result.current.overwritePrompt).toBe(false)
-    const saved = readDraft()
-    expect(saved!.extra_fields).toEqual({ contract_number: "ABC-2" })
-  })
-
-  it("черновик, существовавший на mount, → первое заполнение поднимает диалог перезаписи", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(makeDraft()))
-    const { result } = renderHook(() => setup())
-
+    // Пред-сессионный черновик найден, но диалога перезаписи больше нет
     expect(result.current.pendingDraft).not.toBeNull()
 
+    // Пользователь начинает новое заполнение — оно тихо заменяет старое
+    rerender({ state: formState({ extra_fields: { contract_number: "NEW" } }) })
     act(() => {
       vi.advanceTimersByTime(DEBOUNCE_MS)
-    })
-
-    expect(result.current.overwritePrompt).toBe(true)
-  })
-
-  it("confirmOverwrite пишет новый черновик поверх старого", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(makeDraft()))
-    const { result } = renderHook(() =>
-      setup({ formState: formState({ extra_fields: { contract_number: "NEW" } }) })
-    )
-
-    act(() => {
-      vi.advanceTimersByTime(DEBOUNCE_MS)
-    })
-    expect(result.current.overwritePrompt).toBe(true)
-
-    act(() => {
-      result.current.confirmOverwrite()
     })
 
     const saved = readDraft()
     expect(saved!.extra_fields).toEqual({ contract_number: "NEW" })
   })
 
-  it("cancelOverwrite латчит: дальнейшие изменения не пишутся", () => {
+  it("заполнение с прошлой сессии заменяется при новом вводе после закрытия попапа (#87)", () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(makeDraft()))
     const { result, rerender } = renderHook(
       ({ state }) => setup({ formState: state }),
       { initialProps: { state: formState() } }
     )
 
-    act(() => {
-      vi.advanceTimersByTime(DEBOUNCE_MS)
-    })
-    expect(result.current.overwritePrompt).toBe(true)
+    // Попап закрыли (промпт не нужен) — черновик остался на месте
+    expect(result.current.pendingDraft).not.toBeNull()
 
-    act(() => {
-      result.current.cancelOverwrite()
-    })
-
-    rerender({ state: formState({ extra_fields: { contract_number: "LATER" } }) })
+    // Начинаем новое заполнение
+    rerender({ state: formState({ number: "П-2" }) })
     act(() => {
       vi.advanceTimersByTime(DEBOUNCE_MS)
     })
 
     const saved = readDraft()
+    expect(saved!.number).toBe("П-2")
     expect(saved!.extra_fields).toEqual({ contract_number: "ABC-1" })
   })
 
@@ -206,27 +170,6 @@ describe("useFormDraftRecovery", () => {
     expect(saved!.extra_fields).toEqual({ contract_number: "ABC-1" })
   })
 
-  it("pagehide не пишет, если перезапись отменена", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(makeDraft()))
-    const { result } = renderHook(() => setup())
-
-    act(() => {
-      vi.advanceTimersByTime(DEBOUNCE_MS)
-    })
-    expect(result.current.overwritePrompt).toBe(true)
-
-    act(() => {
-      result.current.cancelOverwrite()
-    })
-
-    act(() => {
-      window.dispatchEvent(new Event("pagehide"))
-    })
-
-    const saved = readDraft()
-    expect(saved!.extra_fields).toEqual({ contract_number: "ABC-1" })
-  })
-
   it("pagehide не пишет, когда в форме нет контента", () => {
     renderHook(() =>
       setup({
@@ -241,7 +184,7 @@ describe("useFormDraftRecovery", () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
   })
 
-  it("clear стирает черновик и сбрасывает гейт перезаписи", () => {
+  it("clear стирает черновик; новое заполнение после него пишется без подтверждения (#87)", () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(makeDraft()))
     const { result, rerender } = renderHook(
       ({ state }) => setup({ formState: state }),
@@ -258,7 +201,6 @@ describe("useFormDraftRecovery", () => {
     act(() => {
       vi.advanceTimersByTime(DEBOUNCE_MS)
     })
-    expect(result.current.overwritePrompt).toBe(false)
     const saved = readDraft()
     expect(saved).not.toBeNull()
     expect(saved!.extra_fields).toEqual({ contract_number: "NEW" })

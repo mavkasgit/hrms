@@ -10,6 +10,10 @@ export class VacationsPage {
   readonly table: Locator
   readonly rows: Locator
   readonly searchInput: Locator
+  readonly createFormEmployeeSearch: Locator
+  readonly orderNumberInput: Locator
+  readonly startDateInput: Locator
+  readonly endDateInput: Locator
 
   constructor(page: Page) {
     this.page = page
@@ -17,12 +21,40 @@ export class VacationsPage {
     this.table = page.locator('table')
     this.rows = page.locator('tbody tr')
     this.searchInput = page.getByPlaceholder(/поиск по фио или таб/i)
+    // Форма создания отпуска (вкладка «Создать трудовой отпуск» открыта по умолчанию)
+    this.createFormEmployeeSearch = page.getByPlaceholder('Поиск по ФИО...').first()
+    this.orderNumberInput = page.getByLabel(/номер приказа/i).first()
+    this.startDateInput = page.getByLabel(/Дата начала/i).first()
+    this.endDateInput = page.getByLabel(/Дата конца/i).first()
   }
 
   async goto() {
     await this.page.goto('/vacations')
     await expect(this.pageTitle).toBeVisible({ timeout: 15000 })
     await expect(this.table).toBeVisible({ timeout: 15000 })
+  }
+
+  /** Выбрать сотрудника в форме создания отпуска (EmployeeSearch). */
+  async selectCreateFormEmployee(name: string) {
+    await expect(this.createFormEmployeeSearch).toBeVisible({ timeout: 10_000 })
+    await this.createFormEmployeeSearch.click()
+    await this.createFormEmployeeSearch.fill(name)
+    const option = this.page.locator('button').filter({ hasText: name }).first()
+    await expect(option).toBeVisible({ timeout: 10_000 })
+    await option.click()
+    await expect(this.page.getByText(name, { exact: false }).first()).toBeVisible({
+      timeout: 5_000,
+    })
+  }
+
+  /** Заполнить даты начала/конца отпуска в формате ДД.ММ.ГГГГ. */
+  async fillCreateFormDates(start: string, end: string) {
+    await this.startDateInput.click()
+    await this.startDateInput.fill(start)
+    await this.startDateInput.press('Enter')
+    await this.endDateInput.click()
+    await this.endDateInput.fill(end)
+    await this.endDateInput.press('Enter')
   }
 
   private async waitForVacationListRefresh(trigger: () => Promise<void>) {

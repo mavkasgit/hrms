@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
 import { Badge } from "@/shared/ui/badge"
@@ -9,7 +9,7 @@ import type { AllDraftItem } from "@/entities/draft"
 import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
 import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order/draftSaveStatus"
 import { timeAgo } from "@/shared/utils/date"
-import { formDraftRecoverUrl, readAllFormDrafts } from "@/entities/form-draft"
+import { formDraftRecoverUrl, formDraftSlotForRoute, readAllFormDrafts } from "@/entities/form-draft"
 import type { FormDraftEntry } from "@/entities/form-draft"
 import { ClipboardPaste, Eye, FilePen, Loader2, Trash2 } from "lucide-react"
 
@@ -117,9 +117,64 @@ export function DraftOrdersNavItem() {
   // Таргеты слотов, по которым пользователь уже принял решение в этой сессии —
   // не показываем повторно (draft мог ещё лежать в localStorage при медленном restore).
   const dismissedRef = useRef(new Set<string>())
+  // Слот заполнения текущей страницы: раскрываем попап и подсвечиваем его строку (#87).
+  const [highlightedTarget, setHighlightedTarget] = useState<string | null>(null)
+  // Попап был раскрыт автоматически (а не пользователем) — закрываем его при
+  // переходе на страницу без заполнения, чтобы не оставлять «пустой» попап (#87).
+  const autoOpenedRef = useRef(false)
   const navigate = useNavigate()
   const location = useLocation()
   const isDraftsActive = isDraftsRoute(location.pathname)
+
+  // Сопоставление «маршрут → слот» вынесено в реестр слотов чистой функцией (#87).
+  const currentSlot = useMemo(
+    () => formDraftSlotForRoute(location.pathname, location.search),
+    [location.pathname, location.search],
+  )
+
+  // При монтировании страницы и при навигации: определяем слот текущей страницы.
+  // Если у слота есть заполнение формы — раскрываем попап и подсвечиваем строку;
+  // если заполнения нет — снимаем подсветку и закрываем автораскрытый попап,
+  // чтобы не оставалась подсветка чужого слота и «пустой» попап (#87, US2/US3).
+  useEffect(() => {
+    const closeAutoOpened = () => {
+      if (autoOpenedRef.current) {
+        autoOpenedRef.current = false
+        setOpen(false)
+      }
+      setHighlightedTarget(null)
+    }
+
+    if (!currentSlot) {
+      closeAutoOpened()
+      return
+    }
+    if (dismissedRef.current.has(currentSlot.target)) {
+      closeAutoOpened()
+      return
+    }
+    try {
+      if (!localStorage.getItem(currentSlot.storageKey)) {
+        closeAutoOpened()
+        return
+      }
+    } catch {
+      closeAutoOpened()
+      return
+    }
+    autoOpenedRef.current = true
+    setHighlightedTarget(currentSlot.target)
+    setOpen(true)
+  }, [currentSlot])
+
+  // Подсвеченная строка прокручивается в видимую область: callback-ref срабатывает
+  // при первом рендере строки и после ре-синка списка при навигации.
+  const highlightRowRef = useCallback(
+    (el: HTMLLIElement | null) => {
+      if (el) el.scrollIntoView({ block: "nearest" })
+    },
+    [],
+  )
 
   useEffect(() => {
     const sync = () => {
@@ -142,6 +197,7 @@ export function DraftOrdersNavItem() {
 
   const handleFormRestore = (entry: FormDraftEntry) => {
     dismissedRef.current.add(entry.slot.target)
+    setHighlightedTarget(null)
     setOpen(false)
     setFormDrafts((prev) => prev.filter((e) => e.slot.target !== entry.slot.target))
     navigate(formDraftRecoverUrl(entry.slot))
@@ -150,8 +206,18 @@ export function DraftOrdersNavItem() {
   const handleFormRemove = (entry: FormDraftEntry) => {
     localStorage.removeItem(entry.slot.storageKey)
     dismissedRef.current.add(entry.slot.target)
+    setHighlightedTarget(null)
     setOpen(false)
     setFormDrafts((prev) => prev.filter((e) => e.slot.target !== entry.slot.target))
+  }
+
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next)
+    // Пользователь открыл попап вручную — больше не закрываем его автоматически.
+    if (next) autoOpenedRef.current = false
+    // Закрытие попапа снимает подсветку (но не «убирает» строку — она останется
+    // в списке, пока заполнение не восстановлено/удалено в этой сессии).
+    if (!next) setHighlightedTarget(null)
   }
 
   return (
@@ -170,7 +236,7 @@ export function DraftOrdersNavItem() {
         <FilePen className="h-4 w-4" />
         Черновики
       </NavLink>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <button
             type="button"
@@ -221,7 +287,17 @@ export function DraftOrdersNavItem() {
           ) : (
             <ul className="max-h-80 overflow-y-auto">
               {formDrafts.map((entry) => (
-                <li key={entry.slot.target} className="border-b border-amber-200 bg-amber-50/60">
+                <li
+                  key={entry.slot.target}
+                  ref={entry.slot.target === highlightedTarget ? highlightRowRef : undefined}
+                  data-testid={`form-draft-row-${entry.slot.target}`}
+                  data-highlighted={entry.slot.target === highlightedTarget ? "true" : undefined}
+                  className={cn(
+                    "border-b border-amber-200 bg-amber-50/60",
+                    entry.slot.target === highlightedTarget &&
+                      "ring-2 ring-inset ring-amber-400"
+                  )}
+                >
                   <div
                     data-testid={
                       entry.slot.target === "orders"

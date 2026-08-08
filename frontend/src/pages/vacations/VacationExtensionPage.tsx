@@ -80,7 +80,6 @@ export function VacationExtensionPage() {
   const {
     clear: recoveryClear,
     restoreGuardRef,
-    overwriteDialog: recoveryOverwriteDialog,
   } = useDraftRecoveryFor<VacationExtensionFormDraft>({
     slot: "vacations:extension",
     formState: recoveryFormState,
@@ -268,9 +267,6 @@ export function VacationExtensionPage() {
           </TabsContent>
         </Tabs>
       </div>
-
-      {/* Подтверждение перезаписи сохранённого заполнения (#28) */}
-      {recoveryOverwriteDialog}
     </div>
   )
 }

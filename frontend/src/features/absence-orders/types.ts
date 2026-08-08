@@ -142,11 +142,6 @@ export interface AbsencePageConfig {
   summaryThirdLabel: string
   /** Показывать сводную таблицу даже без данных (unpaid) или только с данными (weekend). */
   summaryAlwaysRender: boolean
-  /**
-   * Рендерить диалоги перезаписи черновика только для активной вкладки формы
-   * (unpaid) или всегда (weekend) — историческое поведение страниц.
-   */
-  renderOverwriteDialogsByMode: boolean
   single: SingleFormConfig
   group: GroupFormConfig
 }
