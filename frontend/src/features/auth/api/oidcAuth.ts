@@ -11,7 +11,7 @@
 import { oidcHostConfig } from "./oidcHostConfig"
 
 /** Версия OIDC-модуля — синхронизируется verify-sync (режим content + version). */
-export const OIDC_MODULE_VERSION = "1.0.0"
+export const OIDC_MODULE_VERSION = "1.1.0"
 
 /** Storage-ключ с бренд-префиксом (префикс — из хостового конфига). */
 const storageKey = (suffix: string): string => `${oidcHostConfig.storagePrefix}_${suffix}`
@@ -346,7 +346,7 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
 
 /**
  * Align IdP authorize URL host with the page host.
- * Config may say localhost:9000 while SPA is opened as http://192.168.x.x:5180 —
+ * Config may say localhost:9000 while SPA is opened as http://192.168.x.x:5172 —
  * rewrite to the LAN IP so cookies and redirects stay on the same host.
  */
 export function resolveAuthorizationUrl(authorizationUrl: string): string {
