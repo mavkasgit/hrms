@@ -22,7 +22,8 @@ import {
   FORM_DRAFT_CHANGED_EVENT,
 } from "@/entities/form-draft"
 import type { FormDraftEntry } from "@/entities/form-draft"
-import { ClipboardPaste, Eye, FilePen, Loader2, Trash2 } from "lucide-react"
+import { ClipboardPaste, Eye, FilePen, Loader2 } from "lucide-react"
+import { DeleteCancelButton } from "@/shared/ui/delete-cancel-button"
 
 interface DraftStatus {
   label: string
@@ -139,10 +140,12 @@ function DraftBadgeButton({
 }) {
   const navigate = useNavigate()
   const [filling, setFilling] = useState(false)
+  const [armed, setArmed] = useState(false)
   const deleteMutation = useDeleteAllDraft()
 
   const handleFillFields = async () => {
     if (filling) return
+    setArmed(false)
     setFilling(true)
     try {
       await fillFormFromDraft(draft.draft_id, navigate)
@@ -152,8 +155,14 @@ function DraftBadgeButton({
   }
 
   const handleDelete = () => deleteMutation.mutate(draft.draft_id)
-  const openView = () => openDraftEditorWindow(draft.view_url)
-  const openEdit = () => openDraftEditorWindow(draft.edit_url)
+  const openView = () => {
+    setArmed(false)
+    openDraftEditorWindow(draft.view_url)
+  }
+  const openEdit = () => {
+    setArmed(false)
+    openDraftEditorWindow(draft.edit_url)
+  }
 
   return (
     <DraftRow
@@ -196,21 +205,13 @@ function DraftBadgeButton({
           >
             <FilePen className="h-4 w-4" />
           </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={handleDelete}
-            disabled={deleteMutation.isPending}
-            title="Удалить черновик"
-            aria-label="Удалить черновик"
-            className="text-red-500 hover:text-red-700"
-          >
-            {deleteMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="h-4 w-4" />
-            )}
-          </Button>
+          <DeleteCancelButton
+            armed={armed}
+            onArmedChange={setArmed}
+            onDelete={handleDelete}
+            isPending={deleteMutation.isPending}
+            idleLabel="Удалить черновик"
+          />
         </>
       }
     />
@@ -221,6 +222,9 @@ export function DraftOrdersNavItem() {
   const { data: drafts } = useAllDrafts()
   const [open, setOpen] = useState(false)
   const [formDrafts, setFormDrafts] = useState<FormDraftEntry[]>(() => readAllFormDrafts())
+  // Слоты форм, чьи кнопки удаления вооружены (окно отмены активно). Формы
+  // в отличие от серверных черновиков рендерятся прямо здесь, поэтому Set.
+  const [armedFormTargets, setArmedFormTargets] = useState<ReadonlySet<string>>(new Set())
   // Слот заполнения текущей страницы: раскрываем попап и подсвечиваем его строку (#87).
   const [highlightedTarget, setHighlightedTarget] = useState<string | null>(null)
   // Попап был раскрыт автоматически (а не пользователем) — закрываем его при
@@ -324,6 +328,7 @@ export function DraftOrdersNavItem() {
   // живёт в localStorage до создания документа и исчезнет сам по событию
   // FORM_DRAFT_CHANGED_EVENT (после коммита форма вызовет clear()) (#87).
   const handleFormRestore = (entry: FormDraftEntry) => {
+    setArmedFormTargets((prev) => new Set([...prev].filter((t) => t !== entry.slot.target)))
     setHighlightedTarget(null)
     navigate(formDraftRecoverUrl(entry.slot))
   }
@@ -333,6 +338,7 @@ export function DraftOrdersNavItem() {
   // новом реальном вводе, и тогда строка появится снова честно) (#87).
   const handleFormRemove = (entry: FormDraftEntry) => {
     localStorage.removeItem(entry.slot.storageKey)
+    setArmedFormTargets((prev) => new Set([...prev].filter((t) => t !== entry.slot.target)))
     setHighlightedTarget(null)
     setFormDrafts((prev) => prev.filter((e) => e.slot.target !== entry.slot.target))
   }
@@ -437,17 +443,19 @@ export function DraftOrdersNavItem() {
                         >
                           <ClipboardPaste className="h-4 w-4" />
                         </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleFormRemove(item.entry)}
-                          data-testid="recovery-remove"
-                          title="Удалить черновик формы"
-                          aria-label="Удалить черновик формы"
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <DeleteCancelButton
+                          armed={armedFormTargets.has(item.entry.slot.target)}
+                          onArmedChange={(armed) => {
+                            setArmedFormTargets((prev) => {
+                              const next = new Set(prev)
+                              if (armed) next.add(item.entry.slot.target)
+                              else next.delete(item.entry.slot.target)
+                              return next
+                            })
+                          }}
+                          onDelete={() => handleFormRemove(item.entry)}
+                          idleLabel="Удалить черновик формы"
+                        />
                       </>
                     }
                   />

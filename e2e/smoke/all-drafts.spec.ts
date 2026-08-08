@@ -9,7 +9,8 @@ import { createAuthenticatedRequest } from '../helpers/api-request'
  * Сценарии:
  * - бейдж в сайдбаре = сумма всех трёх видов; попап показывает приказ, уведомление и заявление;
  * - страница /drafts — типовая таблица со всеми видами;
- * - удаление через диалог подтверждения работает для каждого вида;
+ * - удаление через окно отмены работает для каждого вида (клик вооружает → истечение → удаление);
+ * - повторный клик в окне отмены оставляет черновик;
  * - просмотр открывается в read-only режиме (без прав редактирования).
  *
  * Не требует Document Server: черновики создаются через API, редактор не открывается.
@@ -259,7 +260,7 @@ test.describe('Unified drafts @smoke', () => {
     }
   })
 
-  test('@smoke drafts: delete via confirm dialog works for each kind', async ({
+  test('@smoke drafts: delete works after cancel-window for each kind', async ({
     page,
     apiOps,
     playwright,
@@ -278,12 +279,10 @@ test.describe('Unified drafts @smoke', () => {
         const row = page.locator('tr').filter({ hasText: emp.name })
         await expect(row.first()).toBeVisible({ timeout: 15_000 })
 
-        await row.first().getByRole('button', { name: 'Удалить' }).click()
-        const dialog = page.getByRole('alertdialog')
-        await expect(dialog).toBeVisible()
-        await dialog.getByRole('button', { name: 'Удалить', exact: true }).click()
-
-        await expect(row).toHaveCount(0)
+        // Первый клик вооружает (окно отмены), ждём истечения — удаляется.
+        await row.first().getByRole('button', { name: 'Удалить черновик' }).click()
+        await expect(row.first().getByRole('button', { name: 'Отменить удаление' })).toBeVisible()
+        await expect(row.first()).not.toBeVisible({ timeout: 15_000 })
       }
 
       // API: все три черновика удалены (идентификация по draft_id, а не по title).
@@ -296,6 +295,47 @@ test.describe('Unified drafts @smoke', () => {
         `notification:${notifId}`
       )
       expect(remainingIds, 'statement draft must be deleted').not.toContain(`statement:${stmtId}`)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  test('@smoke drafts: cancel window — second click keeps the draft', async ({
+    page,
+    apiOps,
+    playwright,
+  }) => {
+    const u = apiOps.uid()
+    const { cleanup, empOrder, orderDraftId, request } = await createThreeDrafts(
+      playwright,
+      apiOps,
+      u,
+    )
+
+    try {
+      await page.goto('/drafts')
+      await expect(page.getByRole('heading', { name: 'Черновики' })).toBeVisible({
+        timeout: 30_000,
+      })
+
+      const row = page.locator('tr').filter({ hasText: empOrder.name })
+      await expect(row.first()).toBeVisible({ timeout: 15_000 })
+
+      // Клик «Удалить» вооружает кнопку; повторный клик в окне отмены разоружает.
+      const deleteBtn = row.first().getByRole('button', { name: 'Удалить черновик' })
+      await deleteBtn.click()
+      await expect(row.first().getByRole('button', { name: 'Отменить удаление' })).toBeVisible()
+      await row.first().getByRole('button', { name: 'Отменить удаление' }).click()
+
+      // Строка осталась, кнопка снова в спокойном состоянии.
+      await expect(row.first()).toBeVisible({ timeout: 5_000 })
+      await expect(deleteBtn).toBeVisible()
+
+      // API: черновик на месте.
+      const drafts = (await request.get(`${API_BASE}/api/drafts`).then((r) => r.json())) as Array<{
+        draft_id: string
+      }>
+      expect(drafts.map((d) => d.draft_id), 'draft kept after cancel').toContain(orderDraftId)
     } finally {
       await cleanup()
     }

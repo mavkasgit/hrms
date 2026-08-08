@@ -139,8 +139,11 @@ test.describe('Order form recovery @ui', () => {
     await expect(ordersPage.heading).toBeVisible({ timeout: 20_000 })
     const row = await expectOrdersDraftRowAutoRevealed(page)
 
-    // «Удалить» (корзина) очищает черновик
-    await row.getByTestId('recovery-remove').click()
+    // «Удалить» (корзина) — окно отмены: первый клик вооружает, повторный удаляет.
+    const removeBtn = row.getByRole('button', { name: 'Удалить черновик формы' })
+    await removeBtn.click()
+    await expect(row.getByRole('button', { name: 'Отменить удаление' })).toBeVisible()
+    await removeBtn.click()
     await expect(row).not.toBeVisible({ timeout: 5_000 })
 
     // Перезагрузка → строки нет (черновик удалён)

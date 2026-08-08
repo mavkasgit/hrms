@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ClipboardPaste, Eye, FilePen, Loader2, Trash2 } from "lucide-react"
+import { ClipboardPaste, Eye, FilePen, Loader2 } from "lucide-react"
 import { useAllDrafts, useDeleteAllDraft, fillFormFromDraft } from "@/entities/draft"
 import type { AllDraftItem } from "@/entities/draft"
 import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
@@ -27,16 +27,7 @@ import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
 import { Button } from "@/shared/ui/button"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/shared/ui/alert-dialog"
+import { DeleteCancelButton } from "@/shared/ui/delete-cancel-button"
 import { formatDate, formatDateTime } from "@/shared/utils/date"
 
 const KIND_LABEL: Record<AllDraftItem["kind"], string> = {
@@ -51,7 +42,8 @@ export function DraftsPage() {
   const navigate = useNavigate()
   const { data: drafts, isLoading } = useAllDrafts()
   const deleteMutation = useDeleteAllDraft()
-  const [deleteDraftId, setDeleteDraftId] = useState<string | null>(null)
+  // Вооружённые кнопки удаления (окно отмены активно). Set — параллельные окна.
+  const [armedDeleteIds, setArmedDeleteIds] = useState<ReadonlySet<string>>(new Set())
   const [fillingId, setFillingId] = useState<string | null>(null)
   const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
   const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
@@ -173,12 +165,22 @@ export function DraftsPage() {
 
   const handleFill = async (draft: AllDraftItem) => {
     if (fillingId) return
+    setArmedDeleteIds((prev) => new Set([...prev].filter((id) => id !== draft.draft_id)))
     setFillingId(draft.draft_id)
     try {
       await fillFormFromDraft(draft.draft_id, navigate)
     } finally {
       setFillingId(null)
     }
+  }
+
+  const toggleArmedDelete = (draftId: string, armed: boolean) => {
+    setArmedDeleteIds((prev) => {
+      const next = new Set(prev)
+      if (armed) next.add(draftId)
+      else next.delete(draftId)
+      return next
+    })
   }
 
   return (
@@ -334,7 +336,10 @@ export function DraftsPage() {
                           size="icon"
                           title="Открыть документ только для чтения"
                           aria-label="Открыть"
-                          onClick={() => openDraftEditorWindow(draft.view_url)}
+                          onClick={() => {
+                            toggleArmedDelete(draft.draft_id, false)
+                            openDraftEditorWindow(draft.view_url)
+                          }}
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -343,19 +348,20 @@ export function DraftsPage() {
                           size="icon"
                           title="Восстановить — открыть в редакторе для доработки и сохранения"
                           aria-label="Восстановить"
-                          onClick={() => openDraftEditorWindow(draft.edit_url)}
+                          onClick={() => {
+                            toggleArmedDelete(draft.draft_id, false)
+                            openDraftEditorWindow(draft.edit_url)
+                          }}
                         >
                           <FilePen className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Удалить черновик"
-                          className="text-red-500 hover:text-red-700"
-                          onClick={() => setDeleteDraftId(draft.draft_id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <DeleteCancelButton
+                          armed={armedDeleteIds.has(draft.draft_id)}
+                          onArmedChange={(armed) => toggleArmedDelete(draft.draft_id, armed)}
+                          onDelete={() => deleteMutation.mutate(draft.draft_id)}
+                          isPending={deleteMutation.isPending}
+                          idleLabel="Удалить черновик"
+                        />
                       </div>
                     </TableCell>
                   </TableRow>
@@ -391,32 +397,6 @@ export function DraftsPage() {
           </div>
         </>
       )}
-
-      <AlertDialog
-        open={deleteDraftId !== null}
-        onOpenChange={(open) => !open && setDeleteDraftId(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Удалить черновик?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Черновик будет удалён безвозвратно. Это действие нельзя отменить.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Отмена</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (deleteDraftId) deleteMutation.mutate(deleteDraftId)
-                setDeleteDraftId(null)
-              }}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Удалить
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }
