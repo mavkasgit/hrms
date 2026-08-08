@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
 import { Badge } from "@/shared/ui/badge"
@@ -24,20 +24,122 @@ import {
 import type { FormDraftEntry } from "@/entities/form-draft"
 import { ClipboardPaste, Eye, FilePen, Loader2, Trash2 } from "lucide-react"
 
-function formatSavedAt(savedAt: string): string {
-  return new Date(savedAt).toLocaleString("ru-RU", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
+interface DraftStatus {
+  label: string
+  className: string
 }
 
-function DraftBadgeButton({ draft }: { draft: AllDraftItem }) {
+// Статусы строк попапа: у незавершённых заполнений форм и серверных черновиков
+// общий визуальный компонент Badge, набор статусов у каждого типа свой (#87).
+const FORM_DRAFT_STATUS: DraftStatus = {
+  label: "Не сохранён",
+  className: "bg-amber-100 text-amber-800 border-amber-200",
+}
+const DRAFT_STATUS_FALLBACK: DraftStatus = {
+  label: "Черновик",
+  className: "bg-muted text-muted-foreground border-border",
+}
+
+// Короткое название типа формы для второй строки строки (номер документа ещё
+// не создан — показываем тип со стадией «форма»).
+const SLOT_TYPE_LABEL: Record<string, string> = {
+  orders: "Приказ",
+  "orders:general": "Общий приказ",
+  notifications: "Уведомление",
+  statements: "Заявление",
+  vacations: "Отпуск",
+  "vacations:recall": "Отзыв из отпуска",
+  "vacations:postpone": "Перенос отпуска",
+  "vacations:extension": "Продление отпуска",
+  "unpaid-leaves": "Отпуск за свой счёт",
+  "unpaid-leaves:group": "Групповой отпуск за свой счёт",
+  "weekend-calls": "Вызов в выходной",
+  "weekend-calls:group": "Групповой вызов в выходной",
+}
+
+function formDraftSubtitle(entry: FormDraftEntry): string {
+  const typeLabel = SLOT_TYPE_LABEL[entry.slot.target] ?? entry.slot.label
+  return `${typeLabel} · форма`
+}
+
+function serverDraftSubtitle(draft: AllDraftItem): string {
+  return (
+    [draft.number ? `№ ${draft.number}` : null, draft.type_name || null]
+      .filter(Boolean)
+      .join(" · ") || "—"
+  )
+}
+
+function serverDraftStatus(draft: AllDraftItem): DraftStatus {
+  if (draft.save_status) {
+    return {
+      label: DRAFT_SAVE_STATUS_LABEL[draft.save_status.state],
+      className: DRAFT_SAVE_STATUS_CLASS[draft.save_status.state],
+    }
+  }
+  return DRAFT_STATUS_FALLBACK
+}
+
+/**
+ * Единая строка списка попапа «Черновики»:
+ * [Название · Статус] / [Подпись] / [Дата] / [Действия].
+ * Одинаковая для незавершённых заполнений форм и созданных документов (#87).
+ */
+function DraftRow({
+  rowRef,
+  highlighted,
+  testId,
+  title,
+  status,
+  subtitle,
+  date,
+  actions,
+}: {
+  rowRef?: (el: HTMLLIElement | null) => void
+  highlighted?: boolean
+  testId?: string
+  title: string
+  status: DraftStatus | null
+  subtitle: string
+  date: string
+  actions: ReactNode
+}) {
+  return (
+    <li
+      ref={rowRef}
+      data-testid={testId}
+      data-highlighted={highlighted ? "true" : undefined}
+      className={cn("border-b", highlighted && "ring-2 ring-inset ring-amber-400")}
+    >
+      <div className="flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent">
+        <div className="min-w-0 flex-1">
+          <span className="flex items-center gap-2">
+            <span className="block truncate font-medium">{title}</span>
+            {status && (
+              <Badge variant="outline" className={cn("shrink-0 px-1.5", status.className)}>
+                {status.label}
+              </Badge>
+            )}
+          </span>
+          <span className="block truncate text-[11px] text-muted-foreground">{subtitle}</span>
+        </div>
+        <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">{date}</span>
+        <div className="flex shrink-0 items-center gap-1">{actions}</div>
+      </div>
+    </li>
+  )
+}
+
+function DraftBadgeButton({
+  draft,
+  rowRef,
+}: {
+  draft: AllDraftItem
+  rowRef?: (el: HTMLLIElement | null) => void
+}) {
   const navigate = useNavigate()
   const [filling, setFilling] = useState(false)
   const deleteMutation = useDeleteAllDraft()
-  const status = draft.save_status
 
   const handleFillFields = async () => {
     if (filling) return
@@ -50,85 +152,68 @@ function DraftBadgeButton({ draft }: { draft: AllDraftItem }) {
   }
 
   const handleDelete = () => deleteMutation.mutate(draft.draft_id)
-
   const openView = () => openDraftEditorWindow(draft.view_url)
   const openEdit = () => openDraftEditorWindow(draft.edit_url)
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent">
-      <button
-        type="button"
-        onClick={openView}
-        className="min-w-0 flex-1 text-left"
-        title={draft.title || undefined}
-      >
-        <span className="flex items-center gap-2">
-          <span className="block truncate font-medium">{draft.title || "—"}</span>
-          {draft.kind === "order" && status && (
-            <Badge
-              variant="outline"
-              className={cn("shrink-0 px-1.5", DRAFT_SAVE_STATUS_CLASS[status.state])}
-              title={status.state === "error" && status.last_error ? status.last_error : undefined}
-            >
-              {DRAFT_SAVE_STATUS_LABEL[status.state]}
-            </Badge>
-          )}
-        </span>
-        <span className="block truncate text-[11px] text-muted-foreground">
-          {[draft.number ? `№ ${draft.number}` : null, draft.type_name || null]
-            .filter(Boolean)
-            .join(" · ") || "—"}
-        </span>
-      </button>
-      <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
-        {timeAgo(draft.created_at)}
-      </span>
-      <div className="flex shrink-0 items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => void handleFillFields()}
-          disabled={filling}
-          title="Заполнить форму создания данными черновика"
-          aria-label="Заполнить"
-        >
-          {filling ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardPaste className="h-4 w-4" />}
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          title="Открыть документ только для чтения"
-          onClick={openView}
-          aria-label="Открыть"
-        >
-          <Eye className="h-4 w-4" />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          title="Восстановить — открыть в редакторе для доработки и сохранения"
-          onClick={openEdit}
-          aria-label="Восстановить"
-        >
-          <FilePen className="h-4 w-4" />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={handleDelete}
-          disabled={deleteMutation.isPending}
-          title="Удалить черновик"
-          aria-label="Удалить черновик"
-          className="text-red-500 hover:text-red-700"
-        >
-          {deleteMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Trash2 className="h-4 w-4" />
-          )}
-        </Button>
-      </div>
-    </div>
+    <DraftRow
+      rowRef={rowRef}
+      title={draft.title || "—"}
+      status={serverDraftStatus(draft)}
+      subtitle={serverDraftSubtitle(draft)}
+      date={timeAgo(draft.created_at)}
+      actions={
+        <>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => void handleFillFields()}
+            disabled={filling}
+            title="Заполнить форму создания данными черновика"
+            aria-label="Заполнить"
+          >
+            {filling ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ClipboardPaste className="h-4 w-4" />
+            )}
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            title="Открыть документ только для чтения"
+            onClick={openView}
+            aria-label="Открыть"
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            title="Восстановить — открыть в редакторе для доработки и сохранения"
+            onClick={openEdit}
+            aria-label="Восстановить"
+          >
+            <FilePen className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={handleDelete}
+            disabled={deleteMutation.isPending}
+            title="Удалить черновик"
+            aria-label="Удалить черновик"
+            className="text-red-500 hover:text-red-700"
+          >
+            {deleteMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+          </Button>
+        </>
+      }
+    />
   )
 }
 
@@ -329,36 +414,19 @@ export function DraftOrdersNavItem() {
             <ul className="max-h-80 overflow-y-auto">
               {combinedItems.map((item) =>
                 item.type === "form" ? (
-                  <li
+                  <DraftRow
                     key={item.entry.slot.target}
-                    ref={
+                    rowRef={
                       item.entry.slot.target === highlightedTarget ? highlightRowRef : undefined
                     }
-                    data-testid={`form-draft-row-${item.entry.slot.target}`}
-                    data-highlighted={item.entry.slot.target === highlightedTarget ? "true" : undefined}
-                    className={cn(
-                      "border-b border-amber-200 bg-amber-50/60",
-                      item.entry.slot.target === highlightedTarget &&
-                        "ring-2 ring-inset ring-amber-400"
-                    )}
-                  >
-                    <div
-                      data-testid={
-                        item.entry.slot.target === "orders"
-                          ? "order-form-recovery-banner"
-                          : `form-draft-recovery-banner-${item.entry.slot.target}`
-                      }
-                      className="flex items-center gap-2 px-3 py-2 text-left text-sm"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">
-                          Несохранённое заполнение {item.entry.slot.label}
-                        </span>
-                        <span className="block truncate text-[11px] text-muted-foreground">
-                          ({formatSavedAt(item.entry.savedAt)})
-                        </span>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1">
+                    highlighted={item.entry.slot.target === highlightedTarget}
+                    testId={`form-draft-row-${item.entry.slot.target}`}
+                    title={`Несохранённое заполнение ${item.entry.slot.label}`}
+                    status={FORM_DRAFT_STATUS}
+                    subtitle={formDraftSubtitle(item.entry)}
+                    date={timeAgo(item.entry.savedAt)}
+                    actions={
+                      <>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -380,13 +448,11 @@ export function DraftOrdersNavItem() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      </div>
-                    </div>
-                  </li>
+                      </>
+                    }
+                  />
                 ) : (
-                  <li key={item.draft.draft_id}>
-                    <DraftBadgeButton draft={item.draft} />
-                  </li>
+                  <DraftBadgeButton key={item.draft.draft_id} draft={item.draft} />
                 )
               )}
             </ul>
