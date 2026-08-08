@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -7,7 +7,6 @@ from fastapi.responses import JSONResponse
 import bcrypt
 from jose import jwt
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -181,10 +180,11 @@ async def backchannel_logout(
 ) -> JSONResponse:
     """OIDC Back-Channel Logout (public). Authentik POSTs logout_token form field.
 
-    - replay protection via jti (one-time use);
-    - if sid present: revoke only sessions with that IdP sid (not all user sessions);
-    - if sid absent (e.g. user deactivation): revoke all sessions by sub;
-    - audit: session_revoke event with source="authentik_backchannel".
+    Orchestrated in ``OidcAuthService.handle_backchannel_logout``:
+      - replay protection via jti (one-time use);
+      - if sid present: revoke only sessions with that IdP sid;
+      - if sid absent (e.g. user deactivation): revoke all sessions by sub;
+      - audit: session_revoke event with source="authentik_backchannel".
 
     Unknown sub is 200 no-op (no enumeration). Invalid token -> 400.
     """
@@ -195,69 +195,9 @@ async def backchannel_logout(
         )
 
     service = OidcAuthService(db)
-    try:
-        claims = await service.validate_logout_token(logout_token)
-    except HTTPException:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="invalid_logout_token",
-        ) from exc
-
-    # Replay-защита: jti одноразовый (OIDC Back-Channel Logout 1.0)
-    if claims.jti and await session_service.is_logout_jti_used(db, claims.jti):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="replay_logout_token",
-        )
-
-    user = await service.users.get_by_authentik_sub(db, claims.sub)
-    revoked = 0
-    if user is not None:
-        if claims.sid:
-            revoked_ids = await session_service.revoke_by_oidc_sid(
-                db, user_id=user.id, oidc_sid=claims.sid, reason="backchannel_logout"
-            )
-            revoked = len(revoked_ids)
-        else:
-            revoked = await session_service.revoke_all(
-                db, user_id=user.id, reason="backchannel_logout"
-            )
-        await session_service.record_login_event(
-            db,
-            event_type="session_revoke",
-            success=True,
-            user_id=user.id,
-            username_attempted=user.username,
-            details={
-                "reason": "backchannel_logout",
-                "source": "authentik_backchannel",
-                "oidc_sid": claims.sid,
-                "revoked": revoked,
-            },
-        )
-
-    # jti фиксируем и при unknown sub: валидный токен считается потреблённым.
-    # Строка живёт до exp токена — дальше replay невозможен по определению.
-    if claims.jti:
-        exp_dt = (
-            datetime.fromtimestamp(claims.exp, tz=timezone.utc)
-            if claims.exp
-            else datetime.now(timezone.utc) + timedelta(minutes=10)
-        )
-        try:
-            await session_service.mark_logout_jti_used(db, claims.jti, expires_at=exp_dt)
-        except IntegrityError as exc:
-            # Гонка повторной доставки: jti уже зафиксирован → replay
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="replay_logout_token",
-            ) from exc
-        await session_service.cleanup_logout_jti(db)
-
+    result = await service.handle_backchannel_logout(str(logout_token).strip())
     return JSONResponse(
-        content={"status": "ok", "revoked": revoked},
+        content=result,
         headers={"Cache-Control": "no-store"},
     )
 
@@ -462,62 +402,20 @@ async def get_me(
         )
 
     from app.services.unified_profile_service import (
-        apply_profile_to_user,
+        ensure_profile_fresh,
         profile_sync_enabled,
-        sync_local_from_idp,
     )
 
-    # Unified profile pull (best-effort; local remains if IdP unreachable)
-    # email: no DB column on HRMS — carry from IdP snapshot into response only
-    email_out: str | None = None
-    if user.authentik_sub and profile_sync_enabled():
-        from datetime import datetime, timezone
-        from app.core.config import settings
-
-        now = datetime.now(timezone.utc)
-        ttl = settings.AUTHENTIK_PROFILE_TTL_SECONDS
-
-        need_pull = True
-        if refresh != 1 and ttl > 0 and user.profile_synced_at is not None:
-            synced_at = user.profile_synced_at
-            if synced_at.tzinfo is None:
-                synced_at = synced_at.replace(tzinfo=timezone.utc)
-            if (now - synced_at).total_seconds() < ttl:
-                need_pull = False
-
-        if need_pull:
-            try:
-                snapshot = await sync_local_from_idp(
-                    authentik_sub=user.authentik_sub,
-                    local_full_name=user.full_name,
-                    local_avatar_seed=user.avatar_seed,
-                    local_locale=user.locale,
-                    local_theme=user.theme,
-                )
-                if snapshot is not None:
-                    email_out = snapshot.email
-                    apply_profile_to_user(user, snapshot)
-
-                user.profile_synced_at = now
-                db.add(user)
-                await db.commit()
-                await db.refresh(user)
-            except Exception:
-                # never break /me for profile sync failures
-                # negative cache: не спамить упавший IdP
-                try:
-                    user.profile_synced_at = now
-                    db.add(user)
-                    await db.commit()
-                    await db.refresh(user)
-                except Exception:
-                    pass
+    # Unified profile pull (best-effort; local remains if IdP unreachable).
+    # email: no DB column on HRMS; ensure_profile_fresh не отдаёт snapshot —
+    # клиент читает email опционально (канон user-settings).
+    await ensure_profile_fresh(db, user, refresh=(refresh == 1))
 
     return {
         "username": user.username,
         "role": user.role,
         "full_name": user.full_name,
-        "email": email_out,
+        "email": None,
         "locale": user.locale,
         "theme": user.theme,
         "avatar_seed": user.avatar_seed,

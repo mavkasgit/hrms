@@ -56,6 +56,7 @@ class User(Base):
     # Authentik / OIDC subject (stable UUID from IdP); link for SSO bridge
     authentik_sub: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     profile_synced_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    profile_sync_failed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

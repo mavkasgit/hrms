@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.user_auth import generate_avatar_seed
 from app.main import app
 from app.models.user import User
+from app.services.authentik_client import AuthentikAdminError
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
@@ -619,3 +620,217 @@ async def test_me_stale_cache_pulls(async_client, db_session: AsyncSession, idp_
             assert mock_sync.call_count == 1
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+
+# ─── failed pull / cooldown / not_found / recovery (HRMS-parity, Ref #49) ────
+
+
+async def test_me_pull_failure_keeps_cache_and_marks_failed_at(
+    async_client, db_session: AsyncSession, idp_api_on
+):
+    """IdP failure → 200 with cache; profile_synced_at untouched, failed_at set."""
+    import uuid as uuid_mod
+    from datetime import datetime, timezone, timedelta
+    from unittest.mock import patch, AsyncMock
+    from app.api.deps import get_current_user, CurrentUser
+    from sqlalchemy import select
+
+    uname = f"fail_me_{uuid_mod.uuid4().hex[:8]}"
+    sub = f"sub-{uuid_mod.uuid4().hex}"
+    user = await _make_user(
+        db_session,
+        username=uname,
+        full_name="Cached Name",
+        avatar_seed="00000000",
+        authentik_sub=sub,
+    )
+    user.profile_synced_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+    synced_before = user.profile_synced_at
+    db_session.add(user)
+    await db_session.commit()
+
+    async def override_user():
+        return CurrentUser(uname, role="admin", full_name="Cached Name")
+
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        with patch(
+            "app.services.unified_profile_service.sync_local_from_idp",
+            new_callable=AsyncMock,
+            side_effect=AuthentikAdminError("IdP down", status_code=502),
+        ) as mock_sync:
+            res1 = await async_client.get("/api/auth/me", headers=_auth())
+            assert res1.status_code == 200
+            assert res1.json()["full_name"] == "Cached Name"
+            assert mock_sync.call_count == 1
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    db_session.expire_all()
+    updated = (
+        await db_session.execute(
+            select(User).where(User.username == uname, User.is_deleted == False)
+        )
+    ).scalar_one()
+    assert updated.full_name == "Cached Name"
+    assert updated.profile_synced_at == synced_before
+    assert updated.profile_sync_failed_at is not None
+
+
+async def test_me_failure_cooldown_skips_second_pull(
+    async_client, db_session: AsyncSession, idp_api_on
+):
+    """After a failed pull the TTL cooldown prevents hammering the IdP."""
+    import uuid as uuid_mod
+    from datetime import datetime, timezone, timedelta
+    from unittest.mock import patch, AsyncMock
+    from app.api.deps import get_current_user, CurrentUser
+
+    uname = f"cooldown_me_{uuid_mod.uuid4().hex[:8]}"
+    sub = f"sub-{uuid_mod.uuid4().hex}"
+    user = await _make_user(
+        db_session,
+        username=uname,
+        full_name="Stale",
+        avatar_seed="00000000",
+        authentik_sub=sub,
+    )
+    user.profile_synced_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+    db_session.add(user)
+    await db_session.commit()
+
+    async def override_user():
+        return CurrentUser(uname, role="admin", full_name="Stale")
+
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        with patch(
+            "app.services.unified_profile_service.sync_local_from_idp",
+            new_callable=AsyncMock,
+            side_effect=AuthentikAdminError("IdP down", status_code=503),
+        ) as mock_sync:
+            res1 = await async_client.get("/api/auth/me", headers=_auth())
+            assert res1.status_code == 200
+            assert mock_sync.call_count == 1
+
+            res2 = await async_client.get("/api/auth/me", headers=_auth())
+            assert res2.status_code == 200
+            assert mock_sync.call_count == 1
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_me_not_found_sets_synced_at_and_skips_second_pull(
+    async_client, db_session: AsyncSession, idp_api_on
+):
+    """not_found is an authoritative answer: synced_at=now, no failed_at, TTL skip."""
+    import uuid as uuid_mod
+    from datetime import datetime, timezone, timedelta
+    from unittest.mock import patch, AsyncMock
+    from app.api.deps import get_current_user, CurrentUser
+    from sqlalchemy import select
+
+    uname = f"nf_me_{uuid_mod.uuid4().hex[:8]}"
+    sub = f"sub-{uuid_mod.uuid4().hex}"
+    user = await _make_user(
+        db_session,
+        username=uname,
+        full_name="Stale",
+        avatar_seed="00000000",
+        authentik_sub=sub,
+    )
+    user.profile_synced_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+    db_session.add(user)
+    await db_session.commit()
+
+    async def override_user():
+        return CurrentUser(uname, role="admin", full_name="Stale")
+
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        with patch(
+            "app.services.unified_profile_service.sync_local_from_idp",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as mock_sync:
+            res1 = await async_client.get("/api/auth/me", headers=_auth())
+            assert res1.status_code == 200
+            assert mock_sync.call_count == 1
+
+            db_session.expire_all()
+            updated = (
+                await db_session.execute(
+                    select(User).where(User.username == uname, User.is_deleted == False)
+                )
+            ).scalar_one()
+            assert updated.profile_sync_failed_at is None
+            assert updated.profile_synced_at is not None
+
+            res2 = await async_client.get("/api/auth/me", headers=_auth())
+            assert res2.status_code == 200
+            assert mock_sync.call_count == 1
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+async def test_me_refresh_recovers_after_failure(
+    async_client, db_session: AsyncSession, idp_api_on
+):
+    """refresh=1 forces a pull; success clears failed_at and refreshes the cache."""
+    import uuid as uuid_mod
+    from datetime import datetime, timezone, timedelta
+    from unittest.mock import patch, AsyncMock
+    from app.api.deps import get_current_user, CurrentUser
+    from app.services.unified_profile_service import UnifiedProfile
+    from sqlalchemy import select
+
+    uname = f"rec_me_{uuid_mod.uuid4().hex[:8]}"
+    sub = f"sub-{uuid_mod.uuid4().hex}"
+    user = await _make_user(
+        db_session,
+        username=uname,
+        full_name="Stale",
+        avatar_seed="00000000",
+        authentik_sub=sub,
+    )
+    user.profile_synced_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+    db_session.add(user)
+    await db_session.commit()
+
+    mock_profile = UnifiedProfile(
+        full_name="Recovered Name",
+        avatar_seed="recovseed",
+        authentik_pk=13,
+        source="idp",
+    )
+
+    async def override_user():
+        return CurrentUser(uname, role="admin", full_name="Stale")
+
+    app.dependency_overrides[get_current_user] = override_user
+    try:
+        with patch(
+            "app.services.unified_profile_service.sync_local_from_idp",
+            new_callable=AsyncMock,
+            side_effect=[AuthentikAdminError("down", status_code=502), mock_profile],
+        ) as mock_sync:
+            res1 = await async_client.get("/api/auth/me", headers=_auth())
+            assert res1.status_code == 200
+            assert mock_sync.call_count == 1
+
+            res2 = await async_client.get("/api/auth/me?refresh=1", headers=_auth())
+            assert res2.status_code == 200
+            assert res2.json()["full_name"] == "Recovered Name"
+            assert mock_sync.call_count == 2
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+    db_session.expire_all()
+    updated = (
+        await db_session.execute(
+            select(User).where(User.username == uname, User.is_deleted == False)
+        )
+    ).scalar_one()
+    assert updated.full_name == "Recovered Name"
+    assert updated.profile_sync_failed_at is None
+    assert updated.profile_synced_at is not None
