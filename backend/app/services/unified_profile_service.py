@@ -21,7 +21,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.services.authentik_client import AuthentikAdminError, _request, is_idp_admin_enabled
@@ -124,14 +127,16 @@ def profile_from_ak_user(user: dict[str, Any]) -> UnifiedProfile:
 
 
 async def fetch_profile_by_sub(authentik_sub: str) -> UnifiedProfile | None:
-    """Load profile from Authentik. None if not found / API off."""
+    """Load profile from Authentik. None = IdP healthy, user not found.
+
+    Transient IdP failures propagate as ``AuthentikAdminError`` so callers can
+    distinguish ``not_found`` from ``failed``. None is returned only when the
+    IdP answered authoritatively that the user does not exist (or the admin API
+    is disabled, i.e. no authoritative answer at all).
+    """
     if not profile_sync_enabled():
         return None
-    try:
-        user = await _find_user_by_sub(authentik_sub)
-    except AuthentikAdminError as exc:
-        logger.warning("unified profile fetch failed: %s", exc.message)
-        return None
+    user = await _find_user_by_sub(authentik_sub)
     if not user:
         return None
     return profile_from_ak_user(user)
@@ -320,3 +325,79 @@ def apply_profile_to_user(user: Any, profile: UnifiedProfile) -> bool:
             user.email = profile.email
             changed = True
     return changed
+
+
+def _ts_utc(value: datetime | None) -> datetime | None:
+    """Normalize a possibly naive DB timestamp to timezone-aware UTC."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _set_profile_failed_at(user: Any, value: datetime | None) -> None:
+    """Set profile_sync_failed_at; no-op when the ORM table lacks the column (HRMS)."""
+    if hasattr(user, "profile_sync_failed_at"):
+        user.profile_sync_failed_at = value
+
+
+async def ensure_profile_fresh(
+    db: AsyncSession,
+    user: Any,
+    *,
+    refresh: bool = False,
+) -> None:
+    """Pull the IdP profile into the local cache, honoring the TTL gate.
+
+    Single orchestration point for profile-cache freshness (must-match with
+    HRMS). Never raises on IdP failure — the caller (e.g. ``/auth/me``) keeps
+    serving the cache with 200.
+
+    Gate: a pull is skipped while either ``profile_synced_at`` or
+    ``profile_sync_failed_at`` is inside the TTL window; ``refresh`` forces it.
+
+    Outcomes of an authoritative IdP answer:
+      - ok        → profile_synced_at=now, profile_sync_failed_at=NULL, apply
+      - not_found → profile_synced_at=now, profile_sync_failed_at=NULL
+    On ``AuthentikAdminError`` (IdP down/error):
+      - profile_sync_failed_at=now (+ warning log), profile_synced_at untouched.
+    """
+    if not getattr(user, "authentik_sub", None) or not profile_sync_enabled():
+        return
+    now = datetime.now(timezone.utc)
+    ttl = settings.AUTHENTIK_PROFILE_TTL_SECONDS
+    if not refresh and ttl > 0:
+        for last in (
+            _ts_utc(getattr(user, "profile_synced_at", None)),
+            _ts_utc(getattr(user, "profile_sync_failed_at", None)),
+        ):
+            if last is not None and (now - last).total_seconds() < ttl:
+                return
+
+    try:
+        snapshot = await sync_local_from_idp(
+            authentik_sub=user.authentik_sub,
+            local_full_name=user.full_name,
+            local_avatar_seed=user.avatar_seed,
+            local_locale=getattr(user, "locale", None),
+            local_theme=getattr(user, "theme", None),
+            local_email=getattr(user, "email", None),
+        )
+    except AuthentikAdminError as exc:
+        logger.warning(
+            "profile sync failed for sub=%s: %s", user.authentik_sub[:8], exc.message
+        )
+        _set_profile_failed_at(user, now)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return
+
+    if snapshot is not None:
+        apply_profile_to_user(user, snapshot)
+    user.profile_synced_at = now
+    _set_profile_failed_at(user, None)
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
