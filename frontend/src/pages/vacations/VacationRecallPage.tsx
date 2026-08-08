@@ -31,7 +31,7 @@ interface VacationRecallFormDraft {
 }
 
 function vacationRecallHasContent(state: Omit<VacationRecallFormDraft, "saved_at">): boolean {
-  return state.vacation !== null || state.recall_date !== "" || state.order_number.trim() !== ""
+  return state.vacation !== null || state.recall_date !== ""
 }
 
 export function VacationRecallPage() {

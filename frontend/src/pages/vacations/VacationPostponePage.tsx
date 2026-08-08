@@ -35,8 +35,7 @@ function vacationPostponeHasContent(state: Omit<VacationPostponeFormDraft, "save
   return (
     state.vacation !== null ||
     state.postpone_start_date !== "" ||
-    state.postpone_end_date !== "" ||
-    state.order_number.trim() !== ""
+    state.postpone_end_date !== ""
   )
 }
 

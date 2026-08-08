@@ -16,7 +16,6 @@ export function orderFormHasContent(state: Omit<OrderFormDraft, "saved_at">): bo
   return (
     state.employee_id !== null ||
     state.order_type_id !== null ||
-    state.order_number.trim() !== "" ||
     Object.values(state.extra_fields).some((v) => v !== "" && v !== null && v !== undefined)
   )
 }

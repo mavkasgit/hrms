@@ -35,8 +35,7 @@ function vacationExtensionHasContent(state: Omit<VacationExtensionFormDraft, "sa
   return (
     state.vacation !== null ||
     state.period_start !== "" ||
-    state.period_end !== "" ||
-    state.order_number.trim() !== ""
+    state.period_end !== ""
   )
 }
 

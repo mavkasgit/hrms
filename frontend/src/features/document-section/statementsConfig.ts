@@ -25,7 +25,6 @@ function statementHasContent(state: Omit<StatementFormDraft, "saved_at">): boole
   return (
     state.employee_id !== null ||
     state.statement_type_id !== null ||
-    state.statement_number.trim() !== "" ||
     Object.values(state.extra_fields).some((v) => v !== "" && v !== null && v !== undefined)
   )
 }

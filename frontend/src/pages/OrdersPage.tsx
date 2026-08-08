@@ -107,8 +107,12 @@ interface GeneralOrderFormDraft {
   saved_at: string
 }
 
-function generalOrderFormHasContent(state: Omit<GeneralOrderFormDraft, "saved_at">): boolean {
-  return state.general_order_number.trim() !== ""
+/** Сегодня в локальном часовом поясе (ISO yyyy-mm-dd) — как инициализируется дата формы. */
+function todayIsoLocal(): string {
+  const now = new Date()
+  const m = String(now.getMonth() + 1).padStart(2, "0")
+  const d = String(now.getDate()).padStart(2, "0")
+  return `${now.getFullYear()}-${m}-${d}`
 }
 
 function OrderDeletePreview({ orderId }: { orderId: number | null }) {
@@ -410,9 +414,11 @@ export function OrdersPage() {
   })
 
   // General order form state
-  const [generalOrderDate, setGeneralOrderDate] = useState(new Date().toISOString().split("T")[0])
+  const [generalOrderDate, setGeneralOrderDate] = useState(todayIsoLocal())
   const [generalOrderNumber, setGeneralOrderNumber] = useState("")
   const [generalOrderErrors, setGeneralOrderErrors] = useState<Record<string, string>>({})
+  // Пользователь вручную правил номер общего приказа (автоподстановка не считается).
+  const generalNumberModifiedRef = useRef(false)
   const [generalDraftId, setGeneralDraftId] = useState<string | null>(null)
 
   // Apply client-side filters for the "all" tab list.
@@ -729,10 +735,11 @@ export function OrdersPage() {
   useFillDraftIdRestore(recoveryRestoreWith, mapOrderFillDraft, "/orders")
 
   const resetGeneralForm = () => {
-    setGeneralOrderDate(new Date().toISOString().split("T")[0])
+    setGeneralOrderDate(todayIsoLocal())
     setGeneralOrderNumber("")
     setGeneralOrderErrors({})
     setGeneralDraftId(null)
+    generalNumberModifiedRef.current = false
     // Очищаем сохранённый черновик формы общего приказа (#28) — форма сброшена
     generalRecoveryClear()
   }
@@ -748,13 +755,23 @@ export function OrdersPage() {
     if (draft.general_order_number) setGeneralOrderNumber(draft.general_order_number)
   }, [])
 
+  // Контент формы общего приказа: только реальные действия пользователя —
+  // ручная правка номера или смена даты от «сегодня». Автоподстановка номера
+  // и даты по умолчанию контентом не считаются (#87).
+  const generalFormHasContent = useCallback(
+    (state: Omit<GeneralOrderFormDraft, "saved_at">): boolean => {
+      return generalNumberModifiedRef.current || state.general_order_date !== todayIsoLocal()
+    },
+    [],
+  )
+
   const {
     restore: generalRecoveryRestore,
     clear: generalRecoveryClear,
   } = useDraftRecoveryFor<GeneralOrderFormDraft>({
     slot: "orders:general",
     formState: generalRecoveryFormState,
-    hasContent: generalOrderFormHasContent,
+    hasContent: generalFormHasContent,
     onRestore: handleGeneralRecoveryRestore,
     // Особый recover-эффект ниже (привязка к вкладке ?tab=general).
     autoRestoreOnRecover: false,
@@ -1259,6 +1276,7 @@ export function OrdersPage() {
                 required
                 error={generalOrderErrors.orderNumber}
                 isGeneralOrder
+                onUserModified={() => { generalNumberModifiedRef.current = true }}
               />
 
               <div className="flex gap-2 pt-2">

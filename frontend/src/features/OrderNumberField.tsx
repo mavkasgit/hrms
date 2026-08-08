@@ -11,6 +11,8 @@ interface OrderNumberFieldProps {
   required?: boolean
   error?: string
   isGeneralOrder?: boolean
+  /** Вызывается, когда пользователь вручную меняет номер (не автоподстановка). */
+  onUserModified?: (modified: boolean) => void
 }
 
 export function OrderNumberField({
@@ -21,6 +23,7 @@ export function OrderNumberField({
   required,
   error,
   isGeneralOrder,
+  onUserModified,
 }: OrderNumberFieldProps) {
   const [letter, setLetter] = useState<string | null>(null)
 
@@ -109,6 +112,7 @@ export function OrderNumberField({
       displayValue={displayValue}
       onBlur={handleBlur}
       suffixElement={suffixElement}
+      onUserModified={onUserModified}
     />
   )
 }

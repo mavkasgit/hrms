@@ -27,7 +27,6 @@ import type {
 function unpaidSingleHasContent(state: Omit<SingleFormDraft, "saved_at">): boolean {
   return (
     state.employee_id !== null ||
-    state.order_number.trim() !== "" ||
     state.vacation_start !== "" ||
     state.vacation_end !== "" ||
     state.vacation_days.trim() !== ""
@@ -139,7 +138,6 @@ function unpaidDefaultEmployeeDays(single: SingleFormValues): number {
 function weekendCallSingleHasContent(state: Omit<SingleFormDraft, "saved_at">): boolean {
   return (
     state.employee_id !== null ||
-    state.order_number.trim() !== "" ||
     state.call_date !== "" ||
     state.call_date_start !== "" ||
     state.call_date_end !== ""
@@ -148,7 +146,6 @@ function weekendCallSingleHasContent(state: Omit<SingleFormDraft, "saved_at">): 
 
 function weekendCallGroupHasContent(state: Omit<GroupFormDraft, "saved_at">): boolean {
   return (
-    state.order_number.trim() !== "" ||
     state.call_date !== "" ||
     state.call_date_start !== "" ||
     state.call_date_end !== "" ||

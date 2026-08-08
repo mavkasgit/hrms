@@ -25,7 +25,6 @@ function notificationHasContent(state: Omit<NotificationFormDraft, "saved_at">):
   return (
     state.employee_id !== null ||
     state.notification_type_id !== null ||
-    state.notification_number.trim() !== "" ||
     Object.values(state.extra_fields).some((v) => v !== "" && v !== null && v !== undefined)
   )
 }

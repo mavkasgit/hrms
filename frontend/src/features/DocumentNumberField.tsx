@@ -16,6 +16,8 @@ interface DocumentNumberFieldProps {
   displayValue?: string
   onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void
   suffixElement?: React.ReactNode
+  /** Вызывается, когда пользователь вручную меняет значение (не автоподстановка). */
+  onUserModified?: (modified: boolean) => void
 }
 
 function defaultFormatDate(dateStr: string): string {
@@ -53,6 +55,7 @@ export function DocumentNumberField({
   displayValue,
   onBlur,
   suffixElement,
+  onUserModified,
 }: DocumentNumberFieldProps) {
   const id = useId()
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -73,6 +76,7 @@ export function DocumentNumberField({
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value
     setUserModified(true)
+    onUserModified?.(true)
     onChange(v)
   }
 
