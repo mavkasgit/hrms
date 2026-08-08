@@ -1,12 +1,10 @@
-import { useMemo, useState, useEffect, useCallback, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { NavLink, useLocation } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
-import api, { getToken } from "@/shared/api/client"
 import { redirectToKtmLogin } from "@/shared/api/authHost"
 import { useAuth } from "@/features/auth/hooks/useAuth"
 import { HrmsUserSettingsDialog } from "@/features/user-settings/HrmsUserSettingsDialog"
 import { HrmsNotificationBell } from "@/features/notifications"
-import { applyTheme, storeLocale } from "@/shared/lib/profile-prefs"
 import { UserAvatar } from "@/shared/ui/user-avatar"
 import { getUserSeed } from "@/shared/lib/avatar"
 import {
@@ -23,25 +21,6 @@ import {
   LogOut,
   Wrench,
 } from "lucide-react"
-
-function decodeToken(token: string) {
-  if (token === "admin") {
-    return { username: "admin", full_name: "Администратор" }
-  }
-  try {
-    const base64Url = token.split('.')[1]
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-    const jsonPayload = decodeURIComponent(
-      window.atob(base64)
-        .split('')
-        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    )
-    return JSON.parse(jsonPayload)
-  } catch (e) {
-    return null
-  }
-}
 
 const topNavItems = [
   { to: "/", label: "Дашборд", icon: LayoutDashboard },
@@ -70,7 +49,7 @@ const getKtmDashboardURL = () => {
 
 export function Sidebar({ afterNav }: { afterNav?: ReactNode }) {
   const location = useLocation()
-  const { logout } = useAuth()
+  const { logout, user, refreshUser, isLoading } = useAuth()
   const hasActiveAbsenceItem = useMemo(
     () => absenceItems.some((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)),
     [location.pathname]
@@ -82,42 +61,6 @@ export function Sidebar({ afterNav }: { afterNav?: ReactNode }) {
   }
   const [absenceOpen, setAbsenceOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-
-  const [currentUser, setCurrentUser] = useState<any>(() => {
-    const token = getToken()
-    if (!token) return null
-    const decoded = decodeToken(token)
-    if (!decoded) return null
-    return {
-      username: decoded.username || "",
-      role: decoded.hrms_access_level || decoded.role || "viewer",
-      full_name: decoded.full_name || "Пользователь",
-    }
-  })
-
-  const refreshProfile = useCallback(() => {
-    const token = getToken()
-    if (token) {
-      api.get("/auth/me")
-        .then((res) => {
-          setCurrentUser(res.data)
-          applyTheme(res.data?.theme)
-          storeLocale(res.data?.locale)
-        })
-        .catch((err) => {
-          console.error("Не удалось перезагрузить данные пользователя:", err)
-        })
-    }
-  }, [])
-
-  useEffect(() => {
-    const token = getToken()
-    if (token) {
-      refreshProfile()
-    } else {
-      setCurrentUser(null)
-    }
-  }, [location.pathname, refreshProfile])
 
   return (
     <aside className="w-64 h-screen sticky top-0 bg-card border-r flex flex-col shrink-0">
@@ -220,7 +163,15 @@ export function Sidebar({ afterNav }: { afterNav?: ReactNode }) {
       </nav>
 
       <div className="p-3 border-t flex flex-col gap-2">
-        {currentUser ? (
+        {isLoading ? (
+          <div className="flex items-center gap-3 px-3 py-2" role="status" aria-label="Загрузка профиля">
+            <div className="h-8 w-8 shrink-0 rounded-xl bg-muted animate-pulse" />
+            <div className="flex-1 space-y-1.5">
+              <div className="h-3 w-24 bg-muted animate-pulse rounded" />
+              <div className="h-2 w-16 bg-muted animate-pulse rounded" />
+            </div>
+          </div>
+        ) : user ? (
           <>
             <div className="flex items-center gap-2">
               <button
@@ -230,7 +181,7 @@ export function Sidebar({ afterNav }: { afterNav?: ReactNode }) {
                 title="Настройки профиля"
               >
                 <UserAvatar
-                  seed={getUserSeed(currentUser)}
+                  seed={getUserSeed(user)}
                   size={32}
                   className="group-hover:scale-105 transition-transform"
                 />
@@ -245,7 +196,7 @@ export function Sidebar({ afterNav }: { afterNav?: ReactNode }) {
             >
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-foreground text-sm truncate group-hover:text-primary transition-colors">
-                  {currentUser.full_name || "Пользователь"}
+                  {user.full_name || "Пользователь"}
                 </div>
                 <div className="text-[10px] text-muted-foreground truncate">
                   Настройки профиля
@@ -263,7 +214,11 @@ export function Sidebar({ afterNav }: { afterNav?: ReactNode }) {
             <HrmsUserSettingsDialog
               open={profileOpen}
               onOpenChange={setProfileOpen}
-              onProfileUpdated={refreshProfile}
+              onProfileUpdated={() => {
+                void refreshUser().catch((err) => {
+                  console.error("Не удалось обновить профиль после сохранения:", err)
+                })
+              }}
             />
           </>
         ) : (

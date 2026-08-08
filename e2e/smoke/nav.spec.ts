@@ -9,6 +9,8 @@ test.describe('Sidebar navigation @smoke', () => {
     await layout.gotoHome()
 
     await expect(page.locator('main')).toBeVisible()
+    // Auth-state owner: sidebar shows the signed-in user from useAuth() (not a local JWT decode).
+    await layout.expectCurrentUserVisible('Emergency Access Admin')
 
     for (const item of MAIN_NAV_TARGETS) {
       await layout.openNav(item.label)

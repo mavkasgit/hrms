@@ -43,6 +43,20 @@ export class LayoutPage {
       this.page.getByRole('heading', { name: 'Активные сессии' }),
     ).toBeVisible({ timeout: 10_000 })
   }
+
+  /**
+   * Ассерт блока авторизованного пользователя в футере сайдбара: полное имя
+   * из /auth/me (break-glass admin → «Emergency Access Admin») и кнопка
+   * «Выйти» — доказывает, что auth-состояние приходит из общего useAuth().
+   */
+  async expectCurrentUserVisible(fullName: string | RegExp) {
+    await expect(this.sidebar.getByText(fullName, { exact: true })).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(this.sidebar.getByRole('button', { name: 'Выйти' })).toBeVisible({
+      timeout: 15_000,
+    })
+  }
 }
 
 /** Main top-level nav items → expected main heading (level 1) after open. */
