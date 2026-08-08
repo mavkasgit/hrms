@@ -27,16 +27,6 @@ from app.services.onlyoffice_form_data import (
 )
 
 
-def short_name(name: str) -> str:
-    """Сократить ФИО до «Фамилия И.О.»: «Махитко Оксана Николаевна» → «Махитко О.Н.»."""
-    parts = [p for p in name.strip().split() if p]
-    if not parts:
-        return name
-    surname = parts[0]
-    initials = "".join(f"{p[0]}." for p in parts[1:] if p)
-    return f"{surname} {initials}".strip()
-
-
 def _draft_sort_ts(value: str | None):
     """Парсить created_at (ISO со смещением или без) для устойчивой сортировки."""
     if not value:
@@ -156,7 +146,7 @@ class UnifiedDraftsService:
                 if payload.get("employee_id"):
                     emp = employees_map.get(payload["employee_id"])
                     if emp:
-                        employee_name = short_name(emp.name)
+                        employee_name = emp.name
                 title = employee_name or None
 
             order_type_code = meta.get("order_type_code")
@@ -181,7 +171,7 @@ class UnifiedDraftsService:
         # Уведомления (БД, is_draft)
         notifications = await self.notification_repo.list_drafts(db)
         for n in notifications:
-            title = short_name(n.employee.name) if n.employee else n.title
+            title = n.employee.name if n.employee else n.title
             items.append(AllDraftsItem(
                 draft_id=f"notification:{n.id}",
                 kind="notification",
@@ -199,7 +189,7 @@ class UnifiedDraftsService:
         # Заявления (БД, is_draft)
         statements = await self.statement_repo.list_drafts(db)
         for s in statements:
-            title = short_name(s.employee.name) if s.employee else s.title
+            title = s.employee.name if s.employee else s.title
             items.append(AllDraftsItem(
                 draft_id=f"statement:{s.id}",
                 kind="statement",

@@ -95,7 +95,7 @@ async def test_list_all_drafts_combines_kinds_and_sorted(db_session, monkeypatch
 
     order = by_kind["order"]
     assert order.draft_id == DRAFT_ID
-    assert order.title == "Петров И.И."
+    assert order.title == "Петров Иван Иванович"
     assert order.type_name == "Перевод"
     assert order.number == "77"
     assert order.date == "2026-01-01"
@@ -161,8 +161,9 @@ async def test_list_all_drafts_notification_title_with_employee(db_session, monk
     await db_session.flush()
 
     items = await oo_api.list_all_drafts(db=db_session, current_user="admin")
-    # Короткое ФИО (Фамилия И.О.) вместо полного — единый стиль со страницей приказов (#58).
-    assert items[0].title == "Смирнова М.П."
+    # Полное ФИО сотрудника — единый стиль со страницей приказов и групповыми
+    # черновиками, где имена и так отдаются полностью (#58).
+    assert items[0].title == "Смирнова Мария Петровна"
 
 
 async def test_list_all_drafts_group_order_title(db_session, monkeypatch):

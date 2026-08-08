@@ -21,7 +21,9 @@ test.describe('Draft visibility @ui', () => {
     playwright,
   }) => {
     const u = apiOps.uid()
-    const empName = `e2e-emp-drafts-${u}`
+    // Двухсловное ФИО: раньше попап сокращал его до «… С.», теперь обязано
+    // показывать полное имя — это и есть фиксация регрессии (#58).
+    const empName = `e2e-emp-drafts-${u} Сотрудник`
     const orderNumber = `E2E${Date.now().toString().slice(-6)}`
 
     const employee = await apiOps.createEmployee({ name: empName })
