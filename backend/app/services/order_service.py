@@ -32,6 +32,7 @@ from app.services.order_document_service import (
     generate_group_document,
     generate_weekend_call_group_document,
 )
+from app.services.order_group_validation import ensure_group_order_employee_count
 from app.services.order_draft_service import order_draft_service
 from app.services.order_type_service import OrderTypeService
 from app.services.contract_history_service import contract_history_service
@@ -596,8 +597,7 @@ class OrderService:
 
         await self.ensure_default_order_types(db)
 
-        if not data.employees:
-            raise HRMSException("Список сотрудников не может быть пустым", "validation_error", status_code=422)
+        ensure_group_order_employee_count(data.employees)
 
         order_type = await self.get_order_type_by_code(db, "vacation_unpaid_group")
 
@@ -737,6 +737,8 @@ class OrderService:
 
         payload = metadata["payload"]
         order_type = await self.get_order_type_by_code(db, order_type_code)
+
+        ensure_group_order_employee_count(payload.get("employees") or [])
 
         order_number = payload.get("order_number")
         if not order_number:
@@ -931,8 +933,7 @@ class OrderService:
 
         await self.ensure_default_order_types(db)
 
-        if not data.employees:
-            raise HRMSException("Список сотрудников не может быть пустым", "validation_error", status_code=422)
+        ensure_group_order_employee_count(data.employees)
 
         order_type = await self.get_order_type_by_code(db, "weekend_call_group")
 

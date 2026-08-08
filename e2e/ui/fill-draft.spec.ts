@@ -75,10 +75,13 @@ test.describe('Fill draft fields @ui', () => {
   }) => {
     const u = apiOps.uid()
     const empName = `e2e-emp-fill-unpaid-${u}`
+    const empNameB = `e2e-emp-fill-unpaid-${u}-b`
     const orderNumber = `E2EGU${Date.now().toString().slice(-6)}`
 
     const employee = await apiOps.createEmployee({ name: empName })
+    const employeeB = await apiOps.createEmployee({ name: empNameB })
     expect(employee.id).toBeGreaterThan(0)
+    expect(employeeB.id).toBeGreaterThan(0)
 
     const { request, dispose } = await createAuthenticatedRequest(playwright)
     let draftId: string | undefined
@@ -88,7 +91,10 @@ test.describe('Fill draft fields @ui', () => {
           order_type_code: 'vacation_unpaid_group',
           order_date: '2026-01-05',
           order_number: orderNumber,
-          employees: [{ employee_id: employee.id, vacation_days: 1 }],
+          employees: [
+            { employee_id: employee.id, vacation_days: 1 },
+            { employee_id: employeeB.id, vacation_days: 1 },
+          ],
           vacation_start: '2026-01-06',
         },
       })
@@ -113,6 +119,9 @@ test.describe('Fill draft fields @ui', () => {
       await expect(page.getByRole('cell', { name: empName, exact: true }).first()).toBeVisible({
         timeout: 10_000,
       })
+      await expect(page.getByRole('cell', { name: empNameB, exact: true }).first()).toBeVisible({
+        timeout: 10_000,
+      })
     } finally {
       if (draftId) {
         await request.delete(`${API_BASE}/api/orders/drafts/${draftId}`).catch(() => {})
@@ -128,10 +137,13 @@ test.describe('Fill draft fields @ui', () => {
   }) => {
     const u = apiOps.uid()
     const empName = `e2e-emp-fill-wknd-${u}`
+    const empNameB = `e2e-emp-fill-wknd-${u}-b`
     const orderNumber = `E2EGW${Date.now().toString().slice(-6)}`
 
     const employee = await apiOps.createEmployee({ name: empName })
+    const employeeB = await apiOps.createEmployee({ name: empNameB })
     expect(employee.id).toBeGreaterThan(0)
+    expect(employeeB.id).toBeGreaterThan(0)
 
     const { request, dispose } = await createAuthenticatedRequest(playwright)
     let draftId: string | undefined
@@ -141,7 +153,10 @@ test.describe('Fill draft fields @ui', () => {
           order_type_code: 'weekend_call_group',
           order_date: '2026-01-05',
           order_number: orderNumber,
-          employees: [{ employee_id: employee.id, vacation_days: 1 }],
+          employees: [
+            { employee_id: employee.id, vacation_days: 1 },
+            { employee_id: employeeB.id, vacation_days: 1 },
+          ],
           mode: 'single',
           call_date: '2026-01-07',
         },
@@ -164,6 +179,9 @@ test.describe('Fill draft fields @ui', () => {
         timeout: 10_000,
       })
       await expect(page.getByRole('cell', { name: empName, exact: true }).first()).toBeVisible({
+        timeout: 10_000,
+      })
+      await expect(page.getByRole('cell', { name: empNameB, exact: true }).first()).toBeVisible({
         timeout: 10_000,
       })
     } finally {

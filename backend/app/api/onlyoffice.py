@@ -694,10 +694,15 @@ async def commit_group_order_draft(
     _ensure_onlyoffice_enabled()
     order_draft_service.claim_draft_for_commit(draft_id)
 
-    order = await order_service.create_group_order_from_draft(
-        db=db,
-        draft_id=draft_id,
-    )
+    try:
+        order = await order_service.create_group_order_from_draft(
+            db=db,
+            draft_id=draft_id,
+        )
+    except Exception:
+        # Release lock so the draft remains available for retry (#30 AC4, #88)
+        order_draft_service.release_commit_lock(draft_id)
+        raise
 
     try:
         await order_draft_service.delete_file_only(draft_id)

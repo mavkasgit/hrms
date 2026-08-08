@@ -96,7 +96,8 @@ function unpaidGroupValidate(
   if (!values.order_date) nextErrors.orderDate = "Укажите дату приказа"
   if (!values.order_number) nextErrors.orderNumber = "Укажите номер приказа"
   if (!values.group_vacation_start) nextErrors.vacationStart = "Укажите дату начала отпуска"
-  if (employees.length === 0) nextErrors.employees = "Добавьте хотя бы одного сотрудника"
+  if (employees.length === 0) nextErrors.employees = "Добавьте хотя бы двух сотрудников"
+  if (employees.length === 1) nextErrors.employees = "Для приказа на одного сотрудника используйте одиночную форму"
   for (const emp of employees) {
     if (emp.vacation_days <= 0) {
       nextErrors[`employee_${emp.employee_id}`] = "Количество дней должно быть больше 0"
@@ -219,7 +220,8 @@ function weekendCallGroupValidate(
       nextErrors.callDateEnd = "Дата окончания раньше даты начала"
     }
   }
-  if (employees.length === 0) nextErrors.employees = "Добавьте хотя бы одного сотрудника"
+  if (employees.length === 0) nextErrors.employees = "Добавьте хотя бы двух сотрудников"
+  if (employees.length === 1) nextErrors.employees = "Для приказа на одного сотрудника используйте одиночную форму"
   return nextErrors
 }
 

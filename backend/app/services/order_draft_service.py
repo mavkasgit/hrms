@@ -14,6 +14,7 @@ from app.models.order_type import OrderType
 from app.schemas.order import OrderCreate
 from app.services.document_draft_service import DocumentDraftService
 from app.services.order_document_service import _build_document, _build_filename
+from app.services.order_group_validation import ensure_group_order_employee_count
 
 
 def normalize_draft_save_status(save_status: dict[str, Any] | None) -> dict[str, Any]:
@@ -282,6 +283,9 @@ class OrderDraftService(DocumentDraftService):
 
         # Build employee rows from payload
         employees = payload.get("employees", [])
+
+        ensure_group_order_employee_count(employees)
+
         employee_rows = []
 
         def to_date(val):
