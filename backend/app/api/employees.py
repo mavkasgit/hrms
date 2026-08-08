@@ -59,7 +59,12 @@ class HireOrderResponse(BaseModel):
 router = APIRouter(prefix="/employees", tags=["employees"])
 
 
-from app.api.deps import get_current_user as _get_current_user_stub
+from app.api.deps import CurrentUser, get_current_user as _get_current_user_stub
+
+
+def _audit_actor(current_user: CurrentUser) -> str:
+    """Автор операции для журнала аудита: ФИО, при отсутствии — логин (username)."""
+    return current_user.full_name or current_user.username
 
 
 async def _load_employee_tags(db: AsyncSession, employee_ids: list[int]) -> dict[int, list[TagRef]]:
@@ -210,9 +215,9 @@ async def get_employee(
 async def create_employee(
     data: EmployeeCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
-    employee = await employee_service.create_employee(db, data, current_user)
+    employee = await employee_service.create_employee(db, data, _audit_actor(current_user))
     # После создания перезагружаем с relations для сериализации
     from sqlalchemy.orm import joinedload
     from sqlalchemy import select
@@ -234,9 +239,9 @@ async def update_employee(
     employee_id: int,
     data: EmployeeUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
-    employee, periods_need_reset = await employee_service.update_employee(db, employee_id, data, current_user)
+    employee, periods_need_reset = await employee_service.update_employee(db, employee_id, data, _audit_actor(current_user))
     response = EmployeeResponse.model_validate(employee)
     result = response.model_dump()
     if periods_need_reset:
@@ -283,10 +288,10 @@ async def dismiss_employee(
     employee_id: int,
     body: Optional[EmployeeDismissal] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     reason = body.dismissal_reason if body else None
-    employee, warnings = await employee_service.dismiss_employee(db, employee_id, current_user, reason)
+    employee, warnings = await employee_service.dismiss_employee(db, employee_id, _audit_actor(current_user), reason)
     response = EmployeeResponse.model_validate(employee)
     result = response.model_dump()
     result["warnings"] = warnings
@@ -297,9 +302,9 @@ async def dismiss_employee(
 async def restore_employee(
     employee_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
-    employee = await employee_service.restore_employee(db, employee_id, current_user)
+    employee = await employee_service.restore_employee(db, employee_id, _audit_actor(current_user))
     locked = await _get_contract_number_locked(db, employee_id)
     response = EmployeeResponse.model_validate(employee)
     result = response.model_dump()
@@ -479,14 +484,14 @@ async def delete_employee(
     hard: bool = Query(False),
     confirm: bool = Query(False),
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     print(f"[DELETE] employee_id={employee_id}, hard={hard}, confirm={confirm}")
     if hard:
         if not confirm:
             from app.core.exceptions import HRMSException
             raise HRMSException("Требуется подтверждение: ?confirm=true", "confirmation_required", status_code=400)
-        await employee_service.hard_delete_employee(db, employee_id, current_user)
+        await employee_service.hard_delete_employee(db, employee_id, _audit_actor(current_user))
     else:
-        await employee_service.soft_delete_employee(db, employee_id, current_user)
+        await employee_service.soft_delete_employee(db, employee_id, _audit_actor(current_user))
     await db.commit()
