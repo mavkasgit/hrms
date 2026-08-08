@@ -106,9 +106,10 @@ test.describe('Vacation form recovery @ui', () => {
     await expect(row).toBeVisible({ timeout: 10_000 })
     await expect(row).toHaveAttribute('data-highlighted', 'true')
 
-    // «Заполнить» возвращает полную форму: номер, даты и сотрудника
+    // «Заполнить» возвращает полную форму: номер, даты и сотрудника.
+    // Строка остаётся — черновик живёт до создания документа (#87)
     await row.getByTestId('recovery-restore').click()
-    await expect(row).not.toBeVisible({ timeout: 5_000 })
+    await expect(row).toBeVisible({ timeout: 5_000 })
 
     await expect(vacPage.orderNumberInput).toHaveValue(savedNumber, { timeout: 10_000 })
     await expect(vacPage.startDateInput).toHaveValue(toDisplayDate(startIso), { timeout: 10_000 })

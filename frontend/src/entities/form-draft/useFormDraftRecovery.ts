@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { FORM_DRAFT_CHANGED_EVENT } from "./slots"
 
 /**
  * Восстановление несохранённого заполнения форм создания документов (#28).
@@ -45,11 +46,8 @@ export function useFormDraftRecovery<T extends { saved_at: string }>({
   const hasContentRef = useRef(hasContent)
   hasContentRef.current = hasContent
   // Есть ли неперсистённые изменения формы с момента последней записи/восстановления.
-  // pagehide-flush пишет только если что-то изменилось — после «Восстановить»
-  // черновик не должен возрождаться без правок.
+  // pagehide-flush пишет только если что-то изменилось.
   const dirtyRef = useRef(false)
-  // Подавление: на время, когда restore сам заполняет форму, не помечаем dirty.
-  const suppressDirtyRef = useRef(false)
 
   const readDraft = useCallback((): T | null => {
     try {
@@ -65,12 +63,15 @@ export function useFormDraftRecovery<T extends { saved_at: string }>({
     (state: Omit<T, "saved_at">): void => {
       const draft = { ...state, saved_at: new Date().toISOString() } as T
       localStorage.setItem(storageKey, JSON.stringify(draft))
+      // Попап «Черновики» в той же вкладке обновляется мгновенно (#87).
+      window.dispatchEvent(new Event(FORM_DRAFT_CHANGED_EVENT))
     },
     [storageKey],
   )
 
   const clearDraft = useCallback((): void => {
     localStorage.removeItem(storageKey)
+    window.dispatchEvent(new Event(FORM_DRAFT_CHANGED_EVENT))
   }, [storageKey])
 
   // При монтировании: проверяем наличие сохранённого черновика
@@ -93,12 +94,6 @@ export function useFormDraftRecovery<T extends { saved_at: string }>({
 
     if (debounceRef.current) clearTimeout(debounceRef.current)
 
-    // Изменения, внесённые самим restore, не считаем пользовательским вводом
-    if (suppressDirtyRef.current) {
-      suppressDirtyRef.current = false
-      return
-    }
-
     if (!hasContentRef.current(formState)) return
     dirtyRef.current = true
 
@@ -119,8 +114,8 @@ export function useFormDraftRecovery<T extends { saved_at: string }>({
   // последний ввод не терялся, если debounce ещё не отработал.
   useEffect(() => {
     const handlePageHide = () => {
-      // Пишем только при неперсистённых изменениях — иначе после «Восстановить»
-      // очищенный черновик тут же возродился бы
+      // Пишем только при неперсистённых изменениях — иначе pagehide
+      // переписывал бы черновик без реального ввода пользователя
       if (!dirtyRef.current) return
       if (!hasContentRef.current(formStateRef.current)) return
       writeDraft(formStateRef.current)
@@ -134,16 +129,14 @@ export function useFormDraftRecovery<T extends { saved_at: string }>({
   const restore = useCallback(() => {
     const draft = pendingDraft ?? readDraft()
     if (draft) {
-      // Изменения, которые restore внесёт в форму, не должны помечаться как
-      // пользовательский ввод (иначе pagehide возродит очищенный черновик)
-      suppressDirtyRef.current = true
       onRestore(draft)
-      // После восстановления очищаем черновик — он больше не нужен
-      clearDraft()
+      // Черновик НЕ чистим: он остаётся пометкой «незавершённое заполнение»
+      // до создания документа. clear() вызывают формы после коммита/сброса —
+      // тогда строка в попапе «Черновики» исчезнет сама (#87).
       dirtyRef.current = false
     }
     setPendingDraft(null)
-  }, [pendingDraft, readDraft, onRestore, clearDraft])
+  }, [pendingDraft, readDraft, onRestore])
 
   const clear = useCallback(() => {
     clearDraft()

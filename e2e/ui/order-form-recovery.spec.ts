@@ -10,7 +10,9 @@ import type { ApiOperations } from '../fixtures/api'
  * - Заполнение формы автоматически сохраняется и переживает перезагрузку
  * - Попап «Черновики» раскрывается сам при перезагрузке страницы с заполнением,
  *   строка текущего заполнения подсвечена (#87)
- * - «Заполнить» и «Удалить» работают как раньше
+ * - «Заполнить» не закрывает попап и не прячет строку: черновик живёт в
+ *   localStorage до создания документа и исчезает только после clear() (#87)
+ * - «Удалить» стирает черновик и строку
  * - Модала перезаписи больше нет; автосейв текущей сессии не блокируется (#87)
  * - Пред-сессионное заполнение тихо заменяется новым при вводе (#87)
  * - «Восстановить» возвращает все поля, включая контрактные (#50)
@@ -101,8 +103,8 @@ test.describe('Order form recovery @ui', () => {
     // Нажимаем «Заполнить»
     await row.getByTestId('recovery-restore').click()
 
-    // Строка исчезает
-    await expect(row).not.toBeVisible({ timeout: 5_000 })
+    // Строка остаётся: черновик живёт до создания документа (#87)
+    await expect(row).toBeVisible({ timeout: 5_000 })
 
     // Форма заполнена: номер приказа на месте
     await ordersPage.ensureCreateFormOpen()
@@ -263,7 +265,7 @@ test.describe('Order form recovery @ui', () => {
     await expect(ordersPage.heading).toBeVisible({ timeout: 20_000 })
     const row = await expectOrdersDraftRowAutoRevealed(page)
     await row.getByTestId('recovery-restore').click()
-    await expect(row).not.toBeVisible({ timeout: 5_000 })
+    await expect(row).toBeVisible({ timeout: 5_000 })
 
     // Контрактные поля восстановлены вместе с формой
     await ordersPage.ensureCreateFormOpen()

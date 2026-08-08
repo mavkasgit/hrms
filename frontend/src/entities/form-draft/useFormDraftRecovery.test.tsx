@@ -128,7 +128,7 @@ describe("useFormDraftRecovery", () => {
     expect(saved!.extra_fields).toEqual({ contract_number: "ABC-1" })
   })
 
-  it("restore вызывает onRestore и чистит черновик", () => {
+  it("restore вызывает onRestore, черновик остаётся до явного clear (#87)", () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(makeDraft()))
     const onRestore = vi.fn()
     const { result } = renderHook(() => setup({ onRestore }))
@@ -138,24 +138,58 @@ describe("useFormDraftRecovery", () => {
     })
 
     expect(onRestore).toHaveBeenCalledTimes(1)
-    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+    // restore не стирает черновик: он остаётся пометкой «незавершённое»
+    // до создания документа — clear() вызывают формы после коммита
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
     expect(result.current.pendingDraft).toBeNull()
+
+    act(() => {
+      result.current.clear()
+    })
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
   })
 
-  it("pagehide не пересоздаёт черновик сразу после restore", () => {
+  it("pagehide не перезаписывает черновик сразу после restore (#87)", () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(makeDraft()))
     const { result } = renderHook(() => setup())
 
     act(() => {
       result.current.restore()
     })
-    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+    // Черновик на месте — restore больше не чистит его
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull()
 
     act(() => {
       window.dispatchEvent(new Event("pagehide"))
     })
 
-    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+    // restore не пометил состояние грязным — pagehide не переписывает saved_at
+    const saved = readDraft()
+    expect(saved).not.toBeNull()
+    expect(saved!.saved_at).toBe("2026-01-10T00:00:00.000Z")
+  })
+
+  it("правка после restore при совпадающем состоянии сохраняется (#87)", () => {
+    // Состояние формы уже совпадает с черновиком — restore не меняет serialized.
+    // Правка пользователя после этого не должна теряться (нет залипшего suppressDirty).
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(makeDraft()))
+    const { result, rerender } = renderHook(
+      ({ state }) => setup({ formState: state }),
+      { initialProps: { state: formState() } }
+    )
+
+    act(() => {
+      result.current.restore()
+    })
+
+    rerender({ state: formState({ number: "П-2" }) })
+    act(() => {
+      vi.advanceTimersByTime(DEBOUNCE_MS)
+    })
+
+    const saved = readDraft()
+    expect(saved).not.toBeNull()
+    expect(saved!.number).toBe("П-2")
   })
 
   it("pagehide пишет черновик синхронно, не дожидаясь debounce", () => {

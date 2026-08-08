@@ -9,7 +9,12 @@ import type { AllDraftItem } from "@/entities/draft"
 import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
 import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order/draftSaveStatus"
 import { timeAgo } from "@/shared/utils/date"
-import { formDraftRecoverUrl, formDraftSlotForRoute, readAllFormDrafts } from "@/entities/form-draft"
+import {
+  formDraftRecoverUrl,
+  formDraftSlotForRoute,
+  readAllFormDrafts,
+  FORM_DRAFT_CHANGED_EVENT,
+} from "@/entities/form-draft"
 import type { FormDraftEntry } from "@/entities/form-draft"
 import { ClipboardPaste, Eye, FilePen, Loader2, Trash2 } from "lucide-react"
 
@@ -22,13 +27,7 @@ function formatSavedAt(savedAt: string): string {
   })
 }
 
-function DraftBadgeButton({
-  draft,
-  onFill,
-}: {
-  draft: AllDraftItem
-  onFill: () => void
-}) {
+function DraftBadgeButton({ draft }: { draft: AllDraftItem }) {
   const navigate = useNavigate()
   const [filling, setFilling] = useState(false)
   const status = draft.save_status
@@ -38,7 +37,6 @@ function DraftBadgeButton({
     setFilling(true)
     try {
       await fillFormFromDraft(draft.draft_id, navigate)
-      onFill()
     } finally {
       setFilling(false)
     }
@@ -114,8 +112,8 @@ export function DraftOrdersNavItem() {
   const { data: drafts } = useAllDrafts()
   const [open, setOpen] = useState(false)
   const [formDrafts, setFormDrafts] = useState<FormDraftEntry[]>(() => readAllFormDrafts())
-  // Таргеты слотов, по которым пользователь уже принял решение в этой сессии —
-  // не показываем повторно (draft мог ещё лежать в localStorage при медленном restore).
+  // Таргеты слотов, чей черновик формы удалён в этой сессии (корзина в попапе) —
+  // не показываем повторно до перезагрузки вкладки.
   const dismissedRef = useRef(new Set<string>())
   // Слот заполнения текущей страницы: раскрываем попап и подсвечиваем его строку (#87).
   const [highlightedTarget, setHighlightedTarget] = useState<string | null>(null)
@@ -182,24 +180,49 @@ export function DraftOrdersNavItem() {
     }
     sync()
     window.addEventListener("storage", sync)
+    // Мгновенная синхронизация в той же вкладке: запись/очистка черновика формы
+    // шлёт FORM_DRAFT_CHANGED_EVENT — строка исчезает сразу после создания документа (#87).
+    window.addEventListener(FORM_DRAFT_CHANGED_EVENT, sync)
     const id = window.setInterval(sync, 30_000)
     return () => {
       window.removeEventListener("storage", sync)
+      window.removeEventListener(FORM_DRAFT_CHANGED_EVENT, sync)
       window.clearInterval(id)
     }
   }, [location.pathname, location.search])
 
+  // Единый список попапа: строки форм (localStorage) + серверные черновики,
+  // отсортированные по времени создания — свежие сверху (#87).
+  const combinedItems = useMemo(() => {
+    const items: Array<
+      | { type: "form"; ts: number; entry: FormDraftEntry }
+      | { type: "server"; ts: number; draft: AllDraftItem }
+    > = [
+      ...formDrafts.map((entry) => ({
+        type: "form" as const,
+        ts: new Date(entry.savedAt).getTime(),
+        entry,
+      })),
+      ...(drafts ?? []).map((draft) => ({
+        type: "server" as const,
+        ts: draft.created_at ? new Date(draft.created_at).getTime() : Number.MIN_SAFE_INTEGER,
+        draft,
+      })),
+    ]
+    items.sort((a, b) => b.ts - a.ts)
+    return items
+  }, [formDrafts, drafts])
+
+  const count = combinedItems.length
   const serverCount = drafts?.length ?? 0
-  const count = serverCount + formDrafts.length
-  const recent = drafts?.slice(0, 5) ?? []
 
   if (count === 0) return null
 
+  // «Заполнить»: попап остаётся открытым, строка остаётся видимой — черновик
+  // живёт в localStorage до создания документа и исчезнет сам по событию
+  // FORM_DRAFT_CHANGED_EVENT (после коммита форма вызовет clear()) (#87).
   const handleFormRestore = (entry: FormDraftEntry) => {
-    dismissedRef.current.add(entry.slot.target)
     setHighlightedTarget(null)
-    setOpen(false)
-    setFormDrafts((prev) => prev.filter((e) => e.slot.target !== entry.slot.target))
     navigate(formDraftRecoverUrl(entry.slot))
   }
 
@@ -282,69 +305,72 @@ export function DraftOrdersNavItem() {
           <div className="border-b p-3">
             <p className="text-sm font-semibold">Черновики ({count})</p>
           </div>
-          {recent.length === 0 && formDrafts.length === 0 ? (
+          {combinedItems.length === 0 ? (
             <p className="p-3 text-sm text-muted-foreground">Черновиков нет</p>
           ) : (
             <ul className="max-h-80 overflow-y-auto">
-              {formDrafts.map((entry) => (
-                <li
-                  key={entry.slot.target}
-                  ref={entry.slot.target === highlightedTarget ? highlightRowRef : undefined}
-                  data-testid={`form-draft-row-${entry.slot.target}`}
-                  data-highlighted={entry.slot.target === highlightedTarget ? "true" : undefined}
-                  className={cn(
-                    "border-b border-amber-200 bg-amber-50/60",
-                    entry.slot.target === highlightedTarget &&
-                      "ring-2 ring-inset ring-amber-400"
-                  )}
-                >
-                  <div
-                    data-testid={
-                      entry.slot.target === "orders"
-                        ? "order-form-recovery-banner"
-                        : `form-draft-recovery-banner-${entry.slot.target}`
+              {combinedItems.map((item) =>
+                item.type === "form" ? (
+                  <li
+                    key={item.entry.slot.target}
+                    ref={
+                      item.entry.slot.target === highlightedTarget ? highlightRowRef : undefined
                     }
-                    className="flex items-center gap-2 px-3 py-2 text-left text-sm"
+                    data-testid={`form-draft-row-${item.entry.slot.target}`}
+                    data-highlighted={item.entry.slot.target === highlightedTarget ? "true" : undefined}
+                    className={cn(
+                      "border-b border-amber-200 bg-amber-50/60",
+                      item.entry.slot.target === highlightedTarget &&
+                        "ring-2 ring-inset ring-amber-400"
+                    )}
                   >
-                    <div className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">
-                        Несохранённое заполнение {entry.slot.label}
-                      </span>
-                      <span className="block truncate text-[11px] text-muted-foreground">
-                        ({formatSavedAt(entry.savedAt)})
-                      </span>
+                    <div
+                      data-testid={
+                        item.entry.slot.target === "orders"
+                          ? "order-form-recovery-banner"
+                          : `form-draft-recovery-banner-${item.entry.slot.target}`
+                      }
+                      className="flex items-center gap-2 px-3 py-2 text-left text-sm"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">
+                          Несохранённое заполнение {item.entry.slot.label}
+                        </span>
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          ({formatSavedAt(item.entry.savedAt)})
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleFormRestore(item.entry)}
+                          data-testid="recovery-restore"
+                          title="Заполнить форму данными несохранённого заполнения"
+                          aria-label="Заполнить"
+                        >
+                          <ClipboardPaste className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => handleFormRemove(item.entry)}
+                          data-testid="recovery-remove"
+                          title="Удалить черновик формы"
+                          aria-label="Удалить черновик формы"
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleFormRestore(entry)}
-                        data-testid="recovery-restore"
-                        title="Заполнить форму данными несохранённого заполнения"
-                        aria-label="Заполнить"
-                      >
-                        <ClipboardPaste className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => handleFormRemove(entry)}
-                        data-testid="recovery-remove"
-                        title="Удалить черновик формы"
-                        aria-label="Удалить черновик формы"
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </li>
-              ))}
-              {recent.map((draft) => (
-                <li key={draft.draft_id}>
-                  <DraftBadgeButton draft={draft} onFill={() => setOpen(false)} />
-                </li>
-              ))}
+                  </li>
+                ) : (
+                  <li key={item.draft.draft_id}>
+                    <DraftBadgeButton draft={item.draft} />
+                  </li>
+                )
+              )}
             </ul>
           )}
           <div className="border-t p-2">

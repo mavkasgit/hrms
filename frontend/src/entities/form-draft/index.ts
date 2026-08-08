@@ -1,5 +1,6 @@
 export {
   FORM_DRAFT_SLOTS,
+  FORM_DRAFT_CHANGED_EVENT,
   getFormDraftSlot,
   formDraftRecoverUrl,
   formDraftSlotForRoute,
