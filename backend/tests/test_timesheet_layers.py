@@ -120,7 +120,7 @@ async def test_manual_shift_over_vacation_wins(db_session, create_employee, crea
     assert row["result_hours"] == 8.0
 
 
-async def test_vacation_sick_overlap_conflict(db_session, create_employee, create_vacation, monkeypatch):
+async def test_vacation_sick_overlap_conflict(db_session, create_employee, create_vacation, monkeypatch, admin_user):
     emp = await create_employee(name="Conflict", hire_date=date(2024, 1, 1))
     await create_vacation(
         employee=emp,
@@ -439,7 +439,7 @@ async def test_order_changed_false_without_auto_layer(
 
 
 async def test_order_changed_with_sick_leave(
-    db_session, create_employee, monkeypatch
+    db_session, create_employee, monkeypatch, admin_user
 ):
     """Больничный, созданный после ручной правки → order_changed = true."""
     emp = await create_employee(name="SickAfter", hire_date=date(2024, 1, 1))

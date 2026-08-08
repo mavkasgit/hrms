@@ -1,7 +1,6 @@
 from datetime import date
 from typing import Optional, List, Dict, Any
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.sick_leave_repository import SickLeaveRepository
@@ -11,10 +10,11 @@ from app.core.exceptions import (
     SickLeaveNotFoundError,
     SickLeaveOverlapError,
     InvalidSickLeaveDatesError,
+    UserNotFoundError,
 )
 from app.core.logging import get_audit_logger
 from app.models.sick_leave import SickLeave, SickLeaveStatus
-from app.models.user import User, UserRole
+from app.repositories.user_repository import UserRepository
 
 audit_logger = get_audit_logger()
 
@@ -25,39 +25,17 @@ class SickLeaveService:
     def __init__(self):
         self.repo = SickLeaveRepository()
         self.employee_repo = EmployeeRepository()
+        self.user_repo = UserRepository()
 
-    async def _resolve_user_id(self, db: AsyncSession, current_user: Any) -> int:
-        if hasattr(current_user, "id"):
-            return int(current_user.id)
-
-        if isinstance(current_user, int):
-            return current_user
-
-        if isinstance(current_user, str):
-            if current_user.isdigit():
-                return int(current_user)
-
-            result = await db.execute(select(User).where(User.username == current_user))
-            user = result.scalar_one_or_none()
-            if user:
-                return int(user.id)
-
-            from app.core.user_auth import generate_avatar_seed
-
-            user = User(
-                username=current_user,
-                role=UserRole.ADMIN.value if current_user == "admin" else UserRole.VIEWER.value,
-                full_name=current_user,
-                avatar_seed=generate_avatar_seed(),
-            )
-            db.add(user)
-            await db.flush()
-            return int(user.id)
-
-        return 1
+    async def _resolve_user_id(self, db: AsyncSession, username: str) -> int:
+        """Строгий резолв автора по username; JIT-провижининг здесь не выполняется."""
+        user = await self.user_repo.get_by_username(db, username)
+        if user is None:
+            raise UserNotFoundError(username)
+        return int(user.id)
 
     async def create_sick_leave(
-        self, db: AsyncSession, data: dict, current_user: Any
+        self, db: AsyncSession, data: dict, username: str
     ) -> Dict[str, Any]:
         """
         Создать запись о больничном.
@@ -65,7 +43,7 @@ class SickLeaveService:
         Args:
             db: Сессия базы данных
             data: Данные для создания (employee_id, start_date, end_date, comment, ...)
-            current_user: Текущий пользователь
+            username: Имя пользователя (автор записи), существующего в системе
 
         Returns:
             dict: Данные созданного больничного
@@ -91,7 +69,7 @@ class SickLeaveService:
             )
 
         days_count = (end_date - start_date).days + 1
-        user_id = await self._resolve_user_id(db, current_user)
+        user_id = await self._resolve_user_id(db, username)
 
         sick_leave = SickLeave(
             employee_id=employee_id,
@@ -124,7 +102,7 @@ class SickLeaveService:
         return await self._build_response(db, created_sick_leave)
 
     async def update_sick_leave(
-        self, db: AsyncSession, sick_leave_id: int, data: dict, current_user: Any
+        self, db: AsyncSession, sick_leave_id: int, data: dict, username: str
     ) -> Dict[str, Any]:
         """
         Обновить запись о больничном.
@@ -133,7 +111,7 @@ class SickLeaveService:
             db: Сессия базы данных
             sick_leave_id: ID больничного
             data: Данные для обновления
-            current_user: Текущий пользователь
+            username: Имя пользователя (автор изменения), существующего в системе
 
         Returns:
             dict: Данные обновленного больничного
@@ -167,7 +145,7 @@ class SickLeaveService:
                     f"({overlap.start_date} - {overlap.end_date})"
                 )
 
-        user_id = await self._resolve_user_id(db, current_user)
+        user_id = await self._resolve_user_id(db, username)
 
         update_data = {}
         for field in ["start_date", "end_date", "comment"]:
@@ -190,7 +168,7 @@ class SickLeaveService:
         return await self._build_response(db, updated_sick_leave)
 
     async def delete_sick_leave(
-        self, db: AsyncSession, sick_leave_id: int, current_user: Any
+        self, db: AsyncSession, sick_leave_id: int, username: str
     ) -> bool:
         """
         Мягко удалить больничный (установить статус DELETED).
@@ -198,7 +176,7 @@ class SickLeaveService:
         Args:
             db: Сессия базы данных
             sick_leave_id: ID больничного
-            current_user: Текущий пользователь
+            username: Имя пользователя (автор удаления), существующего в системе
 
         Returns:
             bool: True если успешно
@@ -207,7 +185,7 @@ class SickLeaveService:
         if not sick_leave:
             raise SickLeaveNotFoundError(sick_leave_id)
 
-        user_id = await self._resolve_user_id(db, current_user)
+        user_id = await self._resolve_user_id(db, username)
 
         await self.repo.soft_delete(db, sick_leave, user_id)
 

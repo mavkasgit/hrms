@@ -8,7 +8,6 @@ from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.user_auth import generate_avatar_seed
 from app.models.user import User
 from app.services import session_service
 from app.services.session_service import SessionInactiveError
@@ -162,8 +161,6 @@ async def get_current_user(
             detail="Доступ запрещен. У вас нет доступа к кадровой системе."
         )
 
-    expected_role = "admin" if hrms_access_level == "admin" else "viewer"
-
     # Сначала активный пользователь. Soft-deleted + новый с тем же username
     # (как shisha_m id=3 deleted / id=4 active) — старый код брал .first() по username
     # без фильтра и блокировал вход «Пользователь удален».
@@ -184,49 +181,20 @@ async def get_current_user(
                 detail="Пользователь удален из системы",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-
-        # Just-In-Time provisioning (SSO: первый вход без локальной записи).
-        # Does NOT create a session — sessions only on login issue paths (R14).
-        jwt_full_name = payload.get("full_name") or username
-
-        user = User(
-            username=username,
-            full_name=jwt_full_name,
-            role=expected_role,
-            avatar_seed=generate_avatar_seed(),
-            is_deleted=False,
+        # JIT-провижининг выполняется только на пути входа (OIDC-callback, A3).
+        # Валидная сессия без локального User — аномалия: просим войти заново.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Пользователь не найден — выполните вход",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-        db.add(user)
-        try:
-            await db.commit()
-            await db.refresh(user)
-        except Exception:
-            await db.rollback()
-            result = await db.execute(
-                select(User).where(User.username == username, User.is_deleted == False)
-            )
-            user = result.scalars().first()
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Не удалось автоматически зарегистрировать пользователя в кадровой системе",
-                )
-    else:
-        # Fail-closed: заблокировать деактивированных пользователей (IdP отозвал роль)
-        if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Доступ запрещен. У вас нет активной роли в кадровой системе.",
-            )
-        # Sync role from JWT claim (legacy path when claim present on token)
-        if user.role != expected_role:
-            user.role = expected_role
-            db.add(user)
-            try:
-                await db.commit()
-                await db.refresh(user)
-            except Exception:
-                await db.rollback()
+
+    # Fail-closed: заблокировать деактивированных пользователей (IdP отозвал роль)
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Доступ запрещен. У вас нет активной роли в кадровой системе.",
+        )
 
     return CurrentUser(
         username, role=user.role, full_name=user.full_name, session_id=session_id

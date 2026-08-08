@@ -37,6 +37,7 @@ from app.models.employee import Employee
 from app.models.order import Order
 from app.models.order_type import OrderType
 from app.models.position import Position
+from app.models.user import User, UserRole
 from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
 
@@ -497,3 +498,32 @@ def create_vacation_period(
         return period
 
     return _create
+
+
+@pytest.fixture
+def create_user(db_session: AsyncSession) -> Callable[..., Awaitable[User]]:
+    async def _create(**overrides) -> User:
+        user = User(
+            username=overrides.pop("username", f"user_{uuid.uuid4().hex[:8]}"),
+            full_name=overrides.pop("full_name", "Test User"),
+            role=overrides.pop("role", UserRole.VIEWER.value),
+            **overrides,
+        )
+        db_session.add(user)
+        await db_session.flush()
+        await db_session.refresh(user)
+        return user
+
+    return _create
+
+
+@pytest.fixture
+async def admin_user(
+    db_session: AsyncSession,
+    create_user: Callable[..., Awaitable[User]],
+) -> User:
+    return await create_user(
+        username="admin",
+        full_name="Admin User",
+        role=UserRole.ADMIN.value,
+    )

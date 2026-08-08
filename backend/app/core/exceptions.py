@@ -87,6 +87,11 @@ class SickLeaveNotFoundError(NotFoundError):
         super().__init__(f"Больничный с ID {sick_leave_id} не найден", "sick_leave_not_found")
 
 
+class UserNotFoundError(NotFoundError):
+    def __init__(self, username: str):
+        super().__init__(f"Пользователь не найден", "user_not_found")
+
+
 class SickLeaveOverlapError(HRMSException):
     def __init__(self, message: str = "Периоды больничных пересекаются"):
         super().__init__(message, "sick_leave_overlap", status_code=409)
