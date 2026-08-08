@@ -52,6 +52,14 @@
       "version": true
     },
     {
+      "path": "backend/app/services/break_glass_service.py",
+      "mode": "presence"
+    },
+    {
+      "path": "backend/app/services/profile_service.py",
+      "mode": "presence"
+    },
+    {
       "path": "frontend/src/modules/notifications/NotificationsBell.tsx",
       "mode": "content"
     },
