@@ -27,6 +27,15 @@
 - `@server-operator`: Запуск команд на удаленном хосте через MCP `ssh-connect`.
 - `@sftp-operator`: Загрузка и скачивание релизов/логов через MCP `sftp-connect`.
 
+## Ручное тестирование через Chrome DevTools (CDP, порт 9222)
+
+Авторизация в dev-окружении (Authentik UI: http://192.168.100.200:9000 или http://localhost:9000):
+- **Логин:** `akadmin`
+- **Пароль:** `akadmin-dev-local`
+
+Это admin-учётка Authentik (IdP). Через неё входишь в SSO → попадаешь в HRMS.
+Break-glass пароль для локального входа в приложение (без SSO): `dev` (см. `.env.dev`, `BREAK_GLASS_PASSWORD`).
+
 ## Ключевые правила разработки
 
 1. **Frontend (React)**:

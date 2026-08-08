@@ -206,6 +206,15 @@ npm run db:makemigrate -- -m "msg"    # Создать новую миграци
 - Frontend Dev: http://localhost:5171
 - Playwright Report: `playwright-report/`
 
+## Ручное тестирование через Chrome DevTools (CDP, порт 9222)
+
+Авторизация в dev-окружении (Authentik UI: http://192.168.100.200:9000 или http://localhost:9000):
+- **Логин:** `akadmin`
+- **Пароль:** `akadmin-dev-local`
+
+Это admin-учётка Authentik (IdP). Через неё входишь в SSO → попадаешь в HRMS.
+Break-glass пароль для локального входа в приложение (без SSO): `dev` (см. `.env.dev`, `BREAK_GLASS_PASSWORD`).
+
 ---
 
 ## Agent skills

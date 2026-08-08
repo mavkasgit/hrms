@@ -28,7 +28,7 @@ test.describe('Internal notifications @ui', () => {
 
     // Открываем попап — либо пустое «Нет новых уведомлений», либо список.
     await bell.click()
-    await expect(page.getByText('Уведомления').first()).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByTestId('notification-popover')).toBeVisible({ timeout: 5_000 })
 
     // Закрываем попап
     await page.keyboard.press('Escape')
