@@ -1,8 +1,15 @@
 class HRMSException(Exception):
-    def __init__(self, message: str, error_code: str = "hrms_error", status_code: int = 500):
+    def __init__(
+        self,
+        message: str,
+        error_code: str = "hrms_error",
+        status_code: int = 500,
+        headers: dict[str, str] | None = None,
+    ):
         self.message = message
         self.error_code = error_code
         self.status_code = status_code
+        self.headers = headers
         super().__init__(self.message)
 
     @property

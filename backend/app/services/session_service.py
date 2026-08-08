@@ -11,15 +11,26 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+from jose import JWTError, jwt
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import HRMSException, NotFoundError
+from app.models.user import User
 from app.models.user_login_event import UserLoginEvent
 from app.models.user_session import UserSession
 from app.repositories.login_event_repository import LoginEventRepository
 from app.repositories.logout_jti_repository import LogoutJtiRepository
 from app.repositories.session_repository import SessionRepository
+from app.schemas.session import (
+    LoginEventListOut,
+    LoginEventOut,
+    MAX_LOGIN_EVENTS_SHOWN,
+    MAX_SESSIONS_SHOWN,
+    SessionListOut,
+    SessionOut,
+)
 from app.services import session_core
 from app.services.session_core import JwtConfig, SessionCoreConfig, SessionCoreError
 from app.utils.user_agent import device_label_from_ua
@@ -313,3 +324,218 @@ async def record_failed_login(
         user_agent=user_agent,
         details={"reason": reason, "method": method},
     )
+
+
+async def resolve_user_id(
+    db: AsyncSession,
+    *,
+    username: str,
+    is_break_glass: bool = False,
+) -> int:
+    """Resolve active User.id from username. Break-glass (no users row) → 400."""
+    if is_break_glass:
+        raise HRMSException(
+            "Операция недоступна для учетной записи аварийного доступа",
+            error_code="break_glass_not_allowed",
+            status_code=400,
+        )
+    result = await db.execute(
+        select(User).where(User.username == username, User.is_deleted == False)
+    )
+    user = result.scalars().first()
+    if not user:
+        raise NotFoundError("Пользователь не найден")
+    return user.id
+
+
+async def list_my_sessions(
+    db: AsyncSession,
+    *,
+    username: str,
+    is_break_glass: bool = False,
+    current_session_id: UUID | None = None,
+) -> SessionListOut:
+    """Активные сессии пользователя: последние MAX_SESSIONS_SHOWN + total."""
+    user_id = await resolve_user_id(db, username=username, is_break_glass=is_break_glass)
+    sessions = await list_sessions(db, user_id=user_id)
+    out = [
+        SessionOut(
+            id=s.id,
+            device_label=s.device_label,
+            ip_address=s.ip_address,
+            user_agent=s.user_agent,
+            login_method=s.login_method,
+            created_at=s.created_at,
+            last_seen_at=s.last_seen_at,
+            is_current=bool(current_session_id and s.id == current_session_id),
+        )
+        for s in sessions
+    ]
+    return SessionListOut(sessions=out[:MAX_SESSIONS_SHOWN], total=len(out))
+
+
+async def revoke_other_sessions(
+    db: AsyncSession,
+    *,
+    username: str,
+    is_break_glass: bool = False,
+    current_session_id: UUID | None = None,
+) -> None:
+    """Отозвать все остальные сессии (кроме текущей). Каноничный путь."""
+    user_id = await resolve_user_id(db, username=username, is_break_glass=is_break_glass)
+    await revoke_others(
+        db,
+        user_id=user_id,
+        current_session_id=current_session_id,
+        reason="user_revoke",
+    )
+    await record_login_event(
+        db,
+        event_type="session_revoke",
+        success=True,
+        user_id=user_id,
+        username_attempted=username,
+        session_id=current_session_id,
+        details={"reason": "user_revoke", "scope": "others"},
+    )
+
+
+async def revoke_my_session(
+    db: AsyncSession,
+    *,
+    username: str,
+    session_id: UUID,
+    is_break_glass: bool = False,
+) -> None:
+    """Отозвать одну сессию (свою). SessionNotFoundError → 404 (глобальный хендлер)."""
+    user_id = await resolve_user_id(db, username=username, is_break_glass=is_break_glass)
+    await revoke_session(
+        db,
+        user_id=user_id,
+        session_id=session_id,
+        reason="user_revoke",
+    )
+    await record_login_event(
+        db,
+        event_type="session_revoke",
+        success=True,
+        user_id=user_id,
+        username_attempted=username,
+        session_id=session_id,
+        details={"reason": "user_revoke", "scope": "one"},
+    )
+
+
+async def list_my_login_events(
+    db: AsyncSession,
+    *,
+    username: str,
+    is_break_glass: bool = False,
+) -> LoginEventListOut:
+    """История входов пользователя: последние MAX_LOGIN_EVENTS_SHOWN + total."""
+    user_id = await resolve_user_id(db, username=username, is_break_glass=is_break_glass)
+    events = await list_login_events(db, user_id=user_id)
+    out: list[LoginEventOut] = []
+    for e in events:
+        details = e.details if isinstance(e.details, dict) else {}
+        out.append(
+            LoginEventOut(
+                id=e.id,
+                event_type=e.event_type,
+                success=e.success,
+                ip_address=e.ip_address,
+                device_label=device_label_from_ua(e.user_agent),
+                login_method=details.get("method") if details else None,
+                created_at=e.created_at,
+                failure_reason=details.get("reason") if details else None,
+            )
+        )
+    return LoginEventListOut(events=out[:MAX_LOGIN_EVENTS_SHOWN], total=len(out))
+
+
+async def logout(db: AsyncSession, token: str | None) -> None:
+    """Отозвать текущую сессию по JWT sid (Bearer токен передаёт роутер).
+
+    Idempotent 204: already-revoked / missing sid / break-glass — no-op.
+    Missing or invalid token → 401 (HRMSException).
+    Magic ``admin`` under DEV_BYPASS_AUTH → no-op.
+    """
+    if not token:
+        raise HRMSException(
+            "Missing authentication token",
+            error_code="missing_token",
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Magic Bearer "admin" (dev-only) — nothing to revoke
+    if token == "admin":
+        if not settings.DEV_BYPASS_AUTH:
+            raise HRMSException(
+                "Invalid or expired token",
+                error_code="invalid_token",
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return
+
+    try:
+        secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
+        payload = jwt.decode(token, secret_key, algorithms=[settings.ALGORITHM])
+    except JWTError:
+        raise HRMSException(
+            "Invalid or expired token",
+            error_code="invalid_token",
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    username = payload.get("username") or payload.get("sub")
+    if not username:
+        raise HRMSException(
+            "Invalid token payload",
+            error_code="invalid_token_payload",
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if payload.get("is_break_glass") is True:
+        sid_raw = payload.get("sid")
+        session_id = UUID(str(sid_raw)) if sid_raw else None
+        await record_login_event(
+            db,
+            event_type="logout",
+            success=True,
+            user_id=None,
+            username_attempted=username,
+            session_id=session_id,
+            details={"source": "emergency_access", "method": "break_glass"},
+        )
+        return
+
+    result = await db.execute(
+        select(User).where(User.username == username, User.is_deleted == False)
+    )
+    user = result.scalars().first()
+    sid_raw = payload.get("sid")
+    session_id: UUID | None = None
+    if sid_raw:
+        try:
+            session_id = UUID(str(sid_raw))
+        except (ValueError, TypeError):
+            session_id = None
+
+    if user is not None and session_id is not None:
+        # Soft revoke: ignore missing / already-revoked
+        session = await session_repo.get_by_id(db, session_id)
+        if session is not None and session.user_id == user.id and session.revoked_at is None:
+            await session_repo.revoke(db, session_id, "logout")
+        await record_login_event(
+            db,
+            event_type="logout",
+            success=True,
+            user_id=user.id,
+            username_attempted=username,
+            session_id=session_id,
+            details={"method": "logout"},
+        )

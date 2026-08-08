@@ -13,4 +13,5 @@ async def hrms_exception_handler(request: Request, exc: HRMSException):
             "error_code": exc.error_code,
             "status_code": exc.status_code,
         },
+        headers=exc.headers,
     )

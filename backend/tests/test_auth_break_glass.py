@@ -1,13 +1,13 @@
 import pytest
 import bcrypt
-from fastapi import HTTPException
-from starlette.requests import Request
 from jose import jwt
+from starlette.requests import Request
 from sqlalchemy.future import select
 
 from app.api.auth import break_glass_login, get_me, logout, BreakGlassLoginRequest
 from app.api.deps import CurrentUser, get_current_user
 from app.core.config import settings
+from app.core.exceptions import HRMSException
 from app.models.user_login_event import UserLoginEvent
 
 
@@ -47,7 +47,7 @@ async def test_break_glass_login_disabled(db_session, monkeypatch):
     payload = BreakGlassLoginRequest(password="secret123")
     request = _make_request()
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(HRMSException) as exc_info:
         await break_glass_login(payload=payload, request=request)
 
     assert exc_info.value.status_code == 401
@@ -65,7 +65,7 @@ async def test_break_glass_login_invalid_password(db_session, monkeypatch):
     payload = BreakGlassLoginRequest(password="wrong_password")
     request = _make_request()
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(HRMSException) as exc_info:
         await break_glass_login(payload=payload, request=request)
 
     assert exc_info.value.status_code == 401
