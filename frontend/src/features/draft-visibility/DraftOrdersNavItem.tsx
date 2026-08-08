@@ -4,7 +4,13 @@ import { cn } from "@/shared/utils/cn"
 import { Badge } from "@/shared/ui/badge"
 import { Button } from "@/shared/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover"
-import { useAllDrafts, fillFormFromDraft, DRAFTS_ROUTE, isDraftsRoute } from "@/entities/draft"
+import {
+  useAllDrafts,
+  useDeleteAllDraft,
+  fillFormFromDraft,
+  DRAFTS_ROUTE,
+  isDraftsRoute,
+} from "@/entities/draft"
 import type { AllDraftItem } from "@/entities/draft"
 import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
 import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order/draftSaveStatus"
@@ -30,6 +36,7 @@ function formatSavedAt(savedAt: string): string {
 function DraftBadgeButton({ draft }: { draft: AllDraftItem }) {
   const navigate = useNavigate()
   const [filling, setFilling] = useState(false)
+  const deleteMutation = useDeleteAllDraft()
   const status = draft.save_status
 
   const handleFillFields = async () => {
@@ -41,6 +48,8 @@ function DraftBadgeButton({ draft }: { draft: AllDraftItem }) {
       setFilling(false)
     }
   }
+
+  const handleDelete = () => deleteMutation.mutate(draft.draft_id)
 
   const openView = () => openDraftEditorWindow(draft.view_url)
   const openEdit = () => openDraftEditorWindow(draft.edit_url)
@@ -103,6 +112,21 @@ function DraftBadgeButton({ draft }: { draft: AllDraftItem }) {
         >
           <FilePen className="h-4 w-4" />
         </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={handleDelete}
+          disabled={deleteMutation.isPending}
+          title="Удалить черновик"
+          aria-label="Удалить черновик"
+          className="text-red-500 hover:text-red-700"
+        >
+          {deleteMutation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
+        </Button>
       </div>
     </div>
   )
@@ -112,9 +136,6 @@ export function DraftOrdersNavItem() {
   const { data: drafts } = useAllDrafts()
   const [open, setOpen] = useState(false)
   const [formDrafts, setFormDrafts] = useState<FormDraftEntry[]>(() => readAllFormDrafts())
-  // Таргеты слотов, чей черновик формы удалён в этой сессии (корзина в попапе) —
-  // не показываем повторно до перезагрузки вкладки.
-  const dismissedRef = useRef(new Set<string>())
   // Слот заполнения текущей страницы: раскрываем попап и подсвечиваем его строку (#87).
   const [highlightedTarget, setHighlightedTarget] = useState<string | null>(null)
   // Попап был раскрыт автоматически (а не пользователем) — закрываем его при
@@ -147,10 +168,6 @@ export function DraftOrdersNavItem() {
       closeAutoOpened()
       return
     }
-    if (dismissedRef.current.has(currentSlot.target)) {
-      closeAutoOpened()
-      return
-    }
     try {
       if (!localStorage.getItem(currentSlot.storageKey)) {
         closeAutoOpened()
@@ -176,7 +193,7 @@ export function DraftOrdersNavItem() {
 
   useEffect(() => {
     const sync = () => {
-      setFormDrafts(readAllFormDrafts().filter((e) => !dismissedRef.current.has(e.slot.target)))
+      setFormDrafts(readAllFormDrafts())
     }
     sync()
     window.addEventListener("storage", sync)
@@ -226,11 +243,12 @@ export function DraftOrdersNavItem() {
     navigate(formDraftRecoverUrl(entry.slot))
   }
 
+  // «Удалить»: попап остаётся открытым, строка исчезает сразу — черновик
+  // удалён из localStorage (auto-save формы может воссоздать его только при
+  // новом реальном вводе, и тогда строка появится снова честно) (#87).
   const handleFormRemove = (entry: FormDraftEntry) => {
     localStorage.removeItem(entry.slot.storageKey)
-    dismissedRef.current.add(entry.slot.target)
     setHighlightedTarget(null)
-    setOpen(false)
     setFormDrafts((prev) => prev.filter((e) => e.slot.target !== entry.slot.target))
   }
 
