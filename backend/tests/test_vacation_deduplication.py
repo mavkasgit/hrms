@@ -87,27 +87,6 @@ async def test_update_vacation_does_not_create_extra_record(db_session, create_e
     assert vacations[0].order_id == updated["order_id"]
 
 
-async def test_vacation_service_duplicate_guard_returns_409(
-    db_session, create_employee, create_vacation, create_order
-):
-    """Защита в vacation_service: вторая запись на (order, employee) → 409."""
-    employee = await create_employee()
-    order = await create_order(employee=employee, order_number="777")
-
-    # Пустой пары нет — проверка проходит без ошибки.
-    await vacation_service._assert_no_vacation_for_order(
-        db_session, order.id, employee.id, order.order_number
-    )
-
-    await create_vacation(employee=employee, order_id=order.id)
-
-    with pytest.raises(DuplicateVacationForOrderError) as exc_info:
-        await vacation_service._assert_no_vacation_for_order(
-            db_session, order.id, employee.id, order.order_number
-        )
-    assert exc_info.value.status_code == 409
-
-
 async def test_order_service_duplicate_guard_returns_409(
     db_session, create_employee, create_order, create_vacation, create_order_type
 ):

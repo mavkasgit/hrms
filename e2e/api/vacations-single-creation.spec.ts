@@ -3,7 +3,9 @@
  *
  * Раньше POST /vacations создавал две записи отпуска (автозапись в
  * order_service + явная запись в vacation_service). Тест доказывает, что
- * один запрос даёт ровно одну запись, а повторный — понятную ошибку 409.
+ * один запрос даёт ровно одну запись, а повторный — понятную ошибку 409
+ * (в form-пути это VacationOverlapError от пересечения дат — оба сценария
+ * возвращают 409 с сообщением, а не 500).
  */
 import { test, expect } from '../fixtures/index'
 import { createAuthenticatedRequest } from '../helpers/api-request'
@@ -48,7 +50,9 @@ test.describe('Vacation single creation @api', () => {
       expect(list.items).toHaveLength(1)
       expect(list.items[0].employee_id).toBe(emp.id)
 
-      // Повторное создание с тем же приказом (те же даты/сотрудник) → 409.
+      // Повторное создание (те же даты/сотрудник) → 409 с понятным сообщением.
+      // Form-путь каждый раз создаёт новый приказ, поэтому дубль перехватывает
+      // проверка пересечения дат (VacationOverlapError) — тоже 409.
       const repeatResp = await request.post('/api/vacations', { data: payload })
       expect(repeatResp.status()).toBe(409)
       const body = await repeatResp.json()
