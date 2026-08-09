@@ -22,7 +22,10 @@
 Внутри run-DB:
 
 1. **Схема на модуль**: `t_<uuid8>` на каждый тест-модуль,
-   `Base.metadata.create_all()` в ней; `DROP SCHEMA` в teardown.
+   `Base.metadata.create_all()` в ней. Схема **не дропается** в run-DB
+   (run-DB целиком дропается launcher'ом; per-module `DROP SCHEMA CASCADE`
+   добавлял бы ~0.25s × модуль без выгоды). В ручном режиме на статичной
+   `hrms_test` схема дропается в teardown, чтобы не копилась.
 2. **Изоляция на тест** (`function scope`): внешняя транзакция + SAVEPOINT;
    на teardown — `rollback`. `HRMS_TEST_ISOLATION=truncate` — `TRUNCATE ... CASCADE`.
 

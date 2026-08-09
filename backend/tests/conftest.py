@@ -9,7 +9,9 @@ Isolation model (launcher owns run-DB):
   databases.
 - This module never creates or drops databases. It only connects to the
   launcher-provided run-DB and isolates per-module schemas (``t_<uuid8>``)
-  inside it.
+  inside it. Module schemas are left in place for launcher-owned run-DBs
+  (dropped whole by the launcher) and are dropped only in manual debug mode
+  on the shared static DB.
 - per-test cleanup via ``HRMS_TEST_ISOLATION``:
   - ``savepoint`` (default) — outer transaction + nested savepoints
     (``join_transaction_mode="create_savepoint"``); fast rollback
@@ -203,9 +205,12 @@ async def db_engine(
 
     The run-DB is owned by the launcher and is deliberately NOT dropped here:
     dropping it in any single module's teardown would break the parallel
-    xdist workers sharing it. The module schema (t_<uuid8>) is dropped
-    instead; the run-DB itself is reaped by `npm run test:db:cleanup` if a
-    run is killed.
+    xdist workers sharing it. The module schema (t_<uuid8>) is also left in
+    place for launcher-owned run-DBs: they are dropped whole by the launcher
+    (or reaped by `npm run test:db:cleanup` if a run is killed), so a per
+    -module DROP SCHEMA CASCADE would only add ~0.25s × module for no gain.
+    The module schema is dropped only in manual debug mode on the shared
+    static DB, so it does not accumulate there.
     """
     engine = create_async_engine(test_database_url, pool_pre_ping=True, poolclass=NullPool)
 
@@ -223,13 +228,17 @@ async def db_engine(
     try:
         yield engine
     finally:
-        try:
-            async with engine.begin() as conn:
-                await conn.execute(
-                    text(f"DROP SCHEMA IF EXISTS {_quote_ident(module_schema_name)} CASCADE")
-                )
-        except Exception as exc:  # noqa: BLE001 — schema cleanup must not abort suite
-            logger.warning("module schema drop failed: %s", exc)
+        db_name = (make_url(test_database_url).database or "").lower()
+        if not RUN_DB_RE.fullmatch(db_name):
+            # Manual debug on the shared static DB — drop the module schema so
+            # t_<uuid8> schemas do not accumulate in the persistent DB.
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text(f"DROP SCHEMA IF EXISTS {_quote_ident(module_schema_name)} CASCADE")
+                    )
+            except Exception as exc:  # noqa: BLE001 — schema cleanup must not abort suite
+                logger.warning("module schema drop failed: %s", exc)
         await engine.dispose()
 
 

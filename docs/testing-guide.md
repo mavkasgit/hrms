@@ -126,7 +126,9 @@ npm run test:db:cleanup-legacy  # одноразовая уборка стары
 
 `backend/tests/conftest.py` run-DB **не создаёт и не удаляет** — только
 подключается и изолирует схемы `t_<uuid8>` на модуль:
-- schema `t_<uuid8>` на **модуль** внутри одной run-DB; `DROP SCHEMA` в teardown;
+- schema `t_<uuid8>` на **модуль** внутри одной run-DB; в launcher-режиме
+  схемы не дропаются (run-DB падает целиком в `finally` launcher'а), в ручном
+  режиме на статичной `hrms_test` — `DROP SCHEMA` в teardown;
 - per-test cleanup через **`HRMS_TEST_ISOLATION`**:
   | Значение | Поведение | Когда |
   |----------|-----------|--------|
