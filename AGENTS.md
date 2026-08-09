@@ -149,6 +149,27 @@ npm run test:e2e:regression  # Полная регрессия (smoke+ui+api+aut
 (postgres + uvicorn + Vite). PR path best-effort; manual via `workflow_dispatch`.  
 См. `docs/testing-guide.md` (секция «E2E smoke»).
 
+### Тестирование backend (pytest)
+
+`npm run test:pytest` — единственная точка входа. Launcher
+`scripts/test-run.ps1` создаёт **изолированную per-run БД** `hrms_test_<runid>`,
+запускает pytest и в `finally` дропает только свою БД. Несколько агентов могут
+гонять тесты параллельно без пересечения. Канон: `backend/tests/AGENTS.md`.
+
+```bash
+npm run test:pytest          # параллельно (-n auto --dist=loadfile)
+npm run test:pytest:full     # serial
+npm run test:pytest:lf       # только упавшие
+npm run test:pytest -- -k db_isolation   # pass-through pytest args
+npm run test:db:cleanup      # orphan run-DB по TTL (24h)
+npm run test:db:cleanup-legacy   # одноразовая уборка старых per-module БД
+```
+
+При нескольких параллельных агентах задавайте `PYTEST_NUM_WORKERS` (например `4`):
+иначе каждый `-n auto` захватит все ядра. **Не** вызывайте `test:db:down` из launcher.
+Отдельный тест без изоляции (serial, общая статичная БД, только отладка):
+`cd backend && python -m pytest tests/test_db_isolation.py -v`
+
 ### Миграции БД
 
 ```bash

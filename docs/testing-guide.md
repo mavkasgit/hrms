@@ -97,33 +97,36 @@ API: seed employee
 
 ### Postgres для pytest
 
-Рекомендуемый путь — **dedicated** Postgres (не dev app DB):
+PostgreSQL — **общая инфраструктура**, живёт независимо от тестового прогона:
 
 | Что | Значение |
 |-----|----------|
 | Compose | `infra/compose/docker-compose.pytest.yml` (project `hrms-pytest-db`) |
 | Контейнер | `hrms-postgres-pytest` |
-| Host port | **5436** (`PYTEST_POSTGRES_PORT`, default) |
-| User / pass / DB | `hrms_user` / `hrms_pass` / `hrms_test` |
-| Env override | `HRMS_TEST_DATABASE_URL` (или `TEST_DATABASE_URL`) |
+| Host port | **5436** (`PYTEST_POSTGRES_PORT`, default; loopback `127.0.0.1` + `[::1]`) |
+| User / pass / admin DB | `hrms_user` / `hrms_pass` / `postgres` |
+| Статичная shared БД | `hrms_test` (для ручного serial-режима) |
 
 ```bash
-npm run test:db:up      # docker compose up -d
+npm run test:db:up      # docker compose up -d (общая инфраструктура)
 npm run test:db:wait    # pg_isready в контейнере
-npm run test:db:down    # остановить dedicated DB
+npm run test:db:down    # остановить dedicated DB (вручную, НЕ из launcher)
+npm run test:db:cleanup # orphan run-DB по TTL (24h) — после убитых прогонов
+npm run test:db:cleanup-legacy  # одноразовая уборка старых per-module БД (dry-run → --apply)
 ```
 
-npm-скрипты `test:pytest*` сами поднимают DB, ждут готовности и выставляют
-`HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5436/hrms_test`.
+### Изоляция — свойство команды (launcher)
 
-Fallback без dedicated compose: default URL в conftest — `localhost:5435`
-(dev Postgres `hrms-postgres`), если env не задан. Права **CREATEDB** обязательны
-(роль `POSTGRES_USER` в compose их имеет).
+`npm run test:pytest` — единственная точка входа. `scripts/test-run.ps1`
+(launcher) генерирует `RUN_ID` (12 hex), создаёт эфемерную БД
+`hrms_test_<runid>`, выставляет `TEST_RUN_ID` / `TEST_DB_NAME` /
+`TEST_DATABASE_URL` и в `finally` **гарантированно** дропает только свою БД.
+Несколько агентов могут гонять тесты параллельно — прогоны не пересекаются и
+не дропают чужие БД. Подробности: [ADR-0005](adr/0005-test-db-per-run-launcher.md).
 
-### Изоляция
-
-Изоляция (`backend/tests/conftest.py`):
-- ephemeral DB `hrms_test_*` на **модуль**;
+`backend/tests/conftest.py` run-DB **не создаёт и не удаляет** — только
+подключается и изолирует схемы `t_<uuid8>` на модуль:
+- schema `t_<uuid8>` на **модуль** внутри одной run-DB; `DROP SCHEMA` в teardown;
 - per-test cleanup через **`HRMS_TEST_ISOLATION`**:
   | Значение | Поведение | Когда |
   |----------|-----------|--------|
@@ -131,28 +134,28 @@ Fallback без dedicated compose: default URL в conftest — `localhost:5435`
   | `truncate` | `TRUNCATE ... CASCADE` после теста | debug / сравнение / тесты с реальной видимостью commit |
 - маркер `@pytest.mark.requires_truncate` — форс TRUNCATE для одного теста, если savepoint недостаточен.
 
-Параллель: `pytest-xdist` + `--dist=loadfile` (файл целиком на одном worker).
+Параллель: launcher запускает `pytest-xdist` + `--dist=loadfile`
+(файл целиком на одном worker — схема модуля живёт в одном worker).
 
 ```bash
-# через npm (dedicated DB :5436)
-npm run test:pytest          # serial -q
-npm run test:pytest:fast     # -n auto --dist=loadfile
+# через launcher (isolated run-DB :5436)
+npm run test:pytest          # -n auto --dist=loadfile
+npm run test:pytest:fast     # то же
+npm run test:pytest:full     # serial -q
 npm run test:pytest:lf       # --lf
+npm run test:pytest -- -k db_isolation   # pass-through pytest args
 
-# вручную из backend/ (нужен URL)
+# при нескольких параллельных агентах ограничьте workers:
+PYTEST_NUM_WORKERS=4 npm run test:pytest
+
+# ручная отладка (serial, общая статичная БД hrms_test, БЕЗ изоляции run-DB):
+# параллельный pytest -n без launcher — ошибка (fail-fast).
+npm run test:db:up      # общая инфраструктура должна быть поднята
 cd backend
-cross-env HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5436/hrms_test python -m pytest -q
-cross-env HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5436/hrms_test python -m pytest -n auto --dist=loadfile -q
-python -m pytest -n 2 --dist=loadfile -q
 python -m pytest -q --durations=20
-
-# dual-mode smoke (изоляция)
-# default savepoint
 python -m pytest tests/test_db_isolation.py -q
-# truncate mode
-cross-env HRMS_TEST_ISOLATION=truncate python -m pytest tests/test_db_isolation.py -q
-# Windows PowerShell:
-# $env:HRMS_TEST_ISOLATION='truncate'; python -m pytest tests/test_db_isolation.py -q
+# truncate mode:
+$env:HRMS_TEST_ISOLATION='truncate'; python -m pytest tests/test_db_isolation.py -q
 ```
 
 ### CI (GitHub Actions)
@@ -161,8 +164,11 @@ cross-env HRMS_TEST_ISOLATION=truncate python -m pytest tests/test_db_isolation.
 
 Workflow [`.github/workflows/test-backend.yml`](../.github/workflows/test-backend.yml):
 - service `postgres:15` на `:5432`;
-- `HRMS_TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_test`;
-- `python -m pytest -n auto --dist=loadfile -q` в `backend/`.
+- создание isolated run-DB через `python scripts/test-db.py create hrms_test_0c0ffeec0dec`
+  (свежий контейнер на job → фиксированный run-id безопасен);
+- `TEST_DATABASE_URL=postgresql+asyncpg://hrms_user:hrms_pass@localhost:5432/hrms_test_0c0ffeec0dec`;
+- `python -m pytest -n auto --dist=loadfile -q` в `backend/`;
+- cleanup run-DB в шаге `if: always()`.
 
 #### E2E smoke (Playwright)
 

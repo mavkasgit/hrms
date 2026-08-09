@@ -1,4 +1,4 @@
-"""Self-check: function-scoped isolation (savepoint or TRUNCATE) within a module DB.
+"""Self-check: function-scoped isolation (savepoint or TRUNCATE) within a module schema.
 
 Works under both ``HRMS_TEST_ISOLATION=savepoint`` (default) and ``truncate``.
 Run twice in CI/manual smoke if dual-mode regressions are suspected.
@@ -20,8 +20,8 @@ _ISOLATION_MARKER_NAME = f"IsolationDept-{uuid.uuid4().hex}"
 
 
 async def test_isolation_creates_department(db_session, create_department, test_database_url):
-    """Создаёт department с уникальным именем; module DB должна быть hrms_test_*."""
-    assert "hrms_test_" in test_database_url
+    """Создаёт department с уникальным именем; run-DB должна быть hrms_test_*."""
+    assert "hrms_test" in test_database_url
 
     department = await create_department(name=_ISOLATION_MARKER_NAME)
     await db_session.commit()
@@ -36,7 +36,7 @@ async def test_isolation_creates_department(db_session, create_department, test_
 
 async def test_isolation_previous_department_is_gone(db_session, test_database_url):
     """После cleanup предыдущего теста marker-department не виден (savepoint rollback или TRUNCATE)."""
-    assert "hrms_test_" in test_database_url
+    assert "hrms_test" in test_database_url
     mode = os.getenv("HRMS_TEST_ISOLATION", "savepoint").strip().lower()
     assert mode in ("savepoint", "truncate", "")
 

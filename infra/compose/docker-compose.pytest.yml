@@ -6,8 +6,13 @@ services:
   postgres-pytest:
     image: postgres:15-alpine
     container_name: hrms-postgres-pytest
+    # Оба loopback-биндинга обязательны: asyncpg резолвит 'localhost' на ::1
+    # первым и виснет ~2с на [::1], если порт опубликован только на IPv4
+    # (Docker Desktop, Windows). С [::1] и 127.0.0.1 коннект мгновенный.
+    # Только loopback — порт не выходит за пределы машины.
     ports:
-      - "${PYTEST_POSTGRES_PORT:-5436}:5432"
+      - "127.0.0.1:${PYTEST_POSTGRES_PORT:-5436}:5432"
+      - "[::1]:${PYTEST_POSTGRES_PORT:-5436}:5432"
     environment:
       POSTGRES_USER: hrms_user
       POSTGRES_PASSWORD: hrms_pass
