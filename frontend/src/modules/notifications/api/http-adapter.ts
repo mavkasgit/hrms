@@ -1,4 +1,4 @@
-import type { InternalNotification, InternalNotificationList } from "../types"
+import type { Notification, NotificationList } from "../types"
 import type { NotificationsApi } from "./adapter"
 
 /**
@@ -88,15 +88,15 @@ export function createHttpAdapter(options: HttpAdapterOptions = {}): Notificatio
 
   return {
     list: (limit = 50) =>
-      request<InternalNotificationList>(
+      request<NotificationList>(
         "GET",
         `${ep.list}?limit=${limit}&only_unclosed=true`,
       ),
 
     markRead: (id) =>
-      request<InternalNotification>("POST", ep.read(id)),
+      request<Notification>("POST", ep.read(id)),
 
     close: (id) =>
-      request<InternalNotification>("POST", ep.close(id)),
+      request<Notification>("POST", ep.close(id)),
   }
 }

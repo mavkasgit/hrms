@@ -1,7 +1,7 @@
 import api from "@/shared/api/client"
 import type {
-  InternalNotification,
-  InternalNotificationList,
+  Notification,
+  NotificationList,
   NotificationsApi,
 } from "@/modules/notifications"
 
@@ -14,23 +14,23 @@ import type {
  * Пути — единый каноничный контракт /internal-notifications.
  */
 export const hrmsNotificationsApi: NotificationsApi = {
-  async list(limit = 50): Promise<InternalNotificationList> {
-    const { data } = await api.get<InternalNotificationList>(
+  async list(limit = 50): Promise<NotificationList> {
+    const { data } = await api.get<NotificationList>(
       "/internal-notifications",
       { params: { limit, only_unclosed: true } },
     )
     return data
   },
 
-  async markRead(id): Promise<InternalNotification> {
-    const { data } = await api.post<InternalNotification>(
+  async markRead(id): Promise<Notification> {
+    const { data } = await api.post<Notification>(
       `/internal-notifications/${id}/read`,
     )
     return data
   },
 
-  async close(id): Promise<InternalNotification> {
-    const { data } = await api.post<InternalNotification>(
+  async close(id): Promise<Notification> {
+    const { data } = await api.post<Notification>(
       `/internal-notifications/${id}/close`,
     )
     return data

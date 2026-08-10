@@ -63,7 +63,7 @@ notifications/
 ├── index.ts                  — публичный API (импортируйте только отсюда)
 ├── NotificationsBell.tsx     — колокольчик (бейдж + попап)
 ├── ui.ts                     — ЕДИНСТВЕННЫЙ файл с импортами хоста (shadcn)
-├── types.ts                  — контракты (InternalNotification, …)
+├── types.ts                  — контракты (Notification, …)
 └── api/
     ├── adapter.ts            — интерфейс NotificationsApi
     └── http-adapter.ts       — fetch-реализация (без axios)

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Bell, X } from "lucide-react"
 import type { NotificationsApi } from "./api/adapter"
-import type { InternalNotification } from "./types"
+import type { Notification } from "./types"
 import { cn, Button, Popover, PopoverContent, PopoverTrigger } from "./ui"
 
 export interface NotificationsBellProps {
@@ -24,7 +24,7 @@ export function NotificationsBell({
   api,
   pollIntervalMs = 30_000,
 }: NotificationsBellProps) {
-  const [items, setItems] = useState<InternalNotification[]>([])
+  const [items, setItems] = useState<Notification[]>([])
   const [unread, setUnread] = useState(0)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(true)

@@ -6,7 +6,7 @@
  *   import { NotificationsBell, createHttpAdapter } from "@/modules/notifications"
  */
 
-export const NOTIFICATIONS_MODULE_VERSION = "1.1.0"
+export const NOTIFICATIONS_MODULE_VERSION = "1.2.0"
 
 export { NotificationsBell } from "./NotificationsBell"
 export type { NotificationsBellProps } from "./NotificationsBell"
@@ -19,6 +19,6 @@ export type {
 } from "./api/http-adapter"
 
 export type {
-  InternalNotification,
-  InternalNotificationList,
+  Notification,
+  NotificationList,
 } from "./types"

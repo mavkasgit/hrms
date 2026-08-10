@@ -17,12 +17,15 @@ test.describe('Templates UI smoke @ui', () => {
       page.getByRole('heading', { name: 'Шаблоны документов', level: 1 })
     ).toBeVisible({ timeout: 15_000 })
 
-    const tabOrders = page.getByRole('button', { name: 'Приказы', exact: true })
-    const tabNotifications = page.getByRole('button', {
+    // Скоупим на main: колокольчик уведомлений в шапке имеет aria-label
+    // «Уведомления» и конфликтует с табом страницы.
+    const main = page.getByRole('main')
+    const tabOrders = main.getByRole('button', { name: 'Приказы', exact: true })
+    const tabNotifications = main.getByRole('button', {
       name: 'Уведомления',
       exact: true,
     })
-    const tabStatements = page.getByRole('button', {
+    const tabStatements = main.getByRole('button', {
       name: 'Заявления',
       exact: true,
     })

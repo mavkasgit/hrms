@@ -1,4 +1,4 @@
-import type { InternalNotification, InternalNotificationList } from "../types"
+import type { Notification, NotificationList } from "../types"
 
 /**
  * Адаптер данных модуля — единственная точка соприкосновения с бэкендом.
@@ -11,11 +11,11 @@ export interface NotificationsApi {
    * Список незакрытых уведомлений + счётчик непрочитанных.
    * `limit` — сколько уведомлений вернуть (по умолчанию 50).
    */
-  list(limit?: number): Promise<InternalNotificationList>
+  list(limit?: number): Promise<NotificationList>
 
   /** Пометить уведомление прочитанным. */
-  markRead(id: number): Promise<InternalNotification>
+  markRead(id: number): Promise<Notification>
 
   /** Закрыть уведомление (пропадает из списка). */
-  close(id: number): Promise<InternalNotification>
+  close(id: number): Promise<Notification>
 }
