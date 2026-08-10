@@ -319,6 +319,7 @@ async def create_department(
     db.add(dept)
     await db.flush()
     await db.refresh(dept)
+    await db.commit()
 
     # Логирование
     audit_logger.info(

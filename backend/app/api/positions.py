@@ -89,6 +89,7 @@ async def create_position(
     db.add(pos)
     await db.flush()
     await db.refresh(pos)
+    await db.commit()
 
     # Логирование
     audit_logger.info(

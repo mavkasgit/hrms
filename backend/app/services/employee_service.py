@@ -120,6 +120,8 @@ class EmployeeService:
             }
         )
         
+        await db.commit()
+
         # После commit загруем сотрудника заново с joinedload department и position
         employee_with_relations = await repository.get_by_id(db, employee.id)
         
