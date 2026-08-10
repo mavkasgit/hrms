@@ -720,6 +720,12 @@ export function OrdersPage() {
 
   // «Заполнить поля» из попапа черновиков / индикатор формы в сайдбаре:
   // /orders?recover=1 — восстанавливаем локальный черновик формы.
+  // Эффект срабатывает ТОЛЬКО по смене URL (?recover=1), а не по идентичности
+  // recoveryRestore: последняя нестабильна (её замыкает handleRecoveryRestore,
+  // зависящий от orderTypes/selectedOrderTypeId), и повторное срабатывание
+  // приводило к бесконечному циклу рендера и откату действий пользователя (#3).
+  const recoveryRestoreRef = useRef(recoveryRestore)
+  recoveryRestoreRef.current = recoveryRestore
   useEffect(() => {
     const mode = searchParams.get("recover")
     if (mode !== "1") return
@@ -728,8 +734,9 @@ export function OrdersPage() {
     // Восстанавливаем только если черновик реально лежит в localStorage —
     // сайдбар мог удалить его раньше (in-memory pendingDraft при этом устарел).
     if (!localStorage.getItem(ORDER_FORM_DRAFT_KEY)) return
-    recoveryRestore()
-  }, [searchParams, recoveryRestore])
+    recoveryRestoreRef.current()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   // «Заполнить поля» из попапа черновиков: /orders?fillDraftId=…
   useFillDraftIdRestore(recoveryRestoreWith, mapOrderFillDraft, "/orders")
@@ -778,13 +785,18 @@ export function OrdersPage() {
   })
 
   // Автовосстановление общего приказа из попапа «Черновики»:
-  // /orders?tab=general&recover=1
+  // /orders?tab=general&recover=1. Тот же фикс, что и для формы приказа:
+  // срабатывает только по смене URL, иначе нестабильная идентичность
+  // generalRecoveryRestore вызывает повторное восстановление и цикл рендера (#3).
+  const generalRecoveryRestoreRef = useRef(generalRecoveryRestore)
+  generalRecoveryRestoreRef.current = generalRecoveryRestore
   useEffect(() => {
     if (searchParams.get("recover") !== "1") return
     if (searchParams.get("tab") !== "general") return
     if (!localStorage.getItem(GENERAL_ORDER_FORM_DRAFT_KEY)) return
-    generalRecoveryRestore()
-  }, [searchParams, generalRecoveryRestore])
+    generalRecoveryRestoreRef.current()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const validateGeneralOrder = (): boolean => {
     const newErrors: Record<string, string> = {}
