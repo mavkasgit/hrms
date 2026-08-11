@@ -6,10 +6,10 @@
 - create: файл рендерится в tmp_path, строка `is_draft=True`; коллизия имени
   → уникальный суффикс;
 - finalize: черновик → флаг False + commit; повторный вызов идемпотентен;
-  объект не найден → 404; сбой скачивания → 502 пробрасывается, черновик
-  остаётся черновиком;
+  объект не найден → 404; сбой скачивания → 500 (единый маппинг ADR-0006),
+  черновик остаётся черновиком;
 - роутеры: create возвращает draft_id; callback при валидном токене и статусе
-  2/6 возвращает `{"error": 0}`; при HRMSException (502) — `{"error": 1}` с
+  2/6 возвращает `{"error": 0}`; при download-failure — 500 `{"error": 1}` с
   честным кодом.
 """
 
@@ -454,14 +454,14 @@ async def test_callback_returns_error_1_with_honest_code_on_hrms_exception(
     )
 
     assert isinstance(response, JSONResponse)
-    assert response.status_code == 502
+    assert response.status_code == 500
     payload = json.loads(bytes(response.body))
     assert payload["error"] == 1
     # Черновик остаётся черновиком после неудачного сохранения.
     assert (await db_session.get(Notification, notification.id)).is_draft is True
 
 
-async def test_callback_returns_error_1_404_for_unknown_record(db_session, _tmp_storage, _enable_onlyoffice):
+async def test_callback_unknown_record_acks_ok(db_session, _tmp_storage, _enable_onlyoffice):
     from app.api import onlyoffice as oo_api
 
     token = jwt.encode({"status": 2}, "test-secret", algorithm="HS256")
@@ -477,10 +477,8 @@ async def test_callback_returns_error_1_404_for_unknown_record(db_session, _tmp_
         current_user="onlyoffice_server",
     )
 
-    assert isinstance(response, JSONResponse)
-    assert response.status_code == 404
-    payload = json.loads(bytes(response.body))
-    assert payload["error"] == 1
+    # Несуществующая запись — target не найден → ACK 0 (ретрай не поможет).
+    assert response == {"error": 0}
 
 
 async def test_callback_ignores_status_without_url(db_session, _tmp_storage, _enable_onlyoffice, monkeypatch):

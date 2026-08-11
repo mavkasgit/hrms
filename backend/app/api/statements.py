@@ -15,7 +15,7 @@ from app.core.paths import statements_path
 from app.models.employee import Employee
 from app.models.statement import Statement
 from app.models.statement_type import StatementType
-from app.services.document_draft_service import db_draft_document_service
+from app.services.document_draft_service import statement_draft_service
 from app.services.order_print_service import order_print_service
 
 router = APIRouter(prefix="/statements", tags=["statements"])
@@ -254,7 +254,7 @@ async def delete_statement(
     if not statement:
         raise HTTPException(status_code=404, detail="Statement not found")
 
-    await db_draft_document_service.delete(db, statement)
+    await statement_draft_service.delete(db, statement)
 
 
 @router.get("/{statement_id:int}/download")

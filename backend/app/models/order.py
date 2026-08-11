@@ -29,6 +29,9 @@ class Order(Base):
 
     is_group: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    source_draft_id: Mapped[Optional[str]] = mapped_column(String(255))
+    source_draft_created_by: Mapped[Optional[str]] = mapped_column(String(100))
+
     employee = relationship("Employee", back_populates="orders")
     order_type = relationship("OrderType", back_populates="orders")
     employees = relationship("OrderEmployee", back_populates="order", cascade="all, delete-orphan")

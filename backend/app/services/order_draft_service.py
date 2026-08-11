@@ -12,7 +12,6 @@ from app.core.exceptions import HRMSException
 from app.models.employee import Employee
 from app.models.order_type import OrderType
 from app.schemas.order import OrderCreate
-from app.services.document_draft_service import DocumentDraftService
 from app.services.order_document_service import _build_document, _build_filename
 from app.services.order_group_validation import ensure_group_order_employee_count
 
@@ -31,9 +30,8 @@ def normalize_draft_save_status(save_status: dict[str, Any] | None) -> dict[str,
     }
 
 
-class OrderDraftService(DocumentDraftService):
+class OrderDraftService:
     def __init__(self):
-        super().__init__()
         self._drafts_dir = Path(settings.ORDERS_PATH) / ".drafts"
         self._save_status_lock = asyncio.Lock()
 
@@ -41,7 +39,7 @@ class OrderDraftService(DocumentDraftService):
         self._drafts_dir.mkdir(parents=True, exist_ok=True)
         return self._drafts_dir
 
-    async def create_draft(  # pyright: ignore[reportIncompatibleMethodOverride] — приказный create намеренно со своей сигнатурой (#80)
+    async def create_draft(
         self, data: OrderCreate, employee: Employee | None, order_type: OrderType, user_id: str = "system"
     ) -> dict[str, Any]:
         draft_id = str(uuid.uuid4())
@@ -131,13 +129,16 @@ class OrderDraftService(DocumentDraftService):
         except OSError:
             pass
 
+    async def delete_file_only(self, draft_id: str) -> None:
+        """Только файловая чистка (файловые черновики без DB-строки)."""
+        self._cleanup_files(draft_id)
+
     def _cleanup_files(self, record: str) -> None:
         """Файловая чистка приказа: docx + метаданные JSON + commit-lock (#84).
 
-        Best-effort, как у всех наследников DocumentDraftService: отсутствующий
-        черновик (404), сбой mkdir storage-директории и OSError не роняют
-        удаление. Для приказов «запись» — это draft_id (файловый черновик,
-        DB-строки до commit нет).
+        Best-effort: отсутствующий черновик (404), сбой mkdir storage-директории
+        и OSError не роняют удаление. Для приказов «запись» — это draft_id
+        (файловый черновик, DB-строки до commit нет).
         """
         try:
             draft_path = self.get_draft_path(record)

@@ -199,12 +199,17 @@ async def test_force_save_other_error_raises(monkeypatch):
     assert exc_info.value.status_code == 502
 
 
-# ── _run_forcesave mapping ──────────────────────────────────────────────────
+# ── request_forcesave mapping ───────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_run_forcesave_no_changes_maps_to_response(monkeypatch):
+async def test_request_forcesave_no_changes_maps_to_response(monkeypatch):
     from app.api import onlyoffice as oo_api
+    from app.services.onlyoffice_callback_pipeline import (
+        CallbackContext,
+        CallbackKind,
+        onlyoffice_callback_pipeline,
+    )
 
     monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
     await onlyoffice_save_tracker.clear()
@@ -214,7 +219,8 @@ async def test_run_forcesave_no_changes_maps_to_response(monkeypatch):
 
     monkeypatch.setattr(oo_api.onlyoffice_service, "force_save", fake_force_save)
 
-    result = await oo_api._run_forcesave("order-1-x-edit", "sid-nc", "order", 1)
+    context = CallbackContext(kind=CallbackKind.ORDER, entity_id=1, db=None, userdata="sid-nc")
+    result = await onlyoffice_callback_pipeline.request_forcesave(context, "order-1-x-edit")
     assert result["message"] == "no_changes"
     assert result["command_error"] == 4
     assert result["save_id"] == "sid-nc"
@@ -223,15 +229,21 @@ async def test_run_forcesave_no_changes_maps_to_response(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_forcesave_success_pending(monkeypatch):
+async def test_request_forcesave_success_pending(monkeypatch):
     from app.api import onlyoffice as oo_api
+    from app.services.onlyoffice_callback_pipeline import (
+        CallbackContext,
+        CallbackKind,
+        onlyoffice_callback_pipeline,
+    )
 
     async def fake_force_save(key, userdata=None):
         return 0
 
     monkeypatch.setattr(oo_api.onlyoffice_service, "force_save", fake_force_save)
 
-    result = await oo_api._run_forcesave("order-1-x-edit", "sid-ok", "order", 1)
+    context = CallbackContext(kind=CallbackKind.ORDER, entity_id=1, db=None, userdata="sid-ok")
+    result = await onlyoffice_callback_pipeline.request_forcesave(context, "order-1-x-edit")
     assert result["message"] == "save_requested"
     assert result["command_error"] is None
     status = await onlyoffice_save_tracker.get("sid-ok")
@@ -239,8 +251,13 @@ async def test_run_forcesave_success_pending(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_forcesave_without_save_id_still_works(monkeypatch):
+async def test_request_forcesave_without_save_id_still_works(monkeypatch):
     from app.api import onlyoffice as oo_api
+    from app.services.onlyoffice_callback_pipeline import (
+        CallbackContext,
+        CallbackKind,
+        onlyoffice_callback_pipeline,
+    )
 
     async def fake_force_save(key, userdata=None):
         assert userdata is None
@@ -248,22 +265,29 @@ async def test_run_forcesave_without_save_id_still_works(monkeypatch):
 
     monkeypatch.setattr(oo_api.onlyoffice_service, "force_save", fake_force_save)
 
-    result = await oo_api._run_forcesave("order-1-x-edit", None, "order", 1)
+    context = CallbackContext(kind=CallbackKind.ORDER, entity_id=1, db=None, userdata=None)
+    result = await onlyoffice_callback_pipeline.request_forcesave(context, "order-1-x-edit")
     assert result["message"] == "save_requested"
     assert result["save_id"] is None
 
 
 @pytest.mark.asyncio
-async def test_run_forcesave_failure_marks_failed(monkeypatch):
+async def test_request_forcesave_failure_marks_failed(monkeypatch):
     from app.api import onlyoffice as oo_api
+    from app.services.onlyoffice_callback_pipeline import (
+        CallbackContext,
+        CallbackKind,
+        onlyoffice_callback_pipeline,
+    )
 
     async def fake_force_save(key, userdata=None):
         raise HRMSException("fail", "onlyoffice_forcesave_failed", status_code=502)
 
     monkeypatch.setattr(oo_api.onlyoffice_service, "force_save", fake_force_save)
 
+    context = CallbackContext(kind=CallbackKind.ORDER, entity_id=1, db=None, userdata="sid-fail")
     with pytest.raises(HRMSException):
-        await oo_api._run_forcesave("order-1-x-edit", "sid-fail", "order", 1)
+        await onlyoffice_callback_pipeline.request_forcesave(context, "order-1-x-edit")
 
     status = await onlyoffice_save_tracker.get("sid-fail")
     assert status["state"] == "failed"
@@ -279,6 +303,7 @@ async def test_order_callback_userdata_marks_persisted(monkeypatch, tmp_path):
 
     monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
     monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
 
     save_id = "cb-persisted-1"
     await onlyoffice_save_tracker.register(save_id, "order", 42)
@@ -296,7 +321,6 @@ async def test_order_callback_userdata_marks_persisted(monkeypatch, tmp_path):
 
     monkeypatch.setattr(oo_api.order_service, "get_by_id", fake_get_by_id)
     monkeypatch.setattr(oo_api.onlyoffice_service, "download_and_replace", fake_download)
-    monkeypatch.setattr(oo_api, "storage_path", lambda *a, **k: target)
 
     token = jwt.encode({"status": 6}, "test-secret", algorithm="HS256")
     body = {"status": 6, "url": "http://oo/cache/file.docx", "userdata": save_id, "token": token}

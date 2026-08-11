@@ -17,10 +17,18 @@ from app.core.exceptions import EmployeeNotFoundError, HRMSException
 from app.core.paths import storage_path
 from app.schemas.order import GroupOrderCreate, OrderCreate
 from app.services.order_document_service import get_template_path
-from app.services.onlyoffice_service import onlyoffice_service
+from app.services.onlyoffice_callback_pipeline import (
+    CallbackKind,
+    CallbackContext,
+    CallbackResult,
+    onlyoffice_callback_pipeline,
+)
 from app.services.onlyoffice_save_tracker import onlyoffice_save_tracker
+from app.services.onlyoffice_service import onlyoffice_service, editor_user
 from app.services.order_draft_service import order_draft_service
 from app.services.document_draft_service import notification_draft_service, statement_draft_service
+from app.services.draft_adapter import draft_application_facade
+from app.services.draft_ref import DraftRef
 from app.services.onlyoffice_form_data import (
     draft_form_data as build_draft_form_data,
     notification_form_data as build_notification_form_data,
@@ -52,7 +60,11 @@ class OnlyOfficeSaveReportRequest(BaseModel):
     reason: str
 
 
-from app.api.deps import get_current_user as _get_current_user_stub, get_current_user_or_onlyoffice
+from app.api.deps import (
+    CurrentUser,
+    get_current_user as _get_current_user_stub,
+    get_current_user_or_onlyoffice,
+)
 
 
 def _ensure_onlyoffice_enabled() -> None:
@@ -183,38 +195,14 @@ def _extract_callback_userdata(body: dict[str, Any]) -> str | None:
     return str(userdata)
 
 
-async def _run_forcesave(
-    document_key: str,
-    save_id: str | None,
-    doc_type: str,
-    doc_id: str | int,
-) -> dict[str, Any]:
-    """Register attempt (optional), call CommandService, map error codes to response."""
-    if save_id:
-        await onlyoffice_save_tracker.register(save_id, doc_type, doc_id)
-    try:
-        command_error = await onlyoffice_service.force_save(document_key, userdata=save_id)
-    except HRMSException as exc:
-        if save_id:
-            await onlyoffice_save_tracker.mark_failed(save_id, "onlyoffice_forcesave_failed")
-        if doc_type == "draft":
-            await order_draft_service.update_save_status(
-                str(doc_id), state="error", error=str(exc.detail)
-            )
-        raise
-    if command_error == 4:
-        if save_id:
-            await onlyoffice_save_tracker.mark_no_changes(save_id)
-        return {
-            "message": "no_changes",
-            "save_id": save_id,
-            "command_error": 4,
-        }
-    return {
-        "message": "save_requested",
-        "save_id": save_id,
-        "command_error": None,
-    }
+def _callback_result_response(result: CallbackResult) -> dict[str, Any] | JSONResponse:
+    """Map pipeline CallbackResult to the callback HTTP contract (ADR-0006).
+
+    Единый маппинг для всех видов: http_error=0 → 200 error:0, http_error=1 → 500 error:1.
+    """
+    if result.http_error == 0:
+        return {"error": 0}
+    return JSONResponse(content={"error": 1, "message": result.error or "onlyoffice_callback_failed"}, status_code=500)
 
 
 def _file_response(file_path: Path) -> FileResponse:
@@ -230,7 +218,7 @@ async def order_onlyoffice_config(
     request: Request,
     mode: str = Query("edit", pattern="^(edit|view)$"),
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
     order = await order_service.get_by_id(db, order_id)
@@ -249,6 +237,7 @@ async def order_onlyoffice_config(
         file_url=_public_api_url(f"/orders/{order_id}/onlyoffice/file"),
         mode=mode,
         data=build_order_form_data(order),
+        user=editor_user(current_user),
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config
@@ -282,12 +271,11 @@ async def order_onlyoffice_callback(
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})
     body = await request.json()
-    status = body.get("status")
     userdata = _extract_callback_userdata(body)
     logger.info(
         "[order callback] order_id=%s status=%s url=%s userdata=%s",
         order_id,
-        status,
+        body.get("status"),
         body.get("url"),
         userdata,
     )
@@ -298,41 +286,9 @@ async def order_onlyoffice_callback(
         logger.warning("[order callback] invalid token for order_id=%s: %s", order_id, exc.detail)
         return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
 
-    if status in (2, 3, 6) and body.get("url"):
-        try:
-            order = await order_service.get_by_id(db, order_id)
-            if order and order.file_path:
-                file_path = storage_path(order.file_path, "ORDERS_PATH")
-                await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
-                file_mtime = int(file_path.stat().st_mtime) if file_path.exists() else None
-                if userdata:
-                    await onlyoffice_save_tracker.mark_persisted(userdata, oo_status=status, file_mtime=file_mtime)
-                logger.info("[order callback] saved successfully order_id=%s", order_id)
-            else:
-                logger.warning("[order callback] order or file_path missing order_id=%s", order_id)
-                if userdata:
-                    await onlyoffice_save_tracker.mark_failed(
-                        userdata, "order_or_file_path_missing", oo_status=status
-                    )
-        except Exception as exc:
-            logger.error("[order callback] failed to save order_id=%s: %s", order_id, exc, exc_info=True)
-            if userdata:
-                await onlyoffice_save_tracker.mark_failed(userdata, str(exc), oo_status=status)
-            return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
-    elif status in (2, 3, 6):
-        # No download URL — especially status 3: mark attempt failed when tracked
-        if userdata and status == 3:
-            await onlyoffice_save_tracker.mark_failed(
-                userdata, "forcesave_callback_status_3_no_url", oo_status=3
-            )
-    elif status == 7:
-        logger.warning("[order callback] force save error for order_id=%s", order_id)
-        if userdata:
-            await onlyoffice_save_tracker.mark_failed(
-                userdata, "forcesave_callback_status_7", oo_status=7
-            )
-
-    return {"error": 0}
+    context = CallbackContext(kind=CallbackKind.ORDER, entity_id=order_id, db=db, userdata=userdata)
+    result = await onlyoffice_callback_pipeline.handle_callback(context, body)
+    return _callback_result_response(result)
 
 
 @router.post("/orders/{order_id}/onlyoffice/forcesave")
@@ -344,7 +300,8 @@ async def order_onlyoffice_forcesave(
     _ensure_onlyoffice_enabled()
     if not data.document_key.startswith(f"order-{order_id}-"):
         raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
-    return await _run_forcesave(data.document_key, data.save_id, "order", order_id)
+    context = CallbackContext(kind=CallbackKind.ORDER, entity_id=order_id, db=None, userdata=data.save_id)
+    return await onlyoffice_callback_pipeline.request_forcesave(context, data.document_key)
 
 
 @router.get("/orders/{order_id}/onlyoffice/save-status/{save_id}")
@@ -375,7 +332,7 @@ async def list_all_drafts(
 ):
     """Объединённый список всех черновиков: приказы, уведомления, заявления."""
     _ensure_onlyoffice_enabled()
-    return await unified_drafts_service.list_all_drafts(db)
+    return await draft_application_facade.list(db)
 
 
 @router.get("/drafts/{draft_id}/form-data")
@@ -469,7 +426,7 @@ async def draft_onlyoffice_config(
     draft_id: str,
     request: Request,
     mode: str = Query("edit", pattern="^(edit|view)$"),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
     file_path = order_draft_service.get_draft_path(draft_id)
@@ -489,6 +446,7 @@ async def draft_onlyoffice_config(
         mode=mode,
         allow_print=False,
         data=form_data or None,
+        user=editor_user(current_user),
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config
@@ -511,12 +469,11 @@ async def draft_onlyoffice_callback(
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})
     body = await request.json()
-    status = body.get("status")
     userdata = _extract_callback_userdata(body)
     logger.info(
         "[draft callback] draft_id=%s status=%s url=%s userdata=%s",
         draft_id,
-        status,
+        body.get("status"),
         body.get("url"),
         userdata,
     )
@@ -527,46 +484,9 @@ async def draft_onlyoffice_callback(
         logger.warning("[draft callback] invalid token for draft_id=%s: %s", draft_id, exc.detail)
         return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
 
-    if status in (2, 3, 6) and body.get("url"):
-        try:
-            file_path = order_draft_service.get_draft_path(draft_id)
-            await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
-            file_mtime = int(file_path.stat().st_mtime) if file_path.exists() else None
-            if userdata:
-                await onlyoffice_save_tracker.mark_persisted(userdata, oo_status=status, file_mtime=file_mtime)
-            await order_draft_service.update_save_status(draft_id, state="saved")
-            logger.info("[draft callback] saved successfully draft_id=%s", draft_id)
-        except Exception as exc:
-            logger.error("[draft callback] failed to save draft_id=%s: %s", draft_id, exc, exc_info=True)
-            if userdata:
-                await onlyoffice_save_tracker.mark_failed(userdata, str(exc), oo_status=status)
-            await order_draft_service.update_save_status(draft_id, state="error", error=str(exc))
-            return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
-    elif status in (2, 3, 6):
-        # No download URL — especially status 3: mark attempt failed when tracked
-        if userdata and status == 3:
-            await onlyoffice_save_tracker.mark_failed(
-                userdata, "forcesave_callback_status_3_no_url", oo_status=3
-            )
-        if status == 3:
-            await order_draft_service.update_save_status(
-                draft_id, state="error", error="forcesave_callback_status_3_no_url"
-            )
-        else:
-            await order_draft_service.update_save_status(
-                draft_id, state="error", error=f"Нет ссылки на сохранённый файл (status={status})"
-            )
-    elif status == 7:
-        logger.warning("[draft callback] force save error for draft_id=%s", draft_id)
-        if userdata:
-            await onlyoffice_save_tracker.mark_failed(
-                userdata, "forcesave_callback_status_7", oo_status=7
-            )
-        await order_draft_service.update_save_status(
-            draft_id, state="error", error="forcesave_callback_status_7"
-        )
-
-    return {"error": 0}
+    context = CallbackContext(kind=CallbackKind.ORDER_DRAFT, entity_id=draft_id, db=None, userdata=userdata)
+    result = await onlyoffice_callback_pipeline.handle_callback(context, body)
+    return _callback_result_response(result)
 
 
 @router.post("/orders/drafts/{draft_id}/onlyoffice/forcesave")
@@ -579,7 +499,8 @@ async def draft_onlyoffice_forcesave(
     order_draft_service.get_draft_path(draft_id)
     if not data.document_key.startswith(f"draft-{draft_id}-"):
         raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
-    return await _run_forcesave(data.document_key, data.save_id, "draft", draft_id)
+    context = CallbackContext(kind=CallbackKind.ORDER_DRAFT, entity_id=draft_id, db=None, userdata=data.save_id)
+    return await onlyoffice_callback_pipeline.request_forcesave(context, data.document_key)
 
 
 @router.get("/orders/drafts/{draft_id}/onlyoffice/save-status/{save_id}")
@@ -615,31 +536,16 @@ async def commit_order_draft(
     current_user: str = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
-    # Atomic claim prevents double-create when UI sends commit twice (postMessage+BC race).
-    try:
-        order_draft_service.claim_draft_for_commit(draft_id)
-    except HRMSException as exc:
-        if exc.status_code == 409:
-            # Duplicate commit: draft already committed — return success silently (#30 AC5)
-            return {"message": "Приказ уже создан", "duplicate": True}
-        raise
-
-    try:
-        order = await order_service.create_single_order_from_draft(db, draft_id)
-    except Exception:
-        # Release lock so the draft remains available for retry (#30 AC4)
-        order_draft_service.release_commit_lock(draft_id)
-        raise
-
-    return order_service._serialize_order(order)
+    return await draft_application_facade.commit(db, current_user, DraftRef.order(draft_id))
 
 
 @router.delete("/orders/drafts/{draft_id}", status_code=204)
 async def delete_order_draft(
     draft_id: str,
+    db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
-    await order_draft_service.delete_file_only(draft_id)
+    await draft_application_facade.delete_draft(db, current_user, DraftRef.order(draft_id))
 
 
 @router.post("/orders/group-drafts")
@@ -692,25 +598,7 @@ async def commit_group_order_draft(
     current_user: str = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
-    order_draft_service.claim_draft_for_commit(draft_id)
-
-    try:
-        order = await order_service.create_group_order_from_draft(
-            db=db,
-            draft_id=draft_id,
-        )
-    except Exception:
-        # Release lock so the draft remains available for retry (#30 AC4, #88)
-        order_draft_service.release_commit_lock(draft_id)
-        raise
-
-    try:
-        await order_draft_service.delete_file_only(draft_id)
-    except Exception:
-        import logging
-        logging.getLogger(__name__).exception("Failed to delete committed group draft %s", draft_id)
-
-    return order_service._serialize_order(order)
+    return await draft_application_facade.commit(db, current_user, DraftRef.order(draft_id))
 
 
 @router.get("/order-types/{order_type_id}/onlyoffice/config")
@@ -719,7 +607,7 @@ async def template_onlyoffice_config(
     request: Request,
     mode: str = Query("edit", pattern="^(edit|view)$"),
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
     order_type = await order_service.get_order_type_by_id(db, order_type_id)
@@ -737,6 +625,7 @@ async def template_onlyoffice_config(
         callback_url=_public_api_url(f"/order-types/{order_type_id}/onlyoffice/callback"),
         file_url=_public_api_url(f"/order-types/{order_type_id}/onlyoffice/file"),
         mode=mode,
+        user=editor_user(current_user),
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config
@@ -812,7 +701,7 @@ async def notification_onlyoffice_config(
     request: Request,
     mode: str = Query("edit", pattern="^(edit|view)$"),
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
     notification = await db.get(Notification, notification_id)
@@ -833,6 +722,7 @@ async def notification_onlyoffice_config(
         file_url=_public_api_url(f"/notifications/{notification_id}/onlyoffice/file"),
         mode=mode,
         data=build_notification_form_data(notification),
+        user=editor_user(current_user),
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config
@@ -865,22 +755,20 @@ async def notification_onlyoffice_callback(
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})
     body = await request.json()
-    status = body.get("status")
 
     try:
         _assert_valid_callback_token(request, body)
     except HRMSException as exc:
         return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
 
-    if status in (2, 6) and body.get("url"):
-        try:
-            await notification_draft_service.finalize(db, notification_id, str(body["url"]))
-        except HRMSException as exc:
-            return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
-        except Exception as exc:
-            return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
-
-    return {"error": 0}
+    context = CallbackContext(
+        kind=CallbackKind.NOTIFICATION,
+        entity_id=notification_id,
+        db=db,
+        userdata=_extract_callback_userdata(body),
+    )
+    result = await onlyoffice_callback_pipeline.handle_callback(context, body)
+    return _callback_result_response(result)
 
 
 @router.post("/notifications/{notification_id}/onlyoffice/forcesave")
@@ -908,8 +796,7 @@ async def commit_notification_draft(
     правил ли пользователь документ (no_changes) — файл уже персистен.
     """
     _ensure_onlyoffice_enabled()
-    await notification_draft_service.commit(db, notification_id)
-    return {"message": "ok"}
+    return await draft_application_facade.commit(db, current_user, DraftRef.notification(notification_id))
 
 
 # ─── Statements OnlyOffice ─────────────────────────────────────────────────────
@@ -934,7 +821,7 @@ async def statement_onlyoffice_config(
     request: Request,
     mode: str = Query("edit", pattern="^(edit|view)$"),
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
     statement = await db.get(Statement, statement_id)
@@ -955,6 +842,7 @@ async def statement_onlyoffice_config(
         file_url=_public_api_url(f"/statements/{statement_id}/onlyoffice/file"),
         mode=mode,
         data=build_statement_form_data(statement),
+        user=editor_user(current_user),
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config
@@ -987,22 +875,20 @@ async def statement_onlyoffice_callback(
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})
     body = await request.json()
-    status = body.get("status")
 
     try:
         _assert_valid_callback_token(request, body)
     except HRMSException as exc:
         return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
 
-    if status in (2, 6) and body.get("url"):
-        try:
-            await statement_draft_service.finalize(db, statement_id, str(body["url"]))
-        except HRMSException as exc:
-            return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
-        except Exception as exc:
-            return JSONResponse(content={"error": 1, "message": str(exc)}, status_code=500)
-
-    return {"error": 0}
+    context = CallbackContext(
+        kind=CallbackKind.STATEMENT,
+        entity_id=statement_id,
+        db=db,
+        userdata=_extract_callback_userdata(body),
+    )
+    result = await onlyoffice_callback_pipeline.handle_callback(context, body)
+    return _callback_result_response(result)
 
 
 @router.post("/statements/{statement_id}/onlyoffice/forcesave")
@@ -1026,5 +912,4 @@ async def commit_statement_draft(
 ):
     """Явный commit черновика заявления из редактора (#86): is_draft=False."""
     _ensure_onlyoffice_enabled()
-    await statement_draft_service.commit(db, statement_id)
-    return {"message": "ok"}
+    return await draft_application_facade.commit(db, current_user, DraftRef.statement(statement_id))

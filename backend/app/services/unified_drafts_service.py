@@ -18,6 +18,7 @@ from app.repositories.employee_repository import EmployeeRepository
 from app.repositories.notification_repository import NotificationRepository
 from app.repositories.order_type_repository import OrderTypeRepository
 from app.repositories.statement_repository import StatementRepository
+from app.services.draft_ref import DraftKind, DraftRef, parse_draft_ref, serialize_draft_ref
 from app.services.order_draft_service import normalize_draft_save_status, order_draft_service
 from app.services.onlyoffice_form_data import (
     DraftFormData,
@@ -154,7 +155,7 @@ class UnifiedDraftsService:
             type_name = order_type.name if order_type else order_type_code
 
             items.append(AllDraftsItem(
-                draft_id=draft_id,
+                draft_id=serialize_draft_ref(DraftRef.order(draft_id)),
                 kind="order",
                 title=title,
                 type_name=type_name,
@@ -173,7 +174,7 @@ class UnifiedDraftsService:
         for n in notifications:
             title = n.employee.name if n.employee else n.title
             items.append(AllDraftsItem(
-                draft_id=f"notification:{n.id}",
+                draft_id=serialize_draft_ref(DraftRef.notification(n.id)),
                 kind="notification",
                 title=title,
                 type_name=n.notification_type.name if n.notification_type else None,
@@ -191,7 +192,7 @@ class UnifiedDraftsService:
         for s in statements:
             title = s.employee.name if s.employee else s.title
             items.append(AllDraftsItem(
-                draft_id=f"statement:{s.id}",
+                draft_id=serialize_draft_ref(DraftRef.statement(s.id)),
                 kind="statement",
                 title=title,
                 type_name=s.statement_type.name if s.statement_type else None,
@@ -214,24 +215,25 @@ class UnifiedDraftsService:
 
         Поля приходят массивом `data` ([{"key", "value"}, ...]); сборка — в
         app.services.onlyoffice_form_data (единый источник для конфига OnlyOffice).
+        Диспатч — по typed `DraftRef`, строковый префикс не разбирается.
         """
+        ref = parse_draft_ref(draft_id)
+
         # Уведомления / заявления — черновики из БД
-        if draft_id.startswith("notification:"):
-            n_id = int(draft_id.split(":", 1)[1])
-            n = await self.notification_repo.get_draft_by_id(db, n_id)
+        if ref.kind is DraftKind.NOTIFICATION:
+            n = await self.notification_repo.get_draft_by_id(db, int(ref.id))
             if not n:
                 raise HRMSException("Черновик не найден", "draft_not_found", status_code=404)
             return DraftFormData(kind="notification", data=build_notification_form_data(n))
 
-        if draft_id.startswith("statement:"):
-            s_id = int(draft_id.split(":", 1)[1])
-            s = await self.statement_repo.get_draft_by_id(db, s_id)
+        if ref.kind is DraftKind.STATEMENT:
+            s = await self.statement_repo.get_draft_by_id(db, int(ref.id))
             if not s:
                 raise HRMSException("Черновик не найден", "draft_not_found", status_code=404)
             return DraftFormData(kind="statement", data=build_statement_form_data(s))
 
         # Приказы — файловые черновики
-        meta = order_draft_service.read_draft_metadata(draft_id)
+        meta = order_draft_service.read_draft_metadata(ref.id)
         order_type_code = meta.get("order_type_code")
 
         if meta.get("kind") == "group_order":

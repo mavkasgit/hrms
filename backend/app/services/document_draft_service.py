@@ -119,9 +119,8 @@ class DocumentDraftService:
     «черновик → документ» по callback-у OnlyOffice (#81). `delete(db, record)`
     и `delete_file_only(draft_id)` — удаление (#84).
 
-    БД-виды настраиваются `config` (см. `DraftServiceConfig`). `OrderDraftService`
-    наследует базу, но переопределяет `create_draft` и `_cleanup_files` —
-    приказная машинерия не переписывается.
+    БД-виды настраиваются `config` (см. `DraftServiceConfig`). Приказная
+    машинерия живёт в самостоятельном `OrderDraftService` (не наследует базу).
     """
 
     def __init__(self, *, config: DraftServiceConfig | None = None) -> None:
@@ -350,25 +349,6 @@ class DocumentDraftService:
         if self.config is not None:
             return self.config.path_func(file_path)
         raise NotImplementedError
-
-
-class DbDraftDocumentService(DocumentDraftService):
-    """Лёгкий БД-наследник для пары уведомление/заявление (#84).
-
-    Хук unlink'ает docx по `notifications_path` / `statements_path`
-    в зависимости от типа записи. Оставлен для обратной совместимости
-    delete-хендлеров пары.
-    """
-
-    def _resolve_file_path(self, record: Any, file_path: str):
-        if isinstance(record, Notification):
-            return notifications_path(file_path)
-        if isinstance(record, Statement):
-            return statements_path(file_path)
-        raise ValueError(f"Неизвестный тип записи: {type(record).__name__}")
-
-
-db_draft_document_service = DbDraftDocumentService()
 
 
 # Конфигурируемые инстансы БД-видов (#80, #85): общий `DocumentDraftService`

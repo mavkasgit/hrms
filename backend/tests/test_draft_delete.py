@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.core.paths import notifications_path, statements_path
 from app.models.notification import Notification
 from app.models.statement import Statement
-from app.services.document_draft_service import db_draft_document_service
+from app.services.document_draft_service import notification_draft_service, statement_draft_service
 
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 
@@ -77,7 +77,7 @@ async def test_delete_notification_removes_row_and_file(db_session, _tmp_storage
     disk_path = notifications_path(notification.file_path)
     disk_path.write_bytes(b"docx")
 
-    await db_draft_document_service.delete(db_session, notification)
+    await notification_draft_service.delete(db_session, notification)
 
     assert await db_session.get(Notification, notification.id) is None
     assert not disk_path.exists()
@@ -89,7 +89,7 @@ async def test_delete_statement_removes_row_and_file(db_session, _tmp_storage):
     disk_path = statements_path(statement.file_path)
     disk_path.write_bytes(b"docx")
 
-    await db_draft_document_service.delete(db_session, statement)
+    await statement_draft_service.delete(db_session, statement)
 
     assert await db_session.get(Statement, statement.id) is None
     assert not disk_path.exists()
@@ -98,7 +98,7 @@ async def test_delete_statement_removes_row_and_file(db_session, _tmp_storage):
 async def test_delete_without_file_path_ok(db_session, _tmp_storage):
     notification = await _make_notification(db_session, file_path=None)
 
-    await db_draft_document_service.delete(db_session, notification)
+    await notification_draft_service.delete(db_session, notification)
 
     assert await db_session.get(Notification, notification.id) is None
 
@@ -106,7 +106,7 @@ async def test_delete_without_file_path_ok(db_session, _tmp_storage):
 async def test_delete_when_file_missing_ok(db_session, _tmp_storage):
     notification = await _make_notification(db_session, file_path="missing.docx")
 
-    await db_draft_document_service.delete(db_session, notification)
+    await notification_draft_service.delete(db_session, notification)
 
     assert await db_session.get(Notification, notification.id) is None
 
@@ -117,7 +117,7 @@ async def test_delete_survives_oserror(db_session, _tmp_storage):
     assert notification.file_path is not None
     notifications_path(notification.file_path).mkdir(parents=True, exist_ok=True)
 
-    await db_draft_document_service.delete(db_session, notification)
+    await notification_draft_service.delete(db_session, notification)
 
     assert await db_session.get(Notification, notification.id) is None
 

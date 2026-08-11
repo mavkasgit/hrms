@@ -15,7 +15,7 @@ from app.core.paths import notifications_path
 from app.models.employee import Employee
 from app.models.notification import Notification
 from app.models.notification_type import NotificationType
-from app.services.document_draft_service import db_draft_document_service
+from app.services.document_draft_service import notification_draft_service
 from app.services.order_print_service import order_print_service
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -256,7 +256,7 @@ async def delete_notification(
     if not notification:
         raise HTTPException(status_code=404, detail="Notification not found")
 
-    await db_draft_document_service.delete(db, notification)
+    await notification_draft_service.delete(db, notification)
 
 
 @router.get("/{notification_id:int}/download")

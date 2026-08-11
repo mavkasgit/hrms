@@ -4,7 +4,7 @@ Covers:
 - OrderDraftService.update_save_status / read_save_status round-trip and defaults
 - concurrency safety of metadata writes
 - draft callback handler wiring (success / download failure / status 7)
-- _run_forcesave wiring for draft vs order
+- request_forcesave wiring for draft vs order
 - list_order_drafts returning save_status + file info
 """
 
@@ -262,12 +262,17 @@ async def test_draft_callback_status_3_no_url_records_error(monkeypatch):
     spy.assert_awaited_once_with(DRAFT_ID, state="error", error="forcesave_callback_status_3_no_url")
 
 
-# ── _run_forcesave wiring ───────────────────────────────────────────────────
+# ── request_forcesave wiring ────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_run_forcesave_draft_failure_records_error(monkeypatch):
+async def test_request_forcesave_draft_failure_records_error(monkeypatch):
     from app.api import onlyoffice as oo_api
+    from app.services.onlyoffice_callback_pipeline import (
+        CallbackContext,
+        CallbackKind,
+        onlyoffice_callback_pipeline,
+    )
 
     async def fake_force_save(key, userdata=None):
         raise HRMSException("OnlyOffice недоступен", "onlyoffice_forcesave_failed", status_code=502)
@@ -276,15 +281,21 @@ async def test_run_forcesave_draft_failure_records_error(monkeypatch):
     spy = AsyncMock()
     monkeypatch.setattr(oo_api.order_draft_service, "update_save_status", spy)
 
+    context = CallbackContext(kind=CallbackKind.ORDER_DRAFT, entity_id=DRAFT_ID, db=None, userdata="sid-x")
     with pytest.raises(HRMSException):
-        await oo_api._run_forcesave(f"draft-{DRAFT_ID}-1", "sid-x", "draft", DRAFT_ID)
+        await onlyoffice_callback_pipeline.request_forcesave(context, f"draft-{DRAFT_ID}-1")
 
     spy.assert_awaited_once_with(DRAFT_ID, state="error", error="OnlyOffice недоступен")
 
 
 @pytest.mark.asyncio
-async def test_run_forcesave_order_failure_does_not_record_draft_status(monkeypatch):
+async def test_request_forcesave_order_failure_does_not_record_draft_status(monkeypatch):
     from app.api import onlyoffice as oo_api
+    from app.services.onlyoffice_callback_pipeline import (
+        CallbackContext,
+        CallbackKind,
+        onlyoffice_callback_pipeline,
+    )
 
     async def fake_force_save(key, userdata=None):
         raise HRMSException("fail", "onlyoffice_forcesave_failed", status_code=502)
@@ -293,15 +304,21 @@ async def test_run_forcesave_order_failure_does_not_record_draft_status(monkeypa
     spy = AsyncMock()
     monkeypatch.setattr(oo_api.order_draft_service, "update_save_status", spy)
 
+    context = CallbackContext(kind=CallbackKind.ORDER, entity_id=1, db=None, userdata="sid-y")
     with pytest.raises(HRMSException):
-        await oo_api._run_forcesave("order-1-x", "sid-y", "order", 1)
+        await onlyoffice_callback_pipeline.request_forcesave(context, "order-1-x")
 
     spy.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_run_forcesave_draft_no_changes_does_not_record_error(monkeypatch):
+async def test_request_forcesave_draft_no_changes_does_not_record_error(monkeypatch):
     from app.api import onlyoffice as oo_api
+    from app.services.onlyoffice_callback_pipeline import (
+        CallbackContext,
+        CallbackKind,
+        onlyoffice_callback_pipeline,
+    )
 
     async def fake_force_save(key, userdata=None):
         return 4
@@ -310,7 +327,8 @@ async def test_run_forcesave_draft_no_changes_does_not_record_error(monkeypatch)
     spy = AsyncMock()
     monkeypatch.setattr(oo_api.order_draft_service, "update_save_status", spy)
 
-    result = await oo_api._run_forcesave(f"draft-{DRAFT_ID}-1", "sid-nc", "draft", DRAFT_ID)
+    context = CallbackContext(kind=CallbackKind.ORDER_DRAFT, entity_id=DRAFT_ID, db=None, userdata="sid-nc")
+    result = await onlyoffice_callback_pipeline.request_forcesave(context, f"draft-{DRAFT_ID}-1")
     assert result["message"] == "no_changes"
     spy.assert_not_awaited()
 
