@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.department_graph import TagRef
 
@@ -41,17 +41,6 @@ class EmployeeCreate(EmployeeBase):
             raise ValueError("Дата рождения не может быть раньше 1900 года")
         return v
 
-    @model_validator(mode="after")
-    def validate_dates(self):
-        if self.hire_date and self.birth_date:
-            min_hire = self.birth_date.replace(year=self.birth_date.year + 16)
-            if self.hire_date < min_hire:
-                raise ValueError("Дата приёма должна быть не раньше 16 лет")
-        if self.contract_end and self.contract_start:
-            if self.contract_end < self.contract_start:
-                raise ValueError("Дата окончания контракта должна быть позже даты начала")
-        return self
-
 
 class EmployeeUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
@@ -84,17 +73,6 @@ class EmployeeUpdate(BaseModel):
         if v and v.year < 1900:
             raise ValueError("Дата рождения не может быть раньше 1900 года")
         return v
-
-    @model_validator(mode="after")
-    def validate_dates(self):
-        if self.hire_date and self.birth_date:
-            min_hire = self.birth_date.replace(year=self.birth_date.year + 16)
-            if self.hire_date < min_hire:
-                raise ValueError("Дата приёма должна быть не раньше 16 лет")
-        if self.contract_end and self.contract_start:
-            if self.contract_end < self.contract_start:
-                raise ValueError("Дата окончания контракта должна быть позже даты начала")
-        return self
 
 
 class EmployeeDismissal(BaseModel):
