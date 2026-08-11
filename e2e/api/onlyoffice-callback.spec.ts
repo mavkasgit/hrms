@@ -15,18 +15,17 @@
  *   неизвестный ключ → 502 (OnlyOffice не принял команду).
  *
  * Callback-токен подписывается тем же JWT-секретом, что и бэкенд
- * (ONLYOFFICE_JWT_SECRET; в docker:test по умолчанию onlyoffice-test-secret).
+ * (ONLYOFFICE_JWT_SECRET): значение обязано быть задано (см. e2e/.env.example)
+ * и совпадать с secret'ом backend-окружения под тестом (dev / test / CI).
  * Требует ONLYOFFICE_ENABLED=true (docker:test / CI e2e-smoke).
  *
  * Test 1 устойчив к окружению: если у черновика уведомления нет file_path
  * (шаблон/файл не создан), pipeline вернёт ACK 200 error:0 (target_not_found),
  * а не 500 — такой кейс аккуратно пропускается (skip), а не падает.
  */
-import { createHmac } from 'node:crypto'
 import { test, expect } from '../fixtures/index'
 import { createAuthenticatedRequest } from '../helpers/api-request'
-
-const OO_JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET ?? 'onlyoffice-test-secret'
+import { onlyOfficeToken } from '../helpers/onlyoffice-token'
 
 /**
  * URL, по которому бэкенд сам для себя скачивает файл при успешном download
@@ -36,19 +35,18 @@ const OO_JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET ?? 'onlyoffice-test-secr
  */
 const OO_DOWNLOAD_BASE = process.env.E2E_OO_DOWNLOAD_URL ?? 'http://backend:8000'
 
-const FAILED_STATUSES = [3, 7]
-const IGNORE_STATUSES = [4, 1, 5, 'garbage']
-const SAVE_STATUSES = [2, 6]
+// OnlyOffice callback statuses (ADR-0006): 2/6 → PERSISTED (скачиваем),
+// 3/7 → FAILED (не скачиваем даже с url), 4 → IGNORE (ACK 0 без strategy/tracker),
+// прочие → IGNORE (ACK 0).
+const OO_SAVE = 6 // «сохранение» → PERSISTED: скачиваем файл
+const OO_SAVE_ALT = 2 // второй status сохранения → PERSISTED
+const OO_FAILED = 3 // ошибка сохранения → FAILED, без скачивания
+const OO_FAILED_ALT = 7 // вторая ошибка → FAILED, без скачивания
+const OO_IGNORE = 4 // «закрыт без изменений» → IGNORE, ACK 0
 
-function onlyOfficeToken(payload: Record<string, unknown>): string {
-  const b64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
-  const header = b64url({ alg: 'HS256', typ: 'JWT' })
-  const body = b64url(payload)
-  const signature = createHmac('sha256', OO_JWT_SECRET)
-    .update(`${header}.${body}`)
-    .digest('base64url')
-  return `${header}.${body}.${signature}`
-}
+const FAILED_STATUSES = [OO_FAILED, OO_FAILED_ALT]
+const IGNORE_STATUSES = [OO_IGNORE, 1, 5, 'garbage']
+const SAVE_STATUSES = [OO_SAVE_ALT, OO_SAVE]
 
 test.describe('OnlyOffice callback unified mapping @api', () => {
   test.setTimeout(60_000)
@@ -82,9 +80,9 @@ test.describe('OnlyOffice callback unified mapping @api', () => {
     )
 
     try {
-      const token = onlyOfficeToken({ status: 6 })
+      const token = onlyOfficeToken({ status: OO_SAVE })
       const resp = await request.post(`/api/notifications/${notifId}/onlyoffice/callback`, {
-        data: { status: 6, url: 'http://127.0.0.1:1/unreachable.docx', token },
+        data: { status: OO_SAVE, url: 'http://127.0.0.1:1/unreachable.docx', token },
       })
       expect(resp.status()).toBe(500)
       const body = (await resp.json()) as { error?: number }
@@ -100,9 +98,9 @@ test.describe('OnlyOffice callback unified mapping @api', () => {
     const { request, dispose } = await createAuthenticatedRequest(playwright)
 
     try {
-      const token = onlyOfficeToken({ status: 6 })
+      const token = onlyOfficeToken({ status: OO_SAVE })
       const resp = await request.post('/api/orders/999999/onlyoffice/callback', {
-        data: { status: 6, url: 'http://127.0.0.1:1/unreachable.docx', token },
+        data: { status: OO_SAVE, url: 'http://127.0.0.1:1/unreachable.docx', token },
       })
       // resolve_target=None (запись не найдена) → ACK 200 {"error":0} — ретрай не поможет.
       expect(resp.status()).toBe(200)
@@ -138,11 +136,11 @@ test.describe('OnlyOffice callback unified mapping @api', () => {
       orderDraftId = (await createResp.json()).draft_id as string
       expect(orderDraftId, 'order draft id').toBeTruthy()
 
-      const token = onlyOfficeToken({ status: 6 })
+      const token = onlyOfficeToken({ status: OO_SAVE })
       const resp = await request.post(
         `/api/orders/drafts/${orderDraftId}/onlyoffice/callback`,
         {
-          data: { status: 6, url: 'http://127.0.0.1:1/unreachable.docx', token },
+          data: { status: OO_SAVE, url: 'http://127.0.0.1:1/unreachable.docx', token },
         }
       )
       expect(resp.status()).toBe(500)
@@ -174,9 +172,9 @@ test.describe('OnlyOffice callback unified mapping @api', () => {
       stmtId = created.statement_id as number
       expect(stmtId, 'statement draft id').toBeTruthy()
 
-      const token = onlyOfficeToken({ status: 6 })
+      const token = onlyOfficeToken({ status: OO_SAVE })
       const resp = await request.post(`/api/statements/${stmtId}/onlyoffice/callback`, {
-        data: { status: 6, url: 'http://127.0.0.1:1/unreachable.docx', token },
+        data: { status: OO_SAVE, url: 'http://127.0.0.1:1/unreachable.docx', token },
       })
       expect(resp.status()).toBe(500)
       const body = (await resp.json()) as { error?: number }
