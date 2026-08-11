@@ -17,7 +17,7 @@ from app.core.database import get_db
 from app.core.exceptions import HRMSException
 from app.core.paths import storage_path, to_relative
 from app.models.document import Document
-from app.services.onlyoffice_service import onlyoffice_service
+from app.services.onlyoffice_service import onlyoffice_service, editor_user
 
 router = APIRouter(prefix="/documents/{doc_code}", tags=["documents"])
 
@@ -26,7 +26,11 @@ XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 PDF_MEDIA_TYPE = "application/pdf"
 
 
-from app.api.deps import get_current_user as _get_current_user_stub, get_current_user_or_onlyoffice
+from app.api.deps import (
+    CurrentUser,
+    get_current_user as _get_current_user_stub,
+    get_current_user_or_onlyoffice,
+)
 
 
 def _public_api_url(path: str) -> str:
@@ -292,7 +296,7 @@ async def document_onlyoffice_config(
     request: Request,
     mode: str = Query("view", pattern="^(edit|view)$"),
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     if not settings.ONLYOFFICE_ENABLED:
         raise HRMSException("OnlyOffice отключен", "onlyoffice_disabled", status_code=503)
@@ -316,6 +320,7 @@ async def document_onlyoffice_config(
         callback_url=_public_api_url(f"/documents/{doc_code}/{doc_id}/onlyoffice/callback"),
         file_url=_public_api_url(f"/documents/{doc_code}/{doc_id}/file"),
         mode=mode,
+        user=editor_user(current_user),
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config

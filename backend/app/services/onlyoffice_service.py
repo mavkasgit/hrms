@@ -3,7 +3,7 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse, urlunparse
 
 import httpx
@@ -11,6 +11,9 @@ from jose import JWTError, jwt
 
 from app.core.config import settings
 from app.core.exceptions import HRMSException
+
+if TYPE_CHECKING:
+    from app.api.deps import CurrentUser
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +40,7 @@ class OnlyOfficeService:
         mode: str = "edit",
         allow_print: bool = True,
         data: list[dict[str, str]] | None = None,
+        user: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         can_edit = mode == "edit"
         file_type, doc_type_oo = self._get_file_types(file_path)
@@ -66,6 +70,7 @@ class OnlyOfficeService:
                 "customization": {
                     "autosave": can_edit,
                     "forcesave": can_edit,
+                    "features": {"featuresTips": False},
                 },
             },
             "height": "100%",
@@ -73,6 +78,8 @@ class OnlyOfficeService:
         }
         if data:
             config["document"]["data"] = data
+        if user:
+            config["editorConfig"]["user"] = user
         config["token"] = jwt.encode(config, settings.ONLYOFFICE_JWT_SECRET, algorithm="HS256")
         return config
 
@@ -196,3 +203,14 @@ class OnlyOfficeService:
 
 
 onlyoffice_service = OnlyOfficeService()
+
+
+def editor_user(current_user: "CurrentUser") -> dict[str, str]:
+    """editorConfig.user из CurrentUser: id=username, name=full_name (или username).
+
+    name никогда не пустой — пустой name возвращает диалог ввода имени (ADR-0010).
+    """
+    return {
+        "id": current_user.username,
+        "name": current_user.full_name or current_user.username,
+    }

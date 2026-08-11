@@ -12,7 +12,11 @@ from app.services.template_variables_service import get_template_variables as ge
 router = APIRouter(prefix="/notification-types", tags=["notification-types"])
 
 
-from app.api.deps import get_current_user as _get_current_user_stub, get_current_user_or_onlyoffice
+from app.api.deps import (
+    CurrentUser,
+    get_current_user as _get_current_user_stub,
+    get_current_user_or_onlyoffice,
+)
 
 
 @router.get("/standard-codes")
@@ -149,7 +153,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.core.config import settings
 from app.core.exceptions import HRMSException
-from app.services.onlyoffice_service import onlyoffice_service
+from app.services.onlyoffice_service import onlyoffice_service, editor_user
 
 
 class OnlyOfficeForceSaveRequest(BaseModel):
@@ -203,7 +207,7 @@ async def notification_type_onlyoffice_config(
     request: Request,
     mode: str = Query("edit", pattern="^(edit|view)$"),
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     _ensure_onlyoffice_enabled()
     n_type = await notification_type_service.get_notification_type(db, notification_type_id)
@@ -221,6 +225,7 @@ async def notification_type_onlyoffice_config(
         callback_url=_public_api_url(f"/notification-types/{notification_type_id}/onlyoffice/callback"),
         file_url=_public_api_url(f"/notification-types/{notification_type_id}/onlyoffice/file"),
         mode=mode,
+        user=editor_user(current_user),
     )
     config["documentServerUrl"] = _document_server_url(request)
     return config

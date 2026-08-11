@@ -4,8 +4,12 @@ import { Skeleton } from "@/shared/ui/skeleton"
 import type { OnlyOfficeConfig } from "@/entities/order/onlyofficeTypes"
 
 const ONLYOFFICE_SCRIPT_ID = "onlyoffice-api-script"
-/** Если за это время редактор не сообщил onDocumentReady — считаем загрузку проваленной. */
-const EDITOR_READY_TIMEOUT_MS = 20_000
+/** Мягкий хинт «Загрузка редактора…» показывается только после этого таймаута. */
+const EDITOR_HINT_TIMEOUT_MS = 20_000
+/** Если редактор не готов и за это время — считаем загрузку проваленной (жёсткая ошибка). */
+const EDITOR_READY_TIMEOUT_MS = 60_000
+/** Длительность fade-in/fade-out анимации хинта. */
+const HINT_FADE_MS = 300
 
 const LOAD_HINT =
   "Частая причина — блокировщик рекламы (uBlock, AdBlock и т.п.): отключите его для этого сайта или добавьте в исключения, затем обновите страницу. Также проверьте, что Document Server (OnlyOffice) запущен и доступен."
@@ -63,30 +67,66 @@ export function OrderEditor({ config, isLoading, error, title, onReadyChange }: 
   const editorInstanceRef = useRef<{ destroyEditor?: () => void } | null>(null)
   const editorIdRef = useRef(`onlyoffice-editor-${Math.random().toString(36).slice(2)}`)
   const [scriptError, setScriptError] = useState<string | null>(null)
-  const [waitingForEditor, setWaitingForEditor] = useState(false)
+  const [showLoadHint, setShowLoadHint] = useState(false)
+  const [hintLeaving, setHintLeaving] = useState(false)
   const onReadyChangeRef = useRef(onReadyChange)
   onReadyChangeRef.current = onReadyChange
 
   useEffect(() => {
     if (!config) return
     let cancelled = false
+    let hintTimer: ReturnType<typeof setTimeout> | undefined
     let readyTimer: ReturnType<typeof setTimeout> | undefined
+    let fadeTimer: ReturnType<typeof setTimeout> | undefined
     setScriptError(null)
-    setWaitingForEditor(true)
+    setShowLoadHint(false)
+    setHintLeaving(false)
     onReadyChangeRef.current?.(false)
+
+    // Мягкий хинт — показываем через 20с с начала загрузки, если редактор ещё грузится.
+    hintTimer = setTimeout(() => {
+      if (!cancelled) setShowLoadHint(true)
+    }, EDITOR_HINT_TIMEOUT_MS)
+
+    // Жёсткая ошибка — если редактор не открылся за 60с с начала загрузки.
+    readyTimer = setTimeout(() => {
+      markFailed(
+        `Редактор не открылся за ${EDITOR_READY_TIMEOUT_MS / 1000} секунд. ` + LOAD_HINT,
+      )
+    }, EDITOR_READY_TIMEOUT_MS)
+
+    const clearTimers = () => {
+      if (hintTimer) clearTimeout(hintTimer)
+      if (readyTimer) clearTimeout(readyTimer)
+      if (fadeTimer) clearTimeout(fadeTimer)
+      hintTimer = undefined
+      readyTimer = undefined
+      fadeTimer = undefined
+    }
+
+    const hideHint = () => {
+      if (fadeTimer) return
+      setHintLeaving(true)
+      fadeTimer = setTimeout(() => {
+        if (cancelled) return
+        setShowLoadHint(false)
+        setHintLeaving(false)
+        fadeTimer = undefined
+      }, HINT_FADE_MS)
+    }
 
     const markReady = () => {
       if (cancelled) return
-      if (readyTimer) clearTimeout(readyTimer)
-      setWaitingForEditor(false)
+      clearTimers()
+      hideHint()
       setScriptError(null)
       onReadyChangeRef.current?.(true)
     }
 
     const markFailed = (message: string) => {
       if (cancelled) return
-      if (readyTimer) clearTimeout(readyTimer)
-      setWaitingForEditor(false)
+      clearTimers()
+      hideHint()
       setScriptError(message)
       onReadyChangeRef.current?.(false)
       try {
@@ -131,12 +171,6 @@ export function OrderEditor({ config, isLoading, error, title, onReadyChange }: 
 
         editorInstanceRef.current?.destroyEditor?.()
         editorInstanceRef.current = new DocsAPI.DocEditor(editorIdRef.current, editorConfig)
-
-        readyTimer = setTimeout(() => {
-          markFailed(
-            "Редактор не открылся за 20 секунд. " + LOAD_HINT,
-          )
-        }, EDITOR_READY_TIMEOUT_MS)
       })
       .catch((err) => {
         markFailed(err instanceof Error ? err.message : "Ошибка загрузки OnlyOffice. " + LOAD_HINT)
@@ -144,7 +178,7 @@ export function OrderEditor({ config, isLoading, error, title, onReadyChange }: 
 
     return () => {
       cancelled = true
-      if (readyTimer) clearTimeout(readyTimer)
+      clearTimers()
       onReadyChangeRef.current?.(false)
       try {
         editorInstanceRef.current?.destroyEditor?.()
@@ -188,13 +222,20 @@ export function OrderEditor({ config, isLoading, error, title, onReadyChange }: 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       {title && <h1 className="mb-2 text-xl font-bold">{title}</h1>}
-      {waitingForEditor && (
-        <div className="pointer-events-none absolute inset-x-0 top-10 z-10 mx-auto max-w-xl px-4">
+      {showLoadHint && (
+        <div
+          className={`pointer-events-none absolute inset-x-0 top-10 z-10 mx-auto max-w-xl px-4 duration-300 ${
+            hintLeaving
+              ? "animate-out fade-out zoom-out-95"
+              : "animate-in fade-in zoom-in-95"
+          }`}
+        >
           <Alert>
             <AlertTitle>Загрузка редактора…</AlertTitle>
             <AlertDescription>
-              Если экран остаётся пустым дольше 20 секунд, отключите блокировщик рекламы для этого
-              сайта и обновите страницу.
+              Редактор загружается дольше обычного. Если экран остаётся пустым, отключите
+              блокировщик рекламы для этого сайта и обновите страницу, либо проверьте, что
+              Document Server доступен.
             </AlertDescription>
           </Alert>
         </div>

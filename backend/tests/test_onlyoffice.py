@@ -137,6 +137,66 @@ def test_onlyoffice_config_omits_empty_data_array(monkeypatch, tmp_path):
     assert "data" not in config["document"]
 
 
+def test_onlyoffice_config_includes_user(monkeypatch, tmp_path):
+    """editorConfig.user (id/name) попадает в конфиг и в подписанный JWT (ADR-0010)."""
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    docx_path = tmp_path / "order.docx"
+    docx_path.write_bytes(b"PK")
+
+    config = OnlyOfficeService().build_config(
+        doc_type="order",
+        doc_id=1,
+        file_path=docx_path,
+        title="order.docx",
+        callback_url="http://app/api/orders/1/onlyoffice/callback",
+        file_url="http://app/api/orders/1/onlyoffice/file",
+        user={"id": "ivanov", "name": "Иванов Иван"},
+    )
+
+    assert config["editorConfig"]["user"] == {"id": "ivanov", "name": "Иванов Иван"}
+    decoded = jwt.decode(config["token"], "test-secret", algorithms=["HS256"])
+    assert decoded["editorConfig"]["user"]["id"] == "ivanov"
+    assert decoded["editorConfig"]["user"]["name"] == "Иванов Иван"
+
+
+def test_onlyoffice_config_omits_user_when_not_passed(monkeypatch, tmp_path):
+    """Без user параметра ключ editorConfig.user не появляется."""
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    docx_path = tmp_path / "order.docx"
+    docx_path.write_bytes(b"PK")
+
+    config = OnlyOfficeService().build_config(
+        doc_type="order",
+        doc_id=1,
+        file_path=docx_path,
+        title="order.docx",
+        callback_url="http://app/api/orders/1/onlyoffice/callback",
+        file_url="http://app/api/orders/1/onlyoffice/file",
+    )
+
+    assert "user" not in config["editorConfig"]
+
+
+def test_onlyoffice_config_disables_features_tips(monkeypatch, tmp_path):
+    """What's new попап отключается features.featuresTips=false (ADR-0010)."""
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    docx_path = tmp_path / "order.docx"
+    docx_path.write_bytes(b"PK")
+
+    config = OnlyOfficeService().build_config(
+        doc_type="order",
+        doc_id=1,
+        file_path=docx_path,
+        title="order.docx",
+        callback_url="http://app/api/orders/1/onlyoffice/callback",
+        file_url="http://app/api/orders/1/onlyoffice/file",
+    )
+
+    assert config["editorConfig"]["customization"]["features"] == {"featuresTips": False}
+    decoded = jwt.decode(config["token"], "test-secret", algorithms=["HS256"])
+    assert decoded["editorConfig"]["customization"]["features"]["featuresTips"] is False
+
+
 def test_onlyoffice_form_data_builds_array(monkeypatch):
     """build_form_data: None и пустые строки пропускаются, list/dict отбрасываются."""
     from app.services.onlyoffice_form_data import build_form_data

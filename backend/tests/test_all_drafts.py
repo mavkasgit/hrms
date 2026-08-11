@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.api.deps import CurrentUser
 from app.core.config import settings
 from app.models.notification import Notification
 from app.models.statement import Statement
@@ -403,7 +404,7 @@ async def test_draft_config_view_mode_read_only(monkeypatch, tmp_path):
         draft_id=DRAFT_ID,
         request=MagicMock(),
         mode="view",
-        current_user="admin",
+        current_user=CurrentUser("admin", full_name="Админ"),
     )
     assert config["editorConfig"]["mode"] == "view"
     assert config["document"]["permissions"]["edit"] is False
@@ -422,9 +423,10 @@ async def test_draft_config_edit_mode_has_edit_rights(monkeypatch, tmp_path):
         draft_id=DRAFT_ID,
         request=MagicMock(),
         mode="edit",
-        current_user="admin",
+        current_user=CurrentUser("admin", full_name="Админ"),
     )
     assert config["editorConfig"]["mode"] == "edit"
     assert config["document"]["permissions"]["edit"] is True
     assert config["editorConfig"]["customization"]["autosave"] is True
     assert config["editorConfig"]["customization"]["forcesave"] is True
+    assert config["editorConfig"]["user"] == {"id": "admin", "name": "Админ"}
