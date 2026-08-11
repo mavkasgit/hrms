@@ -52,7 +52,6 @@ export const statementsConfig: DocumentSectionConfig<
   kind: "statement",
   slot: "statements",
   fillDraftRoute: "/orders/statements",
-  saveMessageType: "hrms:statement-save",
   editorWindowPrefix: "hrms-statement-editor-",
 
   labels: {

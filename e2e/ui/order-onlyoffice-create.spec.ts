@@ -82,8 +82,8 @@ test.describe('Orders OnlyOffice create @ui', () => {
 
     const { orderId } = await saveDraftOrderFromEditor(editor)
 
-    // Verify in registry: reload list, search by number / employee
-    await page.goto('/orders')
+    // Приказ должен появиться в УЖЕ ОТКРЫТОЙ таблице — без перезагрузки (#102).
+    // Если синхронизация сломается, тест обязан падать, а не проходить за счёт reload.
     await expect(ordersPage.heading).toBeVisible({ timeout: 15_000 })
 
     // Filter by order number if filter exists

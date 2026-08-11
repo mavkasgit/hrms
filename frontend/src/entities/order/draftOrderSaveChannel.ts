@@ -53,41 +53,34 @@ export function publishDraftOrderSave(message: Omit<DraftOrderSaveMessage, "type
 }
 
 /**
- * Listen for draft save from editor window.
- * Prefer matching expectedDraftId when provided.
- * Dedupes identical draftId events (postMessage+BC, HMR double handlers, double-click).
+ * Общая реализация подписки на сохранение черновика приказа (транспорт
+ * postMessage→BroadcastChannel + дедупликация по draftId).
+ *
+ * `matches` фильтрует сообщения; `null` означает «слушать все». Дедуп ключуется
+ * по `draftId`, поэтому разные черновики, сохранённые подряд, не теряются.
  */
-export function subscribeDraftOrderSave(
-  expectedDraftId: string | null | undefined,
+function subscribeDraftOrderSaves(
+  matches: ((message: DraftOrderSaveMessage) => boolean) | null,
   handler: (message: DraftOrderSaveMessage) => void
 ): () => void {
-  if (!expectedDraftId) return () => {}
-
-  let lastHandledAt = 0
-  let handling = false
+  // Время последней обработки по каждому draftId (postMessage+BC, HMR, double-click).
+  const lastHandledByDraft = new Map<string, number>()
 
   const handlePayload = (data: unknown) => {
     if (!isDraftOrderSaveMessage(data)) return
-    if (data.draftId !== expectedDraftId) return
+    if (matches && !matches(data)) return
 
     const now = Date.now()
-    if (handling || now - lastHandledAt < DEDUPE_WINDOW_MS) {
+    const last = lastHandledByDraft.get(data.draftId) ?? 0
+    if (now - last < DEDUPE_WINDOW_MS) {
       console.warn(
         "[draftOrderSaveChannel] ignored duplicate draft save signal",
         data.draftId,
       )
       return
     }
-    handling = true
-    lastHandledAt = now
-    try {
-      handler(data)
-    } finally {
-      // Keep dedupe window; allow next real save only after DEDUPE_WINDOW_MS
-      window.setTimeout(() => {
-        handling = false
-      }, DEDUPE_WINDOW_MS)
-    }
+    lastHandledByDraft.set(data.draftId, now)
+    handler(data)
   }
 
   const onWindowMessage = (event: MessageEvent) => {
@@ -109,6 +102,32 @@ export function subscribeDraftOrderSave(
     window.removeEventListener("message", onWindowMessage)
     channel?.close()
   }
+}
+
+/**
+ * Listen for draft save from editor window, filtered by expectedDraftId.
+ * `null`/`undefined` — noop (контракт страниц: без активного черновика не слушаем).
+ * Dedupes identical draftId events (postMessage+BC, HMR double handlers, double-click).
+ */
+export function subscribeDraftOrderSave(
+  expectedDraftId: string | null | undefined,
+  handler: (message: DraftOrderSaveMessage) => void
+): () => void {
+  if (!expectedDraftId) return () => {}
+  return subscribeDraftOrderSaves(
+    (message) => message.draftId === expectedDraftId,
+    handler
+  )
+}
+
+/**
+ * Listen for ALL draft saves from any editor window (глобальный слушатель в Layout).
+ * Та же реализация транспорта и дедупа, что и `subscribeDraftOrderSave`.
+ */
+export function subscribeAllDraftOrderSaves(
+  handler: (message: DraftOrderSaveMessage) => void
+): () => void {
+  return subscribeDraftOrderSaves(null, handler)
 }
 
 /** Open draft OnlyOffice editor; keep opener when possible (no noopener on fallback). */

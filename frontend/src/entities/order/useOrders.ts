@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { invalidateOrderQueries } from "./invalidateOrderQueries"
 import * as api from "./api"
 import type { OrderCreate, OrderUpdate, OrdersQueryParams, OrderTypeCreate, OrderTypeUpdate, OrderDeletionPreview, VacationUnpaidGroupOrderCreate, WeekendCallGroupOrderCreate } from "./types"
 
@@ -71,14 +72,7 @@ export function useCreateOrder() {
   return useMutation({
     mutationFn: (data: OrderCreate) => api.createOrder(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
-      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
-      queryClient.invalidateQueries({ queryKey: ["next-order-number"] })
+      invalidateOrderQueries(queryClient)
     },
   })
 }
@@ -167,13 +161,7 @@ export function useDeleteOrder() {
   return useMutation({
     mutationFn: (orderId: number) => api.deleteOrder(orderId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["vacation-periods"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacation-history"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["employees"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["vacations"], refetchType: "all" })
-      queryClient.invalidateQueries({ queryKey: ["orders"], exact: false })
-      queryClient.invalidateQueries({ queryKey: ["orders-recent"], exact: false })
+      invalidateOrderQueries(queryClient)
     },
   })
 }

@@ -108,8 +108,6 @@ export interface DocumentSectionConfig<TItem, TType, TCreate, TCreateDraft, TDra
   slot: string
   /** Маршрут «Заполнить поля» (?fillDraftId=). */
   fillDraftRoute: string
-  /** Тип сообщения сохранения из редактора OnlyOffice. */
-  saveMessageType: string
   /** Префикс имени окна редактора. */
   editorWindowPrefix: string
 
@@ -448,18 +446,6 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
     if (deleteId) deleteMutation.mutate(deleteId, { onSuccess: () => refetch() })
     setDeleteId(null)
   }
-
-  useEffect(() => {
-    const handleSave = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return
-      const message = event.data as { type?: string }
-      if (message.type === config.saveMessageType) {
-        refetch()
-      }
-    }
-    window.addEventListener("message", handleSave)
-    return () => window.removeEventListener("message", handleSave)
-  }, [refetch, config.saveMessageType])
 
   return (
     <div className="space-y-4">

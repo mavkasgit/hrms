@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import { Navigate, Outlet } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
 import { Sidebar } from "@/shared/ui/sidebar"
 import { DraftOrdersNavItem } from "@/features/draft-visibility/DraftOrdersNavItem"
 import { ToastProvider, showGlobalToast } from "@/shared/ui/use-toast"
@@ -8,21 +9,48 @@ import {
   documentEditorSaveToastCopy,
   subscribeDocumentEditorSave,
 } from "@/entities/document/documentEditorSaveChannel"
+import { subscribeAllDraftOrderSaves } from "@/entities/order/draftOrderSaveChannel"
+import { invalidateOrderQueries } from "@/entities/order/invalidateOrderQueries"
 import { getUserAccessLevel } from "@/shared/api/authHost"
 import { clearAuthTokens, getToken, setAuthErrorForLogin } from "@/shared/api/client"
 
-/** Toast on parent list page when OnlyOffice editor window reports successful save. */
-function DocumentEditorSaveListener() {
+/**
+ * Единая точка обработки сигналов сохранения из окон OnlyOffice-редакторов:
+ * тост + инвалидация кэшей по сущности. Редактор коммитит документ в своём окне,
+ * поэтому инвалидация обязана жить здесь, а не в мутациях родительской страницы.
+ */
+function EditorSaveSynchronizer() {
+  const queryClient = useQueryClient()
+
   useEffect(() => {
-    return subscribeDocumentEditorSave((message) => {
+    const unsubscribeDocument = subscribeDocumentEditorSave((message) => {
       const copy = documentEditorSaveToastCopy(message)
       showGlobalToast({
         title: copy.title,
         description: copy.description,
         variant: "success",
       })
+      if (message.entity === "order") {
+        invalidateOrderQueries(queryClient)
+      } else if (message.entity === "notification") {
+        queryClient.invalidateQueries({ queryKey: ["notifications"], exact: false })
+        queryClient.invalidateQueries({ queryKey: ["next-notification-number"] })
+      } else if (message.entity === "statement") {
+        queryClient.invalidateQueries({ queryKey: ["statements"], exact: false })
+        queryClient.invalidateQueries({ queryKey: ["next-statement-number"] })
+      }
     })
-  }, [])
+
+    const unsubscribeDraft = subscribeAllDraftOrderSaves(() => {
+      invalidateOrderQueries(queryClient)
+    })
+
+    return () => {
+      unsubscribeDocument()
+      unsubscribeDraft()
+    }
+  }, [queryClient])
+
   return null
 }
 
@@ -46,7 +74,7 @@ export function Layout() {
 
   return (
     <ToastProvider>
-      <DocumentEditorSaveListener />
+      <EditorSaveSynchronizer />
       <div className="flex flex-col min-h-screen bg-background">
         <div className="flex flex-1 min-h-0">
           <Sidebar afterNav={<DraftOrdersNavItem />} />

@@ -52,7 +52,6 @@ export const notificationsConfig: DocumentSectionConfig<
   kind: "notification",
   slot: "notifications",
   fillDraftRoute: "/orders/notifications",
-  saveMessageType: "hrms:notification-save",
   editorWindowPrefix: "hrms-notification-editor-",
 
   labels: {
