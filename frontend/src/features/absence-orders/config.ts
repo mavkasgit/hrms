@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query"
-import { getFormDataValue } from "@/entities/draft"
+import { getFormDataInt, getFormDataValue } from "@/entities/draft"
 import type { DraftFormData } from "@/entities/draft"
 import { hydrateDraftEmployees, toDraftEmployeeRefs } from "@/entities/form-draft"
 import {
@@ -15,6 +15,7 @@ import {
 } from "./lib"
 import type {
   AbsencePageConfig,
+  CallMode,
   GroupEmployeeRow,
   GroupFormDraft,
   GroupFormValues,
@@ -53,6 +54,27 @@ function mapUnpaidGroupFillDraft(data: DraftFormData): GroupFormDraft | null {
     call_date_start: "",
     call_date_end: "",
     employees: data.employees ?? [],
+    saved_at: new Date().toISOString(),
+  }
+}
+
+/**
+ * «Заполнить поля» из попапа черновиков: маппинг form-data серверного черновика
+ * в черновик одиночной формы. Только одиночный отпуск за свой счёт — иначе null.
+ */
+export function mapUnpaidSingleFillDraft(data: DraftFormData): SingleFormDraft | null {
+  if (data.is_group || data.order_type_code !== "vacation_unpaid") return null
+  return {
+    employee_id: getFormDataInt(data.data, "employee_id"),
+    order_date: getFormDataValue(data.data, "date") ?? "",
+    order_number: getFormDataValue(data.data, "number") ?? "",
+    mode: "single",
+    vacation_start: getFormDataValue(data.data, "vacation_start") ?? "",
+    vacation_end: getFormDataValue(data.data, "vacation_end") ?? "",
+    vacation_days: getFormDataValue(data.data, "vacation_days") ?? "",
+    call_date: "",
+    call_date_start: "",
+    call_date_end: "",
     saved_at: new Date().toISOString(),
   }
 }
@@ -166,6 +188,31 @@ function mapWeekendCallGroupFillDraft(data: DraftFormData): GroupFormDraft | nul
     call_date_start: get("call_date_start") ?? "",
     call_date_end: get("call_date_end") ?? "",
     employees: data.employees ?? [],
+    saved_at: new Date().toISOString(),
+  }
+}
+
+/**
+ * «Заполнить поля» из попапа черновиков: маппинг form-data серверного черновика
+ * в черновик одиночной формы. Только одиночный вызов в выходной — иначе null.
+ */
+export function mapWeekendCallSingleFillDraft(data: DraftFormData): SingleFormDraft | null {
+  if (data.is_group || data.order_type_code !== "weekend_call") return null
+  const hasCallDateRange =
+    Boolean(getFormDataValue(data.data, "call_date_start")) ||
+    Boolean(getFormDataValue(data.data, "call_date_end"))
+  const mode: CallMode = hasCallDateRange ? "range" : "single"
+  return {
+    employee_id: getFormDataInt(data.data, "employee_id"),
+    order_date: getFormDataValue(data.data, "date") ?? "",
+    order_number: getFormDataValue(data.data, "number") ?? "",
+    mode,
+    vacation_start: "",
+    vacation_end: "",
+    vacation_days: "",
+    call_date: getFormDataValue(data.data, "call_date") ?? "",
+    call_date_start: getFormDataValue(data.data, "call_date_start") ?? "",
+    call_date_end: getFormDataValue(data.data, "call_date_end") ?? "",
     saved_at: new Date().toISOString(),
   }
 }
@@ -285,6 +332,7 @@ export const unpaidLeavesConfig: AbsencePageConfig = {
     validate: unpaidSingleValidate,
     buildExtraFields: unpaidSingleExtraFields,
     hasContent: unpaidSingleHasContent,
+    mapFillDraft: mapUnpaidSingleFillDraft,
   },
   group: {
     kind: "vacation",
@@ -332,6 +380,7 @@ export const weekendCallsConfig: AbsencePageConfig = {
     validate: weekendCallSingleValidate,
     buildExtraFields: weekendCallSingleExtraFields,
     hasContent: weekendCallSingleHasContent,
+    mapFillDraft: mapWeekendCallSingleFillDraft,
   },
   group: {
     kind: "call",

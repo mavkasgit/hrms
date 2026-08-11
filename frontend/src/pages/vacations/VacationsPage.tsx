@@ -59,7 +59,8 @@ import { EmployeeSearch } from "@/features/employee-search"
 import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
-import { draftEditorUrl } from "@/entities/draft"
+import { draftEditorUrl, getFormDataInt, getFormDataValue } from "@/entities/draft"
+import type { DraftFormData } from "@/entities/draft"
 import { openOrderPrint, downloadOrderDocx } from "@/entities/order/orderActions"
 import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import type { OrderCreate } from "@/entities/order/types"
@@ -73,6 +74,7 @@ import type { Employee } from "@/entities/employee/types"
 import type { EmployeeVacationSummary } from "@/entities/vacation/types"
 import {
   useDraftRecoveryFor,
+  useFillDraftIdRestore,
 } from "@/entities/form-draft"
 import { fetchDraftEmployee } from "@/entities/form-draft"
 
@@ -96,6 +98,22 @@ function vacationFormHasContent(state: Omit<VacationFormDraft, "saved_at">): boo
 }
 
 const VACATION_ORDER_CODE = "vacation_paid"
+
+/**
+ * «Заполнить поля» из попапа черновиков: маппинг form-data серверного черновика
+ * в черновик формы. Только одиночный приказ оплачиваемого отпуска — иначе null.
+ */
+export function mapVacationFillDraft(data: DraftFormData): VacationFormDraft | null {
+  if (data.kind !== "order" || data.is_group || data.order_type_code !== "vacation_paid") return null
+  return {
+    employee_id: getFormDataInt(data.data, "employee_id"),
+    start_date: getFormDataValue(data.data, "vacation_start") ?? "",
+    end_date: getFormDataValue(data.data, "vacation_end") ?? "",
+    order_date: getFormDataValue(data.data, "date") ?? new Date().toISOString().split("T")[0],
+    order_number: getFormDataValue(data.data, "number") ?? "",
+    saved_at: new Date().toISOString(),
+  }
+}
 
 const DEFAULT_VACATION_TYPE = "Трудовой"
 
@@ -730,6 +748,9 @@ export function VacationsPage() {
     hasContent: vacationFormHasContent,
     onRestore: handleRecoveryRestore,
   })
+
+  // «Заполнить поля» из попапа черновиков: /vacations?fillDraftId=…
+  useFillDraftIdRestore(handleRecoveryRestore, mapVacationFillDraft, "/vacations")
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}

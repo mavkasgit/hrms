@@ -8,7 +8,8 @@ import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useExtendVacation } from "@/entities/vacation"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
-import { draftEditorUrl } from "@/entities/draft"
+import { draftEditorUrl, getFormDataValue } from "@/entities/draft"
+import type { DraftFormData } from "@/entities/draft"
 import { openOrderPrint } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { VacationSelector } from "@/features/VacationSelector"
@@ -18,9 +19,27 @@ import type { OrderCreate } from "@/entities/order/types"
 import type { Vacation } from "@/entities/vacation/types"
 import {
   useDraftRecoveryFor,
+  useFillDraftIdRestore,
 } from "@/entities/form-draft"
 
 const EXTENSION_ORDER_CODE = "vacation_extension"
+
+/**
+ * «Заполнить поля» из попапа черновиков: маппинг form-data серверного черновика
+ * в черновик формы. Только одиночный приказ продления — иначе null. Отпуск не
+ * хранится в черновике — пользователь выбирает его заново на странице (#101).
+ */
+export function mapExtensionFillDraft(data: DraftFormData): VacationExtensionFormDraft | null {
+  if (data.kind !== "order" || data.is_group || data.order_type_code !== "vacation_extension") return null
+  return {
+    vacation: null,
+    period_start: getFormDataValue(data.data, "period_start") ?? "",
+    period_end: getFormDataValue(data.data, "period_end") ?? "",
+    order_date: getFormDataValue(data.data, "date") ?? new Date().toISOString().split("T")[0],
+    order_number: getFormDataValue(data.data, "number") ?? "",
+    saved_at: new Date().toISOString(),
+  }
+}
 
 interface VacationExtensionFormDraft {
   vacation: Vacation | null
@@ -78,6 +97,7 @@ export function VacationExtensionPage() {
 
   const {
     clear: recoveryClear,
+    restoreWith: recoveryRestoreWith,
     restoreGuardRef,
   } = useDraftRecoveryFor<VacationExtensionFormDraft>({
     slot: "vacations:extension",
@@ -85,6 +105,11 @@ export function VacationExtensionPage() {
     hasContent: vacationExtensionHasContent,
     onRestore: handleRecoveryRestore,
   })
+
+  // «Заполнить поля» из попапа черновиков: /vacations/extension?fillDraftId=…
+  // restoreWith ставит restoreGuardRef → эффект сброса по selectedVacation?.id
+  // пропускает один раз, сохраняя восстановленные даты/реквизиты при выборе отпуска (#101).
+  useFillDraftIdRestore(recoveryRestoreWith, mapExtensionFillDraft, "/vacations/extension")
 
   useEffect(() => {
     // При восстановлении черновика поля уже восстановлены — сброс пропускаем один раз

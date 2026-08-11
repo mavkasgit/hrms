@@ -406,6 +406,7 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
 
   // «Заполнить поля» из попапа черновиков: /unpaid-leaves?fillDraftId=… (тот же
   // общий хендлер восстановления, что и для локального черновика).
+  useFillDraftIdRestore(handleSingleRecoveryRestore, config.single.mapFillDraft, config.fillDraftRoute)
   useFillDraftIdRestore(handleGroupRecoveryRestore, config.group.mapFillDraft, config.fillDraftRoute)
 
   const addGroupEmployee = useCallback((employee: Employee) => {

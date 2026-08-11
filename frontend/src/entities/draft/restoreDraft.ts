@@ -1,4 +1,5 @@
 import { fetchDraftFormData } from "./api"
+import { resolveFillRoute } from "./resolveFillRoute"
 
 /**
  * «Заполнить» форму данными черновика из попапа/страницы черновиков: переводит
@@ -11,20 +12,5 @@ export async function fillFormFromDraft(
   navigate: (to: string) => void
 ): Promise<void> {
   const data = await fetchDraftFormData(draftId)
-
-  if (data.kind === "notification") {
-    navigate(`/orders/notifications?fillDraftId=${encodeURIComponent(draftId)}`)
-    return
-  }
-  if (data.kind === "statement") {
-    navigate(`/orders/statements?fillDraftId=${encodeURIComponent(draftId)}`)
-    return
-  }
-  if (data.kind === "order" && data.is_group) {
-    const route = data.order_type_code === "vacation_unpaid_group" ? "/unpaid-leaves" : "/weekend-calls"
-    navigate(`${route}?fillDraftId=${encodeURIComponent(draftId)}`)
-    return
-  }
-  // Одиночный приказ: та же страница приказов, тот же ?fillDraftId (#28).
-  navigate(`/orders?fillDraftId=${encodeURIComponent(draftId)}`)
+  navigate(`${resolveFillRoute(data)}?fillDraftId=${encodeURIComponent(draftId)}`)
 }

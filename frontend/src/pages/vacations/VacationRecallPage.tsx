@@ -8,7 +8,8 @@ import { useAllOrderTypes } from "@/entities/order/useOrders"
 import { useRecallVacation, useHolidays } from "@/entities/vacation"
 import { useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
 import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
-import { draftEditorUrl } from "@/entities/draft"
+import { draftEditorUrl, getFormDataValue } from "@/entities/draft"
+import type { DraftFormData } from "@/entities/draft"
 import { openOrderPrint } from "@/entities/order/orderActions"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { VacationSelector } from "@/features/VacationSelector"
@@ -18,9 +19,26 @@ import type { OrderCreate } from "@/entities/order/types"
 import type { Vacation } from "@/entities/vacation/types"
 import {
   useDraftRecoveryFor,
+  useFillDraftIdRestore,
 } from "@/entities/form-draft"
 
 const RECALL_ORDER_CODE = "vacation_recall"
+
+/**
+ * «Заполнить поля» из попапа черновиков: маппинг form-data серверного черновика
+ * в черновик формы. Только одиночный приказ отзыва — иначе null. Отпуск не
+ * хранится в черновике — пользователь выбирает его заново на странице (#101).
+ */
+export function mapRecallFillDraft(data: DraftFormData): VacationRecallFormDraft | null {
+  if (data.kind !== "order" || data.is_group || data.order_type_code !== "vacation_recall") return null
+  return {
+    vacation: null,
+    recall_date: getFormDataValue(data.data, "recall_date") ?? "",
+    order_date: getFormDataValue(data.data, "date") ?? new Date().toISOString().split("T")[0],
+    order_number: getFormDataValue(data.data, "number") ?? "",
+    saved_at: new Date().toISOString(),
+  }
+}
 
 interface VacationRecallFormDraft {
   vacation: Vacation | null
@@ -77,6 +95,7 @@ export function VacationRecallPage() {
 
   const {
     clear: recoveryClear,
+    restoreWith: recoveryRestoreWith,
     restoreGuardRef,
   } = useDraftRecoveryFor<VacationRecallFormDraft>({
     slot: "vacations:recall",
@@ -84,6 +103,11 @@ export function VacationRecallPage() {
     hasContent: vacationRecallHasContent,
     onRestore: handleRecoveryRestore,
   })
+
+  // «Заполнить поля» из попапа черновиков: /vacations/recall?fillDraftId=…
+  // restoreWith ставит restoreGuardRef → эффект сброса по selectedVacation?.id
+  // пропускает один раз, сохраняя восстановленные даты/реквизиты при выборе отпуска (#101).
+  useFillDraftIdRestore(recoveryRestoreWith, mapRecallFillDraft, "/vacations/recall")
 
   useEffect(() => {
     // При восстановлении черновика поля уже восстановлены — сброс пропускаем один раз

@@ -74,6 +74,8 @@ export interface SingleFormConfig {
   validate: (values: SingleFormValues, orderTypeExists: boolean) => Record<string, string>
   buildExtraFields: (values: SingleFormValues) => Record<string, string | number | null>
   hasContent: (values: Omit<SingleFormDraft, "saved_at">) => boolean
+  /** Маппинг form-data серверного черновика в одиночную форму («Заполнить поля»). */
+  mapFillDraft: (data: DraftFormData) => SingleFormDraft | null
 }
 
 export interface GroupFormConfig {
