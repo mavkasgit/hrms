@@ -52,10 +52,28 @@ npm run docker:prod:down
 - `ONLYOFFICE_INTERNAL_URL`: Внутренний URL для общения бэкенда с OnlyOffice (`http://nginx/onlyoffice` или `http://localhost:8085`).
 - `BACKEND_INTERNAL_CALLBACK_URL`: URL, используемый OnlyOffice для обратных вызовов на бэкенд (`http://backend:8000`).
 
+### Compose interpolation: источник `${VAR}` при `docker-compose.prod.yml`
+
+Проверено на Compose v5.3.0. Штатный запуск production-стека:
+
+```bash
+npm run docker:prod:up   # docker compose --env-file .env.prod -f infra/compose/docker-compose.prod.yml up -d --build
+```
+
+При таком запуске переменные для `${VAR}` в `docker-compose.prod.yml`
+интерполируются из **явно указанного** `.env.prod` (флаг `--env-file`).
+Отдельный `infra/compose/.env` **не требуется** — он отсутствует в репозитории
+и намеренно покрыт `.gitignore` (паттерн `.env`).
+
+`infra/compose/.env` имеет значение **только** для сценария, когда Compose
+запускается непосредственно из каталога `infra/compose` **без** явного
+`--env-file` — тогда интерполяция идёт из `.env` рядом с compose-файлом.
+Этот сценарий не является штатным для production-деплоя.
+
 ## Чек-лист деплоя
 
 - [ ] Файл `.env.prod` создан и заполнен корректными учетными данными.
 - [ ] Порты 8081 или 80/443 открыты в UFW.
 - [ ] Контейнеры запущены: `docker ps` показывает статус `Up (healthy)`.
-- [ ] OnlyOffice доступен и JWT авторизация работает.
+- [ ] OnlyOffice доступен и JWT авторизация работает: `curl http://<IP>:8081/onlyoffice/healthcheck` → `true`; открытие приказа `view-docx` показывает документ, а не пустой экран.
 - [ ] Бэкапы баз данных настроены на регулярный запуск.
