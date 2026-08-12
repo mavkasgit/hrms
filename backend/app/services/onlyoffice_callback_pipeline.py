@@ -32,6 +32,7 @@ class CallbackKind(StrEnum):
     ORDER_DRAFT = "order-draft"
     NOTIFICATION = "notification"
     STATEMENT = "statement"
+    TEMPLATE = "template"
 
 
 @dataclass(frozen=True)
@@ -304,11 +305,47 @@ class StatementStrategy(_DbRecordStrategy):
         )
 
 
+class TemplateStrategy:
+    """Стратегия шаблонов приказов (order-types): скачать файл, без commit и без save_status.
+
+    resolve_target возвращает путь шаблона через path_func (get_template_path);
+    apply_* — no-op: у шаблона нет save-status записи и commit-этапа.
+    """
+
+    def __init__(self, path_func: Callable[[object], Path]) -> None:
+        self._path_func = path_func
+
+    async def resolve_target(self, context: CallbackContext) -> Target | None:
+        if context.db is None:
+            return None
+        try:
+            order_type = await order_service.get_order_type_by_id(context.db, int(context.entity_id))
+        except HRMSException:
+            return None
+        if order_type is None:
+            return None
+        return Target(self._path_func(order_type))
+
+    async def apply_persisted(self, context: CallbackContext, target: Target) -> None:
+        return None
+
+    async def apply_failed(self, context: CallbackContext, error: str) -> None:
+        return None
+
+    async def apply_forcesave_failed(self, context: CallbackContext, error: str) -> None:
+        return None
+
+
+# Импорт локально в момент создания BUILTIN_STRATEGIES (а не наверху модуля),
+# чтобы не тащить order_document_service в граф импорта pipeline (риск циклов).
+from app.services.order_document_service import get_template_path  # noqa: E402
+
 BUILTIN_STRATEGIES: Mapping[CallbackKind, PersistenceStrategy] = {
     CallbackKind.ORDER: OrderStrategy(),
     CallbackKind.ORDER_DRAFT: OrderDraftStrategy(),
     CallbackKind.NOTIFICATION: NotificationStrategy(),
     CallbackKind.STATEMENT: StatementStrategy(),
+    CallbackKind.TEMPLATE: TemplateStrategy(path_func=cast(Callable[[object], Path], get_template_path)),
 }
 
 onlyoffice_callback_pipeline = OnlyOfficeCallbackPipeline(

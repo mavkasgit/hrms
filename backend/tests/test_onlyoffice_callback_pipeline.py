@@ -374,6 +374,7 @@ def _router_body(status: int = 2, url: str = "http://oo/f.docx") -> dict[str, An
         CallbackKind.ORDER_DRAFT,
         CallbackKind.NOTIFICATION,
         CallbackKind.STATEMENT,
+        CallbackKind.TEMPLATE,
     ],
 )
 async def test_router_mapping_http_error_1_returns_500_for_all_kinds(monkeypatch, kind):
@@ -402,6 +403,10 @@ async def test_router_mapping_http_error_1_returns_500_for_all_kinds(monkeypatch
     elif kind == CallbackKind.NOTIFICATION:
         response = await oo_api.notification_onlyoffice_callback(
             notification_id=1, request=request, db=_db(), current_user="onlyoffice_server"
+        )
+    elif kind == CallbackKind.TEMPLATE:
+        response = await oo_api.template_onlyoffice_callback(
+            order_type_id=1, request=request, db=_db(), current_user="onlyoffice_server"
         )
     else:
         response = await oo_api.statement_onlyoffice_callback(
@@ -529,3 +534,260 @@ def test_singleton_uses_production_deps():
     assert onlyoffice_callback_pipeline._tracker is prod_tracker
     assert onlyoffice_callback_pipeline._strategies is BUILTIN_STRATEGIES
     assert set(onlyoffice_callback_pipeline._strategies.keys()) == set(CallbackKind)
+
+
+# ── TemplateStrategy / TEMPLATE kind ────────────────────────────────────────
+
+
+def _template_body(status: int, url: str | None = None) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "status": status,
+        "token": jwt.encode({"status": status}, "test-secret", algorithm="HS256"),
+    }
+    if url is not None:
+        body["url"] = url
+    return body
+
+
+async def test_template_strategy_resolves_target_via_path_func(monkeypatch):
+    from app.services.onlyoffice_callback_pipeline import TemplateStrategy
+    from app.services.order_service import order_service as order_service_singleton
+
+    order_type = SimpleNamespace(id=7)
+
+    async def fake_get_order_type(db, order_type_id):
+        assert order_type_id == 7
+        return order_type
+
+    monkeypatch.setattr(order_service_singleton, "get_order_type_by_id", fake_get_order_type)
+
+    strategy = TemplateStrategy(path_func=lambda ot: Path(f"/tmp/{getattr(ot, 'id')}.docx"))
+    target = await strategy.resolve_target(_context(kind=CallbackKind.TEMPLATE, entity_id=7, db=_db()))
+
+    assert target is not None
+    assert target.path == Path("/tmp/7.docx")
+
+
+async def test_template_strategy_resolves_none_when_order_type_missing(monkeypatch):
+    from app.services.onlyoffice_callback_pipeline import TemplateStrategy
+    from app.services.order_service import order_service as order_service_singleton
+
+    async def fake_get_order_type(db, order_type_id):
+        return None
+
+    monkeypatch.setattr(order_service_singleton, "get_order_type_by_id", fake_get_order_type)
+
+    strategy = TemplateStrategy(path_func=lambda ot: Path(f"/tmp/{getattr(ot, 'id')}.docx"))
+    assert await strategy.resolve_target(_context(kind=CallbackKind.TEMPLATE, entity_id=7, db=_db())) is None
+
+
+async def test_template_strategy_resolves_none_on_hrms_exception(monkeypatch):
+    from app.services.onlyoffice_callback_pipeline import TemplateStrategy
+    from app.services.order_service import order_service as order_service_singleton
+
+    def boom(db, order_type_id):
+        raise HRMSException("нет", "order_type_not_found", status_code=404)
+
+    monkeypatch.setattr(order_service_singleton, "get_order_type_by_id", boom)
+
+    strategy = TemplateStrategy(path_func=lambda ot: Path(f"/tmp/{getattr(ot, 'id')}.docx"))
+    assert await strategy.resolve_target(_context(kind=CallbackKind.TEMPLATE, entity_id=7, db=_db())) is None
+
+
+async def test_template_strategy_noop_apply_methods():
+    from app.services.onlyoffice_callback_pipeline import Target, TemplateStrategy
+
+    strategy = TemplateStrategy(path_func=lambda ot: Path("/tmp/t.docx"))
+    context = _context(kind=CallbackKind.TEMPLATE, entity_id=7, db=_db())
+    target = Target(path=Path("/tmp/t.docx"))
+
+    assert await strategy.apply_persisted(context, target) is None
+    assert await strategy.apply_failed(context, "err") is None
+    assert await strategy.apply_forcesave_failed(context, "err") is None
+
+
+async def test_template_kind_persisted_downloads_to_template_path(monkeypatch, tmp_path):
+    """TEMPLATE kind: status 2/6+url → download_and_replace с путём шаблона (без commit/save_status)."""
+    from app.services.onlyoffice_callback_pipeline import TemplateStrategy
+    from app.services.order_service import order_service as order_service_singleton
+
+    template_path = tmp_path / "prikaz.docx"
+    template_path.write_bytes(b"old")
+    order_type = SimpleNamespace(id=7, template_filename=template_path)
+
+    async def fake_get_order_type(db, order_type_id):
+        return order_type
+
+    monkeypatch.setattr(order_service_singleton, "get_order_type_by_id", fake_get_order_type)
+
+    strategy = TemplateStrategy(path_func=lambda ot: getattr(ot, "template_filename"))
+    downloader = FakeDownloader()
+    tracker = FakeTracker()
+    pipeline = OnlyOfficeCallbackPipeline(
+        downloader=downloader,
+        command_client=FakeCommandClient(),
+        strategies={CallbackKind.TEMPLATE: strategy},
+        tracker=tracker,
+    )
+
+    result = await pipeline.handle_callback(
+        _context(kind=CallbackKind.TEMPLATE, entity_id=7, db=_db(), userdata="sid-tpl"),
+        {"status": 6, "url": "http://oo/f.docx", "userdata": "sid-tpl"},
+    )
+
+    assert result.physical == PhysicalOutcome.PERSISTED
+    assert result.http_error == 0
+    assert downloader.calls == [("http://oo/f.docx", template_path)]
+    assert template_path.read_bytes() == b"new"
+    assert tracker.calls == [("mark_persisted", "sid-tpl", 6, int(template_path.stat().st_mtime))]
+
+
+@pytest.mark.parametrize("status", [2, 6])
+async def test_template_callback_router_2_6_without_url_acks_without_download(monkeypatch, status):
+    from app.api import onlyoffice as oo_api
+
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    fake_downloader = FakeDownloader()
+    monkeypatch.setattr(oo_api.onlyoffice_callback_pipeline, "_downloader", fake_downloader)
+
+    response = await oo_api.template_onlyoffice_callback(
+        order_type_id=1,
+        request=await _router_request(_template_body(status)),
+        db=_db(),
+        current_user="onlyoffice_server",
+    )
+
+    assert response == {"error": 0}
+    assert fake_downloader.calls == []
+
+
+@pytest.mark.parametrize("status", [3, 7])
+async def test_template_callback_router_3_7_acks_without_download(monkeypatch, status):
+    from app.api import onlyoffice as oo_api
+
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    fake_downloader = FakeDownloader()
+    monkeypatch.setattr(oo_api.onlyoffice_callback_pipeline, "_downloader", fake_downloader)
+
+    response = await oo_api.template_onlyoffice_callback(
+        order_type_id=1,
+        request=await _router_request(_template_body(status, url="http://oo/f.docx")),
+        db=_db(),
+        current_user="onlyoffice_server",
+    )
+
+    assert response == {"error": 0}
+    assert fake_downloader.calls == []
+
+
+async def test_template_callback_router_invalid_token_403(monkeypatch):
+    from app.api import onlyoffice as oo_api
+
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+
+    body = {"status": 2, "url": "http://oo/f.docx", "token": "bad-token"}
+    response = await oo_api.template_onlyoffice_callback(
+        order_type_id=1,
+        request=await _router_request(body),
+        db=_db(),
+        current_user="onlyoffice_server",
+    )
+
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 403
+    payload = json.loads(bytes(response.body))
+    assert payload["error"] == 1
+    assert payload["message"] == "Невалидный JWT OnlyOffice"
+
+
+async def test_template_callback_router_persisted_downloads_to_template_path(monkeypatch, tmp_path):
+    """Роутер TEMPLATE: status 6+url → pipeline скачивает в путь шаблона (get_template_path)."""
+    from app.api import onlyoffice as oo_api
+    from app.services.order_service import order_service as order_service_singleton
+
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    monkeypatch.setattr(settings, "ONLYOFFICE_JWT_SECRET", "test-secret")
+    monkeypatch.setattr(settings, "TEMPLATES_PATH", str(tmp_path))
+
+    template_path = tmp_path / "prikaz.docx"
+    template_path.write_bytes(b"old")
+    order_type = SimpleNamespace(id=7, template_filename="prikaz.docx")
+
+    async def fake_get_order_type(db, order_type_id):
+        return order_type
+
+    monkeypatch.setattr(order_service_singleton, "get_order_type_by_id", fake_get_order_type)
+
+    fake_downloader = FakeDownloader()
+    monkeypatch.setattr(oo_api.onlyoffice_callback_pipeline, "_downloader", fake_downloader)
+
+    response = await oo_api.template_onlyoffice_callback(
+        order_type_id=7,
+        request=await _router_request(_template_body(6, url="http://oo/f.docx")),
+        db=_db(),
+        current_user="onlyoffice_server",
+    )
+
+    assert response == {"error": 0}
+    assert fake_downloader.calls == [("http://oo/f.docx", template_path)]
+    assert template_path.read_bytes() == b"new"
+
+
+async def test_template_forcesave_routes_through_request_forcesave(monkeypatch):
+    from app.api import onlyoffice as oo_api
+    from app.api.onlyoffice import OnlyOfficeForceSaveRequest
+
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+    captured: dict[str, Any] = {}
+
+    async def fake_request_forcesave(context, document_key):
+        captured["context"] = context
+        captured["document_key"] = document_key
+        return {"message": "save_requested", "save_id": context.userdata, "command_error": None}
+
+    monkeypatch.setattr(oo_api.onlyoffice_callback_pipeline, "request_forcesave", fake_request_forcesave)
+
+    result = await oo_api.template_onlyoffice_forcesave(
+        order_type_id=3,
+        data=OnlyOfficeForceSaveRequest(document_key="template-3-abc", save_id="sid-tpl"),
+        current_user="admin",
+    )
+
+    assert result == {"message": "save_requested", "save_id": "sid-tpl", "command_error": None}
+    assert captured["document_key"] == "template-3-abc"
+    assert captured["context"].kind == CallbackKind.TEMPLATE
+    assert captured["context"].entity_id == 3
+    assert captured["context"].userdata == "sid-tpl"
+    assert captured["context"].db is None
+
+
+async def test_template_forcesave_wrong_prefix_422(monkeypatch):
+    from app.api import onlyoffice as oo_api
+    from app.api.onlyoffice import OnlyOfficeForceSaveRequest
+
+    monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
+
+    with pytest.raises(HRMSException) as exc_info:
+        await oo_api.template_onlyoffice_forcesave(
+            order_type_id=3,
+            data=OnlyOfficeForceSaveRequest(document_key="order-3-abc", save_id="sid"),
+            current_user="admin",
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.error_code == "invalid_onlyoffice_key"
+
+
+async def test_request_forcesave_template_kind_registers_template_doc_type():
+    tracker = FakeTracker()
+    client = FakeCommandClient(result=0)
+    pipeline = _make_pipeline(FakeDownloader(), client, tracker, FakeStrategy())
+
+    await pipeline.request_forcesave(
+        _context(kind=CallbackKind.TEMPLATE, entity_id=3, userdata="sid"), "template-3-1"
+    )
+
+    assert tracker.calls == [("register", "sid", "template", "3")]
