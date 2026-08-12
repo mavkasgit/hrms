@@ -28,6 +28,7 @@ import { useDepartments, useCreateDepartment } from "@/entities/department"
 import { usePositions, useCreatePosition } from "@/entities/position"
 import { ComboboxCreate } from "@/shared/ui/combobox-create"
 import { getUserAccessLevel } from "@/shared/api/authHost"
+import { useToast } from "@/shared/ui/use-toast"
 import {
   Select,
   SelectContent,
@@ -42,6 +43,11 @@ interface EmployeeFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   employee?: Employee | null
+}
+
+function getApiErrorMessage(error: unknown): string {
+  const maybe = error as { response?: { data?: { detail?: string } }; message?: string }
+  return maybe.response?.data?.detail || maybe.message || "Неизвестная ошибка"
 }
 
 const emptyForm: EmployeeCreate = {
@@ -92,6 +98,7 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
   const { data: positions = [] } = usePositions()
   const { data: hireOrder } = useHireOrder(employee?.id ?? null)
   const navigate = useNavigate()
+  const { addToast } = useToast()
 
   // Приводим к общему виду { id, name }
   const deptItems = useMemo(
@@ -204,6 +211,11 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
           },
           onError: (error) => {
             console.error(`[FORM] Ошибка при обновлении:`, error)
+            addToast({
+              title: "Не удалось сохранить",
+              description: getApiErrorMessage(error),
+              variant: "destructive",
+            })
           },
         }
       )
@@ -219,6 +231,11 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         },
         onError: (error) => {
           console.error(`[FORM] Ошибка при создании:`, error)
+          addToast({
+            title: "Не удалось создать сотрудника",
+            description: getApiErrorMessage(error),
+            variant: "destructive",
+          })
         },
       })
     }
@@ -276,6 +293,11 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
         onError: (error) => {
           finishRecalculate()
           console.error(`[FORM] Ошибка при обновлении сотрудника:`, error)
+          addToast({
+            title: "Не удалось сохранить",
+            description: getApiErrorMessage(error),
+            variant: "destructive",
+          })
         },
       }
     )
@@ -645,8 +667,8 @@ export function EmployeeForm({ open, onOpenChange, employee }: EmployeeFormProps
                 value={form.contract_number || ""}
                 onChange={(e) => updateField("contract_number", e.target.value || null)}
                 className="w-full h-10 py-2"
-                disabled={isViewer || (isEdit && employee?.contract_number_locked)}
-                placeholder={isEdit && employee?.contract_number_locked ? "Изменяется через приказ" : "—"}
+                disabled={isViewer}
+                placeholder="—"
               />
             </div>
 

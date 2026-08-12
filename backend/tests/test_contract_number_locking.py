@@ -82,8 +82,8 @@ async def test_contract_number_not_locked_after_extension_order_without_number(d
     assert locked is False
 
 
-async def test_contract_number_update_blocked_when_locked(db_session, create_employee, monkeypatch):
-    """Нельзя изменить contract_number через форму сотрудника если он заблокирован."""
+async def test_contract_number_manual_update_allowed_even_when_locked(db_session, create_employee, monkeypatch):
+    """Номер контракта можно изменить вручную, даже если он выдан приказом."""
     await order_service.ensure_default_order_types(db_session)
 
     employee = await create_employee(name="Kozlov Dmitri", contract_number="K-400")
@@ -108,16 +108,65 @@ async def test_contract_number_update_blocked_when_locked(db_session, create_emp
         ),
     )
 
+    assert await _get_contract_number_locked(db_session, employee.id) is True
+
     from app.services.employee_service import employee_service
     from app.schemas.employee import EmployeeUpdate
 
-    with pytest.raises(ValueError, match="Номер контракта заблокирован"):
-        await employee_service.update_employee(
-            db_session,
-            employee.id,
-            EmployeeUpdate(contract_number="K-999"),
-            "admin",
-        )
+    updated, _ = await employee_service.update_employee(
+        db_session,
+        employee.id,
+        EmployeeUpdate(contract_number="K-999"),
+        "admin",
+    )
+    assert updated.contract_number == "K-999"
+
+
+async def test_update_other_fields_allowed_when_contract_locked(db_session, create_employee, monkeypatch):
+    """Баг-фикс: редактирование других полей (например должности) не блокируется,
+    если contract_number в payload не изменился, даже когда номер заблокирован приказом."""
+    await order_service.ensure_default_order_types(db_session)
+
+    employee = await create_employee(name="Orlov Igor", contract_number="K-700")
+    hire_type = await order_service.get_order_type_by_code(db_session, "hire")
+
+    async def _fake_generate(*args, **kwargs):
+        return "/fake/path.docx", "doc.docx"
+
+    monkeypatch.setattr("app.services.order_service.generate_document", _fake_generate)
+
+    await order_service.create_order(
+        db_session,
+        OrderCreate(
+            employee_id=employee.id,
+            order_type_id=hire_type.id,
+            order_date=date(2025, 5, 1),
+            extra_fields={
+                "new_contract_number": "K-700",
+                "hire_date": "2025-05-01",
+                "contract_end": "2026-05-01",
+            },
+        ),
+    )
+
+    # Номер заблокирован приказом
+    assert await _get_contract_number_locked(db_session, employee.id) is True
+
+    from app.services.employee_service import employee_service
+    from app.schemas.employee import EmployeeUpdate
+
+    # Форма всегда шлёт contract_number (не изменённый) — меняем только должность
+    updated, _ = await employee_service.update_employee(
+        db_session,
+        employee.id,
+        EmployeeUpdate(
+            name=employee.name,
+            contract_number="K-700",  # то же значение — блокировка не должна срабатывать
+            position_id=employee.position_id,
+        ),
+        "admin",
+    )
+    assert updated.contract_number == "K-700"
 
 
 async def test_contract_number_update_allowed_when_not_locked(db_session, create_employee):
