@@ -8,19 +8,10 @@ keep working.
 
 from uuid import UUID
 
-from app.core.config import settings
 from app.services.session_core import (
-    JwtConfig,
     create_access_token as _core_create_access_token,
 )
-
-
-def _jwt_config() -> JwtConfig:
-    return JwtConfig(
-        secret_key=settings.JWT_SECRET_KEY or settings.SECRET_KEY,
-        algorithm=settings.ALGORITHM,
-        default_ttl_minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES,
-    )
+from app.services.session_service import jwt_config
 
 
 def create_access_token(
@@ -36,7 +27,7 @@ def create_access_token(
     if claims:
         base.update(claims)
     return _core_create_access_token(
-        _jwt_config(),
+        jwt_config(),
         username,
         claims=base,
         session_id=session_id,

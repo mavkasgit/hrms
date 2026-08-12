@@ -11,7 +11,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +31,7 @@ from app.schemas.session import (
     SessionOut,
 )
 from app.services import session_core
-from app.services.session_core import JwtConfig, SessionCoreConfig, SessionCoreError
+from app.services.session_core import JwtConfig, SessionCoreConfig, SessionCoreError, TokenError
 from app.utils.user_agent import device_label_from_ua
 
 # --- string constants (validation / storage; not DB enums) ---
@@ -79,7 +78,7 @@ def _core_config() -> SessionCoreConfig:
     )
 
 
-def _jwt_config() -> JwtConfig:
+def jwt_config() -> JwtConfig:
     return JwtConfig(
         secret_key=settings.JWT_SECRET_KEY or settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
@@ -284,7 +283,7 @@ async def complete_login(
     )
     full_name = user.full_name or user.username
     token = session_core.create_access_token(
-        _jwt_config(),
+        jwt_config(),
         subject=user.username,
         claims={"full_name": full_name, "hrms_access_level": user.role},
         session_id=session.id,
@@ -480,9 +479,8 @@ async def logout(db: AsyncSession, token: str | None) -> None:
         return
 
     try:
-        secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
-        payload = jwt.decode(token, secret_key, algorithms=[settings.ALGORITHM])
-    except JWTError:
+        payload = session_core.decode_access_token(jwt_config(), token)
+    except TokenError:
         raise HRMSException(
             "Invalid or expired token",
             error_code="invalid_token",

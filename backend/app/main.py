@@ -1,6 +1,5 @@
 from contextlib import asynccontextmanager
 import traceback
-import time
 import asyncio
 from typing import Any, cast
 
@@ -9,13 +8,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from jose import jwt, JWTError
 
 from app.core.config import settings
 from app.core.database import async_session
 from app.core.logging import configure_logging, logger
 from app.core.exceptions import HRMSException
 from app.api.exception_handlers import hrms_exception_handler
+from app.services.session_core import TokenError, decode_access_token
+from app.services.session_service import jwt_config
 from app.api.health import router as health_router
 from app.api.employees import router as employees_router
 from app.api.orders import router as orders_router
@@ -117,14 +117,7 @@ async def check_write_access_middleware(request: Request, call_next):
                         )
                 else:
                     try:
-                        secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
-                        payload = jwt.decode(token, secret_key, algorithms=[settings.ALGORITHM])
-                        exp = payload.get("exp")
-                        if exp and exp < time.time():
-                            return JSONResponse(
-                                status_code=401,
-                                content={"detail": "Token has expired"}
-                            )
+                        payload = decode_access_token(jwt_config(), token)
 
                         hrms_access_level = payload.get("hrms_access_level", "no_access")
                         if hrms_access_level != "admin":
@@ -132,7 +125,7 @@ async def check_write_access_middleware(request: Request, call_next):
                                 status_code=403,
                                 content={"detail": "Доступ запрещен. У вас есть права только на просмотр данных."}
                             )
-                    except JWTError:
+                    except TokenError:
                         return JSONResponse(
                             status_code=401,
                             content={"detail": "Invalid or expired token"}

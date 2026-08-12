@@ -1,4 +1,3 @@
-import time
 from typing import cast
 from uuid import UUID
 
@@ -10,7 +9,8 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
 from app.services import session_service
-from app.services.session_service import SessionInactiveError
+from app.services.session_core import TokenError, decode_access_token
+from app.services.session_service import SessionInactiveError, jwt_config
 
 class CurrentUser(str):
     # Атрибуты устанавливаются в __new__; аннотации — для статической типизации (pyright).
@@ -83,21 +83,11 @@ async def get_current_user(
         return CurrentUser("admin", role="admin", full_name="Admin User")
 
     try:
-        secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
-        payload = jwt.decode(token, secret_key, algorithms=[settings.ALGORITHM])
-    except JWTError as exc:
+        payload = decode_access_token(jwt_config(), token)
+    except TokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Check expiration explicitly if not checked by jwt.decode
-    exp = payload.get("exp")
-    if exp and exp < time.time():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
