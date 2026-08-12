@@ -8,6 +8,7 @@ import {
   useAllDrafts,
   useDeleteAllDraft,
   fillFormFromDraft,
+  ServerDraftActions,
   DRAFTS_ROUTE,
   isDraftsRoute,
 } from "@/entities/draft"
@@ -22,7 +23,7 @@ import {
   FORM_DRAFT_CHANGED_EVENT,
 } from "@/entities/form-draft"
 import type { FormDraftEntry } from "@/entities/form-draft"
-import { ClipboardPaste, Eye, FilePen, Loader2 } from "lucide-react"
+import { ClipboardPaste, FilePen } from "lucide-react"
 import { DeleteCancelButton } from "@/shared/ui/delete-cancel-button"
 
 interface DraftStatus {
@@ -145,23 +146,12 @@ function DraftBadgeButton({
 
   const handleFillFields = async () => {
     if (filling) return
-    setArmed(false)
     setFilling(true)
     try {
       await fillFormFromDraft(draft.draft_id, navigate)
     } finally {
       setFilling(false)
     }
-  }
-
-  const handleDelete = () => deleteMutation.mutate(draft.draft_id)
-  const openView = () => {
-    setArmed(false)
-    openDraftEditorWindow(draft.view_url)
-  }
-  const openEdit = () => {
-    setArmed(false)
-    openDraftEditorWindow(draft.edit_url)
   }
 
   return (
@@ -172,47 +162,16 @@ function DraftBadgeButton({
       subtitle={serverDraftSubtitle(draft)}
       date={timeAgo(draft.created_at)}
       actions={
-        <>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => void handleFillFields()}
-            disabled={filling}
-            title="Заполнить форму создания данными черновика"
-            aria-label="Заполнить"
-          >
-            {filling ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ClipboardPaste className="h-4 w-4" />
-            )}
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            title="Открыть документ только для чтения"
-            onClick={openView}
-            aria-label="Открыть"
-          >
-            <Eye className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            title="Восстановить — открыть в редакторе для доработки и сохранения"
-            onClick={openEdit}
-            aria-label="Восстановить"
-          >
-            <FilePen className="h-4 w-4" />
-          </Button>
-          <DeleteCancelButton
-            armed={armed}
-            onArmedChange={setArmed}
-            onDelete={handleDelete}
-            isPending={deleteMutation.isPending}
-            idleLabel="Удалить черновик"
-          />
-        </>
+        <ServerDraftActions
+          filling={filling}
+          armed={armed}
+          onArmedChange={setArmed}
+          onFill={() => void handleFillFields()}
+          onOpenView={() => openDraftEditorWindow(draft.view_url)}
+          onOpenEdit={() => openDraftEditorWindow(draft.edit_url)}
+          onDelete={() => deleteMutation.mutate(draft.draft_id)}
+          deletePending={deleteMutation.isPending}
+        />
       }
     />
   )

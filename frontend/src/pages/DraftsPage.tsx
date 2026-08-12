@@ -1,7 +1,11 @@
 import { Fragment, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ClipboardPaste, Eye, FilePen, Loader2 } from "lucide-react"
-import { useAllDrafts, useDeleteAllDraft, fillFormFromDraft } from "@/entities/draft"
+import {
+  useAllDrafts,
+  useDeleteAllDraft,
+  fillFormFromDraft,
+  ServerDraftActions,
+} from "@/entities/draft"
 import type { AllDraftItem } from "@/entities/draft"
 import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
 import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order/draftSaveStatus"
@@ -26,8 +30,6 @@ import {
 import { Badge } from "@/shared/ui/badge"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
-import { Button } from "@/shared/ui/button"
-import { DeleteCancelButton } from "@/shared/ui/delete-cancel-button"
 import { formatDate, formatDateTime } from "@/shared/utils/date"
 
 const KIND_LABEL: Record<AllDraftItem["kind"], string> = {
@@ -165,7 +167,6 @@ export function DraftsPage() {
 
   const handleFill = async (draft: AllDraftItem) => {
     if (fillingId) return
-    setArmedDeleteIds((prev) => new Set([...prev].filter((id) => id !== draft.draft_id)))
     setFillingId(draft.draft_id)
     try {
       await fillFormFromDraft(draft.draft_id, navigate)
@@ -317,50 +318,16 @@ export function DraftsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Заполнить форму данными черновика"
-                          aria-label="Заполнить"
-                          disabled={fillingId !== null}
-                          onClick={() => void handleFill(draft)}
-                        >
-                          {fillingId === draft.draft_id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <ClipboardPaste className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Открыть документ только для чтения"
-                          aria-label="Открыть"
-                          onClick={() => {
-                            toggleArmedDelete(draft.draft_id, false)
-                            openDraftEditorWindow(draft.view_url)
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Восстановить — открыть в редакторе для доработки и сохранения"
-                          aria-label="Восстановить"
-                          onClick={() => {
-                            toggleArmedDelete(draft.draft_id, false)
-                            openDraftEditorWindow(draft.edit_url)
-                          }}
-                        >
-                          <FilePen className="h-4 w-4" />
-                        </Button>
-                        <DeleteCancelButton
+                        <ServerDraftActions
+                          filling={fillingId === draft.draft_id}
+                          fillDisabled={fillingId !== null}
                           armed={armedDeleteIds.has(draft.draft_id)}
                           onArmedChange={(armed) => toggleArmedDelete(draft.draft_id, armed)}
+                          onFill={() => void handleFill(draft)}
+                          onOpenView={() => openDraftEditorWindow(draft.view_url)}
+                          onOpenEdit={() => openDraftEditorWindow(draft.edit_url)}
                           onDelete={() => deleteMutation.mutate(draft.draft_id)}
-                          isPending={deleteMutation.isPending}
-                          idleLabel="Удалить черновик"
+                          deletePending={deleteMutation.isPending}
                         />
                       </div>
                     </TableCell>
