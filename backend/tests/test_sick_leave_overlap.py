@@ -29,14 +29,6 @@ def _silence_audit(monkeypatch):
     monkeypatch.setattr("app.services.sick_leave_service.audit_logger.log", _noop_audit_log)
 
 
-@pytest.fixture(autouse=True)
-def _seed_admin(admin_user):
-    # Автор записи (username "admin") существует в БД — проверяем обычный путь
-    # резолва актора (created_by = users.id). Break-glass путь покрыт
-    # в test_sick_leave_service_user_resolution.py (#110).
-    return admin_user
-
-
 def _payload(employee_id: int, start: date, end: date, comment: str = "test") -> dict:
     return {
         "employee_id": employee_id,

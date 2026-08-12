@@ -43,32 +43,16 @@ class SickLeave(Base):
         index=True,
     )
 
-    # Аудит (Кто и когда). Provenance по identity-строке (username/break-glass);
-    # created_by/updated_by/deleted_by — необязательный FK на users.id (заполняется
-    # только для реальных пользователей, см. #110).
+    # Аудит (Кто и когда). Provenance — строка-identity (username / break-glass),
+    # без FK на users: актор может существовать вне таблицы users (#110).
     created_at: Mapped[date] = mapped_column(Date, nullable=False)
-    created_by: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    created_by_identity: Mapped[Optional[str]] = mapped_column(
-        String(100), nullable=True
-    )
+    created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    updated_by: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    updated_by_identity: Mapped[Optional[str]] = mapped_column(
-        String(100), nullable=True
-    )
+    updated_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     # Для soft-delete
-    deleted_by: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
-    deleted_by_identity: Mapped[Optional[str]] = mapped_column(
-        String(100), nullable=True
-    )
+    deleted_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     comment: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 

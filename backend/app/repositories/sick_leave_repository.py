@@ -120,13 +120,11 @@ class SickLeaveRepository:
         self,
         db: AsyncSession,
         sick_leave: SickLeave,
-        user_id: Optional[int],
-        identity: Optional[str],
+        current_user: str,
     ) -> bool:
         """Мягкое удаление больничного (установка статуса DELETED)."""
         sick_leave.status = SickLeaveStatus.DELETED
-        sick_leave.deleted_by = user_id
-        sick_leave.deleted_by_identity = identity
+        sick_leave.deleted_by = current_user
         await db.commit()
         return True
 

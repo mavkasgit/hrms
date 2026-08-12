@@ -11,10 +11,13 @@ async def _noop_audit_log(*args, **kwargs):
     return None
 
 
-async def test_create_sick_leave_resolves_existing_username(
-    db_session, create_employee, admin_user, monkeypatch
+async def test_create_sick_leave_writes_current_user_string(
+    db_session, create_employee, monkeypatch
 ):
-    """Существующий username → created_by = users.id + created_by_identity."""
+    """Автор пишется строкой из current_user напрямую, без lookup в users (#110).
+
+    Реальная запись в users для автора не требуется.
+    """
     monkeypatch.setattr("app.services.sick_leave_service.audit_logger.log", _noop_audit_log)
 
     employee = await create_employee(name="SickLeave User Resolution")
@@ -32,17 +35,13 @@ async def test_create_sick_leave_resolves_existing_username(
 
     assert result["id"] > 0
     assert result["employee_id"] == employee.id
-    assert result["created_by"] == admin_user.id
-    assert result["created_by_identity"] == "admin"
+    assert result["created_by"] == "admin"
 
 
-async def test_create_sick_leave_break_glass_no_user_record(
+async def test_create_sick_leave_break_glass_writes_identity_string(
     db_session, create_employee, monkeypatch
 ):
-    """Break-glass (emergency_admin) без записи в users: 404 не возникает (#110).
-
-    created_by = NULL, provenance — по identity-строке.
-    """
+    """Break-glass (emergency_admin) пишется строкой; 404 не возникает."""
     monkeypatch.setattr("app.services.sick_leave_service.audit_logger.log", _noop_audit_log)
 
     employee = await create_employee(name="SickLeave Break Glass")
@@ -59,17 +58,39 @@ async def test_create_sick_leave_break_glass_no_user_record(
     )
 
     assert result["id"] > 0
-    assert result["created_by"] is None
-    assert result["created_by_identity"] == "emergency_admin"
+    assert result["created_by"] == "emergency_admin"
 
 
-async def test_update_sick_leave_break_glass_no_user_record(
+async def test_create_sick_leave_unknown_username_no_lookup(
     db_session, create_employee, monkeypatch
 ):
-    """Update под break-glass: updated_by_identity фиксируется, 404 не возникает."""
+    """Неизвестный username (опечатка/сервисный аккаунт) не вызывает ошибку:
+    автор фиксируется строкой как есть — никакого обращения к users."""
     monkeypatch.setattr("app.services.sick_leave_service.audit_logger.log", _noop_audit_log)
 
-    employee = await create_employee(name="SickLeave Break Glass Update")
+    employee = await create_employee(name="SickLeave Unknown User")
+
+    result = await sick_leave_service.create_sick_leave(
+        db_session,
+        {
+            "employee_id": employee.id,
+            "start_date": date(2026, 4, 10),
+            "end_date": date(2026, 4, 12),
+            "comment": "test",
+        },
+        "ghost_user",
+    )
+
+    assert result["created_by"] == "ghost_user"
+
+
+async def test_update_sick_leave_writes_current_user_string(
+    db_session, create_employee, monkeypatch
+):
+    """Update фиксирует updated_by строкой из current_user."""
+    monkeypatch.setattr("app.services.sick_leave_service.audit_logger.log", _noop_audit_log)
+
+    employee = await create_employee(name="SickLeave Update Actor")
 
     created = await sick_leave_service.create_sick_leave(
         db_session,
@@ -87,48 +108,16 @@ async def test_update_sick_leave_break_glass_no_user_record(
     )
 
     assert updated["comment"] == "updated"
-    assert updated["updated_by"] is None
-    assert updated["updated_by_identity"] == "emergency_admin"
+    assert updated["updated_by"] == "emergency_admin"
 
 
-async def test_update_sick_leave_break_glass_clears_stale_updated_by(
-    db_session, create_employee, admin_user, monkeypatch
-):
-    """Mixed-provenance: break-glass обновляет запись, ранее тронутую реальным
-    пользователем — updated_by обнуляется (FK на users не актуален), а identity
-    фиксирует фактического автора изменения."""
-    monkeypatch.setattr("app.services.sick_leave_service.audit_logger.log", _noop_audit_log)
-
-    employee = await create_employee(name="SickLeave Mixed Provenance")
-
-    created = await sick_leave_service.create_sick_leave(
-        db_session,
-        {
-            "employee_id": employee.id,
-            "start_date": date(2026, 4, 10),
-            "end_date": date(2026, 4, 12),
-            "comment": "test",
-        },
-        "admin",
-    )
-    assert created["created_by"] == admin_user.id
-
-    updated = await sick_leave_service.update_sick_leave(
-        db_session, created["id"], {"comment": "by break-glass"}, "emergency_admin"
-    )
-
-    assert updated["comment"] == "by break-glass"
-    assert updated["updated_by"] is None
-    assert updated["updated_by_identity"] == "emergency_admin"
-
-
-async def test_delete_sick_leave_break_glass_no_user_record(
+async def test_delete_sick_leave_writes_current_user_string(
     db_session, create_employee, monkeypatch
 ):
-    """Delete под break-glass: deleted_by_identity фиксируется, 404 не возникает."""
+    """Delete фиксирует deleted_by строкой из current_user."""
     monkeypatch.setattr("app.services.sick_leave_service.audit_logger.log", _noop_audit_log)
 
-    employee = await create_employee(name="SickLeave Break Glass Delete")
+    employee = await create_employee(name="SickLeave Delete Actor")
 
     created = await sick_leave_service.create_sick_leave(
         db_session,
@@ -149,7 +138,7 @@ async def test_delete_sick_leave_break_glass_no_user_record(
 
     from sqlalchemy import select
 
-    from app.models.sick_leave import SickLeave
+    from app.models.sick_leave import SickLeave, SickLeaveStatus
 
     row = (
         await db_session.execute(
@@ -157,6 +146,5 @@ async def test_delete_sick_leave_break_glass_no_user_record(
         )
     ).scalars().first()
     assert row is not None
-    assert row.status.value == "deleted"
-    assert row.deleted_by is None
-    assert row.deleted_by_identity == "emergency_admin"
+    assert row.status == SickLeaveStatus.DELETED
+    assert row.deleted_by == "emergency_admin"
