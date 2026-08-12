@@ -15,6 +15,7 @@ from app.core.paths import statements_path
 from app.models.employee import Employee
 from app.models.statement import Statement
 from app.models.statement_type import StatementType
+from app.schemas.statement import StatementCreate
 from app.services.document_draft_service import statement_draft_service
 from app.services.order_print_service import order_print_service
 
@@ -22,16 +23,6 @@ router = APIRouter(prefix="/statements", tags=["statements"])
 
 
 # --- Schemas ---
-
-class StatementCreate(BaseModel):
-    title: str
-    number: Optional[str] = None
-    date: datetime.date
-    employee_id: Optional[int] = None
-    statement_type_id: Optional[int] = None
-    content: Optional[str] = None
-    extra_fields: Optional[dict] = None
-
 
 class StatementUpdate(BaseModel):
     title: Optional[str] = None

@@ -15,6 +15,7 @@ from app.core.paths import notifications_path
 from app.models.employee import Employee
 from app.models.notification import Notification
 from app.models.notification_type import NotificationType
+from app.schemas.notification import NotificationCreate
 from app.services.document_draft_service import notification_draft_service
 from app.services.order_print_service import order_print_service
 
@@ -22,16 +23,6 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
 # --- Schemas ---
-
-class NotificationCreate(BaseModel):
-    title: str
-    number: Optional[str] = None
-    date: datetime.date
-    employee_id: Optional[int] = None
-    notification_type_id: Optional[int] = None
-    content: Optional[str] = None
-    extra_fields: Optional[dict] = None
-
 
 class NotificationUpdate(BaseModel):
     title: Optional[str] = None

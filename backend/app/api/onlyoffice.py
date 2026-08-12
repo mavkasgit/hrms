@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import Any
-from datetime import date
 import ipaddress
 import json
 import logging
@@ -13,9 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.exceptions import EmployeeNotFoundError, HRMSException
+from app.core.exceptions import HRMSException
 from app.core.paths import storage_path
+from app.schemas.notification import NotificationCreate
 from app.schemas.order import GroupOrderCreate, OrderCreate
+from app.schemas.statement import StatementCreate
 from app.services.order_document_service import get_template_path
 from app.services.onlyoffice_callback_pipeline import (
     CallbackKind,
@@ -26,7 +27,6 @@ from app.services.onlyoffice_callback_pipeline import (
 from app.services.onlyoffice_save_tracker import onlyoffice_save_tracker
 from app.services.onlyoffice_service import onlyoffice_service, editor_user
 from app.services.order_draft_service import order_draft_service
-from app.services.document_draft_service import notification_draft_service, statement_draft_service
 from app.services.draft_adapter import draft_application_facade
 from app.services.draft_ref import DraftRef
 from app.services.onlyoffice_form_data import (
@@ -37,12 +37,17 @@ from app.services.onlyoffice_form_data import (
 )
 from app.services.unified_drafts_service import unified_drafts_service
 from app.services.order_service import order_service
-from app.repositories.references_repository import references_repository
-from app.utils.working_days import calculate_vacation_days, count_holidays_in_range
-from app.services.notification_type_service import notification_type_service
-from app.services.statement_type_service import statement_type_service
-from app.api.notifications import NotificationCreate
-from app.api.statements import StatementCreate
+from app.services.order_draft_application_service import (
+    CreateGroupOrderDraftCommand,
+    CreateOrderDraftCommand,
+    order_draft_application_service,
+)
+from app.services.document_draft_application_service import (
+    CreateNotificationDraftCommand,
+    CreateStatementDraftCommand,
+    notification_draft_application_service,
+    statement_draft_application_service,
+)
 from app.models.notification import Notification
 from app.models.statement import Statement
 
@@ -356,69 +361,12 @@ async def create_order_draft(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
+    """Создать черновик приказа (подготовка — в OrderDraftApplicationService, #97)."""
     _ensure_onlyoffice_enabled()
-    await order_service.ensure_default_order_types(db)
-
-    employee = None
-    if data.employee_id is not None:
-        employee = await order_service.get_employee_by_id(db, data.employee_id)
-        if not employee:
-            raise EmployeeNotFoundError(data.employee_id)
-
-    order_type = await order_service.get_order_type_by_id(db, data.order_type_id)
-    if not order_type or not order_type.is_active:
-        raise HRMSException("Активный тип приказа не найден", "order_type_not_found", status_code=404)
-
-    if not data.order_number:
-        order_number = await order_service.get_next_number(db, data.order_type_id)
-        data = data.model_copy(update={"order_number": order_number})
-
-    data = await _normalize_vacation_draft_fields(db, data, order_type.code)
-    data = await _normalize_transfer_draft_fields(db, data, order_type.code)
-
-    return await order_draft_service.create_draft(data, employee, order_type, user_id=current_user)
-
-
-async def _normalize_vacation_draft_fields(db: AsyncSession, data: OrderCreate, order_type_code: str) -> OrderCreate:
-    if order_type_code not in {"vacation_paid", "vacation_unpaid"} or not data.extra_fields:
-        return data
-    start_raw = data.extra_fields.get("vacation_start")
-    end_raw = data.extra_fields.get("vacation_end")
-    if not isinstance(start_raw, str) or not isinstance(end_raw, str):
-        return data
-    try:
-        start = date.fromisoformat(start_raw)
-        end = date.fromisoformat(end_raw)
-    except (ValueError, TypeError):
-        return data
-
-    holidays = await references_repository.get_holidays_for_year(db, start.year)
-    if end.year != start.year:
-        holidays += await references_repository.get_holidays_for_year(db, end.year)
-    days_count = calculate_vacation_days(start, end, count_holidays_in_range(holidays, start, end))
-    extra_fields = {**data.extra_fields, "vacation_days": days_count}
-    return data.model_copy(update={"extra_fields": extra_fields})
-
-
-async def _normalize_transfer_draft_fields(db: AsyncSession, data: OrderCreate, order_type_code: str) -> OrderCreate:
-    """Resolve new_position_name from new_position id for transfer orders."""
-    if order_type_code != "transfer" or not data.extra_fields:
-        return data
-    new_position_id = data.extra_fields.get("new_position")
-    if not new_position_id:
-        return data
-    if isinstance(new_position_id, str) and new_position_id.isdigit():
-        new_position_id = int(new_position_id)
-    if not isinstance(new_position_id, int):
-        return data
-    from app.models.position import Position
-    from sqlalchemy import select
-    result = await db.execute(select(Position).where(Position.id == new_position_id))
-    position = result.scalar_one_or_none()
-    if not position:
-        return data
-    extra_fields = {**data.extra_fields, "new_position_name": position.name}
-    return data.model_copy(update={"extra_fields": extra_fields})
+    return await order_draft_application_service.create_draft(
+        db,
+        CreateOrderDraftCommand(data=data, user_id=current_user),
+    )
 
 
 @router.get("/orders/drafts/{draft_id}/onlyoffice/config")
@@ -554,37 +502,12 @@ async def create_order_group_draft(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
+    """Создать групповой черновик приказа (подготовка — в OrderDraftApplicationService, #97)."""
     _ensure_onlyoffice_enabled()
-    await order_service.ensure_default_order_types(db)
-
-    order_type = await order_service.get_order_type_by_code(db, data.order_type_code)
-    if not order_type or not order_type.is_active:
-        raise HRMSException("Активный тип приказа не найден", "order_type_not_found", status_code=404)
-
-    # Load employees and attach to payload
-    employees_with_objs = []
-    for emp_item in data.employees:
-        employee = await order_service.get_employee_by_id(db, emp_item["employee_id"])
-        if not employee:
-            raise EmployeeNotFoundError(emp_item["employee_id"])
-        employees_with_objs.append({
-            "employee_id": emp_item["employee_id"],
-            "vacation_days": emp_item["vacation_days"],
-            "employee": employee,
-        })
-
-    # Build payload for draft service
-    payload = data.model_dump(exclude_unset=True)
-    # Replace employee IDs with full employee objects for rendering
-    payload["employees"] = employees_with_objs
-
-    draft = await order_draft_service.create_group_draft(
-        order_type_code=data.order_type_code,
-        payload=payload,
-        order_type=order_type,
-        user_id=current_user,
+    draft = await order_draft_application_service.create_group_draft(
+        db,
+        CreateGroupOrderDraftCommand(data=data, user_id=current_user),
     )
-
     return {
         "draft_id": draft["draft_id"],
         "edit_url": f"/drafts/{draft['draft_id']}/edit-docx",
@@ -690,9 +613,12 @@ async def create_notification_draft(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
+    """Создать черновик уведомления (делегирование — в NotificationDraftApplicationService, #97)."""
     _ensure_onlyoffice_enabled()
-    await notification_type_service.ensure_default_notification_types(db)
-    return await notification_draft_service.create_draft(db, data)
+    return await notification_draft_application_service.create_draft(
+        db,
+        CreateNotificationDraftCommand(data=data),
+    )
 
 
 @router.get("/notifications/{notification_id}/onlyoffice/config")
@@ -810,9 +736,12 @@ async def create_statement_draft(
     db: AsyncSession = Depends(get_db),
     current_user: str = Depends(_get_current_user_stub),
 ):
+    """Создать черновик заявления (делегирование — в StatementDraftApplicationService, #97)."""
     _ensure_onlyoffice_enabled()
-    await statement_type_service.ensure_default_statement_types(db)
-    return await statement_draft_service.create_draft(db, data)
+    return await statement_draft_application_service.create_draft(
+        db,
+        CreateStatementDraftCommand(data=data),
+    )
 
 
 @router.get("/statements/{statement_id}/onlyoffice/config")
