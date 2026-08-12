@@ -6,6 +6,7 @@ from jose import JWTError, jwt
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
+from app.core.authorization import DENIED_ACCESS_LEVEL
 from app.core.database import get_db
 from app.models.user import User
 from app.services import session_service
@@ -143,9 +144,9 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
         
-    # Check hrms_access_level from token payload
-    hrms_access_level = payload.get("hrms_access_level", "no_access")
-    if hrms_access_level == "no_access":
+    # Check hrms_access_level from token payload (read-gate: deny-list)
+    hrms_access_level = payload.get("hrms_access_level", DENIED_ACCESS_LEVEL)
+    if hrms_access_level == DENIED_ACCESS_LEVEL:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Доступ запрещен. У вас нет доступа к кадровой системе."

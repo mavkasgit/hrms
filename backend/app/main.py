@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.database import async_session
 from app.core.logging import configure_logging, logger
 from app.core.exceptions import HRMSException
+from app.core.authorization import DENIED_ACCESS_LEVEL, WRITE_REQUIRED_ROLE
 from app.api.exception_handlers import hrms_exception_handler
 from app.services.session_core import TokenError, decode_access_token
 from app.services.session_service import jwt_config
@@ -119,8 +120,8 @@ async def check_write_access_middleware(request: Request, call_next):
                     try:
                         payload = decode_access_token(jwt_config(), token)
 
-                        hrms_access_level = payload.get("hrms_access_level", "no_access")
-                        if hrms_access_level != "admin":
+                        hrms_access_level = payload.get("hrms_access_level", DENIED_ACCESS_LEVEL)
+                        if hrms_access_level != WRITE_REQUIRED_ROLE:
                             return JSONResponse(
                                 status_code=403,
                                 content={"detail": "Доступ запрещен. У вас есть права только на просмотр данных."}
