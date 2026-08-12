@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from sqlalchemy import insert as sa_insert, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -149,6 +150,13 @@ class OrderService:
             raise OrderNotFoundError(order_id)
         return order
 
+    async def find_by_source_draft_id(self, db: AsyncSession, source_draft_id: str) -> Optional[Order]:
+        """Durable lookup по source_draft_id — фундамент идемпотентного commit (ADR-0009, #94).
+
+        Без фильтра is_deleted: soft-deleted Order всё равно держит unique key.
+        """
+        return await self.order_repo.get_by_source_draft_id(db, source_draft_id)
+
     # === Order creation ===
     async def create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
         await self.ensure_default_order_types(db)
@@ -248,6 +256,12 @@ class OrderService:
             return await self._finish_create_order(
                 db, data, order_number, employee, order_type, file_path, display_name
             )
+        except IntegrityError:
+            # Идемпотентность держится на UNIQUE(source_draft_id): повторный/конкурентный
+            # commit даёт IntegrityError. Файл УЖЕ существующего приказа при этом НЕ
+            # удаляем (путь детерминирован, перезапись идентичным содержимым безвредна,
+            # а unlink уничтожил бы файл победителя гонки). #94.
+            raise
         except Exception:
             if permanent_abs is not None:
                 try:
@@ -331,6 +345,7 @@ class OrderService:
                 "display_name": display_name,
                 "notes": data.notes,
                 "extra_fields": extra_fields,
+                "source_draft_id": data.draft_id,
             },
         )
 
@@ -836,6 +851,7 @@ class OrderService:
                 "notes": None,
                 "extra_fields": {},
                 "is_group": True,
+                "source_draft_id": draft_id,
             },
         )
 

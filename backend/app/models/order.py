@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -11,6 +11,19 @@ from app.models.base import Base
 
 class Order(Base):
     __tablename__ = "orders"
+
+    # Durable ключ идемпотентности commit (#94/#95, миграция 052): partial unique
+    # index только для не-NULL source_draft_id. Direct-create (NULL) в индекс не
+    # попадает. Дублируется в миграции 052_orders_source_draft_id — для тестовой
+    # схемы (Base.metadata.create_all) индекс создаёт эта декларация.
+    __table_args__ = (
+        Index(
+            "ix_orders_source_draft_id_unique",
+            "source_draft_id",
+            unique=True,
+            postgresql_where=text("source_draft_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     order_number: Mapped[str] = mapped_column(String(50), nullable=False)

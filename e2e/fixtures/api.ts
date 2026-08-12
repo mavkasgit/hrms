@@ -448,6 +448,30 @@ async function apiCommitGroupDraft(
   return resp.json().catch(() => ({}))
 }
 
+async function apiCreateOrderDraft(
+  request: APIRequestContext,
+  payload: Record<string, unknown>
+): Promise<{ draft_id: string; edit_url?: string }> {
+  const resp = await request.post(`${API_BASE}/api/orders/drafts`, { data: payload })
+  if (![200, 201].includes(resp.status())) {
+    const body = await resp.text().catch(() => '')
+    throw new Error(`createOrderDraft failed: ${resp.status()} ${body}`)
+  }
+  return resp.json()
+}
+
+async function apiCommitOrderDraft(
+  request: APIRequestContext,
+  draftId: string
+): Promise<unknown> {
+  const resp = await request.post(`${API_BASE}/api/orders/drafts/${draftId}/commit`)
+  if (![200, 201].includes(resp.status())) {
+    const body = await resp.text().catch(() => '')
+    throw new Error(`commitOrderDraft failed: ${resp.status()} ${body}`)
+  }
+  return resp.json().catch(() => ({}))
+}
+
 // =============================================================================
 // FIXTURE TYPES
 // =============================================================================
@@ -533,6 +557,11 @@ export type ApiOperations = {
     payload: Record<string, unknown>
   ) => Promise<{ draft_id: string; edit_url: string }>
   commitGroupDraft: (draftId: string) => Promise<unknown>
+  // Single order drafts (OO path — commit creates orders; track orders separately)
+  createOrderDraft: (
+    payload: Record<string, unknown>
+  ) => Promise<{ draft_id: string; edit_url?: string }>
+  commitOrderDraft: (draftId: string) => Promise<unknown>
   // Cleanup
   cleanup: () => Promise<void>
   cleanupEmployee: (id: number) => Promise<void>
@@ -731,6 +760,8 @@ export const test = base.extend<ApiFixtures>({
 
       createGroupDraft: async (payload) => apiCreateGroupDraft(apiRequest, payload),
       commitGroupDraft: async (draftId) => apiCommitGroupDraft(apiRequest, draftId),
+      createOrderDraft: async (payload) => apiCreateOrderDraft(apiRequest, payload),
+      commitOrderDraft: async (draftId) => apiCommitOrderDraft(apiRequest, draftId),
 
       // Explicit cleanup (also runs automatically after each test)
       cleanup: async () => {

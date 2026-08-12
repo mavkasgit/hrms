@@ -828,9 +828,16 @@ async def test_commit_draft_without_metadata_raises_outdated(monkeypatch, tmp_pa
 
 @pytest.mark.asyncio
 async def test_duplicate_commit_returns_success(monkeypatch, tmp_path):
-    """#30 AC5: duplicate commit of same draft doesn't create second order (silent success)."""
+    """#30 AC5 + #94: повторный commit того же draft не создаёт второй приказ.
+
+    Новый контракт: stale lock + отсутствующий durable Order → commit переживает
+    retry-window, перезабирает lock и возвращает 200 с сериализованным Order
+    (а не message-объект `{"duplicate": true}`).
+    """
     from app.api.onlyoffice import commit_order_draft
+    from app.services import draft_adapter
     from app.services.order_draft_service import order_draft_service
+    from app.services.order_service import order_service
 
     monkeypatch.setattr(settings, "ONLYOFFICE_ENABLED", True)
     monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
@@ -841,15 +848,25 @@ async def test_duplicate_commit_returns_success(monkeypatch, tmp_path):
     draft_path = order_draft_service._drafts_dir / f"{draft_id}_order.docx"
     draft_path.write_bytes(b"draft-dup")
 
-    # Simulate already-claimed lock (first commit succeeded)
+    # Simulate already-claimed lock (first commit succeeded, но Order ещё не durable)
     lock_path = order_draft_service._commit_lock_path(draft_id)
     lock_path.write_bytes(b"1")
+
+    # Быстрый retry-window: stale lock распознаётся сразу, без 3s сна.
+    monkeypatch.setattr(draft_adapter, "_CONCURRENT_COMMIT_RETRIES", 1)
+    monkeypatch.setattr(draft_adapter, "_CONCURRENT_COMMIT_RETRY_DELAY", 0)
+
+    fake_order = SimpleNamespace(id=77)
+    monkeypatch.setattr(order_service, "find_by_source_draft_id", AsyncMock(return_value=None))
+    monkeypatch.setattr(order_service, "create_single_order_from_draft", AsyncMock(return_value=fake_order))
+    monkeypatch.setattr(order_service, "_serialize_order", lambda order: {"id": order.id})
 
     db = MagicMock()
     result = await commit_order_draft(draft_id=draft_id, db=db, current_user="admin")
 
-    assert result["duplicate"] is True
-    assert "уже создан" in result["message"]
+    assert result["id"] == 77
+    assert "duplicate" not in result
+    assert not lock_path.exists(), "stale commit lock must be cleaned up"
 
 
 @pytest.mark.asyncio
@@ -887,6 +904,10 @@ async def test_failed_commit_releases_lock_for_retry(monkeypatch, tmp_path):
         "schema_version": 1,
     }
     order_draft_service.save_draft_metadata(draft_id, metadata)
+
+    # Durable lookup с MagicMock-db вернул бы truthy MagicMock — фиксируем отсутствие
+    # Order в БД (изоляция от первого SELECT в новом idempotent-флоу #94).
+    monkeypatch.setattr(order_service_singleton, "find_by_source_draft_id", AsyncMock(return_value=None))
 
     # Make create_single_order_from_draft fail
     async def failing_create(db, draft_id_arg):

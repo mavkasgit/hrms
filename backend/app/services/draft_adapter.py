@@ -16,9 +16,11 @@ T2 — application-level каркас lifecycle-модуля черновико�
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Protocol
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import HRMSException
@@ -34,6 +36,12 @@ from app.services.order_service import order_service
 from app.services.unified_drafts_service import unified_drafts_service
 
 logger = logging.getLogger(__name__)
+
+# Bounded retry-window для true-concurrent double-commit (ADR-0009, #94):
+# 10 × 0.3s ≈ 3s. Внутри окна, когда заказа ещё нет, допустим 409
+# {"message", "duplicate": true}; sequential replay всегда 200 + Order.
+_CONCURRENT_COMMIT_RETRIES = 10
+_CONCURRENT_COMMIT_RETRY_DELAY = 0.3
 
 
 class DraftAdapter(Protocol):
@@ -56,21 +64,49 @@ class OrderDraftAdapter:
     kind = DraftKind.ORDER
 
     async def commit(self, db: AsyncSession, actor: str, ref: DraftRef) -> Any:
-        """Зафиксировать приказ из файлового черновика (#30).
+        """Зафиксировать приказ из файлового черновика (#30, #94/#95).
 
-        Логика перенесена из роутов commit_order_draft/commit_group_order_draft:
-        claim → create_single/group → serialize, включая 409-duplicate-ветку
-        single-commit. Диспатч single/group — по метаданным черновика.
+        Идемпотентность держится на durable UNIQUE(source_draft_id) + обработке
+        IntegrityError (ADR-0009); файловый `.commit.lock` — только оптимизация.
+        Повторный commit → 200 с тем же сериализованным Order; true-concurrent
+        double-commit внутри bounded retry-window без найденного заказа — допустим
+        409 `{"message", "duplicate": true}`. Оба вида (single и group) идут через
+        этот один метод (parity #95).
         """
         draft_id = ref.id
-        # Atomic claim prevents double-create when UI sends commit twice (postMessage+BC race).
+
+        # Durable lookup первичен: replay / crash-recovery (процесс умер между
+        # INSERT Order и cleanup) находит существующий Order даже без файлов.
+        existing = await order_service.find_by_source_draft_id(db, draft_id)
+        if existing is not None:
+            # Stale lock от умершего процесса — best-effort cleanup.
+            order_draft_service.release_commit_lock(draft_id)
+            return order_service._serialize_order(existing)
+
+        # Atomic claim — оптимизация против двойного create (postMessage+BC race).
         try:
             order_draft_service.claim_draft_for_commit(draft_id)
         except HRMSException as exc:
-            if exc.status_code == 409:
-                # Duplicate commit: draft already committed — return success silently (#30 AC5)
+            if exc.status_code != 409:
+                raise
+            # Lock занят конкурентным commit — ждём появления durable Order.
+            existing = await self._wait_for_durable_order(db, draft_id)
+            if existing is not None:
+                order_draft_service.release_commit_lock(draft_id)
+                return order_service._serialize_order(existing)
+            # Заказа так и нет → lock stale: снимаем и пробуем claim ещё раз.
+            order_draft_service.release_commit_lock(draft_id)
+            try:
+                order_draft_service.claim_draft_for_commit(draft_id)
+            except HRMSException as exc2:
+                if exc2.status_code != 409:
+                    raise
+                existing = await self._wait_for_durable_order(db, draft_id)
+                if existing is not None:
+                    order_draft_service.release_commit_lock(draft_id)
+                    return order_service._serialize_order(existing)
+                # True-concurrent double-commit вне retry-window (контракт фронта).
                 return {"message": "Приказ уже создан", "duplicate": True}
-            raise
 
         try:
             metadata = self._read_metadata_for_dispatch(draft_id)
@@ -79,11 +115,24 @@ class OrderDraftAdapter:
                 order = await order_service.create_group_order_from_draft(db=db, draft_id=draft_id)
             else:
                 order = await order_service.create_single_order_from_draft(db, draft_id)
+        except IntegrityError:
+            # Дубликат UNIQUE(source_draft_id): конкурентный commit уже создал Order.
+            # Rollback + durable lookup в свежем стейте. Файл существующего приказа
+            # НЕ удаляется (в _do_create_order IntegrityError ре-райзится без unlink).
+            await db.rollback()
+            existing = await order_service.find_by_source_draft_id(db, draft_id)
+            # Lock снимаем в обоих случаях: найденный Order — успех; иначе —
+            # освобождаем черновик, чтобы replay был возможен (#95).
+            order_draft_service.release_commit_lock(draft_id)
+            if existing is not None:
+                return order_service._serialize_order(existing)
+            raise
         except Exception:
             # Release lock so the draft remains available for retry (#30 AC4, #88)
             order_draft_service.release_commit_lock(draft_id)
             raise
 
+        order_draft_service.release_commit_lock(draft_id)
         if is_group:
             try:
                 await order_draft_service.delete_file_only(draft_id)
@@ -91,6 +140,15 @@ class OrderDraftAdapter:
                 logger.exception("Failed to delete committed group draft %s", draft_id)
 
         return order_service._serialize_order(order)
+
+    async def _wait_for_durable_order(self, db: AsyncSession, draft_id: str) -> Any:
+        """Bounded retry-window: ждём появления durable Order от конкурентного commit."""
+        for _ in range(_CONCURRENT_COMMIT_RETRIES):
+            await asyncio.sleep(_CONCURRENT_COMMIT_RETRY_DELAY)
+            existing = await order_service.find_by_source_draft_id(db, draft_id)
+            if existing is not None:
+                return existing
+        return None
 
     @staticmethod
     def _read_metadata_for_dispatch(draft_id: str) -> dict[str, Any] | None:

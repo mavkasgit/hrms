@@ -259,5 +259,29 @@ class OrderRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_source_draft_id(self, db: AsyncSession, source_draft_id: str) -> Optional[Order]:
+        """Найти Order по durable ключу идемпотентности (ADR-0009, #94).
+
+        Без фильтра is_deleted: soft-deleted строка всё равно занимает unique
+        key по source_draft_id, поэтому replay должен её возвращать. Та же
+        selectinload-гидрация, что и у `get_by_id` (нужна для _serialize_order).
+        """
+        result = await db.execute(
+            select(Order)
+            .options(
+                selectinload(Order.employee),
+                selectinload(Order.order_type),
+                selectinload(Order.employees)
+                    .selectinload(OrderEmployee.employee)
+                    .selectinload(Employee.position),
+                selectinload(Order.employees)
+                    .selectinload(OrderEmployee.employee)
+                    .selectinload(Employee.department),
+            )
+            .where(Order.source_draft_id == source_draft_id)
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
 
 order_repository = OrderRepository()
