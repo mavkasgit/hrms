@@ -47,6 +47,11 @@ export async function deleteNotification(id: number): Promise<void> {
   await axios.delete(`/notifications/${id}`)
 }
 
+/** delete_document (#98): отдельный use-case — удалить уже созданный документ. */
+export async function deleteNotificationDocument(id: number): Promise<void> {
+  await axios.delete(`/notifications/${id}/document`)
+}
+
 export async function fetchNotificationOnlyOfficeConfig(
   notificationId: number,
   mode: "edit" | "view" = "view"

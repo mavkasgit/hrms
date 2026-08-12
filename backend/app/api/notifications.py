@@ -243,11 +243,25 @@ async def delete_notification(
     notification_id: int,
     db: AsyncSession = Depends(get_db),
 ):
+    """delete_draft (#98): удалить только черновик (is_draft=True), иначе 409."""
     notification = await db.get(Notification, notification_id)
     if not notification:
         raise HTTPException(status_code=404, detail="Notification not found")
 
     await notification_draft_service.delete(db, notification)
+
+
+@router.delete("/{notification_id:int}/document", status_code=204)
+async def delete_notification_document(
+    notification_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """delete_document (#98): отдельный use-case — удалить уже созданный документ."""
+    notification = await db.get(Notification, notification_id)
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    await notification_draft_service.delete_document(db, notification)
 
 
 @router.get("/{notification_id:int}/download")

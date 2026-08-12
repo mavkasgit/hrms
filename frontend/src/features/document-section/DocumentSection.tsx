@@ -49,6 +49,8 @@ export interface DocumentListItem {
   date: string
   employee_name: string | null
   created_at: string | null
+  /** Черновик (is_draft=True) или уже созданный документ — разные delete (#98). */
+  is_draft: boolean
 }
 
 /** Параметры списка документов (единый вид для обеих сущностей). */
@@ -130,6 +132,8 @@ export interface DocumentSectionConfig<TItem, TType, TCreate, TCreateDraft, TDra
   useTypes: (activeOnly: boolean) => UseQueryResult<TType[]>
   useCreateDraft: () => UseMutationResult<TCreateDraft, unknown, TCreate>
   useDelete: () => UseMutationResult<unknown, unknown, number>
+  /** delete_document (#98): для строк is_draft=False (документы) вместо useDelete. */
+  useDeleteDocument?: () => UseMutationResult<unknown, unknown, number>
   useNextNumber: () => { data?: string }
   useRecentItems: () => { data?: { items: { id: number; number: string | null; date: string; employee_name: string | null }[] } }
 
@@ -253,7 +257,8 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
   const { data: types = [] } = config.useTypes(true)
   const createDraftMutation = config.useCreateDraft()
   const deleteMutation = config.useDelete()
-  const [deleteId, setDeleteId] = useState<number | null>(null)
+  const deleteDocumentMutation = config.useDeleteDocument?.() ?? null
+  const [deleteItem, setDeleteItem] = useState<TItem | null>(null)
 
   const selectedType = types.find((t) => t.id === selectedTypeId) ?? null
 
@@ -443,8 +448,12 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
   }
 
   const handleDelete = () => {
-    if (deleteId) deleteMutation.mutate(deleteId, { onSuccess: () => refetch() })
-    setDeleteId(null)
+    if (!deleteItem) return
+    // delete_draft для черновиков, delete_document для уже созданных документов (#98).
+    const mutation =
+      deleteDocumentMutation && !deleteItem.is_draft ? deleteDocumentMutation : deleteMutation
+    mutation.mutate(deleteItem.id, { onSuccess: () => refetch() })
+    setDeleteItem(null)
   }
 
   return (
@@ -729,7 +738,7 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
                       variant="ghost"
                       size="icon"
                       title="Удалить"
-                      onClick={() => setDeleteId(item.id)}
+                      onClick={() => setDeleteItem(item)}
                       className="text-red-500 hover:text-red-700"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -743,7 +752,7 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
       )}
 
       {/* Delete dialog */}
-      <AlertDialog open={deleteId !== null} onOpenChange={(open) => !open && setDeleteId(null)}>
+      <AlertDialog open={deleteItem !== null} onOpenChange={(open) => !open && setDeleteItem(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{config.labels.deleteTitle}</AlertDialogTitle>

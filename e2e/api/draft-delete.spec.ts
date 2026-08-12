@@ -1,10 +1,14 @@
 /**
- * Контракт удаления черновиков/документов пары «уведомление/заявление» (#84).
+ * Контракт удаления черновиков/документов пары «уведомление/заявление» (#84, #98).
  *
- * Удаление любого документа (черновик или финал) должно:
- * - возвращать 204 No Content (а не 200 + `{"message": ...}`);
- * - удалять DB-строку: повторный GET → 404;
- * - убирать черновик из объединённого списка `/drafts`.
+ * delete_draft (черновик, is_draft=True):
+ * - DELETE /notifications/{id} | /statements/{id} → 204, строка удалена, GET → 404,
+ *   черновик исчез из `/drafts`;
+ * - DELETE на уже созданный документ (is_draft=False) → 409, строка цела.
+ *
+ * delete_document (отдельный use-case, #98):
+ * - DELETE /notifications/{id}/document | /statements/{id}/document → 204 на документе;
+ * - на черновике → 409.
  *
  * Физическое удаление файла доказано на backend pytest (test_draft_delete.py);
  * здесь — только внешний HTTP-контракт.
@@ -32,6 +36,26 @@ test.describe('Draft delete contract @api', () => {
     const id = kind === 'notification' ? body.notification_id : body.statement_id
     expect(id, `${kind} draft id`).toBeTruthy()
     return id as number
+  }
+
+  async function commitDraft(
+    kind: 'notification' | 'statement',
+    request: import('@playwright/test').APIRequestContext,
+    id: number
+  ): Promise<void> {
+    const entity = kind === 'notification' ? 'notifications' : 'statements'
+    const resp = await request.post(`${API_BASE}/api/${entity}/${id}/commit`)
+    expect(resp.status(), `${kind} commit status`).toBe(200)
+  }
+
+  async function createCommittedDraft(
+    kind: 'notification' | 'statement',
+    request: import('@playwright/test').APIRequestContext,
+    u: string
+  ): Promise<number> {
+    const id = await createDraft(kind, request, u)
+    await commitDraft(kind, request, id)
+    return id
   }
 
   async function assertDeleted(
@@ -140,6 +164,122 @@ test.describe('Draft delete contract @api', () => {
       if (orderDraftId) {
         await request.delete(`${API_BASE}/api/orders/drafts/${orderDraftId}`).catch(() => {})
       }
+      await dispose()
+    }
+  })
+
+  // ── Guard #98: delete_draft не удаляет созданный документ (is_draft=False) ─
+
+  test('@api committed notification: DELETE (draft route) → 409, row preserved', async ({
+    playwright,
+    apiOps,
+  }) => {
+    const u = apiOps.uid()
+    const { request, dispose } = await createAuthenticatedRequest(playwright)
+
+    let id: number | undefined
+    try {
+      id = await createCommittedDraft('notification', request, u)
+
+      const delResp = await request.delete(`${API_BASE}/api/notifications/${id}`)
+      expect(delResp.status(), 'DELETE committed via draft route must be 409').toBe(409)
+
+      const getResp = await request.get(`${API_BASE}/api/notifications/${id}`)
+      expect(getResp.status(), 'committed notification must be preserved').toBe(200)
+    } finally {
+      if (id) await request.delete(`${API_BASE}/api/notifications/${id}/document`).catch(() => {})
+      await dispose()
+    }
+  })
+
+  test('@api committed statement: DELETE (draft route) → 409, row preserved', async ({
+    playwright,
+    apiOps,
+  }) => {
+    const u = apiOps.uid()
+    const { request, dispose } = await createAuthenticatedRequest(playwright)
+
+    let id: number | undefined
+    try {
+      id = await createCommittedDraft('statement', request, u)
+
+      const delResp = await request.delete(`${API_BASE}/api/statements/${id}`)
+      expect(delResp.status(), 'DELETE committed via draft route must be 409').toBe(409)
+
+      const getResp = await request.get(`${API_BASE}/api/statements/${id}`)
+      expect(getResp.status(), 'committed statement must be preserved').toBe(200)
+    } finally {
+      if (id) await request.delete(`${API_BASE}/api/statements/${id}/document`).catch(() => {})
+      await dispose()
+    }
+  })
+
+  // ── delete_document: отдельный use-case (#98) ─────────────────────────────
+
+  test('@api notification document: DELETE /document → 204, row gone', async ({
+    playwright,
+    apiOps,
+  }) => {
+    const u = apiOps.uid()
+    const { request, dispose } = await createAuthenticatedRequest(playwright)
+
+    let id: number | undefined
+    try {
+      id = await createCommittedDraft('notification', request, u)
+
+      const delResp = await request.delete(`${API_BASE}/api/notifications/${id}/document`)
+      expect(delResp.status(), 'DELETE document must be 204').toBe(204)
+
+      const getResp = await request.get(`${API_BASE}/api/notifications/${id}`)
+      expect(getResp.status(), 'GET after document delete must be 404').toBe(404)
+      id = undefined
+    } finally {
+      if (id) await request.delete(`${API_BASE}/api/notifications/${id}/document`).catch(() => {})
+      await dispose()
+    }
+  })
+
+  test('@api statement document: DELETE /document → 204, row gone', async ({
+    playwright,
+    apiOps,
+  }) => {
+    const u = apiOps.uid()
+    const { request, dispose } = await createAuthenticatedRequest(playwright)
+
+    let id: number | undefined
+    try {
+      id = await createCommittedDraft('statement', request, u)
+
+      const delResp = await request.delete(`${API_BASE}/api/statements/${id}/document`)
+      expect(delResp.status(), 'DELETE document must be 204').toBe(204)
+
+      const getResp = await request.get(`${API_BASE}/api/statements/${id}`)
+      expect(getResp.status(), 'GET after document delete must be 404').toBe(404)
+      id = undefined
+    } finally {
+      if (id) await request.delete(`${API_BASE}/api/statements/${id}/document`).catch(() => {})
+      await dispose()
+    }
+  })
+
+  test('@api notification draft: DELETE /document → 409, row preserved', async ({
+    playwright,
+    apiOps,
+  }) => {
+    const u = apiOps.uid()
+    const { request, dispose } = await createAuthenticatedRequest(playwright)
+
+    let id: number | undefined
+    try {
+      id = await createDraft('notification', request, u)
+
+      const delResp = await request.delete(`${API_BASE}/api/notifications/${id}/document`)
+      expect(delResp.status(), 'DELETE /document on draft must be 409').toBe(409)
+
+      const getResp = await request.get(`${API_BASE}/api/notifications/${id}`)
+      expect(getResp.status(), 'draft must be preserved').toBe(200)
+    } finally {
+      if (id) await request.delete(`${API_BASE}/api/notifications/${id}`).catch(() => {})
       await dispose()
     }
   })

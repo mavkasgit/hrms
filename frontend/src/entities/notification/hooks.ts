@@ -75,6 +75,16 @@ export function useDeleteNotification() {
   })
 }
 
+export function useDeleteNotificationDocument() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.deleteNotificationDocument(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications"] })
+    },
+  })
+}
+
 // ─── Notification Types ───
 
 export function useNotificationTypes(active_only = false) {

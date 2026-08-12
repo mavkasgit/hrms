@@ -6,7 +6,9 @@
 - БД-виды (уведомление/заявление): `create_draft(db, data)` рендерит docx и
   регистрирует строку `is_draft=True`; `finalize(db, record_id, url)` по
   callback-у OnlyOffice скачивает файл и делает из черновика документ
-  (`is_draft=False`); `delete(db, record)` удаляет строку и файл.
+  (`is_draft=False`); `delete(db, record)` — delete_draft (только черновик),
+  `delete_document(db, record)` — отдельный use-case удаления документа (#98);
+  `delete_file_only` — для файловых черновиков приказа.
 - Файловые черновики приказов (до commit DB-строки нет): `delete_file_only`
   и собственная приказная машинерия в `OrderDraftService` (create не
   переписывается — #80).
@@ -108,6 +110,8 @@ class DraftServiceConfig:
     path_func: Callable[..., Path]
     not_found_code: str
     file_not_found_code: str
+    not_a_draft_code: str
+    still_a_draft_code: str
     label: str
 
 
@@ -311,14 +315,42 @@ class DocumentDraftService:
     async def _get_record(self, db: AsyncSession, record_id: int, cfg: DraftServiceConfig) -> Any:
         return await db.get(cfg.model, record_id)
 
-    # ─── delete (#84) ────────────────────────────────────────────────────────
+    # ─── delete (#84, delete_draft/delete_document #98) ──────────────────────
 
     async def delete(self, db: AsyncSession, record: Any) -> None:
-        """Удалить DB-строку, затем (best-effort) связанные файлы.
+        """delete_draft: удалить только черновик (is_draft=True).
 
-        Сначала БД, потом unlink — исключает состояние «строка есть, файла
-        нет» (download не ломается). Сбой unlink не роняет delete().
+        Guard #98: документ (is_draft=False) через lifecycle черновика
+        удалить нельзя — 409; удаление документа — отдельный use-case
+        `delete_document`. Затем БД, потом (best-effort) связанные файлы —
+        исключает состояние «строка есть, файла нет». Сбой unlink не роняет
+        delete().
         """
+        cfg = self._config()
+        if not getattr(record, "is_draft", False):
+            raise HRMSException(
+                f"{cfg.label} не является черновиком — удаление документа выполняется отдельным use-case",
+                cfg.not_a_draft_code,
+                status_code=409,
+            )
+        await self._delete_row_and_files(db, record)
+
+    async def delete_document(self, db: AsyncSession, record: Any) -> None:
+        """delete_document: удалить уже созданный документ (is_draft=False).
+
+        Отдельный use-case (#98): не через lifecycle черновика. Черновик
+        (is_draft=True) тут — 409 (для него есть `delete`).
+        """
+        cfg = self._config()
+        if getattr(record, "is_draft", False):
+            raise HRMSException(
+                f"{cfg.label} ещё черновик — используйте удаление черновика",
+                cfg.still_a_draft_code,
+                status_code=409,
+            )
+        await self._delete_row_and_files(db, record)
+
+    async def _delete_row_and_files(self, db: AsyncSession, record: Any) -> None:
         await db.delete(record)
         await db.commit()
         self._cleanup_files(record)
@@ -367,6 +399,8 @@ notification_draft_service = DocumentDraftService(
         path_func=notifications_path,
         not_found_code="notification_not_found",
         file_not_found_code="notification_file_not_found",
+        not_a_draft_code="notification_not_a_draft",
+        still_a_draft_code="notification_still_a_draft",
         label="уведомления",
     )
 )
@@ -385,6 +419,8 @@ statement_draft_service = DocumentDraftService(
         path_func=statements_path,
         not_found_code="statement_not_found",
         file_not_found_code="statement_file_not_found",
+        not_a_draft_code="statement_not_a_draft",
+        still_a_draft_code="statement_still_a_draft",
         label="заявления",
     )
 )

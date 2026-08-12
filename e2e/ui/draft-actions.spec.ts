@@ -287,7 +287,9 @@ test.describe('Draft actions @ui', () => {
       expect(stmt.number?.includes(stmtNumber)).toBe(true)
     } finally {
       if (stmtId) {
-        await request.delete(`${API_BASE}/api/statements/${stmtId}`).catch(() => {})
+        // Заявление закоммичено (is_draft=False): delete_draft дал бы 409 (#98),
+        // поэтому cleanup — через отдельный use-case delete_document.
+        await request.delete(`${API_BASE}/api/statements/${stmtId}/document`).catch(() => {})
       }
       await dispose()
     }

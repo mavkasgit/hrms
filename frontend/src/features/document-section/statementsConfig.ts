@@ -3,6 +3,7 @@ import {
   useStatements,
   useCreateStatementDraft,
   useDeleteStatement,
+  useDeleteStatementDocument,
   useStatementTypes,
   useNextStatementNumber,
 } from "@/entities/statement/hooks"
@@ -82,6 +83,7 @@ export const statementsConfig: DocumentSectionConfig<
   useTypes: (activeOnly) => useStatementTypes(activeOnly),
   useCreateDraft: () => useCreateStatementDraft(),
   useDelete: () => useDeleteStatement(),
+  useDeleteDocument: () => useDeleteStatementDocument(),
   useNextNumber: () => useNextStatementNumber(),
   useRecentItems: () => useStatements({ page: 1, per_page: 100 }),
 

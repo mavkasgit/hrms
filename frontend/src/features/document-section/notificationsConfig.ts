@@ -3,6 +3,7 @@ import {
   useNotifications,
   useCreateNotificationDraft,
   useDeleteNotification,
+  useDeleteNotificationDocument,
   useNotificationTypes,
   useNextNotificationNumber,
 } from "@/entities/notification/hooks"
@@ -82,6 +83,7 @@ export const notificationsConfig: DocumentSectionConfig<
   useTypes: (activeOnly) => useNotificationTypes(activeOnly),
   useCreateDraft: () => useCreateNotificationDraft(),
   useDelete: () => useDeleteNotification(),
+  useDeleteDocument: () => useDeleteNotificationDocument(),
   useNextNumber: () => useNextNotificationNumber(),
   useRecentItems: () => useNotifications({ page: 1, per_page: 100 }),
 

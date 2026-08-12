@@ -47,6 +47,11 @@ export async function deleteStatement(id: number): Promise<void> {
   await axios.delete(`/statements/${id}`)
 }
 
+/** delete_document (#98): отдельный use-case — удалить уже созданный документ. */
+export async function deleteStatementDocument(id: number): Promise<void> {
+  await axios.delete(`/statements/${id}/document`)
+}
+
 export async function fetchStatementOnlyOfficeConfig(
   statementId: number,
   mode: "edit" | "view" = "view"

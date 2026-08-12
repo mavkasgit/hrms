@@ -9,8 +9,10 @@ T2 — application-level каркас lifecycle-модуля черновико�
 - `DraftApplicationFacade` — единая точка входа для list/commit/delete_draft.
 
 Логика per-kind роутов перенесена сюда; роутеры onlyoffice стали тонкими и
-вызывают facade через typed `DraftRef`. Authz (T6), идемпотентность UNIQUE
-(T4/T5), delete-guard (T8) здесь НЕ реализуются.
+вызывают facade через typed `DraftRef`. Authz (T6) и идемпотентность UNIQUE
+(T4/T5) здесь НЕ реализуются. Delete-guard (T8, #98) — «delete_draft удаляет
+только is_draft=True, документ → 409» — реализован в
+`DocumentDraftService.delete`, адаптеры БД-видов полагаются на него.
 """
 from __future__ import annotations
 
@@ -121,6 +123,7 @@ class NotificationDraftAdapter:
         return {"message": "ok"}
 
     async def delete_draft(self, db: AsyncSession, actor: str, ref: DraftRef) -> None:
+        """Удалить черновик уведомления. Guard #98: документ (is_draft=False) → 409."""
         record = await db.get(Notification, int(ref.id))
         if record is None:
             raise HRMSException("Уведомление не найдено", "notification_not_found", status_code=404)
@@ -137,6 +140,7 @@ class StatementDraftAdapter:
         return {"message": "ok"}
 
     async def delete_draft(self, db: AsyncSession, actor: str, ref: DraftRef) -> None:
+        """Удалить черновик заявления. Guard #98: документ (is_draft=False) → 409."""
         record = await db.get(Statement, int(ref.id))
         if record is None:
             raise HRMSException("Заявление не найдено", "statement_not_found", status_code=404)

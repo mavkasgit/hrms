@@ -75,6 +75,16 @@ export function useDeleteStatement() {
   })
 }
 
+export function useDeleteStatementDocument() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => api.deleteStatementDocument(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["statements"] })
+    },
+  })
+}
+
 // ─── Statement Types ───
 
 export function useStatementTypes(active_only = false) {

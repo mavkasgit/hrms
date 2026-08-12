@@ -360,6 +360,12 @@ async function apiGetNotificationTypes(
 
 async function apiDeleteNotification(request: APIRequestContext, id: number): Promise<void> {
   const resp = await request.delete(`${API_BASE}/api/notifications/${id}`)
+  if (resp.status() === 409) {
+    // delete_document (#98): committed notification — отдельный use-case.
+    const docResp = await request.delete(`${API_BASE}/api/notifications/${id}/document`)
+    expect([200, 204]).toContain(docResp.status())
+    return
+  }
   expect([200, 204]).toContain(resp.status())
 }
 

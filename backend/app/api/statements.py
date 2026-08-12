@@ -241,11 +241,25 @@ async def delete_statement(
     statement_id: int,
     db: AsyncSession = Depends(get_db),
 ):
+    """delete_draft (#98): удалить только черновик (is_draft=True), иначе 409."""
     statement = await db.get(Statement, statement_id)
     if not statement:
         raise HTTPException(status_code=404, detail="Statement not found")
 
     await statement_draft_service.delete(db, statement)
+
+
+@router.delete("/{statement_id:int}/document", status_code=204)
+async def delete_statement_document(
+    statement_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """delete_document (#98): отдельный use-case — удалить уже созданный документ."""
+    statement = await db.get(Statement, statement_id)
+    if not statement:
+        raise HTTPException(status_code=404, detail="Statement not found")
+
+    await statement_draft_service.delete_document(db, statement)
 
 
 @router.get("/{statement_id:int}/download")
