@@ -31,7 +31,9 @@ def _silence_audit(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _seed_admin(admin_user):
-    # Автор записи (username "admin") должен существовать в БД: JIT больше не выполняется.
+    # Автор записи (username "admin") существует в БД — проверяем обычный путь
+    # резолва актора (created_by = users.id). Break-glass путь покрыт
+    # в test_sick_leave_service_user_resolution.py (#110).
     return admin_user
 
 

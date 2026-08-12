@@ -10,7 +10,6 @@ from app.core.exceptions import (
     SickLeaveNotFoundError,
     SickLeaveOverlapError,
     InvalidSickLeaveDatesError,
-    UserNotFoundError,
 )
 from app.core.logging import get_audit_logger
 from app.models.sick_leave import SickLeave, SickLeaveStatus
@@ -27,12 +26,20 @@ class SickLeaveService:
         self.employee_repo = EmployeeRepository()
         self.user_repo = UserRepository()
 
-    async def _resolve_user_id(self, db: AsyncSession, username: str) -> int:
-        """Строгий резолв автора по username; JIT-провижининг здесь не выполняется."""
+    async def _resolve_actor(
+        self, db: AsyncSession, username: str
+    ) -> tuple[Optional[int], str]:
+        """Мягкий резолв актора операции (#110).
+
+        Возвращает (user_id | None, identity): user_id заполняется только если
+        пользователь реально существует в ``users`` (обычный вход). Для identity
+        вне ``users`` (break-glass ``emergency_admin``, сервисный аккаунт) —
+        user_id = None, а provenance ведётся по username-строке.
+        """
         user = await self.user_repo.get_by_username(db, username)
         if user is None:
-            raise UserNotFoundError(username)
-        return int(user.id)
+            return None, username
+        return int(user.id), username
 
     async def create_sick_leave(
         self, db: AsyncSession, data: dict, username: str
@@ -43,7 +50,8 @@ class SickLeaveService:
         Args:
             db: Сессия базы данных
             data: Данные для создания (employee_id, start_date, end_date, comment, ...)
-            username: Имя пользователя (автор записи), существующего в системе
+            username: Identity автора (username обычного пользователя или
+                break-glass актора вне users, например emergency_admin)
 
         Returns:
             dict: Данные созданного больничного
@@ -69,7 +77,7 @@ class SickLeaveService:
             )
 
         days_count = (end_date - start_date).days + 1
-        user_id = await self._resolve_user_id(db, username)
+        user_id, identity = await self._resolve_actor(db, username)
 
         sick_leave = SickLeave(
             employee_id=employee_id,
@@ -79,6 +87,7 @@ class SickLeaveService:
             status=SickLeaveStatus.ACTIVE,
             created_at=date.today(),
             created_by=user_id,
+            created_by_identity=identity,
         )
 
         created_sick_leave = await self.repo.create(db, sick_leave)
@@ -89,7 +98,7 @@ class SickLeaveService:
                 "action": "sick_leave_create",
                 "entity_type": "sick_leave",
                 "entity_id": created_sick_leave.id,
-                "performed_by": str(user_id),
+                "performed_by": identity,
                 "changes": {
                     "employee_id": employee_id,
                     "start_date": str(start_date),
@@ -111,7 +120,7 @@ class SickLeaveService:
             db: Сессия базы данных
             sick_leave_id: ID больничного
             data: Данные для обновления
-            username: Имя пользователя (автор изменения), существующего в системе
+            username: Identity автора (username или break-glass актор)
 
         Returns:
             dict: Данные обновленного больничного
@@ -145,12 +154,18 @@ class SickLeaveService:
                     f"({overlap.start_date} - {overlap.end_date})"
                 )
 
-        user_id = await self._resolve_user_id(db, username)
+        user_id, identity = await self._resolve_actor(db, username)
 
         update_data = {}
         for field in ["start_date", "end_date", "comment"]:
             if field in data and data[field] is not None:
                 update_data[field] = data[field]
+
+        # Актёр фиксируется на инстансе напрямую (не через update_data):
+        # для identity вне users user_id=None, и репозиторий не должен
+        # скипать обнуление stale updated_by по общему правилу "value is not None".
+        sick_leave.updated_by = user_id
+        sick_leave.updated_by_identity = identity
 
         updated_sick_leave = await self.repo.update(db, sick_leave, update_data)
 
@@ -160,7 +175,7 @@ class SickLeaveService:
                 "action": "sick_leave_update",
                 "entity_type": "sick_leave",
                 "entity_id": sick_leave_id,
-                "performed_by": str(user_id),
+                "performed_by": identity,
                 "changes": update_data,
             },
         )
@@ -176,7 +191,7 @@ class SickLeaveService:
         Args:
             db: Сессия базы данных
             sick_leave_id: ID больничного
-            username: Имя пользователя (автор удаления), существующего в системе
+            username: Identity автора (username или break-glass актор)
 
         Returns:
             bool: True если успешно
@@ -185,9 +200,9 @@ class SickLeaveService:
         if not sick_leave:
             raise SickLeaveNotFoundError(sick_leave_id)
 
-        user_id = await self._resolve_user_id(db, username)
+        user_id, identity = await self._resolve_actor(db, username)
 
-        await self.repo.soft_delete(db, sick_leave, user_id)
+        await self.repo.soft_delete(db, sick_leave, user_id, identity)
 
         audit_logger.info(
             "SICK LEAVE DELETED",
@@ -195,7 +210,7 @@ class SickLeaveService:
                 "action": "sick_leave_delete",
                 "entity_type": "sick_leave",
                 "entity_id": sick_leave_id,
-                "performed_by": str(user_id),
+                "performed_by": identity,
                 "changes": {"status": "deleted"},
             },
         )
@@ -277,8 +292,11 @@ class SickLeaveService:
             "days_count": days_count,
             "status": sick_leave.status,
             "created_by": sick_leave.created_by,
+            "created_by_identity": sick_leave.created_by_identity,
             "created_at": sick_leave.created_at,
             "updated_by": sick_leave.updated_by,
+            "updated_by_identity": sick_leave.updated_by_identity,
+            "deleted_by_identity": sick_leave.deleted_by_identity,
             "comment": sick_leave.comment,
         }
 

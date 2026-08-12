@@ -2,14 +2,13 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Optional, TYPE_CHECKING
 
-from sqlalchemy import Column, Integer, String, Date, DateTime, ForeignKey, Index, Enum as SQLEnum
+from sqlalchemy import Integer, String, Date, DateTime, ForeignKey, Index, Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.models.employee import Employee
-    from app.models.user import User
 
 
 class SickLeaveStatus(str, Enum):
@@ -44,18 +43,31 @@ class SickLeave(Base):
         index=True,
     )
 
-    # Аудит (Кто и когда)
+    # Аудит (Кто и когда). Provenance по identity-строке (username/break-glass);
+    # created_by/updated_by/deleted_by — необязательный FK на users.id (заполняется
+    # только для реальных пользователей, см. #110).
     created_at: Mapped[date] = mapped_column(Date, nullable=False)
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    created_by_identity: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )
 
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_by: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
+    updated_by_identity: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )
 
     # Для soft-delete
     deleted_by: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id"), nullable=True
+    )
+    deleted_by_identity: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
     )
 
     comment: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -63,12 +75,6 @@ class SickLeave(Base):
     # Relationships
     employee: Mapped["Employee"] = relationship(
         "Employee", back_populates="sick_leaves"
-    )
-    creator: Mapped["User"] = relationship(
-        "User", foreign_keys=[created_by], lazy="joined"
-    )
-    updater: Mapped["User"] = relationship(
-        "User", foreign_keys=[updated_by], lazy="joined"
     )
 
     # Индексы для оптимизации выборок

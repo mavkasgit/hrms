@@ -40,9 +40,12 @@ class SickLeaveResponse(BaseModel):
     end_date: date
     days_count: int
     status: SickLeaveStatus
-    created_by: int
+    created_by: Optional[int]
+    created_by_identity: Optional[str]
     created_at: date
     updated_by: Optional[int]
+    updated_by_identity: Optional[str]
+    deleted_by_identity: Optional[str]
     comment: Optional[str]
 
 

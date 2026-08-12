@@ -8,9 +8,12 @@ export interface SickLeave {
   end_date: string;
   days_count: number;
   status: SickLeaveStatus;
-  created_by: number;
+  created_by: number | null;
+  created_by_identity: string | null;
   created_at: string;
   updated_by: number | null;
+  updated_by_identity: string | null;
+  deleted_by_identity: string | null;
   comment: string | null;
 }
 
