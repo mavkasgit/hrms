@@ -99,8 +99,8 @@ class EmployeeResponse(BaseModel):
     id: int
     tab_number: Optional[int] = None
     name: str
-    department_id: int
-    position_id: int
+    department_id: Optional[int] = None
+    position_id: Optional[int] = None
     department: Optional[DepartmentInfo] = None
     position: Optional[PositionInfo] = None
     hire_date: Optional[date] = None
