@@ -104,6 +104,11 @@ export class TimesheetPage {
   }
 
   async expectLegend() {
+    // Легенда сворачиваемая — раскрываем по клику перед проверкой
+    const legendButton = this.page.getByRole('button', { name: 'Легенда' })
+    if (await legendButton.isVisible().catch(() => false)) {
+      await legendButton.click()
+    }
     await expect(this.page.getByText('Расхождение плана и факта').first()).toBeVisible({
       timeout: 15_000,
     })
