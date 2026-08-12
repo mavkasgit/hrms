@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { Navigate, Outlet } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { Sidebar } from "@/shared/ui/sidebar"
-import { DraftOrdersNavItem } from "@/features/draft-visibility/DraftOrdersNavItem"
+import { DraftOrdersNavItem } from "@/features/draft-visibility"
 import { ToastProvider, showGlobalToast } from "@/shared/ui/use-toast"
 import { Toaster } from "@/shared/ui/toaster"
 import {

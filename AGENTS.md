@@ -198,8 +198,9 @@ npm run db:makemigrate -- -m "msg"    # Создать новую миграци
 
 1. Компоненты — функциональные, с хуками.
 2. Следуй **FSD-архитектуре**: не импортируй из вышестоящих слоёв.
-3. Типизация: никаких `any` без обоснования.
-4. Новые зависимости: `npm install --prefix frontend <pkg>`.
+3. Потребители `entities/draft`, `entities/form-draft` и `features/draft-visibility` используют публичный API соответствующего модуля через его barrel; новые deep-import'ы в эти модули не добавляются (`entities/order` пока вне правила — его barrel в работе, см. issue #112).
+4. Типизация: никаких `any` без обоснования.
+5. Новые зависимости: `npm install --prefix frontend <pkg>`.
 
 ### E2E-тесты
 

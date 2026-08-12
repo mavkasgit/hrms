@@ -2,7 +2,7 @@ import { createBrowserRouter, Navigate, useParams } from "react-router-dom"
 import { Suspense, lazy } from "react"
 import type { ReactNode } from "react"
 import { Layout } from "./Layout"
-import { DRAFTS_ROUTE, draftEditorUrl } from "@/entities/draft/routes"
+import { DRAFTS_ROUTE, draftEditorUrl } from "@/entities/draft"
 
 /**
  * Редирект старых URL черновиков (/orders/drafts/:id/… → /drafts/:id/…).
