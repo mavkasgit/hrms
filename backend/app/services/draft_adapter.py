@@ -72,8 +72,24 @@ class OrderDraftAdapter:
         double-commit внутри bounded retry-window без найденного заказа — допустим
         409 `{"message", "duplicate": true}`. Оба вида (single и group) идут через
         этот один метод (parity #95).
+
+        Authz (#96): commit разрешён только аккаунту с ролью admin — та же
+        политика, что де-факто действует на все write через middleware
+        (main.check_write_access_middleware). Проверка стоит ДО любых действий
+        (включая durable lookup), поэтому replay не-admin тоже 403.
         """
+        # Admin-only (паттерн _require_admin, ср. admin_settings._require_admin).
+        if (getattr(actor, "role", None) or "").lower() != "admin":
+            raise HRMSException(
+                "Доступ запрещен: commit черновика приказа доступен только администраторам",
+                "draft_commit_forbidden",
+                status_code=403,
+            )
         draft_id = ref.id
+        # Провенанс приказа (#104): username инициатора commit (actor), НЕ
+        # metadata.created_by — после успешного commit файл черновика удаляется,
+        # на replay метаданных может не быть.
+        source_draft_created_by = getattr(actor, "username", None) or str(actor)
 
         # Durable lookup первичен: replay / crash-recovery (процесс умер между
         # INSERT Order и cleanup) находит существующий Order даже без файлов.
@@ -112,9 +128,13 @@ class OrderDraftAdapter:
             metadata = self._read_metadata_for_dispatch(draft_id)
             is_group = bool(metadata and metadata.get("kind") == "group_order")
             if is_group:
-                order = await order_service.create_group_order_from_draft(db=db, draft_id=draft_id)
+                order = await order_service.create_group_order_from_draft(
+                    db=db, draft_id=draft_id, source_draft_created_by=source_draft_created_by
+                )
             else:
-                order = await order_service.create_single_order_from_draft(db, draft_id)
+                order = await order_service.create_single_order_from_draft(
+                    db, draft_id, source_draft_created_by=source_draft_created_by
+                )
         except IntegrityError:
             # Дубликат UNIQUE(source_draft_id): конкурентный commit уже создал Order.
             # Rollback + durable lookup в свежем стейте. Файл существующего приказа

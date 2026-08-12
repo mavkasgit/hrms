@@ -11,6 +11,7 @@ from datetime import date
 import pytest
 
 from app.core.exceptions import HRMSException
+from app.api.deps import CurrentUser
 from app.schemas.order import (
     VacationUnpaidGroupEmployeeCreate,
     VacationUnpaidGroupOrderCreate,
@@ -264,7 +265,9 @@ async def test_commit_group_draft_failure_releases_commit_lock(
     from app.api.onlyoffice import commit_group_order_draft
 
     with pytest.raises(HRMSException) as exc:
-        await commit_group_order_draft(draft_id=draft_id, db=db_session, current_user="admin")
+        await commit_group_order_draft(
+            draft_id=draft_id, db=db_session, current_user=CurrentUser("admin", role="admin")
+        )
 
     assert exc.value.status_code == 422
     lock_path = _tmp_drafts_dir / f"{draft_id}.commit.lock"

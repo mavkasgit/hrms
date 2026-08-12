@@ -11,6 +11,7 @@ from app.core.exceptions import (
     VacationOverlapError,
 )
 from app.core.logging import get_audit_logger
+from app.models.order import Order
 from app.repositories.employee_repository import EmployeeRepository
 from app.repositories.references_repository import references_repository
 from app.repositories.vacation_adjustment_repository import vacation_adjustment_repository
@@ -52,6 +53,8 @@ class VacationService:
         employee_id: int,
         vacation_data: dict[str, Any],
         days_count: int,
+        *,
+        source_draft_created_by: str | None = None,
     ):
         order_payload = self._build_order_payload(vacation_data, days_count)
         order_type = await order_service.get_order_type_by_code(db, order_payload["order_type_code"])
@@ -71,6 +74,31 @@ class VacationService:
                 # автозапись в order_service дала бы дубль (#64).
                 skip_auto_vacation=True,
             ),
+            source_draft_created_by=source_draft_created_by,
+        )
+
+    async def _resolve_vacation_order(
+        self,
+        db: AsyncSession,
+        order_payload: OrderCreate,
+        draft_id: str | None,
+        *,
+        source_draft_created_by: str | None = None,
+    ) -> Order:
+        """Приказ корректировки отпуска для переданного черновика (#109).
+
+        Self-commit редактора (#31) уже превратил черновик в приказ
+        (draft_id → source_draft_id), а файлы черновика удалил. Повторный
+        `create_order(draft_id)` падал на 404 «Черновик не найден» — вместо
+        этого переиспользуем уже созданный приказ. Если черновик ещё не
+        закоммичен (прямая кнопка без редактора) — создаём приказ как раньше.
+        """
+        if draft_id:
+            existing = await order_service.find_by_source_draft_id(db, draft_id)
+            if existing is not None:
+                return existing
+        return await order_service.create_order(
+            db, order_payload, source_draft_created_by=source_draft_created_by
         )
 
     async def _calculate_actual_days(self, db: AsyncSession, start_date: date, end_date: date) -> int:
@@ -238,10 +266,6 @@ class VacationService:
         if end_date < start_date:
             raise InsufficientVacationDaysError("Дата конца раньше даты начала")
 
-        overlap = await vacation_repository.check_overlap(db, employee_id, start_date, end_date)
-        if overlap:
-            raise VacationOverlapError(f"Пересекается с отпуском с {overlap.start_date} по {overlap.end_date}")
-
         holidays = await references_repository.get_holidays_for_year(db, start_date.year)
         if end_date.year != start_date.year:
             holidays += await references_repository.get_holidays_for_year(db, end_date.year)
@@ -252,7 +276,40 @@ class VacationService:
         if days_count <= 0:
             raise InsufficientVacationDaysError("Нет дней отпуска в выбранном диапазоне")
 
-        order = await self._create_linked_order(db, employee_id, data, days_count)
+        # Self-commit редактора (#31): черновик уже превращён в приказ, а автозапись
+        # отпуска при коммите (`_create_auto_vacation`) создала запись отпуска.
+        # Идемпотентно возвращаем её вместо дубля (unique uq_vacations_order_employee, #109).
+        resolved_order = None
+        if data.get("draft_id"):
+            resolved_order = await order_service.find_by_source_draft_id(db, data["draft_id"])
+        if resolved_order is not None:
+            existing_vacation = await vacation_repository.get_by_order_and_employee(db, resolved_order.id, employee_id)
+            if existing_vacation is not None:
+                hydrated = await vacation_repository.get_by_id(db, existing_vacation.id)
+                assert hydrated is not None
+                await db.commit()
+                return {
+                    "id": hydrated.id,
+                    "employee_id": hydrated.employee_id,
+                    "employee_name": employee.name,
+                    "start_date": str(hydrated.start_date),
+                    "end_date": str(hydrated.end_date),
+                    "vacation_type": hydrated.vacation_type,
+                    "days_count": hydrated.days_count,
+                    "comment": hydrated.comment,
+                    "created_at": str(hydrated.created_at),
+                    "order_id": hydrated.order_id,
+                    "order_number": resolved_order.order_number,
+                }
+            order = resolved_order
+        else:
+            overlap = await vacation_repository.check_overlap(db, employee_id, start_date, end_date)
+            if overlap:
+                raise VacationOverlapError(f"Пересекается с отпуском с {overlap.start_date} по {overlap.end_date}")
+            order = await self._create_linked_order(
+                db, employee_id, data, days_count, source_draft_created_by=user_id
+            )
+
         vacation = await vacation_repository.create(
             db,
             {
@@ -536,7 +593,9 @@ class VacationService:
             edited_html=data.get("edited_html"),
             draft_id=data.get("draft_id"),
         )
-        recall_order = await order_service.create_order(db, order_payload)
+        recall_order = await self._resolve_vacation_order(
+            db, order_payload, data.get("draft_id"), source_draft_created_by=user_id
+        )
 
         await self.apply_vacation_adjustment(
             db,
@@ -680,7 +739,9 @@ class VacationService:
             edited_html=data.get("edited_html"),
             draft_id=data.get("draft_id"),
         )
-        extension_order = await order_service.create_order(db, order_payload)
+        extension_order = await self._resolve_vacation_order(
+            db, order_payload, data.get("draft_id"), source_draft_created_by=user_id
+        )
 
         await self.apply_vacation_adjustment(
             db,
@@ -816,7 +877,9 @@ class VacationService:
             edited_html=data.get("edited_html"),
             draft_id=data.get("draft_id"),
         )
-        postpone_order = await order_service.create_order(db, order_payload)
+        postpone_order = await self._resolve_vacation_order(
+            db, order_payload, data.get("draft_id"), source_draft_created_by=user_id
+        )
 
         await self.apply_vacation_adjustment(
             db,

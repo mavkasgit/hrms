@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import HRMSException
+from app.api.deps import CurrentUser
 from app.api.orders import print_order_pdf
 from app.models.employee import Employee
 from app.models.order_type import OrderType
@@ -449,7 +450,7 @@ async def test_create_order_deletes_draft_after_success(monkeypatch, tmp_path):
     async def fake_ensure(db):
         return []
 
-    async def fake_do_create(db, data):
+    async def fake_do_create(db, data, **kwargs):
         assert data.draft_id == draft_id
         assert draft_path.exists(), "draft must still exist during create"
         return fake_order
@@ -783,7 +784,7 @@ async def test_commit_single_order_from_metadata(monkeypatch, tmp_path):
     svc = OrderService()
     fake_order = SimpleNamespace(id=77, order_number="99-К")
 
-    async def fake_create_order(db, data):
+    async def fake_create_order(db, data, **kwargs):
         # Verify OrderCreate was built from metadata
         assert data.employee_id == 5
         assert data.order_type_id == 2
@@ -791,6 +792,7 @@ async def test_commit_single_order_from_metadata(monkeypatch, tmp_path):
         assert data.order_number == "99-К"
         assert data.extra_fields == {"vacation_start": "2026-08-10", "vacation_end": "2026-08-20"}
         assert data.draft_id == draft_id
+        assert kwargs.get("source_draft_created_by") is None
         return fake_order
 
     monkeypatch.setattr(svc, "create_order", fake_create_order)
@@ -862,7 +864,7 @@ async def test_duplicate_commit_returns_success(monkeypatch, tmp_path):
     monkeypatch.setattr(order_service, "_serialize_order", lambda order: {"id": order.id})
 
     db = MagicMock()
-    result = await commit_order_draft(draft_id=draft_id, db=db, current_user="admin")
+    result = await commit_order_draft(draft_id=draft_id, db=db, current_user=CurrentUser("admin", role="admin"))
 
     assert result["id"] == 77
     assert "duplicate" not in result
@@ -910,14 +912,14 @@ async def test_failed_commit_releases_lock_for_retry(monkeypatch, tmp_path):
     monkeypatch.setattr(order_service_singleton, "find_by_source_draft_id", AsyncMock(return_value=None))
 
     # Make create_single_order_from_draft fail
-    async def failing_create(db, draft_id_arg):
+    async def failing_create(db, draft_id_arg, **kwargs):
         raise RuntimeError("DB connection lost")
 
     monkeypatch.setattr(order_service_singleton, "create_single_order_from_draft", failing_create)
 
     db = MagicMock()
     with pytest.raises(RuntimeError, match="DB connection lost"):
-        await commit_order_draft(draft_id=draft_id, db=db, current_user="admin")
+        await commit_order_draft(draft_id=draft_id, db=db, current_user=CurrentUser("admin", role="admin"))
 
     # Lock must be released so retry is possible
     lock_path = order_draft_service._commit_lock_path(draft_id)
