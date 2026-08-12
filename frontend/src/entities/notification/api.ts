@@ -7,7 +7,7 @@ import type {
   NotificationUpdate,
   NotificationType,
 } from "./types"
-import type { OnlyOfficeConfig } from "@/entities/order/onlyofficeTypes"
+import type { OnlyOfficeConfig } from "@/shared/api/onlyoffice-types"
 
 // ─── Notifications ───
 

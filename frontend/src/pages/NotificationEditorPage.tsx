@@ -9,7 +9,7 @@ import {
   fetchNotificationSaveStatus,
   commitNotificationDraft,
 } from "@/entities/notification/onlyofficeApi"
-import { requestAndWaitOnlyOfficeSave } from "@/entities/order/waitForOnlyOfficeSave"
+import { requestAndWaitOnlyOfficeSave } from "@/entities/order"
 import { publishDocumentEditorSave } from "@/entities/document/documentEditorSaveChannel"
 import {
   EditorSaveBanner,

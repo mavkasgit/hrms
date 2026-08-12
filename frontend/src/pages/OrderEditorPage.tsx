@@ -1,10 +1,10 @@
 import { useState } from "react"
 import { useLocation, useParams } from "react-router-dom"
 import { Loader2 } from "lucide-react"
-import { useOrderOnlyOfficeConfig } from "@/entities/order/useOnlyOffice"
-import { forceSaveOrder, fetchOrderSaveStatus } from "@/entities/order/onlyofficeApi"
-import { requestAndWaitOnlyOfficeSave } from "@/entities/order/waitForOnlyOfficeSave"
-import { openOrderPrint } from "@/entities/order/orderActions"
+import { useOrderOnlyOfficeConfig } from "@/entities/order"
+import { forceSaveOrder, fetchOrderSaveStatus } from "@/entities/order"
+import { requestAndWaitOnlyOfficeSave } from "@/entities/order"
+import { openOrderPrint } from "@/entities/order"
 import { publishDocumentEditorSave } from "@/entities/document/documentEditorSaveChannel"
 import {
   EditorSaveBanner,

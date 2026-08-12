@@ -28,7 +28,7 @@ import {
 } from "@/shared/ui/select"
 import { TemplateActionsBar } from "@/features/template-actions-bar"
 import { FieldGridEditor, type FieldSchemaItem } from "./FieldGridEditor"
-import type { TemplateVariable } from "@/entities/order/types"
+import type { TemplateVariable } from "@/entities/order"
 import axios from "@/shared/api/client"
 
 interface DocType {

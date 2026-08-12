@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "rea
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { Download, X, Check, ChevronDown, ChevronRight, Settings, Eye, Trash2, ScrollText, FilePen, Search, Filter, Printer, FileText } from "lucide-react"
-import { GroupOrderEmployeesRows } from "@/entities/order/ui/GroupOrderEmployeesRows"
+import { GroupOrderEmployeesRows } from "@/entities/order"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { useDebouncedValue } from "@/shared/hooks/useDebouncedValue"
@@ -45,18 +45,18 @@ import {
   useCreateOrder,
   useDeleteOrder,
   useOrderDeletionPreview,
-} from "@/entities/order/useOrders"
+} from "@/entities/order"
 import { useEmployee } from "@/entities/employee/useEmployees"
-import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order/useOnlyOffice"
-import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
-import { downloadOrderDocx, openOrderEdit, openOrderPrint, openOrderView } from "@/entities/order/orderActions"
+import { useCommitOrderDraft, useCreateOrderDraft } from "@/entities/order"
+import { openDraftEditorWindow, subscribeDraftOrderSave } from "@/entities/order"
+import { downloadOrderDocx, openOrderEdit, openOrderPrint, openOrderView } from "@/entities/order"
 import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { EmployeeSearch } from "@/features/employee-search"
 import { DocumentModal } from "@/features/document-modal/DocumentModal"
 import { ContractRegistryModal } from "@/pages/ContractRegistryPage"
 import type { Employee } from "@/entities/employee/types"
-import type { Order, OrderType } from "@/entities/order/types"
+import type { Order, OrderType } from "@/entities/order"
 import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { getUserAccessLevel } from "@/shared/api/authHost"
 import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
@@ -67,7 +67,7 @@ import {
   FieldGroup,
   type FieldSchema,
 } from "@/features/dynamic-form"
-import { getOrderTypeLayout } from "@/entities/order/orderTypeLayouts"
+import { getOrderTypeLayout } from "@/entities/order"
 import { formatDate } from "@/shared/utils/date"
 import {
   useDraftRecoveryFor,
@@ -77,8 +77,8 @@ import {
   ORDER_FORM_DRAFT_KEY,
   orderFormHasContent,
   type OrderFormDraft,
-} from "@/entities/order/formDraft"
-import { ORDER_TYPE_BADGE_COLORS } from "@/entities/order/orderTypeBadge"
+} from "@/entities/order"
+import { ORDER_TYPE_BADGE_COLORS } from "@/entities/order"
 import { revalidateEmployeeAndType, getFormDraftSlot } from "@/entities/form-draft"
 import { getFormDataValue, getFormDataInt, getFormDataExtraFields, draftEditorUrl } from "@/entities/draft"
 import type { DraftFormData } from "@/entities/draft"

@@ -18,15 +18,15 @@ import {
   useUploadTemplate,
   useCreateOrderType,
   useUpdateOrderType,
-} from "@/entities/order/useOrders"
+} from "@/entities/order"
 import { ImportTemplatesModal } from "@/features/import-templates/ImportTemplatesModal"
 import { TemplateTypeForm } from "@/features/template-type-form"
 import { TemplateTypeTable } from "@/features/template-type-table"
-import type { OrderType } from "@/entities/order/types"
+import type { OrderType } from "@/entities/order"
 import { TemplateVariablesCatalog } from "@/features/template-variables-catalog/TemplateVariablesCatalog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs"
 import { useQueryClient } from "@tanstack/react-query"
-import { downloadTemplate as downloadOrderTypeTemplate } from "@/entities/order/api"
+import { downloadTemplate as downloadOrderTypeTemplate } from "@/entities/order"
 import { downloadStatementTypeTemplate } from "@/entities/statement/api"
 import {
   useStatementTypes,

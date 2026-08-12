@@ -1,6 +1,6 @@
 import api from "@/shared/api/client"
 import type { AllDraftItem, AllDraftKind } from "./types"
-import type { FormDataField } from "@/entities/order/onlyofficeTypes"
+import type { FormDataField } from "@/shared/api/onlyoffice-types"
 
 export async function fetchAllDrafts(): Promise<AllDraftItem[]> {
   const { data } = await api.get<AllDraftItem[]>("/drafts")

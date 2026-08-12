@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query"
 import type { DraftFormData } from "@/entities/draft"
 import type { Employee } from "@/entities/employee/types"
-import type { GroupOrderCreate, Order } from "@/entities/order/types"
+import type { GroupOrderCreate, Order } from "@/entities/order"
 
 export type CallMode = "single" | "range"
 export type AbsenceKind = "vacation" | "call"

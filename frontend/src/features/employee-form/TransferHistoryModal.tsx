@@ -24,7 +24,7 @@ import { ComboboxCreate } from "@/shared/ui/combobox-create"
 import { Briefcase } from "lucide-react"
 import type { EmployeeTransfer } from "@/entities/employee/types"
 import { usePositions, useCreatePosition } from "@/entities/position"
-import { useOrders } from "@/entities/order/useOrders"
+import { useOrders } from "@/entities/order"
 
 interface TransferHistoryModalProps {
   open: boolean

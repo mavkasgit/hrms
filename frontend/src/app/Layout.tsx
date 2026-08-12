@@ -9,8 +9,8 @@ import {
   documentEditorSaveToastCopy,
   subscribeDocumentEditorSave,
 } from "@/entities/document/documentEditorSaveChannel"
-import { subscribeAllDraftOrderSaves } from "@/entities/order/draftOrderSaveChannel"
-import { invalidateOrderQueries } from "@/entities/order/invalidateOrderQueries"
+import { subscribeAllDraftOrderSaves } from "@/entities/order"
+import { invalidateOrderQueries } from "@/entities/order"
 import { getUserAccessLevel } from "@/shared/api/authHost"
 import { clearAuthTokens, getToken, setAuthErrorForLogin } from "@/shared/api/client"
 

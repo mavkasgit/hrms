@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
-import type { OnlyOfficeConfig } from "@/entities/order/onlyofficeTypes"
+import type { OnlyOfficeConfig } from "@/shared/api/onlyoffice-types"
 
 const ONLYOFFICE_SCRIPT_ID = "onlyoffice-api-script"
 /** Мягкий хинт «Загрузка редактора…» показывается только после этого таймаута. */

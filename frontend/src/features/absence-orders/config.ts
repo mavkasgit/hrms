@@ -5,8 +5,8 @@ import { hydrateDraftEmployees, toDraftEmployeeRefs } from "@/entities/form-draf
 import {
   useCreateVacationUnpaidGroupOrder,
   useCreateWeekendCallGroupOrder,
-} from "@/entities/order/useOrders"
-import type { GroupOrderCreate } from "@/entities/order/types"
+} from "@/entities/order"
+import type { GroupOrderCreate } from "@/entities/order"
 import {
   calculateVacationEnd,
   daysInclusive,

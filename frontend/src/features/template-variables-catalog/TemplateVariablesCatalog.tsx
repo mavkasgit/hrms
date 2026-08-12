@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react"
-import type { TemplateVariable } from "@/entities/order/types"
+import type { TemplateVariable } from "@/entities/order"
 import { categorizeVariables } from "./categorizeVariables"
 
 interface TemplateVariablesCatalogProps {

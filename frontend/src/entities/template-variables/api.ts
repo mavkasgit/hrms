@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import axios from "@/shared/api/client"
-import type { TemplateVariable, TemplateVariablesResponse } from "@/entities/order/types"
+import type { TemplateVariable, TemplateVariablesResponse } from "@/entities/order"
 
 export async function fetchUnifiedTemplateVariables(docType?: "order" | "notification" | "statement"): Promise<TemplateVariable[]> {
   const params = docType ? { doc_type: docType } : {}

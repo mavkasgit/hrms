@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/shared/ui/select"
 import { PlaceholderAutocomplete } from "./PlaceholderAutocomplete"
-import type { TemplateVariable } from "@/entities/order/types"
+import type { TemplateVariable } from "@/entities/order"
 
 export interface FieldSchemaItem {
   key: string

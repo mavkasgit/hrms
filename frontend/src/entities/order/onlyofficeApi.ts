@@ -4,11 +4,13 @@ import type {
   CommitOrderDraftResponse,
   DraftListItem,
   GroupDraftResponse,
+  OrderDraftResponse,
+} from "./onlyofficeTypes"
+import type {
   OnlyOfficeConfig,
   OnlyOfficeForceSaveResponse,
   OnlyOfficeSaveStatusResponse,
-  OrderDraftResponse,
-} from "./onlyofficeTypes"
+} from "@/shared/api/onlyoffice-types"
 
 export async function fetchOrderOnlyOfficeConfig(orderId: number, mode: "edit" | "view" = "edit") {
   const { data } = await api.get<OnlyOfficeConfig>(`/orders/${orderId}/onlyoffice/config`, {

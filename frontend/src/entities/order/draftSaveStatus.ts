@@ -1,4 +1,4 @@
-import type { DraftSaveStatus } from "./onlyofficeTypes"
+import type { DraftSaveStatus } from "@/shared/api/onlyoffice-types"
 
 export const DRAFT_SAVE_STATUS_LABEL: Record<DraftSaveStatus["state"], string> = {
   saved: "Сохранён",

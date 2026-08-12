@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { categorizeVariables } from "./categorizeVariables"
-import type { TemplateVariable } from "@/entities/order/types"
+import type { TemplateVariable } from "@/entities/order"
 
 const makeVars = (items: { name: string; category: string }[]): TemplateVariable[] =>
   items.map(({ name, category }) => ({

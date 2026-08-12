@@ -20,7 +20,7 @@ import {
 import { useVacationPeriods, useRecalculateVacationPeriods, useDeleteManualClosureTransaction } from "@/entities/vacation-period"
 import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
 import { VacationPeriodVacationRow } from "@/entities/vacation-period/ui/VacationPeriodVacationRow"
-import { downloadOrderDocx } from "@/entities/order/orderActions"
+import { downloadOrderDocx } from "@/entities/order"
 
 
 

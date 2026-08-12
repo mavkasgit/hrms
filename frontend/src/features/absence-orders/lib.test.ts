@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { Order } from "@/entities/order/types"
+import type { Order } from "@/entities/order"
 import {
   buildSummaryRows,
   calcDays,

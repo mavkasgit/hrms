@@ -1,6 +1,6 @@
 import { calculateDaysDifference, formatDate } from "@/shared/utils/date"
 import type { ColumnSortDef, SortConfig } from "@/shared/hooks/useTableQueryEngine"
-import type { GroupEmployeeInfo, Order } from "@/entities/order/types"
+import type { GroupEmployeeInfo, Order } from "@/entities/order"
 import type { AbsenceEntry, AbsenceKind, AbsenceRange } from "./types"
 
 export function defaultPeriodStartIso(): string {

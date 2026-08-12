@@ -2,24 +2,24 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import type { Dispatch, SetStateAction } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import type { Employee } from "@/entities/employee/types"
-import type { GroupEmployeeInfo, Order, OrderType } from "@/entities/order/types"
+import type { GroupEmployeeInfo, Order, OrderType } from "@/entities/order"
 import {
   useAllOrderTypes,
   useDeleteOrder,
   useOrders,
-} from "@/entities/order/useOrders"
+} from "@/entities/order"
 import {
   useCommitGroupDraft,
   useCommitOrderDraft,
   useCreateGroupDraft,
   useCreateOrderDraft,
   useDeleteOrderDraft,
-} from "@/entities/order/useOnlyOffice"
+} from "@/entities/order"
 import {
   openDraftEditorWindow,
   subscribeDraftOrderSave,
-} from "@/entities/order/draftOrderSaveChannel"
-import { openOrderPrint } from "@/entities/order/orderActions"
+} from "@/entities/order"
+import { openOrderPrint } from "@/entities/order"
 import { failPrintPlaceholder } from "@/shared/utils/print-window"
 import {
   useTableQueryEngine,

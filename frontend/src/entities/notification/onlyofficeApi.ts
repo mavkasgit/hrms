@@ -1,5 +1,5 @@
 import axios from "@/shared/api/client"
-import type { OnlyOfficeForceSaveResponse, OnlyOfficeSaveStatusResponse } from "@/entities/order/onlyofficeTypes"
+import type { OnlyOfficeForceSaveResponse, OnlyOfficeSaveStatusResponse } from "@/shared/api/onlyoffice-types"
 
 export async function forceSaveNotification(
   notificationId: number,

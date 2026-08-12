@@ -7,9 +7,9 @@ import {
   ServerDraftActions,
 } from "@/entities/draft"
 import type { AllDraftItem } from "@/entities/draft"
-import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
-import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order/draftSaveStatus"
-import { ORDER_TYPE_BADGE_COLORS } from "@/entities/order/orderTypeBadge"
+import { openDraftEditorWindow } from "@/entities/order"
+import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order"
+import { ORDER_TYPE_BADGE_COLORS } from "@/entities/order"
 import {
   SortableFilterHeader,
 } from "@/shared/ui/sortable-filter-header"

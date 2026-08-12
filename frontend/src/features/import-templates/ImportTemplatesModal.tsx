@@ -7,8 +7,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog"
-import { useAllOrderTypes, useUploadTemplate, useDeleteTemplate } from "@/entities/order/useOrders"
-import type { OrderType } from "@/entities/order/types"
+import { useAllOrderTypes, useUploadTemplate, useDeleteTemplate } from "@/entities/order"
+import type { OrderType } from "@/entities/order"
 import { useNotificationTypes, useUploadNotificationTypeTemplate, useDeleteNotificationTypeTemplate } from "@/entities/notification/hooks"
 import type { NotificationType } from "@/entities/notification/types"
 import { useStatementTypes, useUploadStatementTypeTemplate, useDeleteStatementTypeTemplate } from "@/entities/statement/hooks"

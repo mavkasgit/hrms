@@ -13,8 +13,8 @@ import {
   isDraftsRoute,
 } from "@/entities/draft"
 import type { AllDraftItem } from "@/entities/draft"
-import { openDraftEditorWindow } from "@/entities/order/draftOrderSaveChannel"
-import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order/draftSaveStatus"
+import { openDraftEditorWindow } from "@/entities/order"
+import { DRAFT_SAVE_STATUS_LABEL, DRAFT_SAVE_STATUS_CLASS } from "@/entities/order"
 import { timeAgo } from "@/shared/utils/date"
 import {
   formDraftRecoverUrl,

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react"
-import { useNextOrderNumber, useRecentOrders } from "@/entities/order/useOrders"
-import type { OrderType } from "@/entities/order/types"
+import { useNextOrderNumber, useRecentOrders } from "@/entities/order"
+import type { OrderType } from "@/entities/order"
 import { DocumentNumberField } from "./DocumentNumberField"
 
 interface OrderNumberFieldProps {

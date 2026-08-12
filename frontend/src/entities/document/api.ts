@@ -1,6 +1,6 @@
 import axios from "@/shared/api/client"
 import type { Document, DocumentCurrentResponse } from "./types"
-import type { OnlyOfficeConfig } from "@/entities/order/onlyofficeTypes"
+import type { OnlyOfficeConfig } from "@/shared/api/onlyoffice-types"
 
 export async function getDocuments(docCode: string, limit = 10): Promise<Document[]> {
   const { data } = await axios.get<Document[]>(`/documents/${docCode}`, {

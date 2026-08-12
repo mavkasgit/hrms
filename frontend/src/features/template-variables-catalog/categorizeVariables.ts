@@ -1,4 +1,4 @@
-import type { TemplateVariable } from "@/entities/order/types"
+import type { TemplateVariable } from "@/entities/order"
 
 const LEFT_CATEGORIES = ["Приказ", "ФИО", "Документ", "Уведомление"]
 const RIGHT_BASE_CATEGORIES = ["Заявление", "Работа", "Даты", "Прочее", "Поля типа"]

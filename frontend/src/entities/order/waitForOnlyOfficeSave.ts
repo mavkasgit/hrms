@@ -1,5 +1,5 @@
 import axios from "axios"
-import type { OnlyOfficeForceSaveResponse, OnlyOfficeSaveStatusResponse } from "./onlyofficeTypes"
+import type { OnlyOfficeForceSaveResponse, OnlyOfficeSaveStatusResponse } from "@/shared/api/onlyoffice-types"
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 

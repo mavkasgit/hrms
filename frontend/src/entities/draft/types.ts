@@ -1,4 +1,4 @@
-import type { DraftSaveStatus } from "@/entities/order/onlyofficeTypes"
+import type { DraftSaveStatus } from "@/shared/api/onlyoffice-types"
 
 export type AllDraftKind = "order" | "notification" | "statement"
 

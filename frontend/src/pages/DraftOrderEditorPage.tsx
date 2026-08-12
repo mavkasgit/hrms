@@ -1,12 +1,12 @@
 import { useState } from "react"
 import { useParams, useLocation } from "react-router-dom"
 import { Loader2 } from "lucide-react"
-import { useDraftOnlyOfficeConfig } from "@/entities/order/useOnlyOffice"
-import { useDraftCommit } from "@/entities/order/useDraftCommit"
-import { forceSaveDraft, fetchDraftSaveStatus, reportDraftSaveError } from "@/entities/order/onlyofficeApi"
-import { publishDraftOrderSave } from "@/entities/order/draftOrderSaveChannel"
-import { openOrderPrint } from "@/entities/order/orderActions"
-import { requestAndWaitOnlyOfficeSave } from "@/entities/order/waitForOnlyOfficeSave"
+import { useDraftOnlyOfficeConfig } from "@/entities/order"
+import { useDraftCommit } from "@/entities/order"
+import { forceSaveDraft, fetchDraftSaveStatus, reportDraftSaveError } from "@/entities/order"
+import { publishDraftOrderSave } from "@/entities/order"
+import { openOrderPrint } from "@/entities/order"
+import { requestAndWaitOnlyOfficeSave } from "@/entities/order"
 import {
   EditorSaveBanner,
   useEditorSaveFeedback,
