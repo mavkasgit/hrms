@@ -307,12 +307,12 @@ export function ImportEmployeesModal({ open, onOpenChange, onImportComplete }: I
                       const mappedField = Object.entries(mapping).find(([, v]) => v === h)?.[0]
                       const isMapped = !!mappedField
                       return (
-                        <th key={`map-${colIdx}`} className={`px-1 py-1 border-r last:border-r-0 ${isMapped ? "bg-blue-50" : ""}`}>
+                        <th key={`map-${colIdx}`} className={`px-1 py-1 border-r last:border-r-0 ${isMapped ? "bg-blue-50 dark:bg-blue-900/40" : ""}`}>
                           <Select
                             value={mappedField || ""}
                             onValueChange={(val) => handleMappingChange(val, h)}
                           >
-                            <SelectTrigger className={`h-7 text-xs px-1 overflow-hidden whitespace-nowrap ${isMapped ? "border-blue-400 bg-blue-50" : ""}`}>
+                            <SelectTrigger className={`h-7 text-xs px-1 overflow-hidden whitespace-nowrap ${isMapped ? "border-blue-400 bg-blue-50 dark:bg-blue-900/40" : ""}`}>
                               <SelectValue placeholder="—" />
                             </SelectTrigger>
                             <SelectContent>

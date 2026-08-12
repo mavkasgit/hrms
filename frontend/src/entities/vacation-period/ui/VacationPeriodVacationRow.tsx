@@ -129,7 +129,13 @@ export function VacationPeriodVacationRow({
   return (
     <tr
       className={`border-b border-muted/30 ${
-        wasRecalled ? "bg-amber-50" : extensionInfo ? "bg-green-50/60" : postponeInfo ? "bg-sky-50/60" : ""
+        wasRecalled
+          ? "bg-amber-50 dark:bg-amber-900/40"
+          : extensionInfo
+          ? "bg-green-50/60 dark:bg-green-900/40"
+          : postponeInfo
+          ? "bg-sky-50/60 dark:bg-sky-900/40"
+          : ""
       }`}
     >
       <td className="px-2 py-1">{formatDate(vacation.start_date)}</td>

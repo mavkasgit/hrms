@@ -81,7 +81,7 @@ export function computeCellDisplay(
       if (factHours > 0) {
         return {
           label: formatHours(factHours),
-          color: "bg-amber-100 ring-2 ring-amber-400 ring-inset",
+          color: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100 ring-2 ring-amber-400 ring-inset",
           stColor: "",
           isNight: false,
           tooltip: `${tooltip} · факт ${formatHours(factHours)}ч`,
@@ -92,7 +92,7 @@ export function computeCellDisplay(
         const hours = cellDay.manual.planned_hours_override ?? st.planned_hours ?? 0
         return {
           label: formatHours(hours),
-          color: "bg-amber-50 ring-1 ring-amber-400 ring-inset",
+          color: "bg-amber-50 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100 ring-1 ring-amber-400 ring-inset",
           stColor: st.color,
           isNight: st.is_night,
           tooltip,
@@ -101,7 +101,7 @@ export function computeCellDisplay(
       const manualLabel = st?.letter ?? NON_WORKING_LABELS[manualCode] ?? manualCode[0] ?? "?"
       return {
         label: manualLabel,
-        color: "bg-amber-50 ring-1 ring-amber-400 ring-inset",
+        color: "bg-amber-50 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100 ring-1 ring-amber-400 ring-inset",
         stColor: "",
         isNight: false,
         tooltip,
@@ -117,7 +117,7 @@ export function computeCellDisplay(
     if (factHours > 0) {
       return {
         label: formatHours(factHours),
-        color: "bg-amber-100 ring-2 ring-amber-400 ring-inset",
+        color: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100 ring-2 ring-amber-400 ring-inset",
         stColor: "",
         isNight: false,
         tooltip: `${tooltip} (по факту отработано ${formatHours(factHours)}ч)`,
@@ -199,7 +199,7 @@ export function computeCellDisplay(
     }
     return {
       label: formatHours(factHours),
-      color: "bg-amber-100 ring-2 ring-amber-400 ring-inset",
+      color: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100 ring-2 ring-amber-400 ring-inset",
       stColor: "",
       isNight: false,
       tooltip: `Расхождение: План ${planHours}ч (${shiftTypeMap[planCode!]?.name ?? planCode}), Факт ${factHours}ч${autoSuffix}`,
@@ -209,7 +209,7 @@ export function computeCellDisplay(
   if (planHours !== factHours) {
     return {
       label: formatHours(factHours),
-      color: "bg-amber-100 ring-1 ring-amber-300 ring-inset",
+      color: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100 ring-1 ring-amber-300 ring-inset",
       stColor: "",
       isNight,
       tooltip: `Расхождение: План ${planHours}ч, Факт ${factHours}ч${autoSuffix}`,
@@ -365,7 +365,7 @@ export function TimesheetDayCell({
   )
   if (hasDivergence) {
     // Фон сохраняем, но рамка всегда оранжевая — отличима от янтарной (план/факт)
-    const bg = color.split(" ").filter((c) => c.startsWith("bg-")).join(" ")
+    const bg = color.split(" ").filter((c) => !c.startsWith("ring-")).join(" ")
     color = `${bg} ring-2 ring-orange-500 ring-inset`.trim()
   }
 
@@ -400,7 +400,11 @@ export function TimesheetDayCell({
       data-divergence={hasDivergence ? "true" : undefined}
       data-order-changed={hasOrderChanged ? "true" : undefined}
       className={`relative w-full h-full flex items-center justify-center text-[11px] leading-none select-none ${color} ${
-        columnData.isHoliday ? "text-red-900" : columnData.isWeekend ? "text-slate-700" : ""
+        columnData.isHoliday
+          ? "text-red-900 dark:text-red-100"
+          : columnData.isWeekend
+          ? "text-slate-700 dark:text-slate-200"
+          : ""
       }`}
       style={stColor ? { backgroundColor: `${stColor}30` } : undefined}
       title={tooltip}

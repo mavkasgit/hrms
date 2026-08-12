@@ -60,6 +60,18 @@
 
 /* Исправление границ праздничных и выходных ячеек при border-collapse */
 
+/* Тёмная тема для react-datasheet-grid (табель): библиотека жёстко задаёт
+   белый фон/чёрный текст — переопределяем через CSS-переменные сетки */
+.dark .dsg-container {
+  --dsg-border-color: hsl(var(--border));
+  --dsg-cell-background-color: hsl(var(--card));
+  --dsg-cell-disabled-background-color: hsl(var(--muted));
+  --dsg-header-text-color: hsl(var(--muted-foreground));
+  --dsg-header-active-text-color: hsl(var(--foreground));
+  color: hsl(var(--foreground));
+  background: hsl(var(--card));
+}
+
 /* 1. Выходные дни (slate-300) */
 td.border-slate-300,
 td[class*="bg-slate-100"],

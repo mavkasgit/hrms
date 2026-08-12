@@ -160,7 +160,7 @@ export function VacationSelector({
         {/* Dropdown */}
         {showDropdown && (dropdownVacations.length > 0 || isSearching) && (
           <div
-            className="absolute z-50 mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto"
+            className="absolute z-50 mt-1 bg-white dark:bg-zinc-900 border rounded-md shadow-lg max-h-60 overflow-auto"
             style={{ width: 500 }}
             onMouseDown={(e) => e.preventDefault()}
             onBlur={() => setShowDropdown(false)}
@@ -172,7 +172,7 @@ export function VacationSelector({
               <div
                 key={v.id}
                 className={`flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted/50 text-sm ${
-                  selectedVacation?.id === v.id ? "bg-blue-50" : ""
+                  selectedVacation?.id === v.id ? "bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:text-blue-100" : ""
                 }`}
                 onClick={() => handleSelect(v)}
               >
@@ -239,7 +239,7 @@ export function VacationSelector({
                   {tableVacations.map((v) => (
                     <tr
                       key={v.id}
-                      className={`border-t cursor-pointer hover:bg-muted/30 ${selectedVacation?.id === v.id ? "bg-blue-50" : ""}`}
+                      className={`border-t cursor-pointer hover:bg-muted/30 ${selectedVacation?.id === v.id ? "bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:text-blue-100" : ""}`}
                       onClick={() => handleSelect(v)}
                     >
                       {showEmployeeColumn && <td className="px-4 py-3 font-medium">{v.employee_name || "—"}</td>}

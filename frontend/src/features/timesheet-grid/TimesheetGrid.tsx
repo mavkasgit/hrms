@@ -704,9 +704,9 @@ export function TimesheetGrid({
           minWidth: 44,
           columnData,
           headerClassName: isHoliday
-            ? "!bg-red-100 !border-red-300"
+            ? "!bg-red-100 !text-red-900 dark:!bg-red-900/40 dark:!text-red-100 !border-red-300"
             : isWeekend
-            ? "!bg-slate-100 !border-slate-300"
+            ? "!bg-slate-100 !text-slate-700 dark:!bg-slate-800/60 dark:!text-slate-200 !border-slate-300"
             : "",
           // Delete: сброс ручного значения → ячейка возвращается к авто
           deleteValue: ({ rowData }) => ({
@@ -762,8 +762,8 @@ export function TimesheetGrid({
       const date = columnId.slice(4)
       const dt = new Date(`${date}T00:00:00`)
       const dow = dt.getDay()
-      if (holidayByDate[date]) return "!bg-red-100/80 !border-red-300"
-      if (dow === 0 || dow === 6) return "!bg-slate-100 !border-slate-300"
+      if (holidayByDate[date]) return "!bg-red-100/80 !border-red-300 dark:!bg-red-900/40"
+      if (dow === 0 || dow === 6) return "!bg-slate-100 !border-slate-300 dark:!bg-slate-800/60"
       return undefined
     },
     [holidayByDate]

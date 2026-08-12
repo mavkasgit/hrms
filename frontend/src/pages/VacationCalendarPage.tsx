@@ -65,7 +65,8 @@ function formatDays(days: string | null | undefined): string {
 function getCellClasses(days: string | null | undefined): string {
   const base =
     "w-full h-full text-[14px] flex items-center justify-center overflow-hidden truncate transition-colors"
-  if (days !== null && days !== undefined) return `${base} bg-sky-100 font-semibold`
+  if (days !== null && days !== undefined)
+    return `${base} bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-100 font-semibold`
   return base
 }
 
@@ -405,9 +406,9 @@ export function VacationCalendarPage() {
                       onClick={() => toggleMonthFilter(monthNum)}
                       className={`text-center font-medium py-2 px-1 w-[70px] border border-zinc-300 transition-colors cursor-pointer select-none ${
                         isFiltered
-                          ? "bg-blue-200 text-blue-900"
+                          ? "bg-blue-200 text-blue-900 dark:bg-blue-900/60 dark:text-blue-100"
                           : isActive
-                          ? "bg-blue-100"
+                          ? "bg-blue-100 text-blue-900 dark:bg-blue-900/40 dark:text-blue-100"
                           : "bg-background hover:bg-muted"
                       }`}
                       title={`Нажмите, чтобы отфильтровать по ${m}`}
@@ -436,13 +437,13 @@ export function VacationCalendarPage() {
                     return (
                       <tr
                         key={row.employee_id}
-                        className={`${isHovered ? "!bg-zinc-100" : ""}`}
+                        className={`${isHovered ? "!bg-zinc-100 dark:!bg-zinc-800" : ""}`}
                         onMouseEnter={() => setHoveredRow(row.employee_id)}
                         onMouseLeave={() => setHoveredRow(null)}
                       >
                         <td
                           className={`sticky left-0 h-8 py-1.5 px-2 text-muted-foreground text-xs border border-zinc-300 whitespace-nowrap overflow-hidden text-ellipsis ${
-                            isHovered ? "!bg-zinc-100" : "bg-background"
+                            isHovered ? "!bg-zinc-100 dark:!bg-zinc-800" : "bg-background"
                           }`}
                         >
                           <div className="flex items-center gap-1.5">
