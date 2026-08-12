@@ -50,9 +50,14 @@ export function OrderNumberField({
   }
 
   const recentOrders = (recentOrdersData || []).filter((o) => {
+    if (o.order_type_code === "vacation_unpaid") return false
     if (!letter) return !hasLetterSuffix(o.order_number)
     return o.order_number.endsWith(`-${letter}`)
   })
+
+  const vacationUnpaidOrders = (recentOrdersData || []).filter(
+    (o) => o.order_type_code === "vacation_unpaid"
+  )
 
   useEffect(() => {
     if (!orderTypes || orderTypes.length === 0) {
@@ -76,6 +81,24 @@ export function OrderNumberField({
     if (letter && value && value.trim() && !value.endsWith(`-${letter}`)) {
       onChange(`${value}-${letter}`)
     }
+  }
+
+  const fillNextFromRow = (items: { id?: number; number?: string | null }[]): string | null => {
+    const row = [...items].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0]
+    if (!row?.number) return null
+    const m = row.number.match(/^(\d+)(.*)$/)
+    if (!m) return null
+    return `${parseInt(m[1], 10) + 1}${m[2]}`
+  }
+
+  const handleFillNextNumber = () => {
+    const next = fillNextFromRow(recentOrders.map((o) => ({ id: o.id, number: o.order_number })))
+    if (next) onChange(next)
+  }
+
+  const handleFillSectionNextNumber = (section: { items: { number: string | null }[] }) => {
+    const next = fillNextFromRow(section.items)
+    if (next) onChange(next)
   }
 
   const suffixElement = isGeneralOrder ? (
@@ -104,6 +127,21 @@ export function OrderNumberField({
           })),
         },
       })}
+      recentSections={
+        letter === "к"
+          ? [
+              {
+                title: "Отпуск за свой счет",
+                items: vacationUnpaidOrders.map((o) => ({
+                  id: o.id ?? 0,
+                  number: o.order_number,
+                  date: o.order_date,
+                  employee_name: o.employee_name,
+                })),
+              },
+            ]
+          : undefined
+      }
       label="Номер приказа"
       emptyListLabel="Приказов пока нет"
       popoverTitle={`Последние приказы (${letter ? `литера ${letter}` : "без литеры"})`}
@@ -112,6 +150,8 @@ export function OrderNumberField({
       displayValue={displayValue}
       onBlur={handleBlur}
       suffixElement={suffixElement}
+      onFillNextNumber={handleFillNextNumber}
+      onFillSectionNextNumber={handleFillSectionNextNumber}
       onUserModified={onUserModified}
     />
   )

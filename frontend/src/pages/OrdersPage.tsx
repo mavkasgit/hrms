@@ -185,7 +185,6 @@ export function OrdersPage() {
   const [filterDateTo, setFilterDateTo] = useState(() => getSavedFilter("dateTo", ""))
   const [filterLetter, setFilterLetter] = useState<string | undefined>(() => getSavedFilter("letter", undefined))
   const [filterLS, setFilterLS] = useState<boolean>(() => getSavedFilter("ls", false))
-  const [filterShowGeneral, setFilterShowGeneral] = useState<boolean>(() => getSavedFilter("showGeneral", false))
   const filterOrderTypeRef = useRef<HTMLDivElement>(null)
 
   const [sortConfigs, setSortConfigs] = useState<SortConfig<string>[]>([])
@@ -203,7 +202,6 @@ export function OrdersPage() {
       dateTo: string
       letter?: string
       ls: boolean
-      showGeneral: boolean
     }
   }
 
@@ -244,7 +242,6 @@ export function OrdersPage() {
       dateTo: filterDateTo,
       letter: filterLetter,
       ls: filterLS,
-      showGeneral: filterShowGeneral,
     }
     localStorage.setItem("hrms_active_filters", JSON.stringify(activeFilters))
   }, [
@@ -256,7 +253,6 @@ export function OrdersPage() {
     filterDateTo,
     filterLetter,
     filterLS,
-    filterShowGeneral,
   ])
 
   const handleSavePresetConfirm = () => {
@@ -275,7 +271,6 @@ export function OrdersPage() {
         dateTo: filterDateTo,
         letter: filterLetter,
         ls: filterLS,
-        showGeneral: filterShowGeneral,
       },
     }
 
@@ -300,7 +295,6 @@ export function OrdersPage() {
     setFilterDateTo(preset.filters.dateTo || "")
     setFilterLetter(preset.filters.letter)
     setFilterLS(preset.filters.ls || false)
-    setFilterShowGeneral(preset.filters.showGeneral || false)
     setAppliedPresetId(preset.id)
     localStorage.setItem("hrms_active_preset_id", preset.id)
   }
@@ -338,7 +332,6 @@ export function OrdersPage() {
       filterDateTo === preset.filters.dateTo &&
       filterLetter === preset.filters.letter &&
       filterLS === preset.filters.ls &&
-      filterShowGeneral === preset.filters.showGeneral &&
       filterOrderTypes.length === (preset.filters.orderTypes || []).length &&
       filterOrderTypes.every((t) =>
         (preset.filters.orderTypes || []).some((pt) => pt.id === t.id)
@@ -367,7 +360,6 @@ export function OrdersPage() {
     filterDateTo,
     filterLetter,
     filterLS,
-    filterShowGeneral,
     presets,
     appliedPresetId,
   ])
@@ -400,7 +392,7 @@ export function OrdersPage() {
     order_number: debouncedOrderNumber || undefined,
   })
 
-  const LS_ORDER_CODES = ["hire", "dismissal", "contract_extension", "transfer"]
+  const LS_ORDER_CODES = ["hire", "dismissal", "contract_extension", "transfer", "new_contract"]
 
   // General orders query
   const { data: generalOrdersData, isLoading: generalOrdersLoading } = useOrders({
@@ -425,9 +417,6 @@ export function OrdersPage() {
   const filteredData = useMemo(() => {
     if (!data?.items) return data
     let items = data.items
-    if (!filterShowGeneral) {
-      items = items.filter((order) => order.order_type_code !== "general_order")
-    }
     if (filterLS) {
       items = items.filter((order) => LS_ORDER_CODES.includes(order.order_type_code))
     }
@@ -436,7 +425,7 @@ export function OrdersPage() {
       items,
       total: items.length,
     }
-  }, [data, filterLS, filterShowGeneral])
+  }, [data, filterLS])
 
   const sortDefs: ColumnSortDef<Order, string>[] = useMemo(() => [
     { field: "order_number", getSortValue: (o) => o.order_number },
@@ -1004,7 +993,6 @@ export function OrdersPage() {
     setYear(new Date().getFullYear())
     setFilterLetter(undefined)
     setFilterLS(false)
-    setFilterShowGeneral(false)
     setAppliedPresetId(null)
     localStorage.removeItem("hrms_active_preset_id")
   }
@@ -1548,15 +1536,6 @@ export function OrdersPage() {
               <div className="flex gap-1">
                 <Button variant={!filterLS ? "default" : "outline"} size="sm" onClick={() => setFilterLS(false)}>Все типы</Button>
                 <Button variant={filterLS ? "default" : "outline"} size="sm" onClick={() => setFilterLS(true)}>ЛС</Button>
-              </div>
-
-              <div className="flex gap-1">
-                <Button variant={filterShowGeneral ? "default" : "outline"} size="sm" onClick={() => setFilterShowGeneral(true)}>
-                  Показывать ОД
-                </Button>
-                <Button variant={!filterShowGeneral ? "default" : "outline"} size="sm" onClick={() => setFilterShowGeneral(false)}>
-                  Скрыть ОД
-                </Button>
               </div>
 
               <Button variant="outline" size="sm" onClick={clearFilters} className="ml-auto">Сбросить фильтры</Button>
