@@ -14,7 +14,7 @@ import type { DayColumnData, ShiftTypeMap, TimesheetViewMode, TimesheetSortField
 
 const ROW_HEIGHT = 32
 const HEADER_HEIGHT = 36
-const PANEL_WIDTH = 240
+const PANEL_WIDTH = 210
 const COL_WIDTH = 44
 const DOW_SHORT = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
 
@@ -698,10 +698,10 @@ export function TimesheetGrid({
             </div>
           ),
           component: TimesheetDayCell,
-          basis: 44,
+          basis: 42,
           grow: 0,
           shrink: 0,
-          minWidth: 44,
+          minWidth: 42,
           columnData,
           headerClassName: isHoliday
             ? "!bg-red-100 !text-red-900 dark:!bg-red-900/40 dark:!text-red-100 !border-red-300"
@@ -797,7 +797,7 @@ export function TimesheetGrid({
   return (
     <div
       data-testid="timesheet-grid"
-      className="border rounded-lg bg-card overflow-hidden flex"
+      className="border rounded-lg bg-card overflow-hidden flex h-full"
     >
       {/* Левая sticky-панель с сотрудниками */}
       <div

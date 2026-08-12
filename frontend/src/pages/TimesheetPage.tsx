@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react"
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Upload,
@@ -57,6 +58,7 @@ export function TimesheetPage() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [onlyDivergences, setOnlyDivergences] = useState(false)
+  const [legendOpen, setLegendOpen] = useState(false)
   const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
   const [columnFilters, setColumnFilters] = useState<Record<FilterField, Set<string>>>({
     department: new Set(),
@@ -258,7 +260,7 @@ export function TimesheetPage() {
   const employeeSortDirection = sortConfigs.find((s) => s.field === "employee")?.order ?? null
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-[calc(100vh-48px)] min-h-0 overflow-hidden space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
@@ -416,7 +418,64 @@ export function TimesheetPage() {
             <X className="h-3.5 w-3.5 mr-1" /> Сбросить ({activeFiltersCount})
           </Button>
         )}
+        <button
+          type="button"
+          onClick={() => setLegendOpen((v) => !v)}
+          className="inline-flex items-center gap-1.5 h-9 px-2 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer select-none"
+          title={legendOpen ? "Свернуть легенду" : "Развернуть легенду"}
+        >
+          <ChevronDown
+            className={`h-4 w-4 transition-transform ${legendOpen ? "rotate-180" : ""}`}
+          />
+          Легенда
+        </button>
       </div>
+
+      {legendOpen && (
+        <div className="text-xs text-muted-foreground space-y-2">
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3.5 h-3.5 bg-amber-100 border border-amber-300 rounded" /> Расхождение плана и факта
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3.5 h-3.5 border-2 border-orange-500 rounded" /> Расхождение ручного и авто
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3.5 h-3.5 rounded-full bg-violet-500 animate-pulse" /> Приказ изменился
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3.5 h-3.5 bg-slate-100 border border-slate-300 rounded" /> Выходной (Сб/Вс)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3.5 h-3.5 bg-red-100/80 border border-red-300 rounded" /> Праздничный день
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5 pt-2 border-t">
+            <span className="text-muted-foreground font-medium mr-1">Нерабочие статусы:</span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">О</span> Отпуск
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">Б</span> Больничный
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">А</span> За свой счет
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">П</span> Прогул
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">Д</span> Донорские
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">ВК</span> Военкомат
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">ВС</span> Военные сборы
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-3 text-sm flex-wrap">
         <Badge variant="secondary">Сотрудников: {totals.employees}</Badge>
@@ -438,7 +497,7 @@ export function TimesheetPage() {
           }
         />
       ) : (
-        <div className="h-[calc(100vh-330px)] min-h-[360px]">
+        <div className="flex-1 min-h-0">
           <TimesheetGrid
             employees={filteredEmployees}
             gridData={gridQuery.data}
@@ -453,50 +512,6 @@ export function TimesheetPage() {
           />
         </div>
       )}
-
-      <div className="text-xs text-muted-foreground space-y-2 mt-4">
-        <div className="flex flex-wrap gap-x-4 gap-y-2">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3.5 h-3.5 bg-amber-100 border border-amber-300 rounded" /> Расхождение плана и факта
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3.5 h-3.5 border-2 border-orange-500 rounded" /> Расхождение ручного и авто
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3.5 h-3.5 rounded-full bg-violet-500 animate-pulse" /> Приказ изменился
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3.5 h-3.5 bg-slate-100 border border-slate-300 rounded" /> Выходной (Сб/Вс)
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3.5 h-3.5 bg-red-100/80 border border-red-300 rounded" /> Праздничный день
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-1.5 pt-2 border-t">
-          <span className="text-muted-foreground font-medium mr-1">Нерабочие статусы:</span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">О</span> Отпуск
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">Б</span> Больничный
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">А</span> За свой счет
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">П</span> Прогул
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">Д</span> Донорские
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">ВК</span> Военкомат
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">ВС</span> Военные сборы
-          </span>
-        </div>
-      </div>
 
       <TimesheetImportModal
         open={importOpen}
