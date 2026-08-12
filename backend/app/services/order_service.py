@@ -158,13 +158,21 @@ class OrderService:
         return await self.order_repo.get_by_source_draft_id(db, source_draft_id)
 
     # === Order creation ===
-    async def create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
+    async def create_order(
+        self,
+        db: AsyncSession,
+        data: OrderCreate,
+        *,
+        source_draft_created_by: str | None = None,
+    ) -> Order:
         await self.ensure_default_order_types(db)
         if db.in_transaction():
-            order = await self._do_create_order(db, data)
+            order = await self._do_create_order(db, data, source_draft_created_by=source_draft_created_by)
         else:
             async with db.begin():
-                order = await self._do_create_order(db, data)
+                order = await self._do_create_order(
+                    db, data, source_draft_created_by=source_draft_created_by
+                )
 
         # Draft delete only after successful create (+ TX commit when we own it), like group commit.
         if data.draft_id:
@@ -177,7 +185,9 @@ class OrderService:
                 )
         return order
 
-    async def create_single_order_from_draft(self, db: AsyncSession, draft_id: str) -> Order:
+    async def create_single_order_from_draft(
+        self, db: AsyncSession, draft_id: str, *, source_draft_created_by: str | None = None
+    ) -> Order:
         """
         Commit a single-order draft using server-stored metadata (#30).
 
@@ -210,9 +220,11 @@ class OrderService:
             extra_fields=payload.get("extra_fields"),
             draft_id=draft_id,
         )
-        return await self.create_order(db, data)
+        return await self.create_order(db, data, source_draft_created_by=source_draft_created_by)
 
-    async def _do_create_order(self, db: AsyncSession, data: OrderCreate) -> Order:
+    async def _do_create_order(
+        self, db: AsyncSession, data: OrderCreate, *, source_draft_created_by: str | None = None
+    ) -> Order:
         from app.core.paths import storage_path as resolve_storage_path
 
         order_number = data.order_number
@@ -254,26 +266,49 @@ class OrderService:
 
         try:
             return await self._finish_create_order(
-                db, data, order_number, employee, order_type, file_path, display_name
+                db, data, order_number, employee, order_type, file_path, display_name,
+                source_draft_created_by=source_draft_created_by,
             )
-        except IntegrityError:
-            # Идемпотентность держится на UNIQUE(source_draft_id): повторный/конкурентный
-            # commit даёт IntegrityError. Файл УЖЕ существующего приказа при этом НЕ
-            # удаляем (путь детерминирован, перезапись идентичным содержимым безвредна,
-            # а unlink уничтожил бы файл победителя гонки). #94.
+        except IntegrityError as exc:
+            # Различаем характер IntegrityError:
+            # - дубликат source_draft_id (идемпотентность, ADR-0009, #94) — файл УЖЕ
+            #   существующего приказа НЕ удаляем (путь детерминирован, перезапись
+            #   идентичным содержимым безвредна, unlink уничтожил бы файл победителя гонки);
+            # - любой другой IntegrityError (нарушение иного constraint'а, глубже по
+            #   каскаду) — орфан permanent-файла удаляем, чтобы не остался сиротой. #105.
+            if not self._is_source_draft_duplicate(exc):
+                self._cleanup_permanent_file(permanent_abs)
             raise
         except Exception:
-            if permanent_abs is not None:
-                try:
-                    if permanent_abs.exists():
-                        permanent_abs.unlink()
-                except Exception:
-                    import logging
-                    logging.getLogger(__name__).exception(
-                        "Failed to cleanup permanent order file after failed create: %s",
-                        permanent_abs,
-                    )
+            self._cleanup_permanent_file(permanent_abs)
             raise
+
+    @staticmethod
+    def _is_source_draft_duplicate(exc: IntegrityError) -> bool:
+        """True, если IntegrityError — нарушение UNIQUE(source_draft_id) (#105)."""
+        orig = getattr(exc, "orig", None)
+        constraint = getattr(getattr(orig, "diag", None), "constraint_name", None)
+        if constraint:
+            return constraint == "ix_orders_source_draft_id_unique"
+        # Fallback для не-psycopg2 драйверов/тестов
+        return "ix_orders_source_draft_id_unique" in str(orig or "")
+
+    def _cleanup_permanent_file(self, permanent_abs: Path | None) -> None:
+        """Удаляет орфан permanent-файла после неудачного создания приказа (#105).
+
+        Защищённо: ошибка unlink'а не маскирует исходное исключение.
+        """
+        if permanent_abs is None:
+            return
+        try:
+            if permanent_abs.exists():
+                permanent_abs.unlink()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "Failed to cleanup permanent order file after failed create: %s",
+                permanent_abs,
+            )
 
     async def _finish_create_order(
         self,
@@ -284,6 +319,8 @@ class OrderService:
         order_type: OrderType,
         file_path: str,
         display_name: str,
+        *,
+        source_draft_created_by: str | None = None,
     ) -> Order:
         # Подготавливаем extra_fields для продления контракта
         extra_fields = data.extra_fields
@@ -346,6 +383,9 @@ class OrderService:
                 "notes": data.notes,
                 "extra_fields": extra_fields,
                 "source_draft_id": data.draft_id,
+                # Провенанс draft-созданных приказов (#104): только если приказ
+                # создан ИЗ черновика, иначе поле остаётся NULL.
+                "source_draft_created_by": source_draft_created_by if data.draft_id else None,
             },
         )
 
@@ -726,7 +766,7 @@ class OrderService:
         return order
 
     async def create_group_order_from_draft(
-        self, db: AsyncSession, draft_id: str
+        self, db: AsyncSession, draft_id: str, *, source_draft_created_by: str | None = None
     ) -> Order:
         """
         Commit a group order draft into a final Order.
@@ -852,6 +892,8 @@ class OrderService:
                 "extra_fields": {},
                 "is_group": True,
                 "source_draft_id": draft_id,
+                # Провенанс draft-созданных приказов (#104): username инициатора commit.
+                "source_draft_created_by": source_draft_created_by or None,
             },
         )
 

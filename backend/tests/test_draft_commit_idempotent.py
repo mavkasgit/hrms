@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from app.api.deps import CurrentUser
 from app.api.onlyoffice import commit_group_order_draft, commit_order_draft
 from app.core.config import settings
 from app.schemas.order import OrderCreate
@@ -93,6 +94,24 @@ def _make_group_draft(drafts_dir: Path, draft_id: str, emp_ids: list[int]) -> No
 # === #94: single ===
 
 
+class _PgErrorWithDiag(Exception):
+    """Имитация psycopg2-ошибки: `orig.diag.constraint_name` (#105)."""
+
+    def __init__(self, message: str, constraint_name: str | None):
+        super().__init__(message)
+        self.diag = SimpleNamespace(constraint_name=constraint_name)
+
+
+def _integrity_error_with_constraint(constraint_name: str) -> IntegrityError:
+    """IntegrityError с `orig.diag.constraint_name` (реальный psycopg2-кейс)."""
+    return IntegrityError("INSERT orders", {}, _PgErrorWithDiag("duplicate key", constraint_name))
+
+
+def _integrity_error_without_diag(message: str) -> IntegrityError:
+    """IntegrityError без `orig.diag` — fallback по строке (не-psycopg2 драйвер/тест)."""
+    return IntegrityError("INSERT orders", {}, Exception(message))
+
+
 async def test_single_repeated_commit_returns_same_order(db_session, _tmp_drafts_dir, _enable_onlyoffice):
     """Два последовательных commit одного single-draft → 200 с одним и тем же order_id."""
     await order_service.ensure_default_order_types(db_session)
@@ -100,8 +119,8 @@ async def test_single_repeated_commit_returns_same_order(db_session, _tmp_drafts
     draft_id = "11111111-aaaa-bbbb-cccc-111111111111"
     _make_single_draft(_tmp_drafts_dir, draft_id, general_type.id)
 
-    first = await commit_order_draft(draft_id=draft_id, db=db_session, current_user="admin")
-    second = await commit_order_draft(draft_id=draft_id, db=db_session, current_user="admin")
+    first = await commit_order_draft(draft_id=draft_id, db=db_session, current_user=CurrentUser("admin", role="admin"))
+    second = await commit_order_draft(draft_id=draft_id, db=db_session, current_user=CurrentUser("admin", role="admin"))
 
     assert second["id"] == first["id"]
     assert first["order_number"] == "99-К"
@@ -115,7 +134,7 @@ async def test_source_draft_id_written_single(db_session, _tmp_drafts_dir, _enab
     draft_id = "22222222-aaaa-bbbb-cccc-222222222222"
     _make_single_draft(_tmp_drafts_dir, draft_id, general_type.id)
 
-    result = await commit_order_draft(draft_id=draft_id, db=db_session, current_user="admin")
+    result = await commit_order_draft(draft_id=draft_id, db=db_session, current_user=CurrentUser("admin", role="admin"))
 
     order = await order_service.find_by_source_draft_id(db_session, draft_id)
     assert order is not None
@@ -136,7 +155,7 @@ async def test_crash_recovery_stale_lock_with_order(
     lock_path = _tmp_drafts_dir / f"{draft_id}.commit.lock"
     lock_path.write_bytes(b"1")
 
-    result = await commit_order_draft(draft_id=draft_id, db=db_session, current_user="admin")
+    result = await commit_order_draft(draft_id=draft_id, db=db_session, current_user=CurrentUser("admin", role="admin"))
 
     assert result["id"] == existing_id
     assert not lock_path.exists(), "stale commit lock must be removed"
@@ -156,7 +175,7 @@ async def test_stale_lock_without_order_recovery(
     monkeypatch.setattr(draft_adapter_module, "_CONCURRENT_COMMIT_RETRIES", 1)
     monkeypatch.setattr(draft_adapter_module, "_CONCURRENT_COMMIT_RETRY_DELAY", 0)
 
-    result = await commit_order_draft(draft_id=draft_id, db=db_session, current_user="admin")
+    result = await commit_order_draft(draft_id=draft_id, db=db_session, current_user=CurrentUser("admin", role="admin"))
 
     order = await order_service.find_by_source_draft_id(db_session, draft_id)
     assert order is not None
@@ -194,7 +213,7 @@ async def test_integrity_error_returns_existing_order(
 
     monkeypatch.setattr(order_service, "find_by_source_draft_id", race_find)
 
-    result = await commit_order_draft(draft_id=draft_id, db=db_session, current_user="admin")
+    result = await commit_order_draft(draft_id=draft_id, db=db_session, current_user=CurrentUser("admin", role="admin"))
 
     assert result["id"] == existing_id
     assert len(calls) >= 2, "durable lookup должен повториться после rollback"
@@ -226,7 +245,8 @@ async def test_do_create_order_integrity_error_keeps_permanent_file(monkeypatch,
         return f"{data.order_date.year}/{dest.name}", dest.name
 
     async def failing_finish(*_args, **_kwargs):
-        raise IntegrityError("INSERT orders", {}, Exception("duplicate source_draft_id"))
+        # Дубликат UNIQUE(source_draft_id) как от psycopg2: orig.diag.constraint_name.
+        raise _integrity_error_with_constraint("ix_orders_source_draft_id_unique")
 
     svc = OrderService()
     order_type = SimpleNamespace(id=1, code="general_order", name="Общий", is_active=True)
@@ -262,6 +282,88 @@ async def test_do_create_order_integrity_error_keeps_permanent_file(monkeypatch,
         assert p.exists(), f"permanent file must NOT be unlinked on IntegrityError: {p}"
 
 
+@pytest.mark.parametrize(
+    "exc, expected_exists",
+    [
+        pytest.param(
+            _integrity_error_with_constraint("ix_orders_source_draft_id_unique"),
+            True,
+            id="duplicate-source-draft-keeps-file",
+        ),
+        pytest.param(
+            _integrity_error_with_constraint("uq_order_employees_order_employee"),
+            False,
+            id="other-constraint-unlinks-orphan",
+        ),
+        pytest.param(
+            _integrity_error_without_diag("duplicate key value violates unique constraint"),
+            False,
+            id="no-orig-diag-fallback-foreign-name-unlinks",
+        ),
+    ],
+)
+async def test_do_create_order_integrity_error_orphan_cleanup(
+    monkeypatch, tmp_path, exc, expected_exists
+):
+    """#105: не-дубликат IntegrityError удаляет орфан permanent-файла; дубликат
+    source_draft_id — сохраняет (идемпотентность, #94/ADR-0009)."""
+    monkeypatch.setattr(settings, "ORDERS_PATH", str(tmp_path))
+    order_draft_service._drafts_dir = tmp_path / ".drafts"
+    order_draft_service.ensure_drafts_dir()
+
+    draft_id = "10500000-aaaa-bbbb-cccc-105000000000"
+    draft_path = order_draft_service._drafts_dir / f"{draft_id}_order.docx"
+    draft_path.write_bytes(b"draft-content")
+
+    permanent_written: list[Path] = []
+
+    async def fake_generate(order_number, data, employee, order_type, year_dir_arg):
+        year_dir_arg.mkdir(parents=True, exist_ok=True)
+        dest = year_dir_arg / f"{order_type.code}_{order_number}.docx"
+        dest.write_bytes(b"copied-from-draft")
+        permanent_written.append(dest)
+        return f"{data.order_date.year}/{dest.name}", dest.name
+
+    async def failing_finish(*_args, **_kwargs):
+        raise exc
+
+    svc = OrderService()
+    order_type = SimpleNamespace(id=1, code="general_order", name="Общий", is_active=True)
+
+    async def fake_ensure(db):
+        return [order_type]
+
+    async def fake_get_type(db, type_id):
+        return order_type
+
+    monkeypatch.setattr(order_service_module, "generate_document", fake_generate)
+    monkeypatch.setattr(svc, "ensure_default_order_types", fake_ensure)
+    monkeypatch.setattr(svc.order_type_repo, "get_by_id", fake_get_type)
+    monkeypatch.setattr(svc, "_finish_create_order", failing_finish)
+
+    db = MagicMock()
+    db.in_transaction.return_value = True
+
+    with pytest.raises(IntegrityError):
+        await svc.create_order(
+            db,
+            OrderCreate(
+                employee_id=None,
+                order_type_id=1,
+                order_date=date(2026, 8, 1),
+                order_number="DRAFT-INT-2",
+                draft_id=draft_id,
+            ),
+        )
+
+    assert permanent_written, "permanent file должен был скопироваться до фейла"
+    for p in permanent_written:
+        if expected_exists:
+            assert p.exists(), f"duplicate IntegrityError должен сохранить файл: {p}"
+        else:
+            assert not p.exists(), f"не-дубликат IntegrityError должен удалить орфан: {p}"
+
+
 # === #95: group ===
 
 
@@ -275,8 +377,8 @@ async def test_group_repeated_commit_returns_same_order(
     draft_id = "33333333-aaaa-bbbb-cccc-333333333333"
     _make_group_draft(_tmp_drafts_dir, draft_id, [emp1.id, emp2.id])
 
-    first = await commit_group_order_draft(draft_id=draft_id, db=db_session, current_user="admin")
-    second = await commit_group_order_draft(draft_id=draft_id, db=db_session, current_user="admin")
+    first = await commit_group_order_draft(draft_id=draft_id, db=db_session, current_user=CurrentUser("admin", role="admin"))
+    second = await commit_group_order_draft(draft_id=draft_id, db=db_session, current_user=CurrentUser("admin", role="admin"))
 
     assert first["is_group"] is True
     assert second["id"] == first["id"]
@@ -293,7 +395,7 @@ async def test_source_draft_id_written_group(
     draft_id = "99999999-aaaa-bbbb-cccc-999999999999"
     _make_group_draft(_tmp_drafts_dir, draft_id, [emp1.id, emp2.id])
 
-    result = await commit_group_order_draft(draft_id=draft_id, db=db_session, current_user="admin")
+    result = await commit_group_order_draft(draft_id=draft_id, db=db_session, current_user=CurrentUser("admin", role="admin"))
 
     order = await order_service.find_by_source_draft_id(db_session, draft_id)
     assert order is not None
@@ -321,7 +423,7 @@ async def test_group_commit_rollback_on_order_employee_failure(
     monkeypatch.setattr(order_service_module, "sa_insert", boom_insert)
 
     with pytest.raises(IntegrityError):
-        await commit_group_order_draft(draft_id=draft_id, db=db_session, current_user="admin")
+        await commit_group_order_draft(draft_id=draft_id, db=db_session, current_user=CurrentUser("admin", role="admin"))
 
     # All-or-nothing: rollback убрал и orders-строку, и OrderEmployee/Vacation.
     assert await order_service.find_by_source_draft_id(db_session, draft_id) is None
