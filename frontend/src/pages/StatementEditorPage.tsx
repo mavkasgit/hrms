@@ -4,7 +4,12 @@ import { Loader2 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { useStatement } from "@/entities/statement/hooks"
 import { fetchStatementOnlyOfficeConfig } from "@/entities/statement/api"
-import { forceSaveStatement, commitStatementDraft } from "@/entities/statement/onlyofficeApi"
+import {
+  forceSaveStatement,
+  fetchStatementSaveStatus,
+  commitStatementDraft,
+} from "@/entities/statement/onlyofficeApi"
+import { requestAndWaitOnlyOfficeSave } from "@/entities/order/waitForOnlyOfficeSave"
 import { publishDocumentEditorSave } from "@/entities/document/documentEditorSaveChannel"
 import {
   EditorSaveBanner,
@@ -57,7 +62,11 @@ export function StatementEditorPage() {
 
     try {
       await withMinDuration(async () => {
-        await forceSaveStatement(Number(statementId), config.document.key)
+        await requestAndWaitOnlyOfficeSave({
+          forceSave: (saveId) =>
+            forceSaveStatement(Number(statementId), config.document.key, saveId),
+          getStatus: (saveId) => fetchStatementSaveStatus(Number(statementId), saveId),
+        })
         // Явный commit черновика → is_draft=False (детерминированно, не зависит от
         // того, правил ли пользователь документ — no_changes от DS) (#86).
         await commitStatementDraft(Number(statementId))

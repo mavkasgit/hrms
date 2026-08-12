@@ -4,7 +4,12 @@ import { Loader2 } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { useNotification } from "@/entities/notification/hooks"
 import { fetchNotificationOnlyOfficeConfig } from "@/entities/notification/api"
-import { forceSaveNotification, commitNotificationDraft } from "@/entities/notification/onlyofficeApi"
+import {
+  forceSaveNotification,
+  fetchNotificationSaveStatus,
+  commitNotificationDraft,
+} from "@/entities/notification/onlyofficeApi"
+import { requestAndWaitOnlyOfficeSave } from "@/entities/order/waitForOnlyOfficeSave"
 import { publishDocumentEditorSave } from "@/entities/document/documentEditorSaveChannel"
 import {
   EditorSaveBanner,
@@ -59,7 +64,11 @@ export function NotificationEditorPage() {
 
     try {
       await withMinDuration(async () => {
-        await forceSaveNotification(Number(notificationId), config.document.key)
+        await requestAndWaitOnlyOfficeSave({
+          forceSave: (saveId) =>
+            forceSaveNotification(Number(notificationId), config.document.key, saveId),
+          getStatus: (saveId) => fetchNotificationSaveStatus(Number(notificationId), saveId),
+        })
         // Явный commit черновика → is_draft=False (детерминированно, не зависит от
         // того, правил ли пользователь документ — no_changes от DS) (#86).
         await commitNotificationDraft(Number(notificationId))

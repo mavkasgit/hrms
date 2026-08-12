@@ -579,14 +579,20 @@ async def template_onlyoffice_callback(
     if not settings.ONLYOFFICE_ENABLED:
         return JSONResponse(content={"error": 0})
     body = await request.json()
-    _assert_valid_callback_token(request, body)
 
-    if body.get("status") in (2, 6) and body.get("url"):
-        order_type = await order_service.get_order_type_by_id(db, order_type_id)
-        if order_type:
-            file_path = get_template_path(order_type)
-            await onlyoffice_service.download_and_replace(str(body["url"]), file_path)
-    return {"error": 0}
+    try:
+        _assert_valid_callback_token(request, body)
+    except HRMSException as exc:
+        return JSONResponse(content={"error": 1, "message": str(exc.detail)}, status_code=exc.status_code)
+
+    context = CallbackContext(
+        kind=CallbackKind.TEMPLATE,
+        entity_id=order_type_id,
+        db=db,
+        userdata=_extract_callback_userdata(body),
+    )
+    result = await onlyoffice_callback_pipeline.handle_callback(context, body)
+    return _callback_result_response(result)
 
 
 @router.post("/order-types/{order_type_id}/onlyoffice/forcesave")
@@ -598,8 +604,13 @@ async def template_onlyoffice_forcesave(
     _ensure_onlyoffice_enabled()
     if not data.document_key.startswith(f"template-{order_type_id}-"):
         raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
-    await onlyoffice_service.force_save(data.document_key)
-    return {"message": "save_requested"}
+    context = CallbackContext(
+        kind=CallbackKind.TEMPLATE,
+        entity_id=order_type_id,
+        db=None,
+        userdata=data.save_id,
+    )
+    return await onlyoffice_callback_pipeline.request_forcesave(context, data.document_key)
 
 
 # ─── Notifications OnlyOffice ──────────────────────────────────────────────────
@@ -706,8 +717,27 @@ async def notification_onlyoffice_forcesave(
     _ensure_onlyoffice_enabled()
     if not data.document_key.startswith(f"notification-{notification_id}-"):
         raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
-    await onlyoffice_service.force_save(data.document_key)
-    return {"message": "save_requested"}
+    context = CallbackContext(
+        kind=CallbackKind.NOTIFICATION,
+        entity_id=notification_id,
+        db=None,
+        userdata=data.save_id,
+    )
+    return await onlyoffice_callback_pipeline.request_forcesave(context, data.document_key)
+
+
+@router.get("/notifications/{notification_id}/onlyoffice/save-status/{save_id}")
+async def notification_onlyoffice_save_status(
+    notification_id: int,
+    save_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    notification = await db.get(Notification, notification_id)
+    if not notification:
+        raise HRMSException("Уведомление не найдено", "notification_not_found", status_code=404)
+    return await onlyoffice_save_tracker.get(save_id)
 
 
 @router.post("/notifications/{notification_id}/commit")
@@ -829,8 +859,27 @@ async def statement_onlyoffice_forcesave(
     _ensure_onlyoffice_enabled()
     if not data.document_key.startswith(f"statement-{statement_id}-"):
         raise HRMSException("Неверный ключ документа OnlyOffice", "invalid_onlyoffice_key", status_code=422)
-    await onlyoffice_service.force_save(data.document_key)
-    return {"message": "save_requested"}
+    context = CallbackContext(
+        kind=CallbackKind.STATEMENT,
+        entity_id=statement_id,
+        db=None,
+        userdata=data.save_id,
+    )
+    return await onlyoffice_callback_pipeline.request_forcesave(context, data.document_key)
+
+
+@router.get("/statements/{statement_id}/onlyoffice/save-status/{save_id}")
+async def statement_onlyoffice_save_status(
+    statement_id: int,
+    save_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    _ensure_onlyoffice_enabled()
+    statement = await db.get(Statement, statement_id)
+    if not statement:
+        raise HRMSException("Заявление не найдено", "statement_not_found", status_code=404)
+    return await onlyoffice_save_tracker.get(save_id)
 
 
 @router.post("/statements/{statement_id}/commit")

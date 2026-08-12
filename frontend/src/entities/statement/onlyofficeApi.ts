@@ -1,9 +1,24 @@
 import axios from "@/shared/api/client"
+import type { OnlyOfficeForceSaveResponse, OnlyOfficeSaveStatusResponse } from "@/entities/order/onlyofficeTypes"
 
-export async function forceSaveStatement(statementId: number, documentKey: string) {
-  const { data } = await axios.post(`/statements/${statementId}/onlyoffice/forcesave`, {
-    document_key: documentKey,
-  })
+export async function forceSaveStatement(
+  statementId: number,
+  documentKey: string,
+  saveId?: string,
+) {
+  const { data } = await axios.post<OnlyOfficeForceSaveResponse>(
+    `/statements/${statementId}/onlyoffice/forcesave`,
+    { document_key: documentKey, save_id: saveId },
+    { skipGlobalToast: true },
+  )
+  return data
+}
+
+export async function fetchStatementSaveStatus(statementId: number, saveId: string) {
+  const { data } = await axios.get<OnlyOfficeSaveStatusResponse>(
+    `/statements/${statementId}/onlyoffice/save-status/${saveId}`,
+    { skipGlobalToast: true },
+  )
   return data
 }
 
