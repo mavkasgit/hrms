@@ -104,4 +104,84 @@ test.describe('Vacation periods smoke @api', () => {
     expect(closed.remaining_days).toBe(0)
     expect(closed.used_days).toBe(closed.total_days)
   })
+
+  test('@api partially-closed period is debited first, then next open', async ({
+    apiOps,
+  }) => {
+    const emp = await apiOps.createEmployee({
+      hire_date: '2023-01-15',
+      contract_start: '2023-01-15',
+      additional_vacation_days: 0,
+    })
+
+    let periods = await apiOps.getPeriods(emp.id)
+    const year1 = periods.find((p: VacationPeriod) => p.year_number === 1)
+    const year2 = periods.find((p: VacationPeriod) => p.year_number === 2)
+    expect(year1).toBeTruthy()
+    expect(year2).toBeTruthy()
+
+    // Частично закрываем первый период: остаток 21.
+    const partial = await apiOps.partialClosePeriod(year1!.period_id, 21)
+    expect(partial.remaining_days).toBe(21)
+    expect(partial.used_days).toBe(partial.total_days - 21)
+
+    // Отпуск 27 дней: 21 с частично закрытого (до 0), 6 со следующего.
+    const vac = await apiOps.createVacation(emp.id, {
+      start_date: '2024-06-01',
+      end_date: '2024-06-27',
+      vacation_type: 'Трудовой',
+      order_date: '2024-05-25',
+    })
+    expect(vac.days_count).toBe(27)
+
+    periods = await apiOps.getPeriods(emp.id)
+    const after1 = periods.find((p: VacationPeriod) => p.year_number === 1)
+    const after2 = periods.find((p: VacationPeriod) => p.year_number === 2)
+
+    // Частично закрытый период доеден до нуля (стал полностью закрытым).
+    expect(after1!.used_days).toBe(after1!.total_days)
+    expect(after1!.remaining_days).toBe(0)
+    expectPeriodInvariant(after1!)
+
+    // Остаток списан со следующего открытого периода.
+    expect(after2!.used_days).toBe(6)
+    expectPeriodInvariant(after2!)
+  })
+
+  test('@api fully-closed period is skipped, debit goes to next open', async ({
+    apiOps,
+  }) => {
+    const emp = await apiOps.createEmployee({
+      hire_date: '2023-01-15',
+      contract_start: '2023-01-15',
+      additional_vacation_days: 0,
+    })
+
+    let periods = await apiOps.getPeriods(emp.id)
+    const year1 = periods.find((p: VacationPeriod) => p.year_number === 1)
+    const year2 = periods.find((p: VacationPeriod) => p.year_number === 2)
+    expect(year1).toBeTruthy()
+    expect(year2).toBeTruthy()
+
+    // Полностью закрываем первый период.
+    const closed = await apiOps.closePeriod(year1!.period_id)
+    expect(closed.remaining_days).toBe(0)
+
+    // Отпуск 8 дней должен целиком уйти во второй (открытый) период.
+    await apiOps.createVacation(emp.id, {
+      start_date: '2024-06-01',
+      end_date: '2024-06-08',
+      vacation_type: 'Трудовой',
+      order_date: '2024-05-25',
+    })
+
+    periods = await apiOps.getPeriods(emp.id)
+    const after1 = periods.find((p: VacationPeriod) => p.year_number === 1)
+    const after2 = periods.find((p: VacationPeriod) => p.year_number === 2)
+
+    expect(after1!.used_days).toBe(after1!.total_days)
+    expect(after1!.remaining_days).toBe(0)
+    expect(after2!.used_days).toBe(8)
+    expectPeriodInvariant(after2!)
+  })
 })

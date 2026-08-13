@@ -36,6 +36,40 @@ npm run test:e2e:regression
 npx playwright test --list
 ```
 
+### Dev vs test окружение (важно для локального прогона)
+
+Локальный e2e-прогон идёт через **Vite dev server** (`E2E_BASE_URL=http://localhost:5171`), а его proxy `/api` настроен на **`http://127.0.0.1:8011`** (IPv4, `frontend/vite.config.ts`). На этом порту **конкурируют два бэкенда**:
+
+| Кто | Адрес | Откуда | БД |
+|-----|-------|--------|----|
+| **dev-бэкенд** (uvicorn `--host 0.0.0.0 --port 8011`, `npm run dev`) | IPv4 `0.0.0.0:8011` | `127.0.0.1:8011` → **dev-бэкенд** | **dev** (`hrms_dev` на `:5435`) |
+| **test-контейнер** (`hrms-backend-test`, `npm run docker:test:up`) | IPv6 `[::]:8011` | `::1:8011` (localhost → IPv6) | test (`hrms_test` на `:5432` внутри compose) |
+
+Ключевое следствие: **`127.0.0.1:8011` = dev, а `::1:8011` / `localhost:8011` = тестовый контейнер**. На Windows `localhost` резолвится в IPv6 → может попасть в test-контейнер, поэтому vite-прокси и `E2E_API_URL` используют явный `127.0.0.1`.
+
+**После правок backend-кода обязательно перезапускай dev-бэкенд** — uvicorn запускается **без `--reload`**, иначе e2e будут биться по старому коду (типичная ловушка: pytest зелёный, а e2e «не видит фикс»):
+
+```bash
+npm run dev:restart   # останавливает и перезапускает dev (DB + backend + frontend)
+# или точечно: поднять uvicorn заново (см. npm run dev:backend)
+```
+
+Проверка, кто держит порт:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8011 -State Listen | Select LocalAddress, LocalPort, OwningProcess
+# 0.0.0.0:8011 → python (dev-бэкенд)
+# [::]:8011     → com.docker.backend (test-контейнер)
+```
+
+Проверка, в какую БД реально пишет dev-бэкенд (данные созданных через API сотрудников):
+
+```powershell
+docker exec hrms-postgres psql -U hrms_user -d hrms_dev -c "SELECT id, name FROM employees ORDER BY id DESC LIMIT 3;"
+```
+
+> ⚠️ Из-за этой схемы **не** «чини» рассинхрон, гоняясь за конкретным `employee_id`: каждый e2e-тест создаёт **нового** сотрудника с `apiOps.uid()`. Ищи свежесозданную запись по последним id в dev-БД, а не фиксированный номер.
+
 ### Параллельный прогон (opt-in)
 
 По умолчанию Playwright: **`workers: 1`**, `fullyParallel: false` (serial — контроль / debug).  
