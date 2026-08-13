@@ -246,6 +246,54 @@ async def test_recalculate_periods_reapplies_manual_closures(db_session, create_
         assert period.used_days <= period_limit
 
 
+async def test_recalculate_allocates_vacation_to_its_work_year(
+    db_session,
+    create_employee,
+):
+    """Регрессия: ручные закрытия восстанавливаются до автосписания.
+
+    При пересчёте отпуск должен попасть в свой рабочий год, а не в самый старый
+    открытый период (который при пересоздании ещё не закрыт). Раньше закрытия
+    применялись после распределения отпусков, и дни уходили в старый период.
+    """
+    from app.models.vacation_period import VacationPeriod
+
+    employee = await create_employee(hire_date=date(2024, 1, 15), additional_vacation_days=0)
+
+    await vacation_period_service.ensure_periods_for_employee(
+        db_session,
+        employee.id,
+        employee.hire_date,
+        employee.additional_vacation_days or 0,
+    )
+
+    periods = await vacation_period_service.get_employee_periods(db_session, employee.id)
+    year_1 = next(p for p in periods if p.year_number == 1)
+
+    # Закрываем первый рабочий год полностью.
+    await vacation_period_service.close_period(db_session, year_1.period_id)
+
+    # Отпуск во втором рабочем году (2025).
+    created = await _create_paid_vacation(db_session, employee.id, date(2025, 6, 1), date(2025, 6, 6))
+
+    # Полный пересчёт периодов.
+    await vacation_period_service.recalculate_periods(db_session, employee.id)
+
+    result = await db_session.execute(
+        select(VacationPeriod).where(VacationPeriod.employee_id == employee.id)
+    )
+    orm_periods = {p.year_number: p for p in result.scalars().all()}
+
+    # Первый год остался полностью закрытым: без автосписаний.
+    assert orm_periods[1].used_days_auto == 0
+    assert orm_periods[1].used_days_manual == 24
+    assert orm_periods[1].remaining_days == 0
+
+    # Дни отпуска легли во второй рабочий год.
+    assert orm_periods[2].used_days_auto == created["days_count"]
+    assert orm_periods[2].remaining_days is None
+
+
 async def test_delete_order_recomputes_only_affected_periods_without_full_rebuild(
     db_session,
     create_employee,
@@ -475,3 +523,62 @@ async def test_delete_extension_order_restores_vacation_state(db_session, create
     # 5. Приказ должен быть удален
     order_db = await db_session.get(Order, extension_order_id)
     assert order_db is None
+
+
+async def test_delete_vacation_cascades_recall_order(db_session, create_employee):
+    """Удаление отпуска целиком каскадно удаляет и приказ отзыва.
+
+    delete_vacation делегирует hard_delete_order приказа отпуска; корректировки
+    отпуска (adjustment_order_id == приказ отзыва) утягивают за собой сам приказ
+    отзыва — иначе он остаётся в реестре сиротой.
+    """
+    from app.models.order import Order
+    from app.models.vacation import Vacation
+
+    employee = await create_employee(hire_date=date(2024, 1, 15))
+    created = await _create_paid_vacation(db_session, employee.id, date(2026, 6, 1), date(2026, 6, 11))
+    vacation_id = created["id"]
+    vacation_order_id = created["order_id"]
+
+    await vacation_service.recall_vacation(
+        db_session,
+        vacation_id,
+        {
+            "recall_date": date(2026, 6, 5),
+            "order_date": date(2026, 6, 4),
+            "order_number": "R-CASCADE",
+            "comment": "cascade",
+        },
+        "admin",
+    )
+
+    vac_db = await db_session.get(Vacation, vacation_id)
+    assert vac_db is not None and vac_db.is_recalled is True
+    recall_order_id = vac_db.recall_order_id
+    assert recall_order_id is not None
+    assert recall_order_id != vacation_order_id
+
+    # Удаляем отпуск целиком (как кнопка «Удалить» в UI).
+    await vacation_service.delete_vacation(db_session, vacation_id, "admin")
+
+    await db_session.close()
+    # 1. Отпуск удалён
+    assert await db_session.get(Vacation, vacation_id) is None
+    # 2. Приказ отпуска удалён
+    assert await db_session.get(Order, vacation_order_id) is None
+    # 3. Приказ отзыва удалён каскадом
+    assert await db_session.get(Order, recall_order_id) is None
+    # 4. Корректировка отзыва удалена
+    adj_result = await db_session.execute(
+        select(VacationAdjustment).where(
+            VacationAdjustment.adjustment_order_id == recall_order_id
+        )
+    )
+    assert len(list(adj_result.scalars().all())) == 0
+    # 5. Транзакции отзыва удалены
+    tx_result = await db_session.execute(
+        select(VacationPeriodTransaction).where(
+            VacationPeriodTransaction.adjustment_order_id == recall_order_id
+        )
+    )
+    assert len(list(tx_result.scalars().all())) == 0

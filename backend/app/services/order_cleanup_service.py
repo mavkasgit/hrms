@@ -169,6 +169,22 @@ class OrderCleanupService:
         )
         adj_ids = [row[0] for row in adj_ids_result.all()]
 
+        # Приказы корректировок (отзыв/перенос/продление), которые станут
+        # сиротами после удаления отпусков, созданных этим приказом. Собираем
+        # ДО удаления корректировок (шаг ниже) — иначе выборка опустеет.
+        adj_order_conditions = [VacationAdjustment.original_order_id == order_id]
+        if to_delete_ids:
+            adj_order_conditions.append(VacationAdjustment.vacation_id.in_(to_delete_ids))
+        adj_order_ids_result = await db.execute(
+            select(VacationAdjustment.adjustment_order_id)
+            .where(
+                VacationAdjustment.adjustment_order_id != order_id,
+                or_(*adj_order_conditions),
+            )
+            .distinct()
+        )
+        adj_order_ids = [row[0] for row in adj_order_ids_result.all()]
+
         if adj_ids:
             # Сбрасываем adjustment_id в транзакциях
             await db.execute(
@@ -180,6 +196,11 @@ class OrderCleanupService:
             await db.execute(
                 sa_delete(VacationAdjustment).where(VacationAdjustment.id.in_(adj_ids))
             )
+
+        # 6b. Каскад: удаляем приказы корректировок, привязанные к отпускам,
+        # созданным этим приказом. Иначе приказ отзыва остаётся в реестре сиротой.
+        for adj_order_id in adj_order_ids:
+            await self.hard_delete_order(db, adj_order_id)
 
         # 7. Находим и обновляем отпуска (отмена отзывов/переносов/продлений)
         to_update_result = await db.execute(

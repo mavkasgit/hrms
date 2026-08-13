@@ -241,10 +241,25 @@ async def get_vacation_deletion_preview(
 ):
     from app.core.exceptions import VacationNotFoundError
     from sqlalchemy import select, func
+    from sqlalchemy.orm import selectinload
+    from app.models.vacation import Vacation
     from app.models.vacation_period_transaction import VacationPeriodTransaction
     from app.models.vacation_adjustment import VacationAdjustment
 
-    vacation = await vacation_repository.get_by_id(db, vacation_id)
+    # Eager-load заказов корректировок: обращение к не загруженному relationship
+    # в async-контексте кидает MissingGreenlet → preview 500 «Загрузка...».
+    preview_result = await db.execute(
+        select(Vacation)
+        .options(
+            selectinload(Vacation.employee),
+            selectinload(Vacation.order),
+            selectinload(Vacation.recall_order),
+            selectinload(Vacation.postpone_order),
+            selectinload(Vacation.extension_order),
+        )
+        .where(Vacation.id == vacation_id, Vacation.is_deleted == False)
+    )
+    vacation = preview_result.scalar_one_or_none()
     if not vacation:
         raise VacationNotFoundError(vacation_id)
 
