@@ -1,8 +1,15 @@
 import { Page, Locator, expect } from '@playwright/test'
 
 /**
- * POM: /vacations — list search, row helpers, additional days edit.
- * Form create / period lifecycle UI methods removed (unused; covered by API pytest).
+ * POM: /vacations — list search, row helpers, additional days edit,
+ * create form, and vacation adjustment forms (recall / extension / postpone).
+ *
+ * Adjustment forms (recall/extension/postpone) use the same OO draft flow as
+ * orders: «Создать приказ» → серверный draft → OnlyOffice-редактор →
+ * «Сохранить приказ» (self-commit) → сигнал `hrms:draft-order-save` →
+ * родитель вызывает vacation-эндпоинт (recall/extend/postpone/create).
+ * `createOrderOpenEditor` открывает попап редактора (config уже загружен),
+ * сохранение и ожидание vacation-эндпоинта делает spec (saveDraftOrderFromEditor).
  */
 export class VacationsPage {
   readonly page: Page
@@ -109,5 +116,75 @@ export class VacationsPage {
     await expect(input).toBeVisible({ timeout: 3000 })
     await input.fill(String(newValue))
     await input.press('Enter')
+  }
+
+  // =========================================================================
+  // Vacation adjustment forms (recall / extension / postpone)
+  // =========================================================================
+
+  /** Открыть страницу корректировки отпуска: /vacations/recall|extension|postpone. */
+  async gotoAdjustment(kind: 'recall' | 'extension' | 'postpone') {
+    const path = kind === 'recall' ? 'recall' : kind === 'extension' ? 'extension' : 'postpone'
+    const headings: Record<typeof kind, string> = {
+      recall: 'Отзыв из отпуска',
+      extension: 'Продление отпуска',
+      postpone: 'Перенос отпуска',
+    }
+    await this.page.goto(`/vacations/${path}`)
+    await expect(
+      this.page.getByRole('heading', { name: headings[kind], exact: true }),
+    ).toBeVisible({ timeout: 15_000 })
+  }
+
+  /** Выбрать отпуск сотрудника в VacationSelector (dropdown по ФИО). */
+  async selectVacation(employeeName: string) {
+    const search = this.page.getByPlaceholder('Поиск по сотруднику, типу отпуска, приказу...')
+    await expect(search).toBeVisible({ timeout: 15_000 })
+    await search.fill(employeeName)
+    const option = this.page.locator('div.cursor-pointer').filter({ hasText: employeeName }).first()
+    await expect(option).toBeVisible({ timeout: 15_000 })
+    await option.click()
+  }
+
+  /**
+   * Заполнить поля-даты по aria-label (ДД.ММ.ГГГГ) + номер приказа.
+   * Каждая дата рендерится DocumentDatePicker (aria-label = label).
+   */
+  async fillAdjustmentForm(
+    dateFields: Array<{ label: RegExp; value: string }>,
+    orderNumber: string,
+  ) {
+    for (const { label, value } of dateFields) {
+      const input = this.page.getByLabel(label)
+      await expect(input).toBeEnabled({ timeout: 15_000 })
+      await input.click()
+      await input.fill(value)
+      await input.press('Enter')
+    }
+    const numInput = this.page.getByLabel(/Номер приказа/i)
+    await expect(numInput).toBeVisible({ timeout: 15_000 })
+    await numInput.fill(orderNumber)
+    await numInput.press('Tab').catch(() => {})
+  }
+
+  /**
+   * «Создать приказ» → OnlyOffice-редактор (попап) с серверным draft.
+   * Возвращает editor page, готовый к «Сохранить приказ» (config уже загружен).
+   * Сам редактор self-commits при сохранении и шлёт сигнал родителю (#31/#86),
+   * поэтому vacation-эндпоинт вызовет родительская страница — его ждёт spec.
+   */
+  async createOrderOpenEditor(): Promise<Page> {
+    const popupPromise = this.page.waitForEvent('popup', { timeout: 60_000 })
+    await this.page.getByRole('button', { name: 'Создать приказ' }).click()
+    const popup = await popupPromise
+    await popup.waitForURL(/\/drafts\/[0-9a-f-]+\/edit-docx/, { timeout: 60_000 })
+    await popup.waitForResponse(
+      (r) =>
+        r.url().includes('/onlyoffice/config') &&
+        r.url().includes('/drafts/') &&
+        r.ok(),
+      { timeout: 60_000 },
+    )
+    return popup
   }
 }

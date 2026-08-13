@@ -450,9 +450,17 @@ class VacationPeriodRepository:
         period.used_days_manual = manual_used
         period.used_days = auto_used + manual_used
 
-        total_days = (period.main_days or 0) + (period.additional_days or 0)
-        remaining = total_days - period.used_days
-        period.remaining_days = max(remaining, 0)
+        # remaining_days — маркер закрытого периода (NULL = открыт, число = закрыт).
+        # Признак закрытия — наличие manual/partial_close транзакции (last_manual),
+        # а не текущее значение remaining_days: иначе пересчёт «закрывал» открытые
+        # периоды (проставлял им остаток) и auto_use_days переставал их списывать,
+        # уводя дни в будущие периоды. Для открытых периодов остаток считается
+        # на лету как total - used_days, поэтому храним NULL.
+        if last_manual is not None:
+            total_days = (period.main_days or 0) + (period.additional_days or 0)
+            period.remaining_days = max(total_days - period.used_days, 0)
+        else:
+            period.remaining_days = None
 
         order_rows = await db.execute(
             select(VacationPeriodTransaction.order_id, VacationPeriodTransaction.order_number)

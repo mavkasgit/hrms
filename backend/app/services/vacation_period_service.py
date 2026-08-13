@@ -756,6 +756,12 @@ class VacationPeriodService:
         await self._repo.delete_auto_transactions_for_employee(db, employee_id)
         await self._repo.delete_manual_transactions_for_employee(db, employee_id)
 
+        # ВАЖНО: восстанавливаем ручные закрытия ДО автосписания. Иначе старые
+        # закрытые периоды остаются открытыми на момент распределения отпусков,
+        # и auto_use_days уводит дни в самый старый открытый период вместо
+        # рабочего года, к которому относится отпуск.
+        await self._reapply_manual_closures(db, employee_id)
+
         # Получаем все трудовые отпуска сотрудника (не удалённые, не отменённые, с приказом)
         result = await db.execute(
             select(Vacation)
@@ -793,8 +799,6 @@ class VacationPeriodService:
                 original_order_id=vacation.order_id,
                 is_recalc=True,
             )
-
-        await self._reapply_manual_closures(db, employee_id)
 
         await db.commit()
         return await self.get_employee_periods(db, employee_id)
