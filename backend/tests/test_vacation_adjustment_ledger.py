@@ -294,6 +294,89 @@ async def test_recalculate_allocates_vacation_to_its_work_year(
     assert orm_periods[2].remaining_days is None
 
 
+async def test_recalculate_days_only_preserves_manual_closures(
+    db_session,
+    create_employee,
+):
+    """recalculate_vacation_days_only не трогает ручные закрытия.
+
+    Пересчёт только авто-списаний не должен пересоздавать manual/partial_close
+    транзакции: их id, даты и дни остаются оригинальными (в отличие от
+    recalculate_periods, который пересоздаёт периоды целиком).
+    """
+    from app.models.vacation_period import VacationPeriod
+    from app.repositories.vacation_period_repository import VacationPeriodRepository
+
+    employee = await create_employee(hire_date=date(2024, 1, 15), additional_vacation_days=0)
+
+    await vacation_period_service.ensure_periods_for_employee(
+        db_session,
+        employee.id,
+        employee.hire_date,
+        employee.additional_vacation_days or 0,
+    )
+
+    periods = await vacation_period_service.get_employee_periods(db_session, employee.id)
+    year_1 = next(p for p in periods if p.year_number == 1)
+    year_2 = next(p for p in periods if p.year_number == 2)
+
+    # Закрываем первый год — создаётся partial_close транзакция.
+    await vacation_period_service.close_period(db_session, year_1.period_id)
+
+    # Отпуск во втором году.
+    created = await _create_paid_vacation(db_session, employee.id, date(2025, 6, 1), date(2025, 6, 6))
+
+    # Сохраняем ручное закрытие ДО пересчёта.
+    manual_before = list(
+        (
+            await db_session.execute(
+                select(VacationPeriodTransaction).where(
+                    VacationPeriodTransaction.period_id == year_1.period_id,
+                    VacationPeriodTransaction.transaction_type.in_(("manual_close", "partial_close")),
+                )
+            )
+        ).scalars().all()
+    )
+    assert len(manual_before) == 1
+    manual_id, manual_created, manual_days = (
+        manual_before[0].id,
+        manual_before[0].created_at,
+        manual_before[0].days_count,
+    )
+
+    # Имитируем баг: у открытого второго периода проставлен remaining_days.
+    repo = VacationPeriodRepository()
+    year_2_orm = await repo.get_by_id(db_session, year_2.period_id)
+    assert year_2_orm is not None
+    year_2_orm.remaining_days = 24
+    await db_session.flush()
+
+    # Пересчитываем только авто-списания.
+    await vacation_period_service.recalculate_vacation_days_only(db_session, employee.id)
+
+    # Ручное закрытие не изменилось (id, дата, дни те же).
+    manual_after = list(
+        (
+            await db_session.execute(
+                select(VacationPeriodTransaction).where(
+                    VacationPeriodTransaction.period_id == year_1.period_id,
+                    VacationPeriodTransaction.transaction_type.in_(("manual_close", "partial_close")),
+                )
+            )
+        ).scalars().all()
+    )
+    assert len(manual_after) == 1
+    assert manual_after[0].id == manual_id
+    assert manual_after[0].created_at == manual_created
+    assert manual_after[0].days_count == manual_days
+
+    # Открытый период самовосстановлен: remaining_days = NULL, дни отпуска на месте.
+    year_2_after = await repo.get_by_id(db_session, year_2.period_id)
+    assert year_2_after is not None
+    assert year_2_after.remaining_days is None
+    assert year_2_after.used_days_auto == created["days_count"]
+
+
 async def test_delete_order_recomputes_only_affected_periods_without_full_rebuild(
     db_session,
     create_employee,
