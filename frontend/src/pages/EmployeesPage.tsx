@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { Plus, Filter, Pencil, Upload, ScrollText, Tag, Building2, Printer, Users } from "lucide-react"
+import { Plus, Filter, Pencil, Upload, ScrollText, Tag, Building2, Printer, Users, Download } from "lucide-react"
 import { Button } from "@/shared/ui/button"
+import { useToast } from "@/shared/ui/use-toast"
 import { SortableFilterHeader } from "@/shared/ui/sortable-filter-header"
 import { useTableQueryEngine, type ColumnSortDef, type SortConfig } from "@/shared/hooks/useTableQueryEngine"
 import { nextMultiSortConfigs } from "@/shared/lib/multiSort"
@@ -18,6 +19,7 @@ import {
   TableRow,
 } from "@/shared/ui/table"
 import { useEmployees } from "@/entities/employee/useEmployees"
+import { exportEmployees } from "@/entities/employee/api"
 import { EmployeeTableFilter } from "@/features/employee-search/EmployeeTableFilter"
 import { EmployeeForm } from "@/features/employee-form"
 import { ImportEmployeesModal } from "@/features/import-employees/ImportEmployeesModal"
@@ -81,6 +83,9 @@ export function EmployeesPage() {
 
   // Print preview state
   const [printOpen, setPrintOpen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+
+  const { addToast } = useToast()
 
   const { data: allTags } = useTags()
 
@@ -242,6 +247,22 @@ export function EmployeesPage() {
     setFormOpen(true)
   }
 
+  const handleExport = async () => {
+    setIsExporting(true)
+    try {
+      await exportEmployees()
+    } catch (e) {
+      console.error("Ошибка экспорта сотрудников:", e)
+      addToast({
+        title: "Ошибка экспорта",
+        description: "Не удалось выгрузить сотрудников в Excel.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   const handleFormClose = (open: boolean) => {
     setFormOpen(open)
     if (!open) setEditingEmployee(null)
@@ -252,6 +273,10 @@ export function EmployeesPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Сотрудники</h1>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExport} disabled={isExporting}>
+            <Download className="mr-2 h-4 w-4" />
+            {isExporting ? "Экспорт..." : "Экспорт"}
+          </Button>
           <Button variant="outline" onClick={() => setPrintOpen(true)}>
             <Printer className="mr-2 h-4 w-4" />
             Печать

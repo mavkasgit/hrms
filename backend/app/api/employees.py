@@ -1,4 +1,5 @@
-from typing import List, Optional
+import io
+from typing import Any, Callable, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -172,6 +173,163 @@ async def search_employees(
         "per_page": len(employees),
         "total_pages": 1,
     }
+
+
+def _calculate_age(birth_date: Optional[date]) -> Optional[int]:
+    if not birth_date:
+        return None
+    today = date.today()
+    age = today.year - birth_date.year
+    if (today.month, today.day) < (birth_date.month, birth_date.day):
+        age -= 1
+    return age
+
+
+@router.get("/export")
+async def export_employees_xlsx(
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Экспорт всех сотрудников (активные + уволенные) в .xlsx.
+
+    Даты пишутся как Excel-даты; включён суммарный остаток отпуска
+    (как показывает страница отпусков). Мягко-удалённые не выгружаются.
+    """
+    from urllib.parse import quote
+
+    from fastapi.responses import StreamingResponse
+    from sqlalchemy.orm import joinedload
+
+    from app.models.employee import Employee
+    from app.services.vacation_service import vacation_service
+
+    result = await db.execute(
+        select(Employee)
+        .options(joinedload(Employee.department), joinedload(Employee.position))
+        .where(Employee.is_deleted == False)  # noqa: E712
+        .order_by(Employee.name.asc())
+    )
+    employees = list(result.unique().scalars().all())
+
+    tags_map = await _load_employee_tags(db, [e.id for e in employees])
+
+    # Остаток отпуска считаем тем же путём, что и страница отпусков.
+    # archive_filter="all" не фильтрует по is_dismissed — возвращаются все
+    # не-удалённые (активные + уволенные). Побочный эффект: недостающие
+    # периоды отпусков автосоздаются — осознанно, для консистентности с UI.
+    summary = await vacation_service.get_employees_summary(db, archive_filter="all")
+    remaining_map = {item["id"]: item.get("remaining_days") for item in summary}
+
+    buffer = _build_employees_export_xlsx(employees, tags_map, remaining_map)
+
+    filename = f"Сотрудники_{date.today().isoformat()}.xlsx"
+    content_disposition = f"attachment; filename*=UTF-8''{quote(filename)}"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": content_disposition},
+    )
+
+
+def _build_employees_export_xlsx(
+    employees: list,
+    tags_map: dict[int, list[TagRef]],
+    remaining_map: dict[int, Optional[int]],
+) -> io.BytesIO:
+    """Формирует .xlsx со всеми полями сотрудников (openpyxl).
+
+    Третьим элементом каждой колонки идёт Excel number_format для ячеек
+    (None — обычный текст/число). Дата-колонки пишутся как настоящие даты.
+    """
+    import json as json_module
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    columns: list[tuple[str, Callable[[Any], Any], Optional[str]]] = [
+        ("ID", lambda e: e.id, None),
+        ("Таб. №", lambda e: e.tab_number, None),
+        ("ФИО", lambda e: e.name, None),
+        ("Подразделение", lambda e: e.department.name if e.department else None, None),
+        ("Должность", lambda e: e.position.name if e.position else None, None),
+        ("Теги", lambda e: ", ".join(t.name for t in tags_map.get(e.id, [])) or None, None),
+        ("Дата приёма", lambda e: e.hire_date, "DD.MM.YYYY"),
+        ("Дата рождения", lambda e: e.birth_date, "DD.MM.YYYY"),
+        ("Возраст", lambda e: _calculate_age(e.birth_date), None),
+        ("Пол", lambda e: e.gender, None),
+        ("Гражданство РФ", lambda e: "Да" if e.citizenship else "Нет", None),
+        ("Резидент РФ", lambda e: "Да" if e.residency else "Нет", None),
+        ("Пенсионер", lambda e: "Да" if e.pensioner else "Нет", None),
+        ("Форма оплаты", lambda e: e.payment_form, None),
+        ("Ставка", lambda e: e.rate, None),
+        ("Тип занятости", lambda e: e.employment_type, None),
+        ("Начало контракта", lambda e: e.contract_start, "DD.MM.YYYY"),
+        ("Конец контракта", lambda e: e.contract_end, "DD.MM.YYYY"),
+        ("Номер контракта", lambda e: e.contract_number, None),
+        ("Персональный номер", lambda e: e.personal_number, None),
+        ("СНИЛС", lambda e: e.insurance_number, None),
+        ("Паспорт", lambda e: e.passport_number, None),
+        ("Доп. дни отпуска", lambda e: e.additional_vacation_days, None),
+        ("Остаток отпуска", lambda e: remaining_map.get(e.id), None),
+        ("Статус", lambda e: "Уволен" if e.is_dismissed else "Активен", None),
+        ("Дата увольнения", lambda e: e.dismissal_date, "DD.MM.YYYY"),
+        ("Причина увольнения", lambda e: e.dismissal_reason, None),
+        ("Уволен кем", lambda e: e.dismissed_by, None),
+        (
+            "Дата увольнения (метка)",
+            lambda e: e.dismissed_at.replace(tzinfo=None) if e.dismissed_at else None,
+            "DD.MM.YYYY HH:MM",
+        ),
+        (
+            "Переводы",
+            lambda e: json_module.dumps(e.transfers, ensure_ascii=False) if e.transfers else None,
+            None,
+        ),
+        (
+            "Создан",
+            lambda e: e.created_at.replace(tzinfo=None) if e.created_at else None,
+            "DD.MM.YYYY HH:MM",
+        ),
+        (
+            "Обновлён",
+            lambda e: e.updated_at.replace(tzinfo=None) if e.updated_at else None,
+            "DD.MM.YYYY HH:MM",
+        ),
+    ]
+
+    workbook = Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.title = "Сотрудники"
+    sheet.append([header for header, _, _ in columns])
+
+    for employee in employees:
+        sheet.append([getter(employee) for _, getter, _ in columns])
+
+    for row in sheet.iter_rows(min_row=2):
+        for cell, (_, _, number_format) in zip(row, columns):
+            if number_format:
+                cell.number_format = number_format
+
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+
+    for column_cells in sheet.columns:
+        max_len = 0
+        for cell in column_cells[:200]:
+            if cell.value is not None:
+                max_len = max(max_len, len(str(cell.value)))
+        column_idx = column_cells[0].column or 1
+        letter = get_column_letter(column_idx)
+        sheet.column_dimensions[letter].width = min(max(max_len + 2, 10), 48)
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer
 
 
 @router.get("/departments")

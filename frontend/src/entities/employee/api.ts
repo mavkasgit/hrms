@@ -1,4 +1,5 @@
 import api from "@/shared/api/client"
+import { downloadFile } from "@/shared/api/download"
 import type {
   Employee,
   EmployeeListResponse,
@@ -32,6 +33,11 @@ export async function searchEmployees(q: string) {
     params: { q },
   })
   return data
+}
+
+export async function exportEmployees(): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10)
+  await downloadFile("/employees/export", `Сотрудники_${today}.xlsx`)
 }
 
 export async function fetchEmployee(employeeId: number) {
