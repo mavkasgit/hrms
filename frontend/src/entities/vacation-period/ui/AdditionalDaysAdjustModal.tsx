@@ -139,7 +139,7 @@ const reopened = useMemo(() => {
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="space-y-1.5">
+<div className="space-y-1.5">
             <label className="text-sm font-medium">Новые доп. дни</label>
             <Input
               type="number"
@@ -147,6 +147,7 @@ const reopened = useMemo(() => {
               value={newValue}
               onChange={(e) => setNewValue(e.target.value)}
               placeholder="0"
+              className="w-20"
             />
           </div>
 
@@ -184,7 +185,7 @@ const reopened = useMemo(() => {
                   onChange={() => setFrom("specific")}
                   className="accent-blue-600"
                 />
-                С указанного периода
+                С выбранного периода
               </label>
 {from === "specific" && (
                 <Select
