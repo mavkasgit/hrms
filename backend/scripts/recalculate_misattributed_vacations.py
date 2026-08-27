@@ -107,21 +107,25 @@ async def run(apply: bool, employee_id: int | None = None) -> None:
                 name = employee.name if employee else f"id={emp_id}"
                 print(f"Сотрудник {emp_id} ({name})")
 
-                before = await vacation_period_service.get_employee_periods(db, emp_id)
-                print("  Балансы ДО пересчёта:")
-                for line in _format_balance(before):
-                    print(line)
+                try:
+                    before = await vacation_period_service.get_employee_periods(db, emp_id)
+                    print("  Балансы ДО пересчёта:")
+                    for line in _format_balance(before):
+                        print(line)
 
-                if not apply:
-                    continue
+                    if not apply:
+                        continue
 
-                await vacation_period_service.recalculate_periods(db, emp_id)
+                    await vacation_period_service.recalculate_periods(db, emp_id)
 
-                after = await vacation_period_service.get_employee_periods(db, emp_id)
-                print("  Балансы ПОСЛЕ пересчёта:")
-                for line in _format_balance(after):
-                    print(line)
-                print()
+                    after = await vacation_period_service.get_employee_periods(db, emp_id)
+                    print("  Балансы ПОСЛЕ пересчёта:")
+                    for line in _format_balance(after):
+                        print(line)
+                    print()
+                except Exception as e:  # noqa: BLE001 — один сотрудник не должен прерывать весь прогон
+                    print(f"  ОШИБКА пересчёта сотрудника: {e}")
+                    await db.rollback()
 
             if not apply:
                 print("\nDry-run: изменения не вносились. Запустите с --apply, чтобы пересчитать.")

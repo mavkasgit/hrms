@@ -29,21 +29,10 @@ async def _period(db, employee_id, year_number):
     return result.scalar_one()
 
 
-async def test_finds_and_recalculates_misattributed_employee(
-    db_session,
-    create_employee,
-    create_order,
-    create_vacation,
-    create_vacation_period,
-):
-    """Сотрудник с мизатрибуцией находится и пересчитывается по FIFO.
-
-    Сценарий (эффект старого бага):
-    - период 1 частично закрыт (остаток 21);
-    - отпуск 27 дн. начинается в периоде 1;
-    - старый баг пропустил частично закрытый период и списал все 27 дн. во 2-й.
-    После пересчёта: 21 дн. уходит в период 1 (доедает до 0), 6 дн. во 2-й.
-    """
+async def _setup_misattributed(db_session, create_employee, create_order, create_vacation, create_vacation_period):
+    """Создаёт сотрудника с мизатрибуцией автосписания (эффект старого бага):
+    период 1 частично закрыт (остаток 21), отпуск 27 дн. начинается в периоде 1,
+    но все 27 дн. списаны во 2-й период. Возвращает (employee, order)."""
     employee = await create_employee(hire_date=date(2024, 1, 15))
     order = await create_order(employee=employee, order_number="200")
 
@@ -99,6 +88,27 @@ async def test_finds_and_recalculates_misattributed_employee(
         recompute_totals=True,
     )
     await db_session.flush()
+    return employee, order
+
+
+async def test_finds_and_recalculates_misattributed_employee(
+    db_session,
+    create_employee,
+    create_order,
+    create_vacation,
+    create_vacation_period,
+):
+    """Сотрудник с мизатрибуцией находится и пересчитывается по FIFO.
+
+    Сценарий (эффект старого бага):
+    - период 1 частично закрыт (остаток 21);
+    - отпуск 27 дн. начинается в периоде 1;
+    - старый баг пропустил частично закрытый период и списал все 27 дн. во 2-й.
+    После пересчёта: 21 дн. уходит в период 1 (доедает до 0), 6 дн. во 2-й.
+    """
+    employee, _ = await _setup_misattributed(
+        db_session, create_employee, create_order, create_vacation, create_vacation_period
+    )
 
     # Скрипт находит сотрудника.
     assert await find_misattributed_employee_ids(db_session) == [employee.id]
@@ -155,58 +165,9 @@ async def test_recalculate_is_idempotent(
     create_vacation_period,
 ):
     """Повторный пересчёт даёт тот же результат (идемпотентность)."""
-    employee = await create_employee(hire_date=date(2024, 1, 15))
-    order = await create_order(employee=employee, order_number="201")
-
-    p1 = await create_vacation_period(
-        employee=employee,
-        period_start=date(2024, 1, 15),
-        period_end=date(2025, 1, 14),
-        main_days=24,
-        additional_days=0,
-        used_days=0,
-        remaining_days=None,
-        year_number=1,
+    employee, _ = await _setup_misattributed(
+        db_session, create_employee, create_order, create_vacation, create_vacation_period
     )
-    p2 = await create_vacation_period(
-        employee=employee,
-        period_start=date(2025, 1, 15),
-        period_end=date(2026, 1, 14),
-        main_days=24,
-        additional_days=0,
-        used_days=0,
-        remaining_days=None,
-        year_number=2,
-    )
-
-    await vacation_period_service.partial_close_period(db_session, p1.id, remaining_days=21)
-    await db_session.refresh(p1)
-
-    vacation = await create_vacation(
-        employee=employee,
-        start_date=date(2024, 6, 1),
-        end_date=date(2024, 6, 27),
-        days_count=27,
-        vacation_type="Трудовой",
-        order_id=order.id,
-    )
-
-    repo = VacationPeriodRepository()
-    await repo.add_used_days(db_session, p2.id, 27, order.id, order.order_number)
-    await repo.add_transaction(
-        db_session,
-        period_id=p2.id,
-        days_count=27,
-        transaction_type="vacation_use",
-        order_id=order.id,
-        order_number=order.order_number,
-        vacation_id=vacation.id,
-        original_order_id=order.id,
-        source_type="vacation",
-        description="Автосписание (мизатрибуция)",
-        recompute_totals=True,
-    )
-    await db_session.flush()
 
     await vacation_period_service.recalculate_periods(db_session, employee.id)
 
