@@ -555,6 +555,9 @@ async def test_future_period_overdraft_becomes_current_balance(
         assert future_period.used_days == 8
         assert future_period.used_days_auto == 8
         assert future_period.remaining_days == -8, f"Future remaining should be -8, got {future_period.remaining_days}"
+        # Перерасход без закрытия (used < total) — период НЕ закрыт, несмотря на
+        # отрицательный «остаток на дату».
+        assert future_period.is_closed is False
 
     # === ШАГ 2: Дата 15.06.2026 — 3-й период ТЕКУЩИЙ (6 месяцев прошло) ===
     with freeze_time("2026-06-15"):
@@ -660,3 +663,60 @@ async def test_future_period_with_partial_close_and_date_transition(
         # Прошлый: display_total = 24, remaining = 2 (явно установлен)
         assert past_period.total_days == 24
         assert past_period.remaining_days == 2, f"Expected 2, got {past_period.remaining_days}"
+
+
+async def test_is_closed_classification_by_full_balance(db_session, create_employee):
+    """is_closed: закрыт только когда полный остаток 0 (все дни использованы или
+    закрыты вручную). Частично закрытый (остаток > 0) и перерасход без закрытия —
+    не закрыты, независимо от отображения (остаток «на дату» может быть отрицательным).
+    """
+    employee = await create_employee(
+        hire_date=date(2024, 1, 15),
+        additional_vacation_days=0,
+    )
+
+    await vacation_period_service.ensure_periods_for_employee(
+        db_session,
+        employee.id,
+        employee.hire_date,
+        employee.additional_vacation_days,
+    )
+
+    repo = VacationPeriodRepository()
+    periods = await vacation_period_service.get_employee_periods(db_session, employee.id)
+    first = next(p for p in periods if p.year_number == 1)
+    second = next(p for p in periods if p.year_number == 2)
+
+    # 1. Открытый период без операций → не закрыт
+    assert first.is_closed is False
+
+    # 2. Частичное закрытие с остатком > 0 → не закрыт
+    partial = await vacation_period_service.partial_close_period(
+        db_session,
+        first.period_id,
+        remaining_days=5,
+    )
+    assert partial.is_closed is False
+    after_partial = next(
+        p for p in await vacation_period_service.get_employee_periods(db_session, employee.id)
+        if p.period_id == first.period_id
+    )
+    assert after_partial.is_closed is False
+
+    # 3. Полное закрытие (остаток 0) → закрыт
+    closed = await vacation_period_service.close_period(db_session, first.period_id)
+    assert closed.is_closed is True
+    after_close = next(
+        p for p in await vacation_period_service.get_employee_periods(db_session, employee.id)
+        if p.period_id == first.period_id
+    )
+    assert after_close.is_closed is True
+
+    # 4. Все дни израсходованы отпусками (used >= total) без ручного закрытия → закрыт
+    await repo.add_used_days(db_session, second.period_id, 30)
+    after_used = next(
+        p for p in await vacation_period_service.get_employee_periods(db_session, employee.id)
+        if p.period_id == second.period_id
+    )
+    assert after_used.used_days == 30
+    assert after_used.is_closed is True

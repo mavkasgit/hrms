@@ -270,8 +270,8 @@ function EmployeeHistoryRow({
   const deleteManualClosureTransactionMutation = useDeleteManualClosureTransaction()
 
   // Определяем, есть ли открытые периоды (до early return для соблюдения Rules of Hooks)
-  const hasOpenPeriods = periods.filter(p => p.remaining_days > 0).length > 0
-  const hasClosedPeriods = periods.filter(p => p.remaining_days === 0).length > 0
+  const hasOpenPeriods = periods.filter(p => !p.is_closed).length > 0
+  const hasClosedPeriods = periods.filter(p => p.is_closed).length > 0
 
   useEffect(() => {
     if (periods && !hasOpenPeriods && hasClosedPeriods) {
@@ -337,8 +337,8 @@ function EmployeeHistoryRow({
   // Разделяем периоды на открытые и закрытые
   // Сортируем от новых к старым по period_start (корректно для N серий)
   const sortedPeriods = [...periods].sort((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime())
-  const openPeriods = sortedPeriods.filter(p => p.remaining_days > 0)
-  const closedPeriods = sortedPeriods.filter(p => p.remaining_days === 0)
+  const openPeriods = sortedPeriods.filter(p => !p.is_closed)
+  const closedPeriods = sortedPeriods.filter(p => p.is_closed)
 
   const displayedPeriods = showClosedPeriods ? sortedPeriods : openPeriods
 
@@ -376,7 +376,7 @@ function EmployeeHistoryRow({
 
       {displayedPeriods.map((p, idx) => {
         const periodVacations = p.vacations || []
-        const isClosed = p.remaining_days === 0
+        const isClosed = p.is_closed
         const isClosing = closingPeriodId === p.period_id
         
         // Определяем нужен ли разделитель перед этим периодом

@@ -32,3 +32,17 @@ class VacationPeriod(Base):
 
     employee = relationship("Employee", back_populates="vacation_periods")
     transactions = relationship("VacationPeriodTransaction", back_populates="period", order_by="VacationPeriodTransaction.created_at", cascade="all, delete-orphan")
+
+    def is_closed(self) -> bool:
+        """Закрыт ли период: полный остаток 0.
+
+        Единый источник правила «открыт/закрыт». Не зависит от отображения
+        (остаток «на дату»/начислено): закрыт только когда все доступные дни
+        либо израсходованы отпусками (used >= total), либо закрыты вручную
+        (manual/partial_close с остатком 0). Частично закрытый (остаток > 0) — не закрыт.
+        """
+        total = (self.main_days or 0) + (self.additional_days or 0)
+        used = self.used_days or 0
+        if self.remaining_days is not None:
+            return self.remaining_days <= 0
+        return used >= total

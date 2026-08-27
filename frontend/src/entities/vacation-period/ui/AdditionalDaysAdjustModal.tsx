@@ -107,7 +107,7 @@ export function AdditionalDaysAdjustModal({
 
   const reopened = useMemo(() => {
     if (isNaN(newValueNum)) return []
-    return affected.filter((p) => p.remaining_days === 0 && newValueNum > p.additional_days)
+    return affected.filter((p) => p.is_closed && newValueNum > p.additional_days)
   }, [affected, newValueNum])
 
   const deltaSum = useMemo(() => {
@@ -261,7 +261,7 @@ export function AdditionalDaysAdjustModal({
                       <SelectContent>
                         {periodsDesc.map((p) => (
                           <SelectItem key={p.period_id} value={String(p.period_id)}>
-                            {p.year_number}-й г. ({formatDate(p.period_start)} — {formatDate(p.period_end)}) · доп. {p.additional_days} дн.{p.remaining_days === 0 ? " · закрыт" : ""}
+                            {p.year_number}-й г. ({formatDate(p.period_start)} — {formatDate(p.period_end)}) · доп. {p.additional_days} дн.{p.is_closed ? " · закрыт" : ""}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -347,7 +347,7 @@ export function AdditionalDaysAdjustModal({
                               <div className="font-medium">{p.year_number}-й г.</div>
                               <div className="text-xs text-muted-foreground">
                                 {formatDate(p.period_start)} — {formatDate(p.period_end)}
-                                {p.remaining_days === 0 ? " · закрыт" : ""}
+                                {p.is_closed ? " · закрыт" : ""}
                               </div>
                             </td>
                             <td className="px-2 py-1.5">

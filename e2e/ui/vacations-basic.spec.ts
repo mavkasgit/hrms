@@ -101,11 +101,60 @@ test.describe('Vacations basic @ui', () => {
     expect(year1After!.used_days).toBe(year1After!.total_days)
     expect(year1After!.remaining_days).toBe(0)
   })
+
+  test('@ui vacations: partially-closed current period stays visible in open list', async ({
+    page,
+    apiOps,
+  }) => {
+    const u = apiOps.uid()
+    const empName = `e2e-emp-vac-cur-${u}`
+
+    // Текущий период начался ~7 месяцев назад: при частичном закрытии остаток
+    // «на дату» (начислено - использовано) становится отрицательным, но период
+    // НЕ закрыт и должен оставаться видимым в списке открытых.
+    const emp = await apiOps.createEmployee({
+      name: empName,
+      hire_date: monthsAgoISO(7),
+      contract_start: monthsAgoISO(7),
+      additional_vacation_days: 0,
+    })
+
+    const periods = await apiOps.getPeriods(emp.id)
+    const year1 = periods.find((p) => p.year_number === 1)
+    expect(year1).toBeTruthy()
+
+    const vacPage = new VacationsPage(page)
+    const historyRow = await expandEmployeeHistory(page, empName, vacPage)
+
+    // Частично закрываем текущий период (остаток 3, списано 21).
+    await partialClosePeriod(historyRow, page, 3)
+
+    // Период остался видимым в списке открытых (не спрятан как «закрытый»).
+    await expect(historyRow.getByText('1-й г.', { exact: true }).first()).toBeVisible({
+      timeout: 5_000,
+    })
+
+    // Закрытых периодов нет — кнопка «Показать закрытые периоды» отсутствует.
+    await expect(
+      historyRow.getByRole('button', { name: /Показать закрытые периоды/ }),
+    ).toHaveCount(0)
+  })
 })
 
 // ---------------------------------------------------------------------------
 // UI-хелперы (стиль vacation-lifecycle-oo)
 // ---------------------------------------------------------------------------
+
+/** Дата «первое число N месяцев назад» в формате YYYY-MM-DD. */
+function monthsAgoISO(n: number): string {
+  const d = new Date()
+  d.setDate(1)
+  d.setMonth(d.getMonth() - n)
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
 
 async function usedDays(apiOps: ApiOperations, empId: number): Promise<number> {
   const balance = await apiOps.getBalance(empId)

@@ -60,6 +60,7 @@ class VacationPeriodBalance(BaseModel):
     order_ids: Optional[str] = None
     order_numbers: Optional[str] = None  # Номера приказов для отображения
     remaining_days: int
+    is_closed: bool = False  # Полный остаток 0 (все дни использованы или закрыты вручную)
     vacations: list[dict] = []  # Отпуска, которые списали дни из этого периода
     transactions: list[VacationPeriodTransactionResponse] = []
 

@@ -322,8 +322,10 @@ class VacationRepository:
             full_days = period.main_days + period.additional_days
             used_days = period.used_days or 0
 
-            # Закрытый период - used >= total или явно сохранённый remaining_days
-            is_closed = used_days >= full_days or period.remaining_days is not None
+            # Закрытый период — полный остаток 0: все дни использованы отпусками
+            # или закрыты вручную (manual/partial_close с остатком 0).
+            # Частично закрытый (остаток > 0) — не закрыт.
+            is_closed = period.is_closed()
 
             if is_closed:
                 used = used_days

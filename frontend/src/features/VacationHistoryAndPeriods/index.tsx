@@ -66,8 +66,8 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
   const [deleteTxId, setDeleteTxId] = useState<number | null>(null)
   const deleteManualClosureTransactionMutation = useDeleteManualClosureTransaction()
 
-  const hasOpenPeriods = periods.filter(p => p.remaining_days > 0).length > 0
-  const hasClosedPeriods = periods.filter(p => p.remaining_days === 0).length > 0
+  const hasOpenPeriods = periods.filter(p => !p.is_closed).length > 0
+  const hasClosedPeriods = periods.filter(p => p.is_closed).length > 0
 
   useEffect(() => {
     if (periods && !hasOpenPeriods && hasClosedPeriods) {
@@ -111,8 +111,8 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
   if (!history || !periods?.length) return <div className="px-4 py-3 text-sm text-muted-foreground">Нет данных о периодах и истории отпусков</div>
 
   const sortedPeriods = [...periods].sort((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime())
-  const openPeriods = sortedPeriods.filter(p => p.remaining_days > 0)
-  const closedPeriods = sortedPeriods.filter(p => p.remaining_days === 0)
+  const openPeriods = sortedPeriods.filter(p => !p.is_closed)
+  const closedPeriods = sortedPeriods.filter(p => p.is_closed)
   const displayedPeriods = showClosedPeriods ? sortedPeriods : openPeriods
 
   return (
@@ -137,7 +137,7 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
 
       {displayedPeriods.map((p, idx) => {
         const periodVacations = p.vacations || []
-        const isClosed = p.remaining_days === 0
+        const isClosed = p.is_closed
         const prevPeriod = idx > 0 ? displayedPeriods[idx - 1] : null
         const dividerDate = prevPeriod ? getSeriesDivider(p.period_start, prevPeriod.period_start) : null
 

@@ -42,6 +42,7 @@ export interface VacationPeriod {
   order_ids: string | null
   order_numbers: string | null
   remaining_days: number
+  is_closed: boolean
   vacations?: VacationPeriodVacation[]
   transactions?: VacationPeriodTransaction[]
 }

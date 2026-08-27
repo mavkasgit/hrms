@@ -79,6 +79,7 @@ class VacationPeriodService:
             order_ids=period.order_ids,
             order_numbers=period.order_numbers,
             remaining_days=period.main_days + period.additional_days,
+            is_closed=period.is_closed(),
             vacations=[],
         )
 
@@ -277,6 +278,7 @@ class VacationPeriodService:
             order_ids=period.order_ids,
             order_numbers=period.order_numbers,
             remaining_days=period.remaining_days if period.remaining_days is not None else total - used_days,
+            is_closed=period.is_closed(),
             vacations=[],
         )
 
@@ -395,6 +397,7 @@ class VacationPeriodService:
                     order_ids=period.order_ids,
                     order_numbers=period.order_numbers,
                     remaining_days=calculated_remaining,
+                    is_closed=period.is_closed(),
                     vacations=period_vacations,
                     transactions=tx_list,
                 )
@@ -508,6 +511,7 @@ class VacationPeriodService:
             order_ids=period.order_ids,
             order_numbers=period.order_numbers,
             remaining_days=total - used_days,
+            is_closed=period.is_closed(),
             vacations=[],
         )
 
@@ -526,10 +530,11 @@ class VacationPeriodService:
 
         В отличие от apply_additional_days_increase (граница с первого/последнего/
         выбранного) позволяет точечно поменять значение на любом периоде — в т.ч.
-        «откатить» один период назад после массового применения. НЕ пишет в
-        vacation_additional_days_adjustments, чтобы не сдвигать границу синхронизации
-        (effective_from из последней записи). У закрытых периодов остаток
-        пересчитывается как total - used (переоткрытие на дельту).
+        «откатить» один период назад после массового применения. Каждая изменённая
+        правка пишется в vacation_additional_days_adjustments с is_period_edit=True:
+        попадает в историю, но НЕ сдвигает границу синхронизации (get_latest
+        игнорирует точечные записи). У закрытых периодов остаток пересчитывается
+        как total - used (переоткрытие на дельту).
         """
         from app.schemas.vacation_period import VacationPeriodBulkAdjustItem
         from app.repositories.employee_repository import EmployeeRepository
@@ -549,11 +554,26 @@ class VacationPeriodService:
             period = by_id.get(item.period_id)
             if not period:
                 raise HTTPException(status_code=404, detail="Период не найден у сотрудника")
-            if period.additional_days != item.additional_days:
+            old_value = period.additional_days
+            if old_value != item.additional_days:
                 await self._repo.update_additional_days(db, item.period_id, item.additional_days)
-                changed[item.period_id] = (period.additional_days, item.additional_days)
+                changed[item.period_id] = (old_value, item.additional_days)
 
         if changed:
+            for period_id, (old_value, new_value) in changed.items():
+                period = by_id[period_id]
+                await vacation_additional_days_adjustment_repository.create(
+                    db,
+                    {
+                        "employee_id": employee_id,
+                        "effective_from": period.period_start,
+                        "old_value": old_value,
+                        "new_value": new_value,
+                        "is_period_edit": True,
+                        "reason": None,
+                        "created_by": created_by,
+                    },
+                )
             await EmployeeRepository()._add_audit_entry(
                 db,
                 employee_id,
@@ -707,6 +727,7 @@ class VacationPeriodService:
                 order_ids=period.order_ids,
                 order_numbers=period.order_numbers,
                 remaining_days=0,
+                is_closed=True,
                 vacations=[],
             )
 
@@ -765,6 +786,7 @@ class VacationPeriodService:
             order_ids=period.order_ids,
             order_numbers=period.order_numbers,
             remaining_days=remaining_days,
+            is_closed=period.is_closed(),
             vacations=[],
         )
 

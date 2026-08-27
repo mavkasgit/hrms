@@ -114,6 +114,7 @@ async def set_period_used_days(
     await db.refresh(period)
 
     total = period.main_days + period.additional_days
+    remaining = total - period.used_days
     return VacationPeriodBalance(
         period_id=period.id,
         year_number=period.year_number,
@@ -127,7 +128,8 @@ async def set_period_used_days(
         used_days_manual=period.used_days_manual or 0,
         order_ids=period.order_ids,
         order_numbers=period.order_numbers,
-        remaining_days=total - period.used_days,
+        remaining_days=remaining,
+        is_closed=period.is_closed(),
         vacations=[],
     )
 
