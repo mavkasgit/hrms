@@ -75,6 +75,45 @@ async def test_recall_creates_reversal_and_adjusted_use(db_session, create_emplo
     assert sum(tx.days_count for tx in txs) == 4
 
 
+async def test_recalculate_days_only_after_recall_no_fk_error(db_session, create_employee):
+    """Пересчёт автосписаний после отзыва не падает на FK reversed_transaction_id.
+
+    Regression: delete_auto_transactions_for_employee пытался удалить
+    авто-транзакцию, на которую ссылается reversal-транзакция отзыва
+    (reversed_transaction_id) → IntegrityError fk_vpt_reversed_tx.
+    """
+    employee = await create_employee(hire_date=date(2024, 1, 15), additional_vacation_days=0)
+    await vacation_period_service.ensure_periods_for_employee(
+        db_session,
+        employee.id,
+        employee.hire_date,
+        employee.additional_vacation_days or 0,
+    )
+
+    created = await _create_paid_vacation(db_session, employee.id, date(2026, 4, 1), date(2026, 4, 11))
+    vacation_id = created["id"]
+
+    await vacation_service.recall_vacation(
+        db_session,
+        vacation_id,
+        {
+            "recall_date": date(2026, 4, 5),
+            "order_date": date(2026, 4, 4),
+            "order_number": "R-RECALC",
+            "comment": "regression",
+        },
+        "admin",
+    )
+
+    await vacation_period_service.recalculate_vacation_days_only(db_session, employee.id)
+
+    tx_result = await db_session.execute(
+        select(VacationPeriodTransaction).where(VacationPeriodTransaction.vacation_id == vacation_id)
+    )
+    txs = list(tx_result.scalars().all())
+    assert sum(tx.days_count for tx in txs) == 4
+
+
 async def test_adjustment_is_idempotent_by_adjustment_order_id(db_session, create_employee):
     employee = await create_employee(hire_date=date(2024, 1, 15))
     created = await _create_paid_vacation(db_session, employee.id, date(2026, 5, 1), date(2026, 5, 10))
