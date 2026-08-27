@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { PlusCircle } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -27,6 +28,11 @@ function formatBoundary(from: AdditionalDaysFrom, boundaryDate: string | undefin
   if (from === "first") return "с первого периода"
   if (from === "last") return "с последнего (текущего)"
   return `с указанного (${formatDate(boundaryDate)})`
+}
+
+function formatPeriodRef(p: VacationPeriod | undefined): string {
+  if (!p) return ""
+  return `${p.year_number}-й г. (${formatDate(p.period_start)} — ${formatDate(p.period_end)})`
 }
 
 export function AdditionalDaysAdjustModal({
@@ -66,11 +72,16 @@ export function AdditionalDaysAdjustModal({
   const newValueNum = parseInt(newValue, 10)
   const isValid = !isNaN(newValueNum) && newValueNum >= 0 && (from !== "specific" || specificPeriodId !== null)
 
-  const boundaryDate = useMemo(() => {
+const boundaryDate = useMemo(() => {
     if (from === "first") return periods[0]?.period_start
     if (from === "last") return periods[periods.length - 1]?.period_start
     return periods.find((p) => p.period_id === specificPeriodId)?.period_start
   }, [from, periods, specificPeriodId])
+
+  const boundaryPeriod = useMemo(
+    () => periods.find((p) => p.period_start === boundaryDate),
+    [periods, boundaryDate],
+  )
 
   const affected = useMemo(() => {
     if (!boundaryDate || isNaN(newValueNum)) return []
@@ -139,7 +150,7 @@ const reopened = useMemo(() => {
             />
           </div>
 
-          <div className="space-y-1.5">
+<div className="space-y-1.5">
             <label className="text-sm font-medium">Применить с</label>
             <div className="space-y-1.5 text-sm">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -149,7 +160,10 @@ const reopened = useMemo(() => {
                   onChange={() => setFrom("first")}
                   className="accent-blue-600"
                 />
-                С первого периода <span className="text-muted-foreground">(за весь стаж)</span>
+                <span>
+                  С первого периода
+                  <span className="text-muted-foreground"> (за весь стаж) — {formatPeriodRef(periods[0])}</span>
+                </span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -158,7 +172,10 @@ const reopened = useMemo(() => {
                   onChange={() => setFrom("last")}
                   className="accent-blue-600"
                 />
-                С последнего (текущего)
+                <span>
+                  С последнего (текущего)
+                  <span className="text-muted-foreground"> — {formatPeriodRef(periods[periods.length - 1])}</span>
+                </span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -169,27 +186,30 @@ const reopened = useMemo(() => {
                 />
                 С указанного периода
               </label>
-              {from === "specific" && (
-                <select
-                  value={specificPeriodId ?? ""}
-                  onChange={(e) => setSpecificPeriodId(e.target.value ? Number(e.target.value) : null)}
-                  className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm"
+{from === "specific" && (
+                <Select
+                  value={specificPeriodId ? String(specificPeriodId) : "none"}
+                  onValueChange={(v) => setSpecificPeriodId(v !== "none" ? Number(v) : null)}
                 >
-                  <option value="">Выберите период</option>
-                  {[...periods].reverse().map((p) => (
-                    <option key={p.period_id} value={p.period_id}>
-                      {p.year_number}-й г. ({formatDate(p.period_start)} — {formatDate(p.period_end)}) · доп. {p.additional_days} дн.{p.remaining_days === 0 ? " · закрыт" : ""}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger className="h-8 w-full">
+                    <SelectValue placeholder="Выберите период" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[...periods].reverse().map((p) => (
+                      <SelectItem key={p.period_id} value={String(p.period_id)}>
+                        {p.year_number}-й г. ({formatDate(p.period_start)} — {formatDate(p.period_end)}) · доп. {p.additional_days} дн.{p.remaining_days === 0 ? " · закрыт" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
             </div>
           </div>
 
-          {isValid && affected.length > 0 && (
+{isValid && affected.length > 0 && (
             <div className="rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-900 dark:text-blue-100 space-y-0.5">
               <div>
-                Затронуто периодов: <b>{affected.length}</b>
+                Затронуто периодов: <b>{affected.length}</b> (с {formatPeriodRef(boundaryPeriod)})
               </div>
               {reopened.length > 0 && (
                 <div className="text-amber-700 dark:text-amber-300">
@@ -208,11 +228,11 @@ const reopened = useMemo(() => {
           )}
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Причина (необязательно)</label>
+<label className="text-sm font-medium">Причина (необязательно)</label>
             <Input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Например: повышение доп. дней по приказу"
+              placeholder="Например: перевод на другую должность, смена условий труда"
             />
           </div>
 
