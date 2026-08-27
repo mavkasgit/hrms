@@ -54,3 +54,28 @@ export interface VacationPeriodBreakdown {
   auto: { order_id: number; days: number }[]
   manual_days: number
 }
+
+export interface AdditionalDaysAdjustment {
+  id: number
+  employee_id: number
+  effective_from: string
+  old_value: number
+  new_value: number
+  reason?: string | null
+  created_by?: string | null
+  created_at?: string | null
+}
+
+export type AdditionalDaysFrom = "first" | "last" | "specific"
+
+export interface AdditionalDaysIncreaseRequest {
+  new_value: number
+  from_period: AdditionalDaysFrom
+  period_id?: number | null
+  reason?: string | null
+}
+
+export interface AdditionalDaysIncreaseResponse {
+  adjustment: AdditionalDaysAdjustment
+  periods: VacationPeriod[]
+}

@@ -262,6 +262,46 @@ async function apiAdjustPeriod(
   return resp.json()
 }
 
+export type AdditionalDaysAdjustmentRecord = {
+  id: number
+  employee_id: number
+  effective_from: string
+  old_value: number
+  new_value: number
+  reason?: string | null
+  created_by?: string | null
+  created_at?: string | null
+}
+
+export type AdditionalDaysIncreaseResult = {
+  adjustment: AdditionalDaysAdjustmentRecord
+  periods: VacationPeriod[]
+}
+
+async function apiGetAdditionalDaysHistory(
+  request: APIRequestContext,
+  employeeId: number
+): Promise<AdditionalDaysAdjustmentRecord[]> {
+  const resp = await request.get(
+    `${API_BASE}/api/employees/${employeeId}/additional-days/history`
+  )
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
+async function apiIncreaseAdditionalDays(
+  request: APIRequestContext,
+  employeeId: number,
+  data: Record<string, unknown>
+): Promise<AdditionalDaysIncreaseResult> {
+  const resp = await request.post(
+    `${API_BASE}/api/employees/${employeeId}/additional-days/increase`,
+    { data }
+  )
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
 async function apiGetOrderTypes(request: APIRequestContext): Promise<OrderTypeRecord[]> {
   const resp = await request.get(`${API_BASE}/api/order-types`)
   expect(resp.status()).toBe(200)
@@ -507,6 +547,11 @@ export type ApiOperations = {
   closePeriod: (periodId: number) => Promise<VacationPeriod>
   partialClosePeriod: (periodId: number, remainingDays: number) => Promise<VacationPeriod>
   adjustPeriod: (periodId: number, additionalDays: number) => Promise<VacationPeriod>
+  getAdditionalDaysHistory: (empId: number) => Promise<AdditionalDaysAdjustmentRecord[]>
+  increaseAdditionalDays: (
+    empId: number,
+    data: Record<string, unknown>
+  ) => Promise<AdditionalDaysIncreaseResult>
   // Orders
   getOrderTypes: () => Promise<OrderTypeRecord[]>
   getOrderTypeId: (params: {
@@ -702,6 +747,10 @@ export const test = base.extend<ApiFixtures>({
         apiPartialClosePeriod(apiRequest, periodId, remainingDays),
       adjustPeriod: async (periodId: number, additionalDays: number) =>
         apiAdjustPeriod(apiRequest, periodId, additionalDays),
+      getAdditionalDaysHistory: async (empId: number) =>
+        apiGetAdditionalDaysHistory(apiRequest, empId),
+      increaseAdditionalDays: async (empId: number, data: Record<string, unknown>) =>
+        apiIncreaseAdditionalDays(apiRequest, empId, data),
 
       getOrderTypes: async () => apiGetOrderTypes(apiRequest),
       getOrderTypeId: async (params: { code?: string; name?: string; visibleOnly?: boolean }) =>

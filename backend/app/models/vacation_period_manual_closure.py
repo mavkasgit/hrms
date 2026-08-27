@@ -18,6 +18,7 @@ class VacationPeriodManualClosure(Base):
     days_count: Mapped[int] = mapped_column(Integer, nullable=False)
     closure_type: Mapped[str] = mapped_column(String(30), nullable=False, default="manual_close")
     remaining_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    additional_days_at_closure: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     order_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("orders.id"), nullable=True)
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)

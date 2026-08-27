@@ -3,13 +3,13 @@ import { VacationsPage } from '../pages/VacationsPage'
 import { createAuthenticatedRequest } from '../helpers/api-request'
 
 /**
- * Inline edit of additional vacation days on /vacations.
- * Legacy: add-vacation-days.spec.ts
+ * Доп. дни отпуска через модалку «Управление доп. днями» (#123).
+ * Legacy: add-vacation-days.spec.ts (inline edit заменён на модалку).
  */
 test.describe('Additional vacation days @ui', () => {
   test.setTimeout(60_000)
 
-  test('@ui vacations: inline edit additional days and persist via API', async ({
+  test('@ui vacations: set additional days via modal and persist via API', async ({
     page,
     apiOps,
     playwright,
@@ -40,12 +40,13 @@ test.describe('Additional vacation days @ui', () => {
     const newValue = oldValue + 5
     const responsePromise = page.waitForResponse(
       (resp) =>
-        resp.url().includes('/api/employees') &&
-        resp.request().method() === 'PUT' &&
+        resp.url().includes('/additional-days/increase') &&
+        resp.request().method() === 'POST' &&
         resp.status() === 200
     )
 
-    await vacPage.editAddDays(addDaysCell, newValue)
+    await vacPage.openAddDaysModal(addDaysCell)
+    await vacPage.setAddDaysInModal(newValue)
     await responsePromise
 
     const { request, dispose } = await createAuthenticatedRequest(playwright)
@@ -54,6 +55,12 @@ test.describe('Additional vacation days @ui', () => {
       expect(apiResponse.status()).toBe(200)
       const updatedEmp = await apiResponse.json()
       expect(updatedEmp.additional_vacation_days).toBe(newValue)
+
+      const history = await request.get(`/api/employees/${emp.id}/additional-days/history`)
+      expect(history.status()).toBe(200)
+      const records = await history.json()
+      expect(records.length).toBe(1)
+      expect(records[0].new_value).toBe(newValue)
     } finally {
       await dispose()
     }

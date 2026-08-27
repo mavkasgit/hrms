@@ -1,6 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { fetchVacationPeriods, adjustVacationPeriod, closePeriod, partialClosePeriod, recalculateVacationPeriods, deleteManualClosureTransaction } from "./api"
-import type { VacationPeriodAdjust } from "./types"
+import {
+  fetchVacationPeriods,
+  adjustVacationPeriod,
+  closePeriod,
+  partialClosePeriod,
+  recalculateVacationPeriods,
+  deleteManualClosureTransaction,
+  fetchAdditionalDaysHistory,
+  applyAdditionalDaysIncrease,
+} from "./api"
+import type { VacationPeriodAdjust, AdditionalDaysIncreaseRequest } from "./types"
 
 export function useVacationPeriods(employeeId: number | null) {
   return useQuery({
@@ -87,6 +96,29 @@ export function useDeleteManualClosureTransaction() {
       queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
+    },
+  })
+}
+
+export function useAdditionalDaysHistory(employeeId: number | null) {
+  return useQuery({
+    queryKey: ["additional-days-history", employeeId],
+    queryFn: () => fetchAdditionalDaysHistory(employeeId!),
+    enabled: !!employeeId,
+  })
+}
+
+export function useApplyAdditionalDaysIncrease() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ employeeId, data }: { employeeId: number; data: AdditionalDaysIncreaseRequest }) =>
+      applyAdditionalDaysIncrease(employeeId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
+      queryClient.invalidateQueries({ queryKey: ["additional-days-history"] })
+      queryClient.invalidateQueries({ queryKey: ["employees"] })
     },
   })
 }

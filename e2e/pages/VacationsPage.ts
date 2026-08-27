@@ -107,15 +107,22 @@ export class VacationsPage {
     return row.locator(`td:nth-child(${colIndex + 1})`)
   }
 
-  async editAddDays(cell: Locator, newValue: number): Promise<void> {
+  /** Открыть модалку «Управление доп. днями» по кнопке в ячейке «Доп. дни». */
+  async openAddDaysModal(cell: Locator): Promise<void> {
     const button = cell.locator('button')
     await expect(button).toBeVisible()
     await button.click()
+    await expect(this.page.getByRole('dialog')).toBeVisible({ timeout: 5_000 })
+  }
 
-    const input = cell.locator('input')
-    await expect(input).toBeVisible({ timeout: 3000 })
+  /** Задать новое значение доп. дней в модалке и подтвердить («Применить»). */
+  async setAddDaysInModal(newValue: number): Promise<void> {
+    const dialog = this.page.getByRole('dialog')
+    const input = dialog.locator('input[type="number"]')
+    await expect(input).toBeVisible({ timeout: 3_000 })
     await input.fill(String(newValue))
-    await input.press('Enter')
+    await dialog.getByRole('button', { name: 'Применить' }).click()
+    await expect(dialog).toBeHidden({ timeout: 5_000 }).catch(() => {})
   }
 
   // =========================================================================

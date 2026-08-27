@@ -23,6 +23,11 @@ from app.schemas.employee import (
 )
 from app.schemas.vacation_period import VacationPeriodBalance
 from app.schemas.hire_date_adjustment import HireDateAdjustmentCreate, HireDateAdjustmentResponse
+from app.schemas.vacation_additional_days_adjustment import (
+    AdditionalDaysAdjustmentResponse,
+    AdditionalDaysIncreaseRequest,
+    AdditionalDaysIncreaseResponse,
+)
 from app.services.employee_service import employee_service
 from app.services.vacation_period_service import vacation_period_service
 from app.services.audit_log_service import read_audit_logs
@@ -577,6 +582,53 @@ async def list_hire_date_adjustments(
     adjustment_repo = HireDateAdjustmentRepository()
     adjustments = await adjustment_repo.get_by_employee(db, employee_id)
     return [HireDateAdjustmentResponse.model_validate(a) for a in adjustments]
+
+
+@router.get(
+    "/{employee_id:int}/additional-days/history",
+    response_model=list[AdditionalDaysAdjustmentResponse],
+)
+async def list_additional_days_adjustments(
+    employee_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """История изменений доп. дней отпуска сотрудника (новые → старые)."""
+    adjustments = await vacation_period_service.get_additional_days_adjustments(db, employee_id)
+    return [AdditionalDaysAdjustmentResponse.model_validate(a) for a in adjustments]
+
+
+@router.post(
+    "/{employee_id:int}/additional-days/increase",
+    response_model=AdditionalDaysIncreaseResponse,
+)
+async def apply_additional_days_increase(
+    employee_id: int,
+    data: AdditionalDaysIncreaseRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Изменить доп. дни отпуска с выбором границы применения (с какого периода)."""
+    employee = await employee_service.get_by_id(db, employee_id)
+    if not employee:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+
+    adjustment, periods = await vacation_period_service.apply_additional_days_increase(
+        db,
+        employee_id=employee_id,
+        new_value=data.new_value,
+        from_period=data.from_period,
+        period_id=data.period_id,
+        reason=data.reason,
+        created_by=current_user,
+    )
+    await db.commit()
+    await db.refresh(adjustment)
+
+    return AdditionalDaysIncreaseResponse(
+        adjustment=AdditionalDaysAdjustmentResponse.model_validate(adjustment),
+        periods=periods,
+    )
 
 
 @router.delete(

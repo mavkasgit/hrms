@@ -14,6 +14,9 @@ from app.repositories.vacation_adjustment_repository import VacationAdjustmentRe
 from app.repositories.vacation_period_manual_closure_repository import (
     VacationPeriodManualClosureRepository,
 )
+from app.repositories.vacation_additional_days_adjustment_repository import (
+    vacation_additional_days_adjustment_repository,
+)
 from app.schemas.vacation_period import VacationPeriodBalance
 
 MAIN_VACATION_DAYS = 24
@@ -30,6 +33,12 @@ class VacationPeriodService:
         """Возвращает дату начала для создания периодов: последнюю adjustment_date или hire_date."""
         latest = await self._adjustment_repo.get_latest(db, employee_id)
         return latest.adjustment_date if latest else hire_date
+
+    async def get_additional_days_effective_from(self, db: AsyncSession, employee_id: int) -> Optional[date]:
+        """Граница синхронизации доп. дней: period_start из последней записи
+        vacation_additional_days_adjustments, или None (синкаем все периоды)."""
+        latest = await vacation_additional_days_adjustment_repository.get_latest(db, employee_id)
+        return latest.effective_from if latest else None
 
     async def create_period(
         self,
@@ -114,6 +123,7 @@ class VacationPeriodService:
                         days_count=remaining,
                         closure_type="partial_close",
                         remaining_days=0,
+                        additional_days_at_closure=p.additional_days,
                         reason=f"Автоматическое закрытие при корректировке от {cutoff_date}: Было—{remaining} дн., остаток—0 дн.",
                     )
                     await self._repo.add_transaction(
@@ -142,6 +152,10 @@ class VacationPeriodService:
         today = date.today()
         existing = await self._repo.get_by_employee(db, employee_id)
 
+        # Граница синхронизации доп. дней: периоды старее effective_from
+        # не перезаписываются значением из карточки сотрудника (#123).
+        additional_effective_from = await self.get_additional_days_effective_from(db, employee_id)
+
         # Получаем все точки начала серий
         boundaries = await self._get_series_boundaries(db, employee_id, hire_date)
 
@@ -163,6 +177,8 @@ class VacationPeriodService:
             # Все серии кроме последней — только обновляем additional_days
             for series_start in boundaries[:-1]:
                 for period in series_periods[series_start]:
+                    if additional_effective_from and period.period_start < additional_effective_from:
+                        continue
                     if period.additional_days != additional_days:
                         await self._repo.update_additional_days(db, period.id, additional_days)
 
@@ -187,6 +203,8 @@ class VacationPeriodService:
             last_year = max(existing_years, default=0)
 
             for period in latest_periods:
+                if additional_effective_from and period.period_start < additional_effective_from:
+                    continue
                 if period.additional_days != additional_days:
                     await self._repo.update_additional_days(db, period.id, additional_days)
 
@@ -212,6 +230,8 @@ class VacationPeriodService:
             last_year = max(existing_years, default=0)
 
             for period in existing:
+                if additional_effective_from and period.period_start < additional_effective_from:
+                    continue
                 if period.additional_days != additional_days:
                     await self._repo.update_additional_days(db, period.id, additional_days)
 
@@ -422,8 +442,19 @@ class VacationPeriodService:
             total_days = (period.main_days or 0) + (period.additional_days or 0)
             auto_used = period.used_days_auto or 0
             target_remaining = closure.remaining_days if closure.remaining_days is not None else 0
-            target_used_total = max(total_days - target_remaining, 0)
-            manual_days_to_apply = max(target_used_total - auto_used, 0)
+
+            if closure.additional_days_at_closure is not None:
+                # Снапшот доп. дней на момент закрытия (#123): сохраняем
+                # фактически израсходованные дни, чтобы дельта выросших доп. дней
+                # не «проглатывалась» (закрытый период переоткрывается на дельту).
+                total_at_closure = (period.main_days or 0) + closure.additional_days_at_closure
+                used_at_closure = max(total_at_closure - target_remaining, 0)
+                manual_days_to_apply = max(used_at_closure - auto_used, 0)
+                target_remaining = max(total_days - used_at_closure, 0)
+            else:
+                # Legacy-закрытие без снапшота — прежнее поведение.
+                target_used_total = max(total_days - target_remaining, 0)
+                manual_days_to_apply = max(target_used_total - auto_used, 0)
 
             # Если auto-списания уже дают целевой остаток, manual транзакция не нужна.
             if manual_days_to_apply <= 0:
@@ -479,6 +510,97 @@ class VacationPeriodService:
             remaining_days=total - used_days,
             vacations=[],
         )
+
+    async def get_additional_days_adjustments(self, db: AsyncSession, employee_id: int) -> list:
+        """История изменений доп. дней отпуска (новые → старые)."""
+        return await vacation_additional_days_adjustment_repository.get_by_employee(db, employee_id)
+
+    async def apply_additional_days_increase(
+        self,
+        db: AsyncSession,
+        employee_id: int,
+        new_value: int,
+        from_period: str = "last",
+        period_id: int | None = None,
+        reason: str | None = None,
+        created_by: str | None = None,
+    ):
+        """Изменить доп. дни отпуска сотрудника с выбором границы применения (#123).
+
+        Граница (from_period):
+          - "first" — с самого старого периода (за весь стаж);
+          - "last" — с самого нового существующего периода;
+          - "specific" — с указанного периода (period_id).
+
+        У закрытых периодов, попавших в диапазон, сохраняются фактически
+        израсходованные дни, а остаток пересчитывается как total - used:
+        рост доп. дней переоткрывает период на дельту (возврат в очередь
+        автосписания FIFO). Возвращает (adjustment, балансы периодов).
+        """
+        from app.repositories.employee_repository import EmployeeRepository
+
+        employee_repo = EmployeeRepository()
+        employee = await employee_repo.get_by_id(db, employee_id)
+        if not employee:
+            raise HTTPException(status_code=404, detail="Сотрудник не найден")
+        if not employee.hire_date:
+            raise HTTPException(status_code=400, detail="У сотрудника не указана дата приёма")
+        if new_value < 0:
+            raise HTTPException(status_code=400, detail="Доп. дни не могут быть отрицательными")
+
+        periods = await self._repo.get_by_employee(db, employee_id)
+        if not periods:
+            raise HTTPException(status_code=400, detail="У сотрудника нет трудовых периодов")
+
+        if from_period == "first":
+            boundary_start = min(p.period_start for p in periods)
+        elif from_period == "last":
+            boundary_start = max(p.period_start for p in periods)
+        else:
+            if period_id is None:
+                raise HTTPException(status_code=400, detail="Не указан период применения")
+            period = next((p for p in periods if p.id == period_id), None)
+            if not period:
+                raise HTTPException(status_code=404, detail="Период не найден у сотрудника")
+            boundary_start = period.period_start
+
+        old_value = employee.additional_vacation_days or 0
+
+        employee.additional_vacation_days = new_value
+        await db.flush()
+
+        for p in periods:
+            if p.period_start >= boundary_start and p.additional_days != new_value:
+                await self._repo.update_additional_days(db, p.id, new_value)
+
+        adjustment = await vacation_additional_days_adjustment_repository.create(
+            db,
+            {
+                "employee_id": employee_id,
+                "effective_from": boundary_start,
+                "old_value": old_value,
+                "new_value": new_value,
+                "reason": reason,
+                "created_by": created_by,
+            },
+        )
+
+        await employee_repo._add_audit_entry(
+            db,
+            employee_id,
+            "additional_days_adjust",
+            created_by or "system",
+            reason,
+            {
+                "old_value": old_value,
+                "new_value": new_value,
+                "effective_from": str(boundary_start),
+            },
+        )
+
+        await db.flush()
+        periods_balance = await self.get_employee_periods(db, employee_id)
+        return adjustment, periods_balance
 
     async def close_period(self, db: AsyncSession, period_id: int) -> VacationPeriodBalance:
         """Полное закрытие периода — делегирует partial_close с remaining_days=0."""
@@ -557,6 +679,7 @@ class VacationPeriodService:
                 days_count=new_manual,
                 closure_type="partial_close",
                 remaining_days=remaining_days,
+                additional_days_at_closure=period.additional_days,
                 reason=reason_text,
             )
             # Всегда создаём новую транзакцию — история операций важна.
@@ -735,6 +858,16 @@ class VacationPeriodService:
         # Получаем границы серий
         boundaries = await self._get_series_boundaries(db, employee_id, employee.hire_date)
 
+        # Снапшот доп. дней периодов старее границы применения (#123): пересоздание
+        # не должно «уплощить» их до текущего глобального значения.
+        additional_by_start: dict = {}
+        effective_from = await self.get_additional_days_effective_from(db, employee_id)
+        if effective_from:
+            periods_before = await self._repo.get_by_employee(db, employee_id)
+            for p in periods_before:
+                if p.period_start < effective_from:
+                    additional_by_start[p.period_start] = p.additional_days
+
         if len(boundaries) > 1:
             # Удаляем только периоды последней серии
             latest_boundary = boundaries[-1]
@@ -752,6 +885,13 @@ class VacationPeriodService:
             employee.hire_date,
             employee.additional_vacation_days or 0,
         )
+
+        # Возвращаем исторические доп. дни периодам старее границы (до пересоздания).
+        if additional_by_start:
+            restored_periods = await self._repo.get_by_employee(db, employee_id)
+            for p in restored_periods:
+                if p.period_start in additional_by_start and p.additional_days != additional_by_start[p.period_start]:
+                    await self._repo.update_additional_days(db, p.id, additional_by_start[p.period_start])
 
         await self._repo.delete_auto_transactions_for_employee(db, employee_id)
         await self._repo.delete_manual_transactions_for_employee(db, employee_id)

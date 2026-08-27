@@ -1,5 +1,12 @@
 import api from "@/shared/api/client"
-import type { VacationPeriod, VacationPeriodAdjust, VacationPeriodBreakdown } from "./types"
+import type {
+  VacationPeriod,
+  VacationPeriodAdjust,
+  VacationPeriodBreakdown,
+  AdditionalDaysAdjustment,
+  AdditionalDaysIncreaseRequest,
+  AdditionalDaysIncreaseResponse,
+} from "./types"
 
 export async function fetchVacationPeriods(employeeId: number): Promise<VacationPeriod[]> {
   const { data } = await api.get<VacationPeriod[]>("/vacation-periods", {
@@ -54,6 +61,24 @@ export async function recalculateVacationPeriods(employeeId: number): Promise<Va
 export async function deleteManualClosureTransaction(transactionId: number): Promise<VacationPeriod> {
   const { data } = await api.delete<VacationPeriod>(
     `/vacation-periods/transactions/${transactionId}`,
+  )
+  return data
+}
+
+export async function fetchAdditionalDaysHistory(employeeId: number): Promise<AdditionalDaysAdjustment[]> {
+  const { data } = await api.get<AdditionalDaysAdjustment[]>(
+    `/employees/${employeeId}/additional-days/history`,
+  )
+  return data
+}
+
+export async function applyAdditionalDaysIncrease(
+  employeeId: number,
+  payload: AdditionalDaysIncreaseRequest,
+): Promise<AdditionalDaysIncreaseResponse> {
+  const { data } = await api.post<AdditionalDaysIncreaseResponse>(
+    `/employees/${employeeId}/additional-days/increase`,
+    payload,
   )
   return data
 }

@@ -23,6 +23,7 @@ class VacationPeriodManualClosureRepository:
         days_count: int,
         closure_type: str,
         remaining_days: int | None = None,
+        additional_days_at_closure: int | None = None,
         order_id: int | None = None,
         reason: str | None = None,
         created_by: str | None = None,
@@ -40,6 +41,7 @@ class VacationPeriodManualClosureRepository:
             existing.days_count = days_count
             existing.closure_type = closure_type
             existing.remaining_days = remaining_days
+            existing.additional_days_at_closure = additional_days_at_closure
             existing.order_id = order_id
             existing.reason = reason
             if created_by:
@@ -55,6 +57,7 @@ class VacationPeriodManualClosureRepository:
             days_count=days_count,
             closure_type=closure_type,
             remaining_days=remaining_days,
+            additional_days_at_closure=additional_days_at_closure,
             order_id=order_id,
             reason=reason,
             created_by=created_by,

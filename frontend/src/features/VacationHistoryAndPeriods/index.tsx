@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { formatDate, formatDateTime } from "@/shared/utils/date"
-import { RefreshCw, X } from "lucide-react"
+import { PlusCircle, RefreshCw, X } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { Badge } from "@/shared/ui/badge"
@@ -17,7 +17,7 @@ import {
 import {
   useEmployeeVacationHistory,
 } from "@/entities/vacation"
-import { useVacationPeriods, useRecalculateVacationPeriods, useDeleteManualClosureTransaction } from "@/entities/vacation-period"
+import { useVacationPeriods, useRecalculateVacationPeriods, useDeleteManualClosureTransaction, AdditionalDaysAdjustModal } from "@/entities/vacation-period"
 import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
 import { VacationPeriodVacationRow } from "@/entities/vacation-period/ui/VacationPeriodVacationRow"
 import { downloadOrderDocx } from "@/entities/order"
@@ -61,6 +61,7 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
 
   const [showClosedPeriods, setShowClosedPeriods] = useState(false)
   const [recalculateAlertOpen, setRecalculateAlertOpen] = useState(false)
+  const [additionalDaysOpen, setAdditionalDaysOpen] = useState(false)
   const [isRecalculating, setIsRecalculating] = useState(false)
   const [deleteTxId, setDeleteTxId] = useState<number | null>(null)
   const deleteManualClosureTransactionMutation = useDeleteManualClosureTransaction()
@@ -122,10 +123,16 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
             {showClosedPeriods ? <>Скрыть закрытые периоды ({closedPeriods.length})</> : <>Показать закрытые периоды ({closedPeriods.length})</>}
           </Button>
         ) : <div />}
-        <Button variant="outline" size="sm" className="h-7 text-xs text-slate-500" onClick={() => setRecalculateAlertOpen(true)}>
-          <RefreshCw className="h-3 w-3 mr-1" />
-          Пересоздать трудовые периоды
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-7 text-xs text-slate-500" onClick={() => setAdditionalDaysOpen(true)}>
+            <PlusCircle className="h-3 w-3 mr-1" />
+            Доп. дни
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs text-slate-500" onClick={() => setRecalculateAlertOpen(true)}>
+            <RefreshCw className="h-3 w-3 mr-1" />
+            Пересоздать трудовые периоды
+          </Button>
+        </div>
       </div>
 
       {displayedPeriods.map((p, idx) => {
@@ -271,6 +278,13 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Модалка изменения доп. дней отпуска */}
+      <AdditionalDaysAdjustModal
+        employeeId={employeeId}
+        open={additionalDaysOpen}
+        onOpenChange={setAdditionalDaysOpen}
+      />
 
       {/* Диалог пересоздания периодов */}
       {recalculateAlertOpen && (

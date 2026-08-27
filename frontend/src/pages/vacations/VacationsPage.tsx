@@ -51,11 +51,10 @@ import {
   useHolidays,
   useVacationDeletionPreview,
 } from "@/entities/vacation"
-import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, useDeleteManualClosureTransaction, fetchVacationPeriods } from "@/entities/vacation-period"
+import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, useDeleteManualClosureTransaction, fetchVacationPeriods, AdditionalDaysAdjustModal } from "@/entities/vacation-period"
 import type { VacationPeriod } from "@/entities/vacation-period"
 import { VacationPeriodVacationRow } from "@/entities/vacation-period/ui/VacationPeriodVacationRow"
 import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
-import { useUpdateEmployee } from "@/entities/employee/useEmployees"
 import { EmployeeSearch } from "@/features/employee-search"
 import { useAllOrderTypes } from "@/entities/order"
 import { useCreateOrderDraft } from "@/entities/order"
@@ -946,9 +945,7 @@ export function VacationsPage() {
   const debouncedSearch = useDebouncedValue(searchName, 300)
   const [dismissalFilter, setDismissalFilter] = useState<"active" | "dismissed" | "all">("active")
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
-  const [editingAddDays, setEditingAddDays] = useState<number | null>(null)
-  const [editingAddDaysValue, setEditingAddDaysValue] = useState("")
-  const updateAddDaysMutation = useUpdateEmployee()
+  const [additionalDaysModalEmployee, setAdditionalDaysModalEmployee] = useState<number | null>(null)
 
   const [sortConfigs, setSortConfigs] = useState<SortConfig<SortField>[]>([])
   const [columnFilters, setColumnFilters] = useState<Record<SortField, Set<string>>>({
@@ -1496,49 +1493,14 @@ export function VacationsPage() {
                         )}
                       </TableCell>
                       <TableCell className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
-                        {editingAddDays === emp.id ? (
-                          <div className="w-16 h-8 rounded-md border border-input overflow-hidden">
-                            <Input
-                              autoFocus
-                              value={editingAddDaysValue}
-                              onChange={(e) => setEditingAddDaysValue(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault()
-                                  const num = parseInt(editingAddDaysValue, 10)
-                                  if (!isNaN(num) && num >= 0) {
-                                    updateAddDaysMutation.mutate({ employeeId: emp.id, data: { additional_vacation_days: num } })
-                                  }
-                                  setEditingAddDays(null)
-                                }
-                                if (e.key === "Escape") {
-                                  e.preventDefault()
-                                  setEditingAddDays(null)
-                                }
-                              }}
-                              onBlur={(e) => {
-                                // Не закрываем если это вызвано фокусом на кнопках ✓/✗
-                                if (!e.relatedTarget || !e.relatedTarget.closest('button')) {
-                                  const num = parseInt(editingAddDaysValue, 10)
-                                  if (!isNaN(num) && num >= 0) {
-                                    updateAddDaysMutation.mutate({ employeeId: emp.id, data: { additional_vacation_days: num } })
-                                  }
-                                  setEditingAddDays(null)
-                                }
-                              }}
-                              className="h-full w-full border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-center text-sm"
-                            />
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => { setEditingAddDays(emp.id); setEditingAddDaysValue(String(emp.additional_vacation_days ?? 0)) }}
-                            className="w-16 h-8 rounded-md border border-dashed border-gray-300 hover:border-solid hover:border-gray-400 text-sm font-semibold text-center hover:bg-muted/50 transition-colors flex items-center justify-center gap-1 group"
-                            title="Нажмите для редактирования"
-                          >
-                            {emp.additional_vacation_days ?? 0}
-                            <Pencil className="h-3 w-3 text-gray-400" />
-                          </button>
-                        )}
+                        <button
+                          onClick={() => setAdditionalDaysModalEmployee(emp.id)}
+                          className="w-16 h-8 rounded-md border border-dashed border-gray-300 hover:border-solid hover:border-gray-400 text-sm font-semibold text-center hover:bg-muted/50 transition-colors flex items-center justify-center gap-1 group"
+                          title="Управление доп. днями"
+                        >
+                          {emp.additional_vacation_days ?? 0}
+                          <Pencil className="h-3 w-3 text-gray-400" />
+                        </button>
                       </TableCell>
                       <TableCell className="px-4 py-2 text-muted-foreground">
                         {formatDate(emp.hire_date)}
@@ -1614,6 +1576,18 @@ export function VacationsPage() {
 
       {/* --- Orders registry dialog --- */}
       <OrdersRegistryModal open={registryOpen} onOpenChange={setRegistryOpen} year={new Date().getFullYear()} />
+
+      {/* --- Модалка управления доп. днями отпуска --- */}
+      {additionalDaysModalEmployee !== null && (
+        <AdditionalDaysAdjustModal
+          employeeId={additionalDaysModalEmployee}
+          open
+          onOpenChange={(open) => !open && setAdditionalDaysModalEmployee(null)}
+          currentAdditionalDays={
+            displayEmployees.find((emp) => emp.id === additionalDaysModalEmployee)?.additional_vacation_days ?? null
+          }
+        />
+      )}
     </div>
   )
 }

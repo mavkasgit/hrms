@@ -122,6 +122,13 @@ class VacationPeriodRepository:
         if not period:
             return None
         period.additional_days = additional_days
+        # У закрытого периода (remaining_days зафиксирован) сохраняем
+        # фактически израсходованные дни и пересчитываем остаток по инварианту
+        # remaining = total - used (#123): рост доп. дней переоткрывает период
+        # на дельту, и он снова попадает в очередь автосписания FIFO.
+        if period.remaining_days is not None:
+            total = (period.main_days or 0) + additional_days
+            period.remaining_days = max(total - (period.used_days or 0), 0)
         await db.flush()
         await db.refresh(period)
         return period
@@ -380,7 +387,18 @@ class VacationPeriodRepository:
                 VacationPeriodTransaction.transaction_type.in_(self.AUTO_TRANSACTION_TYPES),
             )
         )
-        for tx in tx_result.scalars().all():
+        auto_txs = list(tx_result.scalars().all())
+        auto_ids = [tx.id for tx in auto_txs]
+
+        # Self-reference from reversed_transaction_id can block deletes.
+        if auto_ids:
+            await db.execute(
+                update(VacationPeriodTransaction)
+                .where(VacationPeriodTransaction.reversed_transaction_id.in_(auto_ids))
+                .values(reversed_transaction_id=None)
+            )
+
+        for tx in auto_txs:
             await db.delete(tx)
         await db.flush()
         for period_id in period_ids:
@@ -400,7 +418,18 @@ class VacationPeriodRepository:
                 VacationPeriodTransaction.transaction_type.in_(("manual_close", "partial_close")),
             )
         )
-        for tx in tx_result.scalars().all():
+        manual_txs = list(tx_result.scalars().all())
+        manual_ids = [tx.id for tx in manual_txs]
+
+        # Self-reference from reversed_transaction_id can block deletes.
+        if manual_ids:
+            await db.execute(
+                update(VacationPeriodTransaction)
+                .where(VacationPeriodTransaction.reversed_transaction_id.in_(manual_ids))
+                .values(reversed_transaction_id=None)
+            )
+
+        for tx in manual_txs:
             await db.delete(tx)
         await db.flush()
         for period_id in period_ids:
