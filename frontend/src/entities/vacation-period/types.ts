@@ -62,6 +62,7 @@ export interface AdditionalDaysAdjustment {
   effective_from: string
   old_value: number
   new_value: number
+  is_period_edit?: boolean
   reason?: string | null
   created_by?: string | null
   created_at?: string | null

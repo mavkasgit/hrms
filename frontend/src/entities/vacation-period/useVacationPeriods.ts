@@ -134,6 +134,7 @@ export function useAdjustPeriodsAdditionalDays() {
       queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
+      queryClient.invalidateQueries({ queryKey: ["additional-days-history"] })
       queryClient.invalidateQueries({ queryKey: ["employees"] })
     },
   })

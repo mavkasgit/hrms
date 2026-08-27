@@ -12,6 +12,7 @@ class AdditionalDaysAdjustmentResponse(BaseModel):
     effective_from: date
     old_value: int
     new_value: int
+    is_period_edit: bool = False
     reason: Optional[str] = None
     created_by: Optional[str] = None
     created_at: Optional[datetime] = None

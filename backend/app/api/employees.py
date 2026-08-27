@@ -606,7 +606,7 @@ async def apply_additional_days_increase(
     employee_id: int,
     data: AdditionalDaysIncreaseRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     """Изменить доп. дни отпуска с выбором границы применения (с какого периода)."""
     employee = await employee_service.get_by_id(db, employee_id)
@@ -620,7 +620,7 @@ async def apply_additional_days_increase(
         from_period=data.from_period,
         period_id=data.period_id,
         reason=data.reason,
-        created_by=current_user,
+        created_by=_audit_actor(current_user),
     )
     await db.commit()
     await db.refresh(adjustment)
@@ -639,7 +639,7 @@ async def adjust_periods_additional_days(
     employee_id: int,
     data: VacationPeriodsBulkAdjustRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: str = Depends(_get_current_user_stub),
+    current_user: CurrentUser = Depends(_get_current_user_stub),
 ):
     """Ручная корректировка доп. дней по конкретным периодам сотрудника."""
     employee = await employee_service.get_by_id(db, employee_id)
@@ -650,7 +650,7 @@ async def adjust_periods_additional_days(
         db,
         employee_id=employee_id,
         items=data.items,
-        created_by=current_user,
+        created_by=_audit_actor(current_user),
     )
     await db.commit()
     return periods

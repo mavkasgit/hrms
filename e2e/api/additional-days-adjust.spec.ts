@@ -152,4 +152,41 @@ test.describe('Additional days adjust @api', () => {
     expectPeriodInvariant(year1After!)
     expect(year3After!.additional_days).toBe(1)
   })
+
+  test('@api repeated change: bulk reopen → bulk revert closes → manual single period again', async ({ apiOps }) => {
+    const emp = await apiOps.createEmployee({
+      hire_date: '2023-01-15',
+      contract_start: '2023-01-15',
+      additional_vacation_days: 1,
+    })
+
+    let periods = await apiOps.getPeriods(emp.id)
+    const year1 = periods.find((p: VacationPeriod) => p.year_number === 1)
+    expect(year1).toBeTruthy()
+    await apiOps.closePeriod(year1!.period_id)
+
+    // 1) «с первого»: 1 → 3 — переоткрытие на 2
+    await apiOps.increaseAdditionalDays(emp.id, { new_value: 3, from_period: 'first' })
+    periods = await apiOps.getPeriods(emp.id)
+    const afterFirst = periods.find((p: VacationPeriod) => p.year_number === 1)
+    expect(afterFirst!.remaining_days).toBe(2)
+
+    // 2) повторно «с первого»: 3 → 1 — откат, период снова закрыт
+    await apiOps.increaseAdditionalDays(emp.id, { new_value: 1, from_period: 'first' })
+    periods = await apiOps.getPeriods(emp.id)
+    const afterRevert = periods.find((p: VacationPeriod) => p.year_number === 1)
+    expect(afterRevert!.additional_days).toBe(1)
+    expect(afterRevert!.remaining_days).toBe(0)
+    expectPeriodInvariant(afterRevert!)
+
+    // 3) ручная правка одного периода: 1 → 2 — снова переоткрытие
+    const afterManual = await apiOps.adjustPeriodsAdditionalDays(emp.id, [
+      { period_id: afterRevert!.period_id, additional_days: 2 },
+    ])
+    const year1Final = afterManual.find((p: VacationPeriod) => p.year_number === 1)
+    expect(year1Final!.additional_days).toBe(2)
+    expect(year1Final!.used_days).toBe(25)
+    expect(year1Final!.remaining_days).toBe(1)
+    expectPeriodInvariant(year1Final!)
+  })
 })

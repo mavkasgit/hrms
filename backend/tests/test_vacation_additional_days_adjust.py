@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from app.models.vacation_period import VacationPeriod
 from app.repositories.vacation_period_repository import VacationPeriodRepository
+from app.schemas.vacation_period import VacationPeriodBulkAdjustItem
 from app.services.vacation_period_service import auto_use_days, vacation_period_service
 
 
@@ -456,6 +457,58 @@ async def test_adjust_periods_no_change_is_noop(db_session, create_employee):
     assert len(audits) == 0  # ничего не изменилось — аудит не пишем
 
 
+async def test_adjust_periods_recorded_in_history_without_shifting_boundary(db_session, create_employee):
+    """Точечные правки пишутся в историю (is_period_edit=True), но не двигают границу."""
+    from app.repositories.vacation_additional_days_adjustment_repository import (
+        vacation_additional_days_adjustment_repository,
+    )
+
+    employee = await create_employee(
+        hire_date=date(2024, 1, 15),
+        additional_vacation_days=1,
+    )
+    await _ensure_periods(db_session, employee)
+
+    periods = await _periods_by_year(db_session, employee.id)
+    await vacation_period_service.close_period(db_session, periods[1].id)
+
+    # Диапазонная правка «с последнего»: 1 → 3
+    await vacation_period_service.apply_additional_days_increase(
+        db_session, employee.id, new_value=3, from_period="last", created_by="u1"
+    )
+    boundary_from = await vacation_period_service.get_additional_days_effective_from(db_session, employee.id)
+    assert boundary_from == periods[3].period_start
+
+    # Точечная правка 1-го периода: 1 → 2
+    await vacation_period_service.adjust_periods_additional_days(
+        db_session,
+        employee.id,
+        [VacationPeriodBulkAdjustItem(period_id=periods[1].id, additional_days=2)],
+        created_by="u2",
+    )
+
+    # История: 2 записи (диапазонная + точечная), новые → старые
+    records = await vacation_additional_days_adjustment_repository.get_by_employee(db_session, employee.id)
+    assert len(records) == 2
+    assert records[0].is_period_edit is True
+    assert records[0].effective_from == periods[1].period_start
+    assert records[0].old_value == 1
+    assert records[0].new_value == 2
+    assert records[1].is_period_edit is False
+    assert records[1].new_value == 3
+
+    # Граница НЕ сдвинута: get_latest по-прежнему диапазонная запись
+    assert await vacation_period_service.get_additional_days_effective_from(db_session, employee.id) == periods[3].period_start
+
+    # ensure не перезаписывает 1-й период (остаётся 2)
+    await vacation_period_service.ensure_periods_for_employee(
+        db_session, employee.id, employee.hire_date, employee.additional_vacation_days or 0
+    )
+    after = await _periods_by_year(db_session, employee.id)
+    assert after[1].additional_days == 2
+    assert after[1].remaining_days == 1
+
+
 async def test_increase_records_adjustment_and_audit(db_session, create_employee):
     """Создаётся запись в vacation_additional_days_adjustments и аудит на сотруднике."""
     from sqlalchemy import select
@@ -542,3 +595,219 @@ async def test_increase_rejects_negative_value(db_session, create_employee):
             created_by="test_user",
         )
     assert exc_info.value.status_code == 400
+
+
+async def test_adjust_periods_single_period_reopen_repeat_reclose(db_session, create_employee):
+    """Ручная правка ОДНОГО периода: переоткрытие → повторное увеличение → откат до закрытия."""
+    employee = await create_employee(
+        hire_date=date(2024, 1, 15),
+        additional_vacation_days=1,
+    )
+    await _ensure_periods(db_session, employee)
+
+    periods = await _periods_by_year(db_session, employee.id)
+    await vacation_period_service.close_period(db_session, periods[1].id)
+    p1 = await VacationPeriodRepository().get_by_id(db_session, periods[1].id)
+    assert p1 is not None
+    assert p1.remaining_days == 0
+
+    # 1 → 2: переоткрытие на дельту 1
+    await vacation_period_service.adjust_periods_additional_days(
+        db_session,
+        employee.id,
+        [VacationPeriodBulkAdjustItem(period_id=p1.id, additional_days=2)],
+        created_by="test_user",
+    )
+    after1 = await VacationPeriodRepository().get_by_id(db_session, p1.id)
+    assert after1 is not None
+    assert after1.used_days == 25
+    assert after1.remaining_days == 1
+
+    # 2 → 3 (повторно): остаток растёт до 2
+    await vacation_period_service.adjust_periods_additional_days(
+        db_session,
+        employee.id,
+        [VacationPeriodBulkAdjustItem(period_id=p1.id, additional_days=3)],
+        created_by="test_user",
+    )
+    after2 = await VacationPeriodRepository().get_by_id(db_session, p1.id)
+    assert after2 is not None
+    assert after2.used_days == 25
+    assert after2.remaining_days == 2
+
+    # 3 → 1 (откат до исходного): период снова полностью закрыт
+    await vacation_period_service.adjust_periods_additional_days(
+        db_session,
+        employee.id,
+        [VacationPeriodBulkAdjustItem(period_id=p1.id, additional_days=1)],
+        created_by="test_user",
+    )
+    after3 = await VacationPeriodRepository().get_by_id(db_session, p1.id)
+    assert after3 is not None
+    assert after3.additional_days == 1
+    assert after3.used_days == 25
+    assert after3.remaining_days == 0
+
+
+async def test_increase_all_ranges_repeated_history_and_final_state(db_session, create_employee):
+    """Все диапазоны подряд (первый → последний → выбранный): история + итоговое состояние."""
+    from app.repositories.vacation_additional_days_adjustment_repository import (
+        vacation_additional_days_adjustment_repository,
+    )
+
+    employee = await create_employee(
+        hire_date=date(2020, 1, 15),
+        additional_vacation_days=1,
+    )
+    await _ensure_periods(db_session, employee)
+
+    # 1. «с первого»: все периоды → 2
+    await vacation_period_service.apply_additional_days_increase(
+        db_session, employee.id, new_value=2, from_period="first", created_by="u1"
+    )
+    # 2. «с последнего»: текущий+будущие → 4
+    await vacation_period_service.apply_additional_days_increase(
+        db_session, employee.id, new_value=4, from_period="last", created_by="u2"
+    )
+    # 3. «с указанного» (2-й период): 2-й и далее → 5
+    periods = await _periods_by_year(db_session, employee.id)
+    await vacation_period_service.apply_additional_days_increase(
+        db_session, employee.id, new_value=5, from_period="specific", period_id=periods[2].id, created_by="u3"
+    )
+
+    after = await _periods_by_year(db_session, employee.id)
+    # 1-й период не трогали последние две операции
+    assert after[1].additional_days == 2
+    # 2-й и далее — последнее значение
+    for year in range(2, max(after) + 1):
+        assert after[year].additional_days == 5
+
+    # Глобальное значение сотрудника — последнее
+    assert employee.additional_vacation_days == 5
+
+    # История: 3 записи, новые → старые
+    records = await vacation_additional_days_adjustment_repository.get_by_employee(db_session, employee.id)
+    assert len(records) == 3
+    assert [r.new_value for r in records] == [5, 4, 2]
+    assert [r.old_value for r in records] == [4, 2, 1]
+    assert [r.created_by for r in records] == ["u3", "u2", "u1"]
+
+    # Граница держится: повторный ensure не перезаписывает 1-й период
+    await vacation_period_service.ensure_periods_for_employee(
+        db_session, employee.id, employee.hire_date, 5
+    )
+    after_ensure = await _periods_by_year(db_session, employee.id)
+    assert after_ensure[1].additional_days == 2
+
+
+async def test_increase_then_decrease_same_range_repeated_closes_period(db_session, create_employee):
+    """Повторные изменения одного диапазона: увеличение → откат до закрытия → снова увеличение."""
+    employee = await create_employee(
+        hire_date=date(2024, 1, 15),
+        additional_vacation_days=1,
+    )
+    await _ensure_periods(db_session, employee)
+
+    periods = await _periods_by_year(db_session, employee.id)
+    await vacation_period_service.close_period(db_session, periods[1].id)
+
+    # «с первого»: 1 → 3 — переоткрытие на 2
+    await vacation_period_service.apply_additional_days_increase(
+        db_session, employee.id, new_value=3, from_period="first", created_by="u1"
+    )
+    p1 = await VacationPeriodRepository().get_by_id(db_session, periods[1].id)
+    assert p1 is not None
+    assert p1.used_days == 25
+    assert p1.remaining_days == 2
+
+    # снова «с первого»: 3 → 1 — откат до исходного, период снова закрыт
+    await vacation_period_service.apply_additional_days_increase(
+        db_session, employee.id, new_value=1, from_period="first", created_by="u2"
+    )
+    p1b = await VacationPeriodRepository().get_by_id(db_session, periods[1].id)
+    assert p1b is not None
+    assert p1b.additional_days == 1
+    assert p1b.used_days == 25
+    assert p1b.remaining_days == 0
+
+    # ещё раз «с первого»: 1 → 4 — снова переоткрытие, уже на 3
+    await vacation_period_service.apply_additional_days_increase(
+        db_session, employee.id, new_value=4, from_period="first", created_by="u3"
+    )
+    p1c = await VacationPeriodRepository().get_by_id(db_session, periods[1].id)
+    assert p1c is not None
+    assert p1c.additional_days == 4
+    assert p1c.used_days == 25
+    assert p1c.remaining_days == 3
+
+
+async def test_adjust_periods_then_bulk_overrides_manual(db_session, create_employee):
+    """Ручная правка периода, затем массовая «с первого» — массовая применяется к диапазону (повторно)."""
+    employee = await create_employee(
+        hire_date=date(2024, 1, 15),
+        additional_vacation_days=1,
+    )
+    await _ensure_periods(db_session, employee)
+
+    periods = await _periods_by_year(db_session, employee.id)
+    await vacation_period_service.close_period(db_session, periods[1].id)
+
+    # ручная: 1-й период → 2 (переоткрытие на 1)
+    await vacation_period_service.adjust_periods_additional_days(
+        db_session,
+        employee.id,
+        [VacationPeriodBulkAdjustItem(period_id=periods[1].id, additional_days=2)],
+        created_by="test_user",
+    )
+    p1 = await VacationPeriodRepository().get_by_id(db_session, periods[1].id)
+    assert p1 is not None
+    assert p1.remaining_days == 1
+
+    # массовая «с первого»: все → 4 — перекрывает ручную правку
+    await vacation_period_service.apply_additional_days_increase(
+        db_session, employee.id, new_value=4, from_period="first", created_by="u1"
+    )
+    after = await _periods_by_year(db_session, employee.id)
+    assert after[1].additional_days == 4
+    assert after[1].used_days == 25
+    assert after[1].remaining_days == 3
+
+
+async def test_adjust_periods_repeated_single_period_stays_consistent_with_fifo(db_session, create_employee, create_order):
+    """Повторная ручная правка одного периода + автосписание списывает с переоткрытого остатка."""
+    employee = await create_employee(
+        hire_date=date(2024, 1, 15),
+        additional_vacation_days=1,
+    )
+    await _ensure_periods(db_session, employee)
+
+    periods = await _periods_by_year(db_session, employee.id)
+    await vacation_period_service.close_period(db_session, periods[1].id)
+
+    # переоткрытие на 2
+    await vacation_period_service.adjust_periods_additional_days(
+        db_session,
+        employee.id,
+        [VacationPeriodBulkAdjustItem(period_id=periods[1].id, additional_days=3)],
+        created_by="test_user",
+    )
+    reopened = await _periods_by_year(db_session, employee.id)
+    assert reopened[1].remaining_days == 2
+
+    # автосписание 2 дней → уходит с переоткрытого 1-го периода (FIFO)
+    order = await create_order(employee=employee, order_number="77")
+    await auto_use_days(
+        db_session,
+        employee.id,
+        days_to_use=2,
+        hire_date=employee.hire_date,
+        additional_days=employee.additional_vacation_days or 0,
+        order_id=order.id,
+        order_number=order.order_number,
+        transaction_type="vacation_use",
+        original_order_id=order.id,
+    )
+
+    after = await _periods_by_year(db_session, employee.id)
+    assert after[1].used_days == 27
+    assert after[1].remaining_days == 0

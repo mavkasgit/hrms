@@ -59,7 +59,11 @@ export function AdditionalDaysAdjustModal({
     )
   }, [periodsRaw])
 
-  const currentValue = currentAdditionalDays ?? history?.[0]?.new_value ?? periods[0]?.additional_days ?? 0
+  const currentValue =
+    currentAdditionalDays ??
+    history?.find((h) => !h.is_period_edit)?.new_value ??
+    periods[0]?.additional_days ??
+    0
 
   // --- Быстрое применение к диапазону ---
   const [newValue, setNewValue] = useState("")
@@ -78,12 +82,27 @@ export function AdditionalDaysAdjustModal({
       setSpecificPeriodId(null)
       setReason("")
       setShowPeriods(false)
-      const edits: Record<number, string> = {}
-      for (const p of periods) edits[p.period_id] = String(p.additional_days)
-      setPeriodEdits(edits)
+      setPeriodEdits({})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  // Заполняем инпуты периодов текущими значениями, когда данные подгрузились
+  // (не перетирая уже сделанные ручные правки).
+  useEffect(() => {
+    if (!open || periods.length === 0) return
+    setPeriodEdits((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const p of periods) {
+        if (!(p.period_id in next)) {
+          next[p.period_id] = String(p.additional_days)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [open, periods])
 
   const newValueNum = parseInt(newValue, 10)
   const isValidBulk =
@@ -173,6 +192,7 @@ export function AdditionalDaysAdjustModal({
             title: "Изменения сохранены",
             description: `Обновлено периодов: ${dirtyItems.length}`,
           })
+          onOpenChange(false)
         },
         onError: () => {
           addToast({ title: "Ошибка", description: "Не удалось сохранить изменения периодов" })
@@ -185,7 +205,7 @@ export function AdditionalDaysAdjustModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !busy && onOpenChange(v)}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className={`${showPeriods ? "max-w-3xl" : "max-w-lg"} transition-[max-width] duration-200`}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PlusCircle className="h-4 w-4" /> Управление доп. днями отпуска
@@ -270,6 +290,22 @@ export function AdditionalDaysAdjustModal({
                 </div>
               </div>
 
+              {/* Раскрытие ручной корректировки по периодам (под выбранным периодом) */}
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setShowPeriods((v) => !v)}
+                disabled={busy}
+              >
+                <PlusCircle className="h-4 w-4 mr-1" />
+                {showPeriods
+                  ? "Скрыть ручную корректировку периодов"
+                  : `Показать периоды для ручной правки (${periods.length})`}
+                {!showPeriods && dirtyItems.length > 0 && (
+                  <span className="ml-1 text-xs text-blue-600">· изменено: {dirtyItems.length}</span>
+                )}
+              </Button>
+
               {isValidBulk && affected.length > 0 && (
                 <div className="rounded-md border border-blue-200 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-900 dark:text-blue-100 space-y-0.5">
                   <div>
@@ -296,22 +332,6 @@ export function AdditionalDaysAdjustModal({
                 </Button>
               </div>
             </div>
-
-            {/* Раскрытие ручной корректировки по периодам */}
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => setShowPeriods((v) => !v)}
-              disabled={busy}
-            >
-              <PlusCircle className="h-4 w-4 mr-1" />
-              {showPeriods
-                ? "Скрыть ручную корректировку периодов"
-                : `Показать периоды для ручной правки (${periods.length})`}
-              {!showPeriods && dirtyItems.length > 0 && (
-                <span className="ml-1 text-xs text-blue-600">· изменено: {dirtyItems.length}</span>
-              )}
-            </Button>
           </div>
 
           {/* Правая колонка: таблица периодов (раскрывается по кнопке) */}
@@ -379,19 +399,21 @@ export function AdditionalDaysAdjustModal({
           <div className="space-y-1">
             <label className="text-sm font-medium">История изменений</label>
             <div className="max-h-32 overflow-y-auto rounded-md border border-muted/30 divide-y divide-muted/20 text-xs">
-              {history.map((h) => (
-                <div key={h.id} className="px-2 py-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{h.old_value} → {h.new_value} дн.</span>
-                    <span className="text-muted-foreground">с {formatDate(h.effective_from)}</span>
-                    {h.created_at && (
-                      <span className="text-muted-foreground ml-auto">({formatDateTime(h.created_at)})</span>
-                    )}
+{history.map((h) => (
+                  <div key={h.id} className="px-2 py-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{h.old_value} → {h.new_value} дн.</span>
+                      <span className="text-muted-foreground">
+                        {h.is_period_edit ? "период" : "с"} {formatDate(h.effective_from)}
+                      </span>
+                      {h.created_at && (
+                        <span className="text-muted-foreground ml-auto">({formatDateTime(h.created_at)})</span>
+                      )}
+                    </div>
+                    {h.reason && <div className="text-muted-foreground">{h.reason}</div>}
+                    {h.created_by && <div className="text-muted-foreground">автор: {h.created_by}</div>}
                   </div>
-                  {h.reason && <div className="text-muted-foreground">{h.reason}</div>}
-                  {h.created_by && <div className="text-muted-foreground">автор: {h.created_by}</div>}
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         )}
@@ -400,9 +422,11 @@ export function AdditionalDaysAdjustModal({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
             Закрыть
           </Button>
-          <Button onClick={handleSavePeriods} disabled={dirtyItems.length === 0 || busy}>
-            {periodMutation.isPending ? "Сохранение..." : `Сохранить изменения (${dirtyItems.length})`}
-          </Button>
+          {dirtyItems.length > 0 && (
+            <Button onClick={handleSavePeriods} disabled={busy}>
+              {periodMutation.isPending ? "Сохранение..." : `Сохранить изменения (${dirtyItems.length})`}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

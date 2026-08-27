@@ -24,10 +24,16 @@ class VacationAdditionalDaysAdjustmentRepository:
         return list(result.scalars().all())
 
     async def get_latest(self, db: AsyncSession, employee_id: int) -> Optional[VacationAdditionalDaysAdjustment]:
-        """Последняя запись — задаёт текущую границу синхронизации (effective_from)."""
+        """Последняя ДИАПАЗОННАЯ запись — задаёт границу синхронизации (effective_from).
+
+        Точечные правки (is_period_edit=True) границу не двигают и игнорируются.
+        """
         result = await db.execute(
             select(VacationAdditionalDaysAdjustment)
-            .where(VacationAdditionalDaysAdjustment.employee_id == employee_id)
+            .where(
+                VacationAdditionalDaysAdjustment.employee_id == employee_id,
+                VacationAdditionalDaysAdjustment.is_period_edit == False,
+            )
             .order_by(VacationAdditionalDaysAdjustment.created_at.desc(), VacationAdditionalDaysAdjustment.id.desc())
             .limit(1)
         )
