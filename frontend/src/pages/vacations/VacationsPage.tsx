@@ -706,8 +706,12 @@ export function VacationsPage() {
     }
   }
 
-  const resetForm = () => {
-    setSelectedEmployee(null)
+  const resetForm = (keepEmployee = false) => {
+    // #121: после создания отпуска сотрудник остаётся выбранным, блок периодов
+    // обновляется на месте (кэш инвалидируется в useCreateVacation)
+    if (!keepEmployee) {
+      setSelectedEmployee(null)
+    }
     setStartDate("")
     setEndDate("")
     setOrderNumber("")
@@ -830,7 +834,7 @@ export function VacationsPage() {
           }
           setSuccessMessage("Отпуск успешно создан!")
           setTimeout(() => setSuccessMessage(null), 5000)
-          resetForm()
+          resetForm(true)
         },
         onError: (error: any) => {
           console.error("[VacationsPage] mutation error:", error)
