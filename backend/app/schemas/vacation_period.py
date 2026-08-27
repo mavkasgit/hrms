@@ -68,6 +68,15 @@ class VacationPeriodAdjust(BaseModel):
     additional_days: int
 
 
+class VacationPeriodBulkAdjustItem(BaseModel):
+    period_id: int
+    additional_days: int
+
+
+class VacationPeriodsBulkAdjustRequest(BaseModel):
+    items: list[VacationPeriodBulkAdjustItem]
+
+
 class VacationPeriodUsedDays(BaseModel):
     used_days: int
 

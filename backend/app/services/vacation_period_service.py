@@ -515,6 +515,61 @@ class VacationPeriodService:
         """История изменений доп. дней отпуска (новые → старые)."""
         return await vacation_additional_days_adjustment_repository.get_by_employee(db, employee_id)
 
+    async def adjust_periods_additional_days(
+        self,
+        db: AsyncSession,
+        employee_id: int,
+        items: list,
+        created_by: str | None = None,
+    ) -> list[VacationPeriodBalance]:
+        """Ручная корректировка доп. дней по конкретным периодам (#123).
+
+        В отличие от apply_additional_days_increase (граница с первого/последнего/
+        выбранного) позволяет точечно поменять значение на любом периоде — в т.ч.
+        «откатить» один период назад после массового применения. НЕ пишет в
+        vacation_additional_days_adjustments, чтобы не сдвигать границу синхронизации
+        (effective_from из последней записи). У закрытых периодов остаток
+        пересчитывается как total - used (переоткрытие на дельту).
+        """
+        from app.schemas.vacation_period import VacationPeriodBulkAdjustItem
+        from app.repositories.employee_repository import EmployeeRepository
+
+        if not items:
+            return await self.get_employee_periods(db, employee_id)
+
+        periods = await self._repo.get_by_employee(db, employee_id)
+        by_id = {p.id: p for p in periods}
+        changed: dict[int, tuple[int, int]] = {}
+
+        for item in items:
+            if not isinstance(item, VacationPeriodBulkAdjustItem):
+                item = VacationPeriodBulkAdjustItem.model_validate(item)
+            if item.additional_days < 0:
+                raise HTTPException(status_code=400, detail="Доп. дни не могут быть отрицательными")
+            period = by_id.get(item.period_id)
+            if not period:
+                raise HTTPException(status_code=404, detail="Период не найден у сотрудника")
+            if period.additional_days != item.additional_days:
+                await self._repo.update_additional_days(db, item.period_id, item.additional_days)
+                changed[item.period_id] = (period.additional_days, item.additional_days)
+
+        if changed:
+            await EmployeeRepository()._add_audit_entry(
+                db,
+                employee_id,
+                "additional_days_periods",
+                created_by or "system",
+                None,
+                {
+                    "periods": {
+                        str(pid): {"old": old, "new": new}
+                        for pid, (old, new) in changed.items()
+                    }
+                },
+            )
+        await db.flush()
+        return await self.get_employee_periods(db, employee_id)
+
     async def apply_additional_days_increase(
         self,
         db: AsyncSession,

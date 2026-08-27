@@ -115,13 +115,14 @@ export class VacationsPage {
     await expect(this.page.getByRole('dialog')).toBeVisible({ timeout: 5_000 })
   }
 
-  /** Задать новое значение доп. дней в модалке и подтвердить («Применить»). */
+  /** Задать новое значение доп. дней в модалке и применить к диапазону, затем закрыть. */
   async setAddDaysInModal(newValue: number): Promise<void> {
     const dialog = this.page.getByRole('dialog')
-    const input = dialog.locator('input[type="number"]')
+    const input = dialog.locator('input[type="number"][placeholder="0"]')
     await expect(input).toBeVisible({ timeout: 3_000 })
     await input.fill(String(newValue))
-    await dialog.getByRole('button', { name: 'Применить' }).click()
+    await dialog.getByRole('button', { name: 'Применить к диапазону' }).click()
+    await dialog.getByRole('button', { name: 'Закрыть' }).click()
     await expect(dialog).toBeHidden({ timeout: 5_000 }).catch(() => {})
   }
 

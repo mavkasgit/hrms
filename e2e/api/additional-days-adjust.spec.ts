@@ -114,4 +114,42 @@ test.describe('Additional days adjust @api', () => {
     expect(history[1].new_value).toBe(2)
     expect(history[1].old_value).toBe(0)
   })
+
+  test('@api per-period manual tweak reopens closed period and reverts one back', async ({ apiOps }) => {
+    const emp = await apiOps.createEmployee({
+      hire_date: '2023-01-15',
+      contract_start: '2023-01-15',
+      additional_vacation_days: 1,
+    })
+
+    let periods = await apiOps.getPeriods(emp.id)
+    const year1 = periods.find((p: VacationPeriod) => p.year_number === 1)
+    const year3 = periods.find((p: VacationPeriod) => p.year_number === 3)
+    expect(year1).toBeTruthy()
+    expect(year3).toBeTruthy()
+
+    // Закрываем 1-й год и применяем «с последнего»: 1 → 3
+    await apiOps.closePeriod(year1!.period_id)
+    await apiOps.increaseAdditionalDays(emp.id, { new_value: 3, from_period: 'last' })
+
+    periods = await apiOps.getPeriods(emp.id)
+    const year1AfterBulk = periods.find((p: VacationPeriod) => p.year_number === 1)
+    const year3AfterBulk = periods.find((p: VacationPeriod) => p.year_number === 3)
+    expect(year1AfterBulk!.additional_days).toBe(1) // старый не тронут границей
+    expect(year3AfterBulk!.additional_days).toBe(3)
+
+    // Ручная корректировка: 1-й → 2 (переоткрытие на 1), 3-й → 1 (откат назад)
+    const after = await apiOps.adjustPeriodsAdditionalDays(emp.id, [
+      { period_id: year1AfterBulk!.period_id, additional_days: 2 },
+      { period_id: year3AfterBulk!.period_id, additional_days: 1 },
+    ])
+
+    const year1After = after.find((p: VacationPeriod) => p.year_number === 1)
+    const year3After = after.find((p: VacationPeriod) => p.year_number === 3)
+    expect(year1After!.additional_days).toBe(2)
+    expect(year1After!.used_days).toBe(25)
+    expect(year1After!.remaining_days).toBe(1)
+    expectPeriodInvariant(year1After!)
+    expect(year3After!.additional_days).toBe(1)
+  })
 })

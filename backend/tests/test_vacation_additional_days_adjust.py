@@ -345,6 +345,117 @@ async def test_recalculate_keeps_boundary_old_periods_untouched(db_session, crea
     assert after[3].additional_days == 3
 
 
+async def test_adjust_periods_manually_tweaks_specific_periods(db_session, create_employee):
+    """Ручная корректировка: один период вверх, другой назад, закрытый переоткрывается."""
+    from app.schemas.vacation_period import VacationPeriodBulkAdjustItem
+
+    employee = await create_employee(
+        hire_date=date(2024, 1, 15),
+        additional_vacation_days=1,
+    )
+    await _ensure_periods(db_session, employee)
+
+    periods = await _periods_by_year(db_session, employee.id)
+    # Закрываем 1-й год
+    await vacation_period_service.close_period(db_session, periods[1].id)
+
+    # Сначала массовое применение «с последнего»: 1 → 3 на текущем+будущих
+    await vacation_period_service.apply_additional_days_increase(
+        db_session,
+        employee.id,
+        new_value=3,
+        from_period="last",
+        created_by="test_user",
+    )
+    before = await _periods_by_year(db_session, employee.id)
+    assert before[1].additional_days == 1  # старый не тронут
+    assert before[3].additional_days == 3
+
+    # Ручная корректировка: 1-й период → 2 (переоткрытие на 1), 3-й → 1 (откат назад)
+    balances = await vacation_period_service.adjust_periods_additional_days(
+        db_session,
+        employee.id,
+        [
+            VacationPeriodBulkAdjustItem(period_id=before[1].id, additional_days=2),
+            VacationPeriodBulkAdjustItem(period_id=before[3].id, additional_days=1),
+        ],
+        created_by="test_user",
+    )
+
+    after = await _periods_by_year(db_session, employee.id)
+    # Закрытый 1-й период переоткрыт на дельту: used=25, total=26, remaining=1
+    assert after[1].additional_days == 2
+    assert after[1].used_days == 25
+    assert after[1].remaining_days == 1
+    # 3-й период откачен назад
+    assert after[3].additional_days == 1
+    # Глобальное значение сотрудника НЕ меняется
+    assert employee.additional_vacation_days == 3
+    assert len(balances) == len(after)
+
+
+async def test_adjust_periods_rejects_negative_and_unknown(db_session, create_employee):
+    from app.schemas.vacation_period import VacationPeriodBulkAdjustItem
+
+    employee = await create_employee(
+        hire_date=date(2024, 1, 15),
+        additional_vacation_days=1,
+    )
+    await _ensure_periods(db_session, employee)
+    periods = await _periods_by_year(db_session, employee.id)
+
+    with pytest.raises(HTTPException) as exc:
+        await vacation_period_service.adjust_periods_additional_days(
+            db_session,
+            employee.id,
+            [VacationPeriodBulkAdjustItem(period_id=periods[1].id, additional_days=-1)],
+            created_by="test_user",
+        )
+    assert exc.value.status_code == 400
+
+    with pytest.raises(HTTPException) as exc:
+        await vacation_period_service.adjust_periods_additional_days(
+            db_session,
+            employee.id,
+            [VacationPeriodBulkAdjustItem(period_id=999_999, additional_days=2)],
+            created_by="test_user",
+        )
+    assert exc.value.status_code == 404
+
+
+async def test_adjust_periods_no_change_is_noop(db_session, create_employee):
+    from app.schemas.vacation_period import VacationPeriodBulkAdjustItem
+
+    employee = await create_employee(
+        hire_date=date(2024, 1, 15),
+        additional_vacation_days=1,
+    )
+    await _ensure_periods(db_session, employee)
+    periods = await _periods_by_year(db_session, employee.id)
+
+    balances = await vacation_period_service.adjust_periods_additional_days(
+        db_session,
+        employee.id,
+        [VacationPeriodBulkAdjustItem(period_id=periods[1].id, additional_days=1)],
+        created_by="test_user",
+    )
+    assert len(balances) >= 1
+
+    from sqlalchemy import select
+    from app.models.employee import EmployeeAuditLog
+    audits = list(
+        (
+            await db_session.execute(
+                select(EmployeeAuditLog).where(
+                    EmployeeAuditLog.employee_id == employee.id,
+                    EmployeeAuditLog.action == "additional_days_periods",
+                )
+            )
+        ).scalars().all()
+    )
+    assert len(audits) == 0  # ничего не изменилось — аудит не пишем
+
+
 async def test_increase_records_adjustment_and_audit(db_session, create_employee):
     """Создаётся запись в vacation_additional_days_adjustments и аудит на сотруднике."""
     from sqlalchemy import select

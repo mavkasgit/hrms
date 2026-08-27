@@ -8,8 +8,9 @@ import {
   deleteManualClosureTransaction,
   fetchAdditionalDaysHistory,
   applyAdditionalDaysIncrease,
+  adjustPeriodsAdditionalDays,
 } from "./api"
-import type { VacationPeriodAdjust, AdditionalDaysIncreaseRequest } from "./types"
+import type { VacationPeriodAdjust, AdditionalDaysIncreaseRequest, VacationPeriodBulkAdjustItem } from "./types"
 
 export function useVacationPeriods(employeeId: number | null) {
   return useQuery({
@@ -118,6 +119,21 @@ export function useApplyAdditionalDaysIncrease() {
       queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
       queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
       queryClient.invalidateQueries({ queryKey: ["additional-days-history"] })
+      queryClient.invalidateQueries({ queryKey: ["employees"] })
+    },
+  })
+}
+
+export function useAdjustPeriodsAdditionalDays() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ employeeId, items }: { employeeId: number; items: VacationPeriodBulkAdjustItem[] }) =>
+      adjustPeriodsAdditionalDays(employeeId, items),
+    onSuccess: (_data, { employeeId }) => {
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods", employeeId] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-periods"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-employees-summary"] })
+      queryClient.invalidateQueries({ queryKey: ["vacation-history"] })
       queryClient.invalidateQueries({ queryKey: ["employees"] })
     },
   })

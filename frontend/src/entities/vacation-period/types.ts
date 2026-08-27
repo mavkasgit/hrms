@@ -79,3 +79,8 @@ export interface AdditionalDaysIncreaseResponse {
   adjustment: AdditionalDaysAdjustment
   periods: VacationPeriod[]
 }
+
+export interface VacationPeriodBulkAdjustItem {
+  period_id: number
+  additional_days: number
+}

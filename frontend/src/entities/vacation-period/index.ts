@@ -1,4 +1,4 @@
-export { useVacationPeriods, useAdjustVacationPeriod, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, useDeleteManualClosureTransaction, useAdditionalDaysHistory, useApplyAdditionalDaysIncrease } from "./useVacationPeriods"
-export { fetchVacationPeriods, fetchPeriodBreakdown, adjustVacationPeriod, closePeriod, partialClosePeriod, deleteManualClosureTransaction, fetchAdditionalDaysHistory, applyAdditionalDaysIncrease } from "./api"
+export { useVacationPeriods, useAdjustVacationPeriod, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, useDeleteManualClosureTransaction, useAdditionalDaysHistory, useApplyAdditionalDaysIncrease, useAdjustPeriodsAdditionalDays } from "./useVacationPeriods"
+export { fetchVacationPeriods, fetchPeriodBreakdown, adjustVacationPeriod, closePeriod, partialClosePeriod, deleteManualClosureTransaction, fetchAdditionalDaysHistory, applyAdditionalDaysIncrease, adjustPeriodsAdditionalDays } from "./api"
 export { AdditionalDaysAdjustModal } from "./ui/AdditionalDaysAdjustModal"
-export type { VacationPeriod, VacationPeriodVacation, VacationPeriodAdjust, VacationPeriodBreakdown, AdditionalDaysAdjustment, AdditionalDaysIncreaseRequest, AdditionalDaysFrom } from "./types"
+export type { VacationPeriod, VacationPeriodVacation, VacationPeriodAdjust, VacationPeriodBreakdown, AdditionalDaysAdjustment, AdditionalDaysIncreaseRequest, AdditionalDaysFrom, VacationPeriodBulkAdjustItem } from "./types"

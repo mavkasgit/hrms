@@ -21,7 +21,7 @@ from app.schemas.employee import (
     EmployeeAuditLogResponse,
     EmployeeWarningsResponse,
 )
-from app.schemas.vacation_period import VacationPeriodBalance
+from app.schemas.vacation_period import VacationPeriodBalance, VacationPeriodsBulkAdjustRequest
 from app.schemas.hire_date_adjustment import HireDateAdjustmentCreate, HireDateAdjustmentResponse
 from app.schemas.vacation_additional_days_adjustment import (
     AdditionalDaysAdjustmentResponse,
@@ -629,6 +629,31 @@ async def apply_additional_days_increase(
         adjustment=AdditionalDaysAdjustmentResponse.model_validate(adjustment),
         periods=periods,
     )
+
+
+@router.post(
+    "/{employee_id:int}/additional-days/adjust-periods",
+    response_model=list[VacationPeriodBalance],
+)
+async def adjust_periods_additional_days(
+    employee_id: int,
+    data: VacationPeriodsBulkAdjustRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: str = Depends(_get_current_user_stub),
+):
+    """Ручная корректировка доп. дней по конкретным периодам сотрудника."""
+    employee = await employee_service.get_by_id(db, employee_id)
+    if not employee:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+
+    periods = await vacation_period_service.adjust_periods_additional_days(
+        db,
+        employee_id=employee_id,
+        items=data.items,
+        created_by=current_user,
+    )
+    await db.commit()
+    return periods
 
 
 @router.delete(

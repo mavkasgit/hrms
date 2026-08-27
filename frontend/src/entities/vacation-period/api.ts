@@ -6,6 +6,7 @@ import type {
   AdditionalDaysAdjustment,
   AdditionalDaysIncreaseRequest,
   AdditionalDaysIncreaseResponse,
+  VacationPeriodBulkAdjustItem,
 } from "./types"
 
 export async function fetchVacationPeriods(employeeId: number): Promise<VacationPeriod[]> {
@@ -79,6 +80,17 @@ export async function applyAdditionalDaysIncrease(
   const { data } = await api.post<AdditionalDaysIncreaseResponse>(
     `/employees/${employeeId}/additional-days/increase`,
     payload,
+  )
+  return data
+}
+
+export async function adjustPeriodsAdditionalDays(
+  employeeId: number,
+  items: VacationPeriodBulkAdjustItem[],
+): Promise<VacationPeriod[]> {
+  const { data } = await api.post<VacationPeriod[]>(
+    `/employees/${employeeId}/additional-days/adjust-periods`,
+    { items },
   )
   return data
 }
