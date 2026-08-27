@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, Fragment, useCallback } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { ChevronDown, ChevronRight, X, ScrollText, RefreshCw, Pencil, Printer, FilePen, Cake, FileText } from "lucide-react"
 import { renderIcon } from "@/pages/structure-page/shared/iconCatalog"
@@ -51,7 +51,8 @@ import {
   useHolidays,
   useVacationDeletionPreview,
 } from "@/entities/vacation"
-import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, useDeleteManualClosureTransaction } from "@/entities/vacation-period"
+import { useVacationPeriods, useClosePeriod, usePartialClosePeriod, useRecalculateVacationPeriods, useDeleteManualClosureTransaction, fetchVacationPeriods } from "@/entities/vacation-period"
+import type { VacationPeriod } from "@/entities/vacation-period"
 import { VacationPeriodVacationRow } from "@/entities/vacation-period/ui/VacationPeriodVacationRow"
 import { useHireDateAdjustments } from "@/entities/hire-date-adjustment/useHireDateAdjustments"
 import { useUpdateEmployee } from "@/entities/employee/useEmployees"
@@ -71,7 +72,7 @@ import { PrintPreviewDialog } from "@/features/print-preview"
 import { OrdersRegistryModal } from "@/features/orders-registry/OrdersRegistryModal"
 import { formatDate, formatDateTime } from "@/shared/utils/date"
 import type { Employee } from "@/entities/employee/types"
-import type { EmployeeVacationSummary } from "@/entities/vacation/types"
+import type { EmployeeVacationSummary, Vacation } from "@/entities/vacation/types"
 import {
   useDraftRecoveryFor,
   useFillDraftIdRestore,
@@ -138,6 +139,45 @@ function transactionPriority(type: string): number {
     case "manual_close": return 5
     case "partial_close": return 6
     default: return 99
+  }
+}
+
+/**
+ * #122 (T3): Текст тоста о том, «куда и как» лёг только что созданный отпуск.
+ * Строится из обновлённых данных трудовых периодов по транзакциям созданного
+ * приказа (vacation_id) — без изменений API.
+ * - Один период: «Отпуск 111-л создан: 14 дн. → 25-й период (04.07.2024–03.07.2025)».
+ * - Несколько периодов: «Отпуск 111-л создан: 18 дн. → 24-й: 7 дн., 25-й: 11 дн.».
+ */
+async function buildVacationDistributionToast(
+  queryClient: QueryClient,
+  vacation: Vacation,
+): Promise<string> {
+  const orderLabel = vacation.order_number || "без номера"
+  const fallback = `Отпуск ${orderLabel} создан: ${vacation.days_count} дн.`
+  try {
+    const periods = await queryClient.fetchQuery({
+      queryKey: ["vacation-periods", vacation.employee_id],
+      queryFn: () => fetchVacationPeriods(vacation.employee_id),
+    })
+    const rows: { period: VacationPeriod; days: number }[] = []
+    for (const period of periods) {
+      const days = (period.transactions || [])
+        .filter((tx) => tx.vacation_id === vacation.id)
+        .reduce((sum, tx) => sum + (tx.days_count || 0), 0)
+      if (days > 0) rows.push({ period, days })
+    }
+    rows.sort((a, b) => a.period.period_start.localeCompare(b.period.period_start))
+    if (rows.length === 0) return fallback
+    if (rows.length === 1) {
+      const { period } = rows[0]
+      return `Отпуск ${orderLabel} создан: ${vacation.days_count} дн. → ${period.year_number}-й период (${formatDate(period.period_start)}–${formatDate(period.period_end)})`
+    }
+    const parts = rows.map(({ period, days }) => `${period.year_number}-й: ${days} дн.`)
+    return `Отпуск ${orderLabel} создан: ${vacation.days_count} дн. → ${parts.join(", ")}`
+  } catch (error) {
+    console.error("[VacationsPage] toast build error:", error)
+    return fallback
   }
 }
 
@@ -826,14 +866,15 @@ export function VacationsPage() {
     createMutation.mutate(
       buildVacationPayload({ draft_id: draftId }),
       {
-        onSuccess: (vacation) => {
+        onSuccess: async (vacation) => {
           if (openPrint && vacation?.order_id) {
             openOrderPrint(vacation.order_id, printTarget || "_blank")
           } else if (openPrint) {
             failPrintPlaceholder(printTarget, "Отпуск создан, но не получен ID приказа для печати.")
           }
-          setSuccessMessage("Отпуск успешно создан!")
-          setTimeout(() => setSuccessMessage(null), 5000)
+          const toastMessage = await buildVacationDistributionToast(queryClient, vacation)
+          setSuccessMessage(toastMessage)
+          setTimeout(() => setSuccessMessage(null), 8000)
           resetForm(true)
         },
         onError: (error: any) => {
