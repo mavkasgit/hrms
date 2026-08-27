@@ -58,6 +58,25 @@
   }
 }
 
+/* Radix Select скрывает скроллбар дропдаунов намеренно
+   (scrollbar-width:none + ::-webkit-scrollbar{display:none}) —
+   возвращаем обычный тонкий скроллбар для длинных списков. */
+[data-radix-select-viewport] {
+  scrollbar-width: thin !important;
+  scrollbar-color: hsl(var(--muted-foreground)) transparent !important;
+}
+[data-radix-select-viewport]::-webkit-scrollbar {
+  display: block !important;
+  width: 8px !important;
+}
+[data-radix-select-viewport]::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.4) !important;
+  border-radius: 4px !important;
+}
+[data-radix-select-viewport]::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
 /* Исправление границ праздничных и выходных ячеек при border-collapse */
 
 /* Тёмная тема для react-datasheet-grid (табель): библиотека жёстко задаёт
