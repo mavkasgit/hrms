@@ -35,6 +35,8 @@ BACKUP_TABLE_EXPORTS_DIR = "exports/tables"
 BACKUP_TABLE_WORKBOOK_NAME = "hrms_tables.xlsx"
 BACKUP_STORAGE_DIRS = {
     "orders": "ORDERS_PATH",
+    "notifications": "NOTIFICATIONS_PATH",
+    "statements": "STATEMENTS_PATH",
     "staffing": "STAFFING_PATH",
     "templates": "TEMPLATES_PATH",
     "personal": "PERSONAL_FILES_PATH",

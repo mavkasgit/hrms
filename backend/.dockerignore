@@ -1,0 +1,12 @@
+# Локальные данные и артефакты не должны попадать в образ:
+# инцидент 2026-08-27 — dev-файлы из backend/data были впечены в прод-контейнер
+data/
+logs/
+*.log
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+.venv/
+venv/
+htmlcov/
+.coverage

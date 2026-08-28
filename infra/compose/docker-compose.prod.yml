@@ -48,6 +48,8 @@ services:
       - "8000"
     volumes:
       - ../../data/orders:/app/data/orders
+      - ../../data/notifications:/app/data/notifications
+      - ../../data/statements:/app/data/statements
       - ../../data/staffing:/app/data/staffing
       - ../../data/templates:/app/data/templates
       - ../../data/personal_files:/app/data/personal

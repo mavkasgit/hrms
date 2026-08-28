@@ -12,17 +12,25 @@ def test_write_storage_dirs_to_zip(monkeypatch, tmp_path):
     staffing_root = tmp_path / "staffing"
     templates_root = tmp_path / "templates"
     personal_root = tmp_path / "personal"
+    notifications_root = tmp_path / "notifications"
+    statements_root = tmp_path / "statements"
     (orders_root / "2026").mkdir(parents=True)
     staffing_root.mkdir()
     templates_root.mkdir()
     personal_root.mkdir()
+    notifications_root.mkdir()
+    statements_root.mkdir()
     (orders_root / "2026" / "order.docx").write_bytes(b"order")
     (staffing_root / "staff.xlsx").write_bytes(b"staff")
+    (notifications_root / "10_notice.docx").write_bytes(b"notice")
+    (statements_root / "06_stmt.docx").write_bytes(b"stmt")
 
     monkeypatch.setattr(settings, "ORDERS_PATH", str(orders_root))
     monkeypatch.setattr(settings, "STAFFING_PATH", str(staffing_root))
     monkeypatch.setattr(settings, "TEMPLATES_PATH", str(templates_root))
     monkeypatch.setattr(settings, "PERSONAL_FILES_PATH", str(personal_root))
+    monkeypatch.setattr(settings, "NOTIFICATIONS_PATH", str(notifications_root))
+    monkeypatch.setattr(settings, "STATEMENTS_PATH", str(statements_root))
 
     archive_path = tmp_path / "backup.zip"
     with zipfile.ZipFile(archive_path, "w") as zip_file:
@@ -31,6 +39,8 @@ def test_write_storage_dirs_to_zip(monkeypatch, tmp_path):
     with zipfile.ZipFile(archive_path) as zip_file:
         assert zip_file.read("data/orders/2026/order.docx") == b"order"
         assert zip_file.read("data/staffing/staff.xlsx") == b"staff"
+        assert zip_file.read("data/notifications/10_notice.docx") == b"notice"
+        assert zip_file.read("data/statements/06_stmt.docx") == b"stmt"
 
 
 def test_extract_storage_dirs_rejects_traversal(tmp_path):
@@ -47,23 +57,31 @@ def test_replace_storage_dirs_removes_stale_files(monkeypatch, tmp_path):
     staffing_root = tmp_path / "staffing"
     templates_root = tmp_path / "templates"
     personal_root = tmp_path / "personal"
-    for root in [orders_root, staffing_root, templates_root, personal_root]:
+    notifications_root = tmp_path / "notifications"
+    statements_root = tmp_path / "statements"
+    for root in [orders_root, staffing_root, templates_root, personal_root, notifications_root, statements_root]:
         root.mkdir()
         (root / "stale.txt").write_text("stale")
 
     extracted_root = tmp_path / "extracted"
     (extracted_root / "orders" / "2026").mkdir(parents=True)
     (extracted_root / "orders" / "2026" / "order.docx").write_bytes(b"order")
+    (extracted_root / "notifications").mkdir()
+    (extracted_root / "notifications" / "10_notice.docx").write_bytes(b"notice")
 
     monkeypatch.setattr(settings, "ORDERS_PATH", str(orders_root))
     monkeypatch.setattr(settings, "STAFFING_PATH", str(staffing_root))
     monkeypatch.setattr(settings, "TEMPLATES_PATH", str(templates_root))
     monkeypatch.setattr(settings, "PERSONAL_FILES_PATH", str(personal_root))
+    monkeypatch.setattr(settings, "NOTIFICATIONS_PATH", str(notifications_root))
+    monkeypatch.setattr(settings, "STATEMENTS_PATH", str(statements_root))
 
     backups._replace_storage_dirs(extracted_root)
 
     assert (orders_root / "2026" / "order.docx").read_bytes() == b"order"
+    assert (notifications_root / "10_notice.docx").read_bytes() == b"notice"
     assert not (orders_root / "stale.txt").exists()
+    assert not (notifications_root / "stale.txt").exists()
     assert not (staffing_root / "stale.txt").exists()
 
 
