@@ -109,10 +109,20 @@ test.describe('Draft actions @ui', () => {
       await expect(page.locator('tr').filter({ hasText: orderNumber })).not.toBeVisible({
         timeout: 20_000,
       })
-      const afterCount = Number(
-        (await badge.getAttribute('aria-label'))?.replace(/\D+/g, '') || ''
-      )
-      expect(afterCount, 'draft counter dropped after commit').toBeLessThan(beforeCount)
+      // Бейдж рендерится только при count > 0: после коммита он исчезает из DOM целиком (считаем 0).
+      await expect
+        .poll(
+          async () => {
+            if (!(await badge.isVisible())) return 0
+            return Number((await badge.getAttribute('aria-label'))?.replace(/\D+/g, '') || 0)
+          },
+          {
+            timeout: 20_000,
+            intervals: [1000, 2000, 3000],
+            message: 'draft counter dropped after commit',
+          }
+        )
+        .toBeLessThan(beforeCount)
 
       if (found?.id) {
         await apiOps.deleteOrder(found.id).catch(() => {})

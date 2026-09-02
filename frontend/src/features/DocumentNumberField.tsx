@@ -85,6 +85,25 @@ export function DocumentNumberField({
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [userModified, setUserModified] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Поповер открывается по фокусу на инпуте, а не по hover: поповер широкий и
+  // накрывает поля формы ниже, поэтому hover-триггер на wrapper перехватывал
+  // клики по этим полям (mouseleave не срабатывал, если курсор попадал в его
+  // прямоугольник). Закрытие — по blur с коротким grace-таймером, чтобы клик
+  // по элементу списка успел сработать до закрытия.
+  const hoveredRef = useRef(false)
+  const focusedRef = useRef(false)
+
+  const clearCloseTimer = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  const scheduleClose = () => {
+    clearCloseTimer()
+    timerRef.current = setTimeout(() => setPopoverOpen(false), 200)
+  }
 
   const { data: suggestedNumber } = useNextNumber()
   const { data: recentData } = useRecentItems()
@@ -97,7 +116,9 @@ export function DocumentNumberField({
       {[...items].sort((a, b) => (b.id ?? 0) - (a.id ?? 0)).slice(0, 8).map((item) => (
         <div
           key={item.id}
-          onClick={() => {
+          onMouseDown={() => {
+            // mousedown срабатывает до blur инпута — успеваем применить значение и закрыть поповер.
+            clearCloseTimer()
             if (item.number) onChange(item.number)
             setPopoverOpen(false)
           }}
@@ -134,13 +155,18 @@ export function DocumentNumberField({
     onChange(`${parseInt(m[1], 10) + 1}${m[2]}`)
   }
 
-  const handleMouseEnter = () => {
-    if (timerRef.current) clearTimeout(timerRef.current)
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    focusedRef.current = true
+    clearCloseTimer()
     setPopoverOpen(true)
+    e.target.select()
   }
 
-  const handleMouseLeave = () => {
-    timerRef.current = setTimeout(() => setPopoverOpen(false), 200)
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    focusedRef.current = false
+    onBlur?.(e)
+    // Пока курсор над поповером, не закрываем: клик по элементу списка ещё не сработал.
+    if (!hoveredRef.current) scheduleClose()
   }
 
   const hasError = error || (required && !value)
@@ -153,6 +179,7 @@ export function DocumentNumberField({
       <Button
         type="button"
         size="sm"
+        onMouseDown={(e) => e.preventDefault()}
         onClick={onFill ?? handleFillMain}
         className="h-6 px-2 text-[11px] shrink-0"
       >
@@ -167,20 +194,16 @@ export function DocumentNumberField({
         {label}
         {required && <span className="text-red-500 ml-1">*</span>}
       </label>
-      <div
-        className="relative inline-block"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-      >
+      <div className="relative inline-block">
         <div className="flex items-center gap-1">
           <div className="relative">
             <Input
               id={id}
               value={displayValue !== undefined ? displayValue : value}
               onChange={handleChange}
-              onBlur={onBlur}
+              onBlur={handleBlur}
               className={`h-10 text-sm w-[100px] pr-7 ${hasError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
-              onFocus={(e) => e.target.select()}
+              onFocus={handleFocus}
             />
             <ListFilter className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           </div>
@@ -189,8 +212,14 @@ export function DocumentNumberField({
         {popoverOpen && (
           <div
             className={`absolute top-full left-0 mt-1 ${hasSections ? "min-w-[760px]" : "min-w-[420px]"} border rounded-md bg-background p-2 z-50 shadow-lg`}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
+            onMouseEnter={() => {
+              hoveredRef.current = true
+              clearCloseTimer()
+            }}
+            onMouseLeave={() => {
+              hoveredRef.current = false
+              if (!focusedRef.current) scheduleClose()
+            }}
           >
             {hasSections ? (
               <div className="flex gap-4">
