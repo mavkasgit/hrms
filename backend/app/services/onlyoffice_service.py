@@ -18,6 +18,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def onlyoffice_base_url_candidates() -> list[str]:
+    candidates: list[str] = []
+    for url in (settings.ONLYOFFICE_INTERNAL_URL, settings.ONLYOFFICE_PUBLIC_URL):
+        normalized = url.rstrip("/")
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+    return candidates
+
+
+def normalize_download_url(url: str) -> str:
+    internal = settings.ONLYOFFICE_INTERNAL_URL.rstrip("/")
+    public = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
+    if not internal or internal == public:
+        return url
+
+    parsed_url = urlparse(url)
+    parsed_public = urlparse(public)
+    parsed_internal = urlparse(internal)
+    if parsed_url.netloc == parsed_public.netloc:
+        return urlunparse(parsed_url._replace(scheme=parsed_internal.scheme, netloc=parsed_internal.netloc))
+    return url
+
+
 class OnlyOfficeService:
     _FILE_TYPE_MAP = {
         "docx": ("docx", "word"),
@@ -145,12 +168,7 @@ class OnlyOfficeService:
         )
 
     def _onlyoffice_base_url_candidates(self) -> list[str]:
-        candidates: list[str] = []
-        for url in (settings.ONLYOFFICE_INTERNAL_URL, settings.ONLYOFFICE_PUBLIC_URL):
-            normalized = url.rstrip("/")
-            if normalized and normalized not in candidates:
-                candidates.append(normalized)
-        return candidates
+        return onlyoffice_base_url_candidates()
 
     async def download_and_replace(self, url: str, target_path: Path) -> None:
         download_url = self._normalize_download_url(url)
@@ -185,17 +203,7 @@ class OnlyOfficeService:
             ) from exc
 
     def _normalize_download_url(self, url: str) -> str:
-        internal = settings.ONLYOFFICE_INTERNAL_URL.rstrip("/")
-        public = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
-        if not internal or internal == public:
-            return url
-
-        parsed_url = urlparse(url)
-        parsed_public = urlparse(public)
-        parsed_internal = urlparse(internal)
-        if parsed_url.netloc == parsed_public.netloc:
-            return urlunparse(parsed_url._replace(scheme=parsed_internal.scheme, netloc=parsed_internal.netloc))
-        return url
+        return normalize_download_url(url)
 
     async def _replace_docx_atomically(self, target_path: Path, temp_path: Path) -> None:
         target_path.parent.mkdir(parents=True, exist_ok=True)

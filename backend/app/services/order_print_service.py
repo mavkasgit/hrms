@@ -2,13 +2,17 @@ import os
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
-from urllib.parse import urlparse, urlunparse
 
 import httpx
 from jose import jwt
 
 from app.core.config import settings
 from app.core.exceptions import HRMSException
+from app.core.onlyoffice_net import public_api_url
+from app.services.onlyoffice_service import (
+    normalize_download_url,
+    onlyoffice_base_url_candidates,
+)
 
 EntityKind = Literal["order", "notification", "statement"]
 
@@ -21,17 +25,8 @@ class OrderPrintService:
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir
 
-    def _onlyoffice_base_url_candidates(self) -> list[str]:
-        candidates: list[str] = []
-        for url in (settings.ONLYOFFICE_INTERNAL_URL, settings.ONLYOFFICE_PUBLIC_URL):
-            normalized = (url or "").rstrip("/")
-            if normalized and normalized not in candidates:
-                candidates.append(normalized)
-        return candidates
-
     def _source_file_url(self, entity_kind: EntityKind, entity_id: int) -> str:
-        base_url = (settings.BACKEND_INTERNAL_CALLBACK_URL or settings.APP_PUBLIC_URL).rstrip("/")
-        return f"{base_url}/api/{entity_kind}s/{entity_id}/onlyoffice/file"
+        return public_api_url(f"/{entity_kind}s/{entity_id}/onlyoffice/file")
 
     def _cache_key(self, entity_kind: EntityKind, entity_id: int, docx_path: Path) -> str:
         mtime = int(docx_path.stat().st_mtime)
@@ -90,7 +85,7 @@ class OrderPrintService:
         signed_payload = {**payload, "token": token}
 
         last_error: Exception | None = None
-        for base_url in self._onlyoffice_base_url_candidates():
+        for base_url in onlyoffice_base_url_candidates():
             converter_url = f"{base_url}/converter?shardkey={quote(cache_key)}"
             try:
                 async with httpx.AsyncClient(timeout=settings.DOCUMENT_GENERATION_TIMEOUT) as client:
@@ -132,7 +127,7 @@ class OrderPrintService:
         )
 
     async def _download_pdf(self, file_url: str) -> bytes:
-        download_urls = [self._normalize_download_url(file_url)]
+        download_urls = [normalize_download_url(file_url)]
         if file_url not in download_urls:
             download_urls.append(file_url)
 
@@ -152,19 +147,6 @@ class OrderPrintService:
             "order_pdf_download_failed",
             status_code=502,
         )
-
-    def _normalize_download_url(self, url: str) -> str:
-        internal = settings.ONLYOFFICE_INTERNAL_URL.rstrip("/")
-        public = settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
-        if not internal or internal == public:
-            return url
-
-        parsed_url = urlparse(url)
-        parsed_public = urlparse(public)
-        parsed_internal = urlparse(internal)
-        if parsed_url.netloc == parsed_public.netloc:
-            return urlunparse(parsed_url._replace(scheme=parsed_internal.scheme, netloc=parsed_internal.netloc))
-        return url
 
 
 order_print_service = OrderPrintService()

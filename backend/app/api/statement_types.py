@@ -154,6 +154,11 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.core.exceptions import HRMSException
 from app.services.onlyoffice_service import onlyoffice_service, editor_user
+from app.core.onlyoffice_net import (
+    assert_valid_callback_token as _assert_valid_callback_token,
+    document_server_url as _document_server_url,
+    public_api_url as _public_api_url,
+)
 
 
 class OnlyOfficeForceSaveRequest(BaseModel):
@@ -163,42 +168,6 @@ class OnlyOfficeForceSaveRequest(BaseModel):
 def _ensure_onlyoffice_enabled() -> None:
     if not settings.ONLYOFFICE_ENABLED:
         raise HRMSException("OnlyOffice отключен", "onlyoffice_disabled", status_code=503)
-
-
-def _public_api_url(path: str) -> str:
-    base_url = (settings.BACKEND_INTERNAL_CALLBACK_URL or settings.APP_PUBLIC_URL).rstrip("/")
-    return f"{base_url}/api{path}"
-
-
-def _document_server_url(request: Request) -> str:
-    if settings.ONLYOFFICE_PUBLIC_URL:
-        return settings.ONLYOFFICE_PUBLIC_URL.rstrip("/")
-    proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip()
-    cf_visitor_raw = request.headers.get("cf-visitor")
-    if cf_visitor_raw:
-        try:
-            import json
-            cf_scheme = json.loads(cf_visitor_raw).get("scheme")
-            if cf_scheme in {"http", "https"}:
-                proto = cf_scheme
-        except Exception:
-            pass
-    if not proto:
-        proto = request.url.scheme
-    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
-    return f"{proto}://{host}".rstrip("/")
-
-
-def _assert_valid_callback_token(request: Request, body: dict) -> None:
-    token = body.get("token")
-    if token:
-        token = str(token)
-    if not token:
-        authorization = request.headers.get("authorization") or request.headers.get("Authorization")
-        if authorization and authorization.lower().startswith("bearer "):
-            token = authorization[7:].strip()
-    if not token or not onlyoffice_service.validate_callback_token(token):
-        raise HRMSException("Невалидный JWT OnlyOffice", "invalid_onlyoffice_jwt", status_code=403)
 
 
 @router.get("/{statement_type_id}/onlyoffice/config")
