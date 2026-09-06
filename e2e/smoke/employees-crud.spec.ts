@@ -60,16 +60,9 @@ test.describe('Employees CRUD @smoke', () => {
     const restored = await apiOps.getEmployee(emp.id)
     expect(restored.is_dismissed).toBeFalsy()
 
-    // UI: active only
+    // UI: after reload the list defaults to active-only — restored employee is visible
     await page.reload()
     await expect(empPage.pageTitle).toBeVisible({ timeout: 15_000 })
-    await empPage.filterBtn.click()
-    const panel2 = page.locator('div.absolute').filter({ hasText: 'Статус' }).first()
-    await expect(panel2).toBeVisible({ timeout: 10_000 })
-    // Prefer explicit active: click Активные on, Уволенные off if panel multi-toggle
-    await panel2.getByRole('button', { name: 'Активные' }).click()
-    await panel2.getByRole('button', { name: 'Уволенные' }).click()
-    await empPage.filterBtn.click()
 
     await empPage.searchEmployee(name)
     await empPage.expectEmployeeInTable(name)
