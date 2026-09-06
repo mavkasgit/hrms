@@ -109,42 +109,77 @@ class EmployeeRepository:
 
         return items, total
 
-    async def search(self, db: AsyncSession, q: str) -> list[Employee]:
+    async def search(
+        self,
+        db: AsyncSession,
+        q: str,
+        status: Optional[str] = None,
+    ) -> list[Employee]:
         results: dict[int, Employee] = {}
 
+        # Семантика статуса — как в get_all; без фильтра поиск по q
+        # возвращает уволенных в «активном» списке (ломает UI-поиск)
+        status_conditions = []
+        if status == "active":
+            status_conditions.extend([Employee.is_deleted == False, Employee.is_dismissed == False])
+        elif status == "dismissed":
+            status_conditions.extend([Employee.is_deleted == False, Employee.is_dismissed == True])
+        elif status == "deleted":
+            status_conditions.append(Employee.is_deleted == True)
+
+        def _with_status(stmt):
+            if status_conditions:
+                stmt = stmt.where(and_(*status_conditions))
+            return stmt
+
         name_start_result = await db.execute(
-            select(Employee)
-            .options(joinedload(Employee.department), joinedload(Employee.position))
-            .where(Employee.name.ilike(f"{q}%"), Employee.is_deleted == False)
-            .order_by(Employee.name.asc())
+            _with_status(
+                select(Employee)
+                .options(joinedload(Employee.department), joinedload(Employee.position))
+                .where(Employee.name.ilike(f"{q}%"), Employee.is_deleted == False)
+                .order_by(Employee.name.asc())
+            )
         )
         for emp in name_start_result.unique().scalars().all():
             results[emp.id] = emp
 
         name_contains_result = await db.execute(
-            select(Employee)
-            .options(joinedload(Employee.department), joinedload(Employee.position))
-            .where(Employee.name.ilike(f"%{q}%"), Employee.is_deleted == False)
-            .order_by(Employee.name.asc())
+            _with_status(
+                select(Employee)
+                .options(joinedload(Employee.department), joinedload(Employee.position))
+                .where(Employee.name.ilike(f"%{q}%"), Employee.is_deleted == False)
+                .order_by(Employee.name.asc())
+            )
         )
         for emp in name_contains_result.unique().scalars().all():
             results[emp.id] = emp
 
+        def _matches_status(emp: Employee) -> bool:
+            if status == "active":
+                return not emp.is_deleted and not emp.is_dismissed
+            if status == "dismissed":
+                return not emp.is_deleted and emp.is_dismissed
+            if status == "deleted":
+                return bool(emp.is_deleted)
+            return True
+
         if q.isdigit():
             tab = int(q)
             emp = await self.get_by_tab_number(db, tab)
-            if emp:
+            if emp and _matches_status(emp):
                 results[emp.id] = emp
 
         # Поиск по тегам
         from app.models.tag import Tag, EmployeeTag
         tag_result = await db.execute(
-            select(Employee)
-            .options(joinedload(Employee.department), joinedload(Employee.position))
-            .join(EmployeeTag, EmployeeTag.employee_id == Employee.id)
-            .join(Tag, Tag.id == EmployeeTag.tag_id)
-            .where(Tag.name.ilike(f"%{q}%"), Employee.is_deleted == False)
-            .order_by(Employee.name.asc())
+            _with_status(
+                select(Employee)
+                .options(joinedload(Employee.department), joinedload(Employee.position))
+                .join(EmployeeTag, EmployeeTag.employee_id == Employee.id)
+                .join(Tag, Tag.id == EmployeeTag.tag_id)
+                .where(Tag.name.ilike(f"%{q}%"), Employee.is_deleted == False)
+                .order_by(Employee.name.asc())
+            )
         )
         for emp in tag_result.unique().scalars().all():
             results[emp.id] = emp

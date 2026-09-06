@@ -74,10 +74,12 @@ class EmployeeService:
             raise EmployeeDeletedError(tab_number)
         return employee
 
-    async def search_employees(self, db: AsyncSession, q: str) -> list[Employee]:
+    async def search_employees(
+        self, db: AsyncSession, q: str, status: Optional[str] = None
+    ) -> list[Employee]:
         if not q or len(q.strip()) < 1:
             return []
-        return await repository.search(db, q.strip())
+        return await repository.search(db, q.strip(), status=status)
 
     async def create_employee(self, db: AsyncSession, data: EmployeeCreate, user_id: str) -> Employee:
         if data.tab_number:

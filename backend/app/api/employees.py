@@ -128,7 +128,7 @@ async def list_employees(
             )
 
     if q:
-        employees = await employee_service.search_employees(db, q)
+        employees = await employee_service.search_employees(db, q, status=status)
         total = len(employees)
         start = (page - 1) * per_page
         items = employees[start:start + per_page]
