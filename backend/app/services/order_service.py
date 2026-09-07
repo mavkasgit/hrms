@@ -571,23 +571,25 @@ class OrderService:
             },
         )
 
-        # Списываем дни отпуска с периодов — как при создании через форму.
-        # Иначе «приказ об отпуске из раздела Приказы» создаёт запись, но не
-        # пересчитывает остаток.
-        from app.services.vacation_period_service import auto_use_days
+        # Списываем дни отпуска с периодов — только для «Трудовой».
+        # Для «Отпуск за свой счет» (vacation_unpaid) запись vacation создаётся,
+        # но списание баланса не выполняется (см. ADR-0012).
+        if order_type.code == "vacation_paid":
+            from app.services.vacation_period_service import auto_use_days
 
-        await auto_use_days(
-            db,
-            employee.id,
-            days_count,
-            employee.hire_date,
-            employee.additional_vacation_days or 0,
-            order.id,
-            order.order_number,
-            vacation_id=vacation.id,
-            transaction_type="vacation_use",
-            original_order_id=order.id,
-        )
+            await auto_use_days(
+                db,
+                employee.id,
+                days_count,
+                employee.hire_date,
+                employee.additional_vacation_days or 0,
+                order.id,
+                order.order_number,
+                vacation_id=vacation.id,
+                transaction_type="vacation_use",
+                original_order_id=order.id,
+                vacation_type=v_type,
+            )
 
     # === Order update ===
     async def update_order(self, db: AsyncSession, order_id: int, data: OrderUpdate, user_id: str) -> dict[str, Any]:

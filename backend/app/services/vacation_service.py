@@ -163,6 +163,7 @@ class VacationService:
             additional_days=employee.additional_vacation_days or 0,
             order_id=vacation.order_id,
             order_number=order_number,
+            vacation_type="Трудовой",
             vacation_id=vacation.id,
             transaction_type="vacation_use_adjusted",
             original_order_id=vacation.order_id,
@@ -324,18 +325,20 @@ class VacationService:
             },
         )
 
-        await auto_use_days(
-            db,
-            employee_id,
-            days_count,
-            employee.hire_date,
-            employee.additional_vacation_days or 0,
-            order.id,
-            order.order_number,
-            vacation_id=vacation.id,
-            transaction_type="vacation_use",
-            original_order_id=order.id,
-        )
+        if vacation_type == "Трудовой":
+            await auto_use_days(
+                db,
+                employee_id,
+                days_count,
+                employee.hire_date,
+                employee.additional_vacation_days or 0,
+                order.id,
+                order.order_number,
+                vacation_id=vacation.id,
+                transaction_type="vacation_use",
+                original_order_id=order.id,
+                vacation_type=vacation_type,
+            )
         await db.flush()
 
         # Внутреннее уведомление «приказ изменился» (#18): отпуск создан,

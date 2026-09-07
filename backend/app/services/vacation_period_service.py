@@ -916,6 +916,7 @@ class VacationPeriodService:
                 vacation_id=vacation.id,
                 transaction_type="recalculate_use",
                 original_order_id=vacation.order_id,
+                vacation_type="Трудовой",
                 is_recalc=True,
             )
 
@@ -1011,9 +1012,9 @@ class VacationPeriodService:
                 additional_days=employee.additional_vacation_days or 0,
                 order_id=vacation.order_id,
                 order_number=order_number,
-                vacation_id=vacation.id,
                 transaction_type="recalculate_use",
                 original_order_id=vacation.order_id,
+                vacation_type="Трудовой",
                 is_recalc=True,
             )
 
@@ -1035,7 +1036,14 @@ async def auto_use_days(
     adjustment_order_id: int | None = None,
     adjustment_id: int | None = None,
     is_recalc: bool = False,
+    vacation_type: str = "Трудовой",
 ) -> None:
+    if vacation_type != "Трудовой":
+        raise ValueError(
+            f"auto_use_days called with non-Tрудовой vacation_type={vacation_type!r}. "
+            f"See ADR-0012: auto_use_days is only allowed for 'Трудовой' (paid) vacations; "
+            f"unpaid and other types must NOT touch vacation_periods balance."
+        )
     from dateutil.relativedelta import relativedelta
 
     repo = VacationPeriodRepository()
