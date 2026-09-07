@@ -201,6 +201,16 @@ async function apiDeleteVacation(request: APIRequestContext, id: number): Promis
   expect([200, 204]).toContain(resp.status())
 }
 
+async function apiUpdateVacation(
+  request: APIRequestContext,
+  id: number,
+  data: Record<string, unknown>
+): Promise<Vacation> {
+  const resp = await request.put(`${API_BASE}/api/vacations/${id}`, { data })
+  expect(resp.status()).toBe(200)
+  return resp.json()
+}
+
 async function apiGetVacationBalance(
   request: APIRequestContext,
   employeeId: number
@@ -551,6 +561,7 @@ export type ApiOperations = {
   deleteEmployee: (id: number) => Promise<void>
   // Vacations
   createVacation: (empId: number, overrides?: Record<string, unknown>) => Promise<Vacation>
+  updateVacation: (id: number, data: Record<string, unknown>) => Promise<Vacation>
   deleteVacation: (id: number) => Promise<void>
   getVacationBalance: (empId: number) => Promise<VacationBalance>
   getVacationPeriods: (empId: number) => Promise<VacationPeriod[]>
@@ -751,6 +762,8 @@ export const test = base.extend<ApiFixtures>({
         resources.vacations.push(vac.id)
         return vac
       },
+      updateVacation: async (id: number, data: Record<string, unknown>) =>
+        apiUpdateVacation(apiRequest, id, data),
       deleteVacation: async (id: number) => {
         await apiDeleteVacation(apiRequest, id)
       },

@@ -13,7 +13,7 @@ export class LoginPage {
     this.heading = page.getByRole('heading', { name: 'HRMS' })
     this.breakGlassInput = page.getByPlaceholder('Пароль аварийного доступа')
     this.breakGlassSubmitButton = page.getByRole('button', { name: 'Аварийный вход' })
-    this.errorMessage = page.locator('p.text-red-600')
+    this.errorMessage = page.locator('div.text-red-600').first
     this.ssoButton = page.getByRole('button', { name: 'Войти через единый вход' })
   }
 
