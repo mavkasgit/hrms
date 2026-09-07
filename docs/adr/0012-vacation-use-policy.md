@@ -85,7 +85,7 @@ async def auto_use_days(
   работать без изменений — default kwarg совместим.
 - Новый `test_vacation_unpaid_no_deduction.py` фиксирует 4 кейса:
   guard auto_use_days, прямой приказ unpaid, прямой paid, групповой
-- Одноразовый `backend/scripts/rollback_unpaid_vacation_prod.py` для
+- Одноразовый `backend/scripts/archive/rollback_unpaid_vacation_prod.py` для
   отката единственного пострадавшего кейса в проде. Подключается к БД
   через `--db-url` или `$DATABASE_URL`, вставляет компенсирующую
   транзакцию `vacation_restore` с `is_reversal=true`,
@@ -108,3 +108,49 @@ async def auto_use_days(
 - Если в будущем появится новый тип отпуска, который ДОЛЖЕН списывать
   баланс (например, «Учебный с сохранением з/п»), решение принимается
   отдельным ADR и точечно расширяет `auto_use_days`.
+
+## Дополнение (2026-09-07): update_vacation — отдельный путь корректировки
+
+`vacation_service.update_vacation` (`backend/app/services/vacation_service.py:396`)
+изменяет даты и тип существующего отпуска. До фикса он пересоздавал приказ
+через `_create_linked_order(skip_auto_vacation=True)` и удалял старый
+через `hard_delete_order`, но НЕ пересчитывал `vacation_period_transactions`:
+
+- Старый приказ удалялся → транзакции списания удалялись вместе с ним
+  (`order_cleanup_service.py:131-152` чистит транзакции по
+  `original_order_id`/`adjustment_order_id`).
+- Новый приказ создавался без вызова `auto_use_days` →
+  `used_days_auto` периода расходился с фактически списанными днями.
+- Смена `vacation_type` через update ломала политику: «Трудовой» с
+  удалённым списанием vs «За свой счёт» с висящим `original_order_id`.
+
+Фикс (см. `.agents/plans/vacation-update-balance-fix.md`):
+
+1. **Guard на смену типа**: `update_vacation` бросает
+   `VacationTypeChangeForbiddenError` (409), если
+   `data["vacation_type"] != vacation.vacation_type`. Смена типа требует
+   recall/postpone + create нового отпуска — через update это ломает
+   политику, шаблон приказа и табель.
+2. **reverse + reapply по образцу `recall_vacation`**:
+   - Создаём новый приказ (`_create_linked_order`).
+   - Пишем `VacationAdjustment` с `adjustment_type='adjustment'`,
+     `original_order_id=<старый>`, `adjustment_order_id=<новый>` —
+     трейл корректировки.
+   - Вызываем `reverse_vacation_auto_transactions` (тот же хелпер,
+     что использует `apply_vacation_adjustment` для recall/extension/postpone).
+   - Если новый тип «Трудовой» и `days_count > 0` — вызываем
+     `reapply_vacation_days` с `original_order_id=<старый>` явно
+     (важно: `vacation.order_id` ещё указывает на старый приказ в этот момент).
+   - Подменяем `vacation.order_id` на новый приказ.
+   - Удаляем старый приказ через `hard_delete_order`. Поскольку транзакции
+     уже сторнированы, удаление безопасно для `used_days`.
+3. **Регрессионный тест** `test_vacation_update_recalculates_balance.py`
+   покрывает: продление дат (5→10 дней → `used_days_auto` +5),
+   сокращение дат (10→5 → −5), запрет смены типа, единственность
+   активной транзакции после update.
+
+Будущие правки `update_vacation` или `reverse_vacation_auto_transactions`
+ОБЯЗАНЫ проходить ревью с проверкой: (а) guard на смену типа сохранён;
+(б) reapply вызывается до подмены `vacation.order_id`; (в) `original_order_id`
+явно передаётся в `reapply_vacation_days` (= старый приказ), иначе аудит
+потеряется.

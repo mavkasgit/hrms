@@ -82,6 +82,11 @@ class InsufficientVacationDaysError(HRMSException):
         super().__init__(message, "insufficient_vacation_days", status_code=400)
 
 
+class VacationTypeChangeForbiddenError(HRMSException):
+    def __init__(self, message: str = "Смена типа отпуска через редактирование запрещена"):
+        super().__init__(message, "vacation_type_change_forbidden", status_code=409)
+
+
 class EmployeeHasActiveProcessesError(HRMSException):
     def __init__(self, warnings: list[str]):
         message = "У сотрудника есть активные процессы: " + "; ".join(warnings)

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.vacation import Vacation
+from app.core.vacation_types import VACATION_TYPE_MAIN
 from app.models.vacation_period import VacationPeriod
 from app.repositories.vacation_period_repository import VacationPeriodRepository
 from app.repositories.hire_date_adjustment_repository import HireDateAdjustmentRepository
@@ -317,7 +318,7 @@ class VacationPeriodService:
                     Vacation.start_date >= period.period_start,
                     Vacation.start_date <= period.period_end,
                     Vacation.is_deleted == False,
-                    Vacation.vacation_type == "Трудовой",
+                    Vacation.vacation_type == VACATION_TYPE_MAIN,
                 )
             .order_by(Vacation.start_date.desc())
             )
@@ -891,7 +892,7 @@ class VacationPeriodService:
                 Vacation.employee_id == employee_id,
                 Vacation.is_deleted == False,
                 Vacation.order_id.isnot(None),
-                Vacation.vacation_type == "Трудовой",
+                Vacation.vacation_type == VACATION_TYPE_MAIN,
             )
             .order_by(Vacation.start_date.asc(), Vacation.id.asc())
         )
@@ -916,7 +917,7 @@ class VacationPeriodService:
                 vacation_id=vacation.id,
                 transaction_type="recalculate_use",
                 original_order_id=vacation.order_id,
-                vacation_type="Трудовой",
+                vacation_type=VACATION_TYPE_MAIN,
                 is_recalc=True,
             )
 
@@ -987,7 +988,7 @@ class VacationPeriodService:
                 Vacation.employee_id == employee_id,
                 Vacation.is_deleted == False,
                 Vacation.order_id.isnot(None),
-                Vacation.vacation_type == "Трудовой",
+                Vacation.vacation_type == VACATION_TYPE_MAIN,
             )
             .order_by(Vacation.start_date.asc(), Vacation.id.asc())
         )
@@ -1012,9 +1013,10 @@ class VacationPeriodService:
                 additional_days=employee.additional_vacation_days or 0,
                 order_id=vacation.order_id,
                 order_number=order_number,
+                vacation_id=vacation.id,
                 transaction_type="recalculate_use",
                 original_order_id=vacation.order_id,
-                vacation_type="Трудовой",
+                vacation_type=VACATION_TYPE_MAIN,
                 is_recalc=True,
             )
 
@@ -1036,12 +1038,12 @@ async def auto_use_days(
     adjustment_order_id: int | None = None,
     adjustment_id: int | None = None,
     is_recalc: bool = False,
-    vacation_type: str = "Трудовой",
+    vacation_type: str = VACATION_TYPE_MAIN,
 ) -> None:
-    if vacation_type != "Трудовой":
+    if vacation_type != VACATION_TYPE_MAIN:
         raise ValueError(
-            f"auto_use_days called with non-Tрудовой vacation_type={vacation_type!r}. "
-            f"See ADR-0012: auto_use_days is only allowed for 'Трудовой' (paid) vacations; "
+            f"auto_use_days called with non-{VACATION_TYPE_MAIN!r} vacation_type={vacation_type!r}. "
+            f"See ADR-0012: auto_use_days is only allowed for {VACATION_TYPE_MAIN!r} (paid) vacations; "
             f"unpaid and other types must NOT touch vacation_periods balance."
         )
     from dateutil.relativedelta import relativedelta

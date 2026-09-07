@@ -16,6 +16,7 @@ from app.core.exceptions import (
     VacationOverlapError,
 )
 from app.core.logging import get_audit_logger
+from app.core.vacation_types import VACATION_TYPE_MAIN, VACATION_TYPE_UNPAID
 from app.models.employee import Employee
 from app.models.order import Order
 from app.models.order_employee import OrderEmployee
@@ -555,7 +556,7 @@ class OrderService:
         if existing:
             raise DuplicateVacationForOrderError(order.order_number)
 
-        v_type = "Трудовой" if order_type.code == "vacation_paid" else "Отпуск за свой счет"
+        v_type = VACATION_TYPE_MAIN if order_type.code == "vacation_paid" else VACATION_TYPE_UNPAID
         # Через репозиторий, чтобы нарушение unique-индекса вернулось 409 (#64).
         vacation = await _vacation_repo.create(
             db,
@@ -724,7 +725,7 @@ class OrderService:
                     employee_id=emp.id,
                     start_date=common_start,
                     end_date=row["vacation_end"],
-                    vacation_type="Отпуск за свой счет",
+                    vacation_type=VACATION_TYPE_UNPAID,
                     days_count=row["vacation_days"],
                     vacation_year=common_start.year,
                     order_id=order.id,
@@ -948,7 +949,7 @@ class OrderService:
                         employee_id=emp.id,
                         start_date=to_date(payload["vacation_start"]),
                         end_date=row["vacation_end"],
-                        vacation_type="Отпуск за свой счет",
+                        vacation_type=VACATION_TYPE_UNPAID,
                         days_count=row["vacation_days"],
                         vacation_year=order_date.year,
                         order_id=order.id,

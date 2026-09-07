@@ -52,7 +52,7 @@ async def _ensure_order_type(
 async def test_auto_use_days_rejects_non_paid_vacation_type(db_session, create_employee):
     """Инвариант: auto_use_days допускает только 'Трудовой' (ADR-0012)."""
     employee = await _make_employee_with_period(create_employee)
-    with pytest.raises(ValueError, match="non-Tрудовой vacation_type"):
+    with pytest.raises(ValueError, match="vacation_type"):
         await auto_use_days(
             db_session,
             employee_id=employee.id,

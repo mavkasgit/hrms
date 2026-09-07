@@ -9,7 +9,9 @@ from app.core.exceptions import (
     InsufficientVacationDaysError,
     VacationNotFoundError,
     VacationOverlapError,
+    VacationTypeChangeForbiddenError,
 )
+from app.core.vacation_types import VACATION_TYPE_MAIN
 from app.core.logging import get_audit_logger
 from app.models.order import Order
 from app.repositories.employee_repository import EmployeeRepository
@@ -163,7 +165,7 @@ class VacationService:
             additional_days=employee.additional_vacation_days or 0,
             order_id=vacation.order_id,
             order_number=order_number,
-            vacation_type="Трудовой",
+            vacation_type=VACATION_TYPE_MAIN,
             vacation_id=vacation.id,
             transaction_type="vacation_use_adjusted",
             original_order_id=vacation.order_id,
@@ -325,7 +327,7 @@ class VacationService:
             },
         )
 
-        if vacation_type == "Трудовой":
+        if vacation_type == VACATION_TYPE_MAIN:
             await auto_use_days(
                 db,
                 employee_id,
@@ -398,9 +400,19 @@ class VacationService:
         if not vacation:
             raise VacationNotFoundError(id)
 
+        # Guard (см. ADR-0012 + .agents/plans/vacation-update-balance-fix.md):
+        # смена vacation_type требует отмены существующего и создания нового
+        # отпуска (recall/create). Через update это ломает политику списания,
+        # шаблон приказа и табель — запрещаем явно.
+        if "vacation_type" in data and data["vacation_type"] != vacation.vacation_type:
+            raise VacationTypeChangeForbiddenError(
+                "Смена vacation_type через update запрещена; "
+                "используйте recall/postpone или создайте новый отпуск."
+            )
+
         start_date = data.get("start_date", vacation.start_date)
         end_date = data.get("end_date", vacation.end_date)
-        vacation_type = data.get("vacation_type", vacation.vacation_type)
+        vacation_type = vacation.vacation_type  # всегда текущее значение
 
         if end_date < start_date:
             raise InsufficientVacationDaysError("Дата конца раньше даты начала")
@@ -417,6 +429,9 @@ class VacationService:
 
         holidays_count = count_holidays_in_range(holidays, start_date, end_date)
         days_count = calculate_vacation_days(start_date, end_date, holidays_count)
+
+        if days_count <= 0:
+            raise InsufficientVacationDaysError("Нет дней отпуска в выбранном диапазоне")
 
         update_data = {
             "start_date": start_date,
@@ -440,13 +455,15 @@ class VacationService:
             )
 
         existing_order = await order_service.get_by_id(db, vacation.order_id) if vacation.order_id else None
+        old_days_count = vacation.days_count
+
         updated = await vacation_repository.update(db, id, update_data)
         assert updated is not None
 
         recreated_order = None
         if existing_order:
-            # Сначала создаём новый приказ, затем обновляем order_id у отпуска,
-            # и только потом удаляем старый приказ — чтобы CASCADE не удалил отпуск
+            # 1) Создаём новый приказ (vacation ещё указывает на старый order_id —
+            #    нужно для original_order_id транзакции в reapply).
             recreated_order = await self._create_linked_order(
                 db,
                 updated.employee_id,
@@ -460,9 +477,69 @@ class VacationService:
                 },
                 updated.days_count,
             )
+
+            # 2) Записываем VacationAdjustment с типом 'adjustment' — это трейл
+            #    корректировки. adjustment_order_id = новый приказ,
+            #    original_order_id = старый (тот, чьи транзакции сейчас сторнируем).
+            adjustment = await vacation_adjustment_repository.create(
+                db,
+                {
+                    "vacation_id": updated.id,
+                    "employee_id": updated.employee_id,
+                    "adjustment_type": "adjustment",
+                    "original_order_id": existing_order.id,
+                    "adjustment_order_id": recreated_order.id,
+                    "original_start_date": vacation.start_date,
+                    "original_end_date": vacation.end_date,
+                    "actual_start_date": updated.start_date,
+                    "actual_end_date": updated.end_date,
+                    "original_days": old_days_count,
+                    "actual_days": days_count,
+                    "days_delta": days_count - old_days_count,
+                    "days_returned": max(old_days_count - days_count, 0),
+                    "days_added": max(days_count - old_days_count, 0),
+                    "reason": data.get("comment"),
+                },
+            )
+
+            # 3) Сторнируем существующие транзакции списания по старому приказу
+            #    (vacation_period_transactions с original_order_id=existing_order.id
+            #    или adjustment_order_id=existing_order.id). Для каждой создаём
+            #    компенсирующую vacation_restore с is_reversal=True.
+            await self.reverse_vacation_auto_transactions(
+                db,
+                vacation_id=updated.id,
+                adjustment_id=adjustment.id,
+                adjustment_order_id=recreated_order.id,
+                adjustment_order_number=recreated_order.order_number,
+                original_order_id=existing_order.id,
+            )
+
+            # 4) Если тип «Трудовой» — списываем заново с актуальным days_count.
+            #    vacation.order_id ещё указывает на старый приказ — это нужно для
+            #    original_order_id внутри reapply_vacation_days.
+            if updated.vacation_type == VACATION_TYPE_MAIN and employee and days_count > 0:
+                await self.reapply_vacation_days(
+                    db,
+                    employee=employee,
+                    vacation=vacation,  # старый объект: order_id == existing_order.id
+                    actual_days=days_count,
+                    adjustment_id=adjustment.id,
+                    adjustment_order_id=recreated_order.id,
+                    order_number=existing_order.order_number,
+                )
+
+            # 5) Подменяем order_id у vacation на новый приказ.
+            #    Делаем ПОСЛЕ reapply, чтобы транзакция записалась с правильным
+            #    original_order_id (= старый приказ). Иначе аудит-трейл потеряется.
+            #    Старый приказ НЕ удаляем — он остаётся как часть трейла корректировки,
+            #    на него ссылается VacationAdjustment.original_order_id и транзакции
+            #    vacation_period_transactions.original_order_id. Это consistent
+            #    с recall/extension/postpone, где старый приказ тоже остаётся в БД.
+            #    Альтернатива (hard_delete_order) убивала бы ссылки через CASCADE
+            #    и обнуляла бы used_days_auto периода — регрессия из исходного бага.
             updated = await vacation_repository.update(db, id, {"order_id": recreated_order.id})
             assert updated is not None
-            await order_service.hard_delete_order(db, existing_order.id)
 
         # Внутреннее уведомление «приказ изменился» (#18): отпуск изменён,
         # авто-слой табеля мог измениться — сигналим администраторам.
@@ -497,6 +574,7 @@ class VacationService:
                     "end_date": str(updated.end_date),
                     "vacation_type": updated.vacation_type,
                     "days_count": updated.days_count,
+                    "old_days_count": old_days_count,
                     "order_id": updated.order_id,
                     "order_number": recreated_order.order_number if recreated_order else existing_order.order_number if existing_order else None,
                 },
