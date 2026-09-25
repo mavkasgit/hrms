@@ -15,7 +15,12 @@
  * Поле entry.version:true добавляет к content-сравнению сверку версии.
  *
  * Запуск (из корня репозитория):
- *   node scripts/verify-sync.mjs --other ../hrms
+ *   node scripts/verify-sync.mjs --other ../ktm2000
+ *   node scripts/verify-sync.mjs --other ../ktm2000 --if-enabled
+ *
+ * В автоматическом режиме (`--if-enabled`) проверка выполняется только при
+ * HRMS_SYNCGATE=1|true|yes|on. Без переменной выход успешный, с неверном
+ * значением — ошибка. Ручной запуск без флага проверяет всегда.
  */
 import fs from "node:fs"
 import path from "node:path"
@@ -28,8 +33,10 @@ const HOST_NAMES = ["index.ts", "index.tsx", "index.js", "index.jsx", "index.mjs
 const MODES = new Set(["content", "version", "presence"])
 const VERSION_RE = /(?:export\s+)?const\s+([A-Z][A-Z0-9_]*_VERSION)\s*=\s*["']([^"']+)["']/g
 
+const ENABLED_VALUES = new Set(["1", "true", "yes", "on"])
+
 export function parseArgs(argv) {
-  const args = { other: null, root: null }
+  const args = { other: null, root: null, ifEnabled: false }
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--other" && argv[i + 1]) {
       args.other = argv[i + 1]
@@ -37,6 +44,8 @@ export function parseArgs(argv) {
     } else if (argv[i] === "--root" && argv[i + 1]) {
       args.root = argv[i + 1]
       i++
+    } else if (argv[i] === "--if-enabled") {
+      args.ifEnabled = true
     }
   }
   return args
@@ -153,10 +162,24 @@ export function run({ root, otherRoot, manifestPath = MANIFEST }) {
 }
 
 function main() {
-  const { other, root: rootOverride } = parseArgs(process.argv.slice(2))
+  const { other, root: rootOverride, ifEnabled } = parseArgs(process.argv.slice(2))
   if (!other) {
-    console.error("Использование: node scripts/verify-sync.mjs --other <путь к sibling-проекту> [--root <корень репозитория>]")
+    console.error("Использование: node scripts/verify-sync.mjs --other <путь к sibling-проекту> [--root <корень репозитория>] [--if-enabled]")
     process.exit(2)
+  }
+  if (ifEnabled) {
+    const value = process.env.HRMS_SYNCGATE
+    if (value === undefined) {
+      console.log("Синк-гейт отключён (HRMS_SYNCGATE не установлен).")
+      process.exit(0)
+    }
+    const normalized = value.trim().toLowerCase()
+    if (!ENABLED_VALUES.has(normalized)) {
+      console.error(
+        `Недопустимое значение HRMS_SYNCGATE=${JSON.stringify(value)}. Используйте одно из: 1, true, yes, on.`,
+      )
+      process.exit(2)
+    }
   }
   const root = rootOverride
     ? path.resolve(rootOverride)

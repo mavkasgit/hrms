@@ -156,6 +156,16 @@ npm run prod:tunnel:up
 | `npm run dev:kill`     | Остановка портов 8000, 5171                            |
 | `npm run dev:restart`  | Перезапуск DEV-окружения                               |
 
+Syncgate автоматически выключен и не блокирует `npm run dev` или сборку.
+Включить его для одной команды:
+
+```powershell
+$env:HRMS_SYNCGATE = "1"; npm run dev
+```
+
+Допустимы `1`, `true`, `yes`, `on`. Ручной `npm run verify:sync` запускает
+сравнение с `../ktm2000` принудительно независимо от переключателя.
+
 ### Docker
 
 | Команда                    | Описание                          |

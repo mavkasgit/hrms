@@ -22,16 +22,6 @@
       "mode": "content"
     },
     {
-      "path": "scripts/verify-sync.mjs",
-      "mode": "content",
-      "version": true
-    },
-    {
-      "path": "scripts/sync-manifest.json",
-      "mode": "content",
-      "version": true
-    },
-    {
       "path": "frontend/src/features/auth/api/oidcAuth.ts",
       "mode": "content",
       "version": true
