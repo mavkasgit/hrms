@@ -11,7 +11,7 @@
 import { oidcHostConfig } from "./oidcHostConfig"
 
 /** Версия OIDC-модуля — синхронизируется verify-sync (режим content + version). */
-export const OIDC_MODULE_VERSION = "1.1.0"
+export const OIDC_MODULE_VERSION = "1.2.0"
 
 /** Storage-ключ с бренд-префиксом (префикс — из хостового конфига). */
 const storageKey = (suffix: string): string => `${oidcHostConfig.storagePrefix}_${suffix}`
