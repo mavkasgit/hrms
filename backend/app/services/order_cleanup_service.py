@@ -47,7 +47,15 @@ class OrderCleanupService:
             return None
         return "\n".join(cleaned_lines)
 
-    async def hard_delete_order(self, db: AsyncSession, order_id: int) -> bool:
+    async def hard_delete_order(self, db: AsyncSession, order_id: int, _rebalance: bool = True) -> bool:
+        """Удалить приказ со всеми зависимостями.
+
+        _rebalance — внутренний флаг каскада. Пересчёт FIFO выполняется только
+        на верхнем уровне: вложенный вызов (приказ корректировки) пересчитывать
+        не должен, т.к. пересчёт заново создаёт транзакции со ссылками на
+        приказы, которые ещё не удалены выше по стеку, — их удаление упало бы
+        на FK.
+        """
         order = await self.order_repo.get_by_id(db, order_id)
         if not order:
             raise OrderNotFoundError(order_id)
@@ -114,10 +122,10 @@ class OrderCleanupService:
         from app.services.contract_history_service import contract_history_service
         await contract_history_service.delete_by_order(db, order_id)
 
-        # Get affected period IDs before deletion
         from app.services.vacation_period_service import vacation_period_service
 
-        affected_period_ids = await vacation_period_service.get_affected_period_ids_for_order(db, order_id)
+        # Список затронутых периодов больше не нужен: баланс пересчитывается
+        # целиком по сотруднику в конце удаления (см. конец метода).
 
         # Clean up dependent entities explicitly
 
@@ -200,7 +208,7 @@ class OrderCleanupService:
         # 6b. Каскад: удаляем приказы корректировок, привязанные к отпускам,
         # созданным этим приказом. Иначе приказ отзыва остаётся в реестре сиротой.
         for adj_order_id in adj_order_ids:
-            await self.hard_delete_order(db, adj_order_id)
+            await self.hard_delete_order(db, adj_order_id, _rebalance=False)
 
         # 7. Находим и обновляем отпуска (отмена отзывов/переносов/продлений)
         to_update_result = await db.execute(
@@ -259,7 +267,17 @@ class OrderCleanupService:
 
         # Delete the order
         await self.order_repo.hard_delete(db, order_id)
-        await vacation_period_service.recompute_period_totals_by_ids(db, affected_period_ids)
+
+        # Освобождение дней требует полного пересчёта FIFO по сотруднику, а не
+        # пересчёта агрегатов затронутых периодов: удаление приказа возвращает
+        # дни в исходный период, но списания других отпусков, ушедшие в поздние
+        # периоды, остаются там — ранний период числится свободным, поздний
+        # списанным. recalculate_vacation_days_only заново раскладывает все дни
+        # от самого старшего периода. На каскадных вызовах (_rebalance=False)
+        # пересчёт делает внешний уровень — иначе он создал бы транзакции со
+        # ссылками на ещё не удалённые приказы.
+        if _rebalance and order.employee_id:
+            await vacation_period_service.recalculate_vacation_days_only(db, order.employee_id)
         await db.commit()
 
         audit_logger.info(

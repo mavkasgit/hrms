@@ -127,6 +127,61 @@ async def test_auto_use_days_skips_fully_closed_period_and_debits_next_open(
     assert open_period.used_days == 8  # списание ушло в первый открытый
 
 
+
+async def test_auto_use_days_uses_sixth_period_saved_remaining_before_next_period(
+    db_session,
+    create_employee,
+    create_order,
+    create_vacation_period,
+):
+    """FIFO использует сохранённый остаток частично закрытого периода, а не агрегат used_days."""
+    employee = await create_employee(hire_date=date(2024, 1, 15))
+    order = await create_order(employee=employee, order_number="FIFO-13")
+
+    periods = [
+        await create_vacation_period(
+            employee=employee,
+            period_start=date(2024 + offset, 1, 15),
+            period_end=date(2025 + offset, 1, 14),
+            main_days=24,
+            additional_days=0,
+            year_number=offset + 1,
+        )
+        for offset in range(7)
+    ]
+    closed_periods = periods[:5]
+    partial, following = periods[5], periods[6]
+
+    for period in closed_periods:
+        await vacation_period_service.close_period(db_session, period.id)
+    await vacation_period_service.partial_close_period(db_session, partial.id, remaining_days=13)
+
+    # Агрегат мог разойтись с ручным закрытием; сохранённый остаток остаётся источником истины.
+    partial.used_days = 24
+    await db_session.flush()
+
+    await auto_use_days(
+        db_session,
+        employee.id,
+        days_to_use=13,
+        hire_date=employee.hire_date,
+        additional_days=0,
+        order_id=order.id,
+        order_number=order.order_number,
+        transaction_type="vacation_use",
+        original_order_id=order.id,
+    )
+
+    for period in closed_periods:
+        await db_session.refresh(period)
+    await db_session.refresh(partial)
+    await db_session.refresh(following)
+
+    assert all(period.used_days_auto == 0 for period in closed_periods)
+    assert partial.used_days_auto == 13
+    assert partial.remaining_days == 0
+    assert following.used_days == 0
+
 async def test_auto_use_days_oldest_open_period_first(
     db_session,
     create_employee,

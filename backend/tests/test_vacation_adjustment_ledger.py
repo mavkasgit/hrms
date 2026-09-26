@@ -420,6 +420,14 @@ async def test_delete_order_recomputes_only_affected_periods_without_full_rebuil
     db_session,
     create_employee,
 ):
+    """Удаление приказа возвращает его дни, не пересоздавая периоды.
+
+    Периоды остаются теми же (id не меняются) — пересчёт трогает только
+    списания. При этом ни в одном периоде не должно остаться дней,
+    списанных удалённым приказом: ни в транзакциях, ни в списке связанных
+    приказов. Проверяем адресно по order_id, а не суммой used_days — сумма
+    обнуляется и сама по себе, не отвечая, чьи дни остались в периоде.
+    """
     employee = await create_employee(hire_date=date(2024, 5, 23), additional_vacation_days=2)
 
     created = await _create_paid_vacation(
@@ -442,12 +450,105 @@ async def test_delete_order_recomputes_only_affected_periods_without_full_rebuil
 
     # Периоды не пересоздаются "с нуля": id остаются теми же.
     assert before_ids == after_ids
-    # Удалённый приказ больше не влияет на использованные дни.
-    assert sum(p.used_days for p in after) == 0
-    # Дублирования "manual + auto" после удаления быть не должно.
+
     for period in after:
+        # Списания удалённого приказа не остались ни в одной транзакции:
+        # ни по order_id, ни по original_order_id/adjustment_order_id.
+        stale_transactions = [
+            tx.id
+            for tx in period.transactions
+            if tx.days_count != 0
+            and order_id in (tx.order_id, tx.original_order_id, tx.adjustment_order_id)
+        ]
+        assert stale_transactions == []
+
+        # И не остались в списке связанных приказов периода.
+        linked_order_ids = {part.strip() for part in (period.order_ids or "").split(",")}
+        assert str(order_id) not in linked_order_ids
+
+        # Дублирования "manual + auto" после удаления быть не должно.
         period_limit = period.main_days + period.additional_days
         assert period.used_days <= period_limit
+
+
+async def test_deleting_order_returns_later_vacation_days_to_freed_earlier_period(
+    db_session,
+    create_employee,
+):
+    """Регрессия: удаление приказа возвращает дни позднего отпуска в ранний период.
+
+    Сотрудник с четырьмя рабочими годами. Первые два периода закрыты вручную,
+    третий полностью съеден отпуском №1, поэтому отпуск №2 уходит в четвёртый.
+    Удаление приказа №1 освобождает третий период — дни отпуска №2 обязаны
+    вернуться в него по FIFO. Пересчёт только затронутых периодов этого не
+    делал: третий числился свободным, а четвёртый — списанным.
+    """
+    # Дата приёма даёт ровно 4 периода на 2026 год.
+    employee = await create_employee(hire_date=date(2023, 1, 15), additional_vacation_days=0)
+
+    await vacation_period_service.ensure_periods_for_employee(
+        db_session,
+        employee.id,
+        employee.hire_date,
+        employee.additional_vacation_days or 0,
+    )
+
+    periods = await vacation_period_service.get_employee_periods(db_session, employee.id)
+    assert len(periods) == 4
+    year_1 = next(p for p in periods if p.year_number == 1)
+    year_2 = next(p for p in periods if p.year_number == 2)
+
+    # Первые два периода закрыты вручную — в FIFO они не участвуют.
+    await vacation_period_service.close_period(db_session, year_1.period_id)
+    await vacation_period_service.close_period(db_session, year_2.period_id)
+
+    # Отпуск №1: 2025-06-02..2025-06-25 — 24 дня отпуска, ровно съедает 3-й период.
+    vacation_1 = await _create_paid_vacation(
+        db_session,
+        employee.id,
+        date(2025, 6, 2),
+        date(2025, 6, 25),
+    )
+    order_id_1 = vacation_1["order_id"]
+
+    # Отпуск №2: 4 дня отпуска; 3-й период исчерпан, поэтому они уходят в 4-й.
+    vacation_2 = await _create_paid_vacation(
+        db_session,
+        employee.id,
+        date(2026, 1, 20),
+        date(2026, 1, 23),
+    )
+
+    before = await vacation_period_service.get_employee_periods(db_session, employee.id)
+    before_by_year = {p.year_number: p for p in before}
+    assert order_id_1 is not None
+    # Предусловие сценария: 3-й период полностью съеден отпуском №1.
+    assert before_by_year[3].used_days == 24
+    assert before_by_year[3].used_days_auto == vacation_1["days_count"]
+    assert before_by_year[3].is_closed is True
+    # Отпуск №2 ушёл в 4-й период.
+    assert before_by_year[4].used_days == vacation_2["days_count"]
+
+    await order_service.hard_delete_order(db_session, order_id_1)
+
+    after = await vacation_period_service.get_employee_periods(db_session, employee.id)
+    after_by_year = {p.year_number: p for p in after}
+
+    # Освободившийся 3-й период снова открыт и принял дни отпуска №2.
+    assert after_by_year[3].is_closed is False
+    assert after_by_year[3].used_days_manual == 0
+    assert after_by_year[3].used_days_auto == vacation_2["days_count"]
+    assert after_by_year[3].used_days == vacation_2["days_count"]
+
+    # В 4-м периоде списаний не осталось: дни уехали в освободившийся 3-й.
+    assert after_by_year[4].used_days == 0
+    assert after_by_year[4].used_days_auto == 0
+
+    # Ручные закрытия 1-го и 2-го периодов пережили удаление приказа.
+    assert after_by_year[1].is_closed is True
+    assert after_by_year[1].used_days_manual == 24
+    assert after_by_year[2].is_closed is True
+    assert after_by_year[2].used_days_manual == 24
 
 
 async def test_delete_recall_order_restores_vacation_state(db_session, create_employee):

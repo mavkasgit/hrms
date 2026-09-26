@@ -485,7 +485,6 @@ def create_vacation_period(
             remaining_days=overrides.pop("remaining_days", None),
             order_ids=overrides.pop("order_ids", None),
             order_numbers=overrides.pop("order_numbers", None),
-            order_days_map=overrides.pop("order_days_map", None),
             year_number=overrides.pop("year_number", 1),
             **overrides,
         )

@@ -149,8 +149,17 @@ class VacationPeriodService:
         hire_date: date,
         additional_days: int = 0,
     ) -> None:
+        """Создать недостающие периоды и синхронизировать доп. дни.
+
+        Побочный эффект: при дублях year_number или расхождении period_start
+        периоды последней серии удаляются вместе со своими транзакциями. Отпуска,
+        их списавшие, остаются живыми, поэтому после удаления баланс
+        восстанавливается полным пересчётом FIFO по сотруднику.
+        """
         from dateutil.relativedelta import relativedelta
 
+        # Периоды были пересозданы — их транзакции удалены, баланс надо вернуть.
+        periods_recreated = False
         today = date.today()
         existing = await self._repo.get_by_employee(db, employee_id)
 
@@ -200,6 +209,7 @@ class VacationPeriodService:
                         await db.delete(p)
                     await db.flush()
                     latest_periods = []
+                    periods_recreated = True
 
             existing_years = {p.year_number for p in latest_periods}
             last_year = max(existing_years, default=0)
@@ -227,6 +237,7 @@ class VacationPeriodService:
                 if has_duplicates or first_period.period_start != expected_start:
                     await self._repo.delete_all_by_employee(db, employee_id)
                     existing = []
+                    periods_recreated = True
 
             existing_years = {p.year_number for p in existing}
             last_year = max(existing_years, default=0)
@@ -244,6 +255,11 @@ class VacationPeriodService:
             for year_number in range(last_year + 1, current_year_number + 1):
                 if year_number not in existing_years:
                     await self.create_period(db, employee_id, hire_date, year_number, additional_days)
+
+        if periods_recreated:
+            # Периоды удалены вместе с транзакциями — возвращаем списанные дни
+            # по FIFO. Коммит на сделке (recalculate_vacation_days_only).
+            await self.recalculate_vacation_days_only(db, employee_id)
 
     async def check_periods_mismatch(self, db: AsyncSession, employee_id: int, hire_date: date) -> bool:
         """Проверяет, соответствуют ли существующие периоды текущему hire_date."""
@@ -791,92 +807,23 @@ class VacationPeriodService:
             vacations=[],
         )
 
-    async def reverse_order_transactions(
-        self, db: AsyncSession, employee_id: int, order_id: int
-    ) -> None:
-        """
-        Создаёт reversal-транзакции для всех записей vacation_period_transactions,
-        связанных с удаляемым приказом (по original_order_id).
-        Затем пересчитывает totals только затронутых периодов.
-
-        Это инкрементальная альтернатива recalculate_periods:
-        — не удаляет периоды;
-        — не трогает ручные закрытия;
-        — не перераспределяет все отпуска с нуля;
-        — только отменяет операции конкретного приказа.
-
-        Важно: reversal-транзакции создаются с original_order_id=None,
-        чтобы они НЕ были удалены CASCADE при удалении приказа.
-        """
-        from sqlalchemy import select
-        from app.models.vacation_period_transaction import VacationPeriodTransaction
-
-        # Находим все положительные транзакции, связанные с этим приказом
-        tx_result = await db.execute(
-            select(VacationPeriodTransaction).where(
-                VacationPeriodTransaction.original_order_id == order_id,
-                VacationPeriodTransaction.days_count > 0,
-                VacationPeriodTransaction.is_reversal == False,
-            )
-        )
-        order_transactions = list(tx_result.scalars().all())
-
-        if not order_transactions:
-            return
-
-        # Группируем по period_id
-        affected_periods: dict[int, int] = {}  # period_id → total days to reverse
-        for tx in order_transactions:
-            affected_periods[tx.period_id] = affected_periods.get(tx.period_id, 0) + tx.days_count
-
-        # Для каждого периода создаём reversal-транзакцию
-        for period_id, days_to_reverse in affected_periods.items():
-            # Находим оригинальную транзакцию для ссылки
-            first_tx = next(tx for tx in order_transactions if tx.period_id == period_id)
-
-            # original_order_id=None и vacation_id=None чтобы reversal не был удалён CASCADE
-            # при удалении приказа (cascade на original_order_id) и отпуска (cascade на vacation_id)
-            await self._repo.add_transaction(
-                db,
-                period_id=period_id,
-                days_count=-days_to_reverse,
-                transaction_type="vacation_restore",
-                order_id=None,
-                order_number=first_tx.order_number,
-                vacation_id=None,
-                original_order_id=None,
-                reversed_transaction_id=None,
-                is_reversal=True,
-                source_type="order_deletion",
-                description=f"Восстановление при удалении приказа №{first_tx.order_number or order_id}: {days_to_reverse} дн.",
-                recompute_totals=True,
-            )
-
-    async def get_affected_period_ids_for_order(
-        self,
-        db: AsyncSession,
-        order_id: int,
-    ) -> list[int]:
-        """Возвращает period_id, в которых есть операции, каскадно удаляемые с приказом."""
-        from sqlalchemy import distinct, or_
-        from app.models.vacation_period_transaction import VacationPeriodTransaction
-
-        result = await db.execute(
-            select(distinct(VacationPeriodTransaction.period_id)).where(
-                or_(
-                    VacationPeriodTransaction.original_order_id == order_id,
-                    VacationPeriodTransaction.adjustment_order_id == order_id,
-                )
-            )
-        )
-        return [row[0] for row in result.all() if row[0] is not None]
-
-    async def recompute_period_totals_by_ids(self, db: AsyncSession, period_ids: list[int]) -> None:
-        for period_id in sorted(set(period_ids)):
-            await self._repo.recompute_period_totals(db, period_id)
-
     async def recalculate_vacation_days_only(self, db: AsyncSession, employee_id: int) -> list[VacationPeriodBalance]:
-        """Пересчитать автоматические списания без удаления периодов и ручных закрытий."""
+        """Пересчитать автоматические списания без удаления периодов и ручных закрытий.
+
+        Единственный путь, который восстанавливает FIFO-инвариант целиком: удаляет
+        все auto-транзакции сотрудника и заново раскладывает дни по периодам от
+        самого старшего. Звать всё, что освобождает дни в раннем периоде
+        (удаление приказа/отпуска), иначе списания остаются в поздних периодах,
+        а ранний числится свободным.
+
+        Транзакционно-нейтральна: коммит на сделке. Иначе вложенный вызов из
+        рекурсивного hard_delete_order коммитит посреди незавершённой работы.
+
+        Границы: учитываются только отпуска с приказом и только основной
+        (VACATION_TYPE_MAIN) — см. ADR-0012. Отпуск без приказа списания не
+        имеет: оба пути создания отпуска (vacation_service.create_vacation,
+        order_service._create_auto_vacation) приказ создают.
+        """
         from app.repositories.employee_repository import EmployeeRepository
         from app.repositories.order_repository import OrderRepository
 
@@ -921,7 +868,6 @@ class VacationPeriodService:
                 is_recalc=True,
             )
 
-        await db.commit()
         return await self.get_employee_periods(db, employee_id)
 
     async def recalculate_periods(self, db: AsyncSession, employee_id: int) -> list[VacationPeriodBalance]:
@@ -1061,16 +1007,24 @@ async def auto_use_days(
         if remaining_to_use <= 0:
             break
 
+        # Перед расчётом доступного остатка синхронизируем агрегаты с журналом.
+        # Это важно для частично закрытого периода: remaining_days — источник
+        # истины, а used_days мог остаться от старого пересчёта.
+        if period.remaining_days is not None:
+            await repo.recompute_period_totals(db, period.id)
+
         total = period.main_days + period.additional_days
 
-        # Списываем только с НЕ полностью закрытых периодов, от старых к новым.
-        # Полностью закрытый период — остаток явно зафиксирован как 0
-        # (remaining_days == 0) или все дни израсходованы (used_days >= total).
-        # Частично закрытый (remaining_days > 0) остаётся в очереди списания.
-        if (period.remaining_days is not None and period.remaining_days <= 0) or (period.used_days or 0) >= total:
-            continue
+        # Для ручного частичного закрытия remaining_days — источник истины.
+        # Не используем только total - used_days: после пересчёта или
+        # восстановления закрытия эти агрегаты могут временно расходиться.
+        if period.remaining_days is not None:
+            remaining = period.remaining_days
+        else:
+            remaining = total - (period.used_days or 0)
 
-        remaining = total - (period.used_days or 0)
+        # Полностью закрытый период не участвует в FIFO. Частично закрытый
+        # период продолжает списываться до своего явного остатка.
         if remaining <= 0:
             continue
 

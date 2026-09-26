@@ -24,7 +24,6 @@ class VacationPeriod(Base):
     remaining_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Явно сохранённый остаток (для закрытых периодов)
     order_ids: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # ID приказов для связей в БД
     order_numbers: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # Номера приказов для отображения
-    order_days_map: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # JSON: {"87": 18, "88": 5, "89": 20}
     
     year_number: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
