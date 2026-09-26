@@ -116,6 +116,8 @@ test.describe('Additional days adjust @api', () => {
   })
 
   test('@api per-period manual tweak reopens closed period and reverts one back', async ({ apiOps }) => {
+    // Последний период берём динамически (максимальный period_start): число периодов
+    // у сотрудника растёт с календарём, и жёсткий year_number снова сломает тест 15.01.2027.
     const emp = await apiOps.createEmployee({
       hire_date: '2023-01-15',
       contract_start: '2023-01-15',
@@ -124,9 +126,14 @@ test.describe('Additional days adjust @api', () => {
 
     let periods = await apiOps.getPeriods(emp.id)
     const year1 = periods.find((p: VacationPeriod) => p.year_number === 1)
-    const year3 = periods.find((p: VacationPeriod) => p.year_number === 3)
+    const last = periods.reduce((a: VacationPeriod, b: VacationPeriod) =>
+      a.period_start >= b.period_start ? a : b,
+    )
     expect(year1).toBeTruthy()
-    expect(year3).toBeTruthy()
+    // Граница «с последнего» должна быть строго новее 1-го периода, иначе
+    // проверка «старый не тронут границей» вырождается в тавтологию.
+    expect(last.period_id).not.toBe(year1!.period_id)
+    const lastPeriodId = last.period_id
 
     // Закрываем 1-й год и применяем «с последнего»: 1 → 3
     await apiOps.closePeriod(year1!.period_id)
@@ -134,23 +141,28 @@ test.describe('Additional days adjust @api', () => {
 
     periods = await apiOps.getPeriods(emp.id)
     const year1AfterBulk = periods.find((p: VacationPeriod) => p.year_number === 1)
-    const year3AfterBulk = periods.find((p: VacationPeriod) => p.year_number === 3)
+    const lastAfterBulk = periods.find((p: VacationPeriod) => p.period_id === lastPeriodId)
     expect(year1AfterBulk!.additional_days).toBe(1) // старый не тронут границей
-    expect(year3AfterBulk!.additional_days).toBe(3)
+    expect(lastAfterBulk!.additional_days).toBe(3)
+    // ВСЕ периоды старше границы сохраняют исходное значение: граница «с последнего»
+    // обязана быть именно самой новой, иначе часть периодов молча обновилась бы.
+    for (const p of periods) {
+      if (p.period_id !== lastPeriodId) expect(p.additional_days).toBe(1)
+    }
 
-    // Ручная корректировка: 1-й → 2 (переоткрытие на 1), 3-й → 1 (откат назад)
+    // Ручная корректировка: 1-й → 2 (переоткрытие на 1), последний → 1 (откат назад)
     const after = await apiOps.adjustPeriodsAdditionalDays(emp.id, [
       { period_id: year1AfterBulk!.period_id, additional_days: 2 },
-      { period_id: year3AfterBulk!.period_id, additional_days: 1 },
+      { period_id: lastPeriodId, additional_days: 1 },
     ])
 
     const year1After = after.find((p: VacationPeriod) => p.year_number === 1)
-    const year3After = after.find((p: VacationPeriod) => p.year_number === 3)
+    const lastAfter = after.find((p: VacationPeriod) => p.period_id === lastPeriodId)
     expect(year1After!.additional_days).toBe(2)
     expect(year1After!.used_days).toBe(25)
     expect(year1After!.remaining_days).toBe(1)
     expectPeriodInvariant(year1After!)
-    expect(year3After!.additional_days).toBe(1)
+    expect(lastAfter!.additional_days).toBe(1)
   })
 
   test('@api repeated change: bulk reopen → bulk revert closes → manual single period again', async ({ apiOps }) => {
