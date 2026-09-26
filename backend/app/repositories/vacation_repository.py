@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import DuplicateVacationForOrderError
+from app.core.exceptions import DuplicateVacationForOrderError, EmployeeNotFoundError
 from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
 from app.models.employee import Employee
@@ -634,7 +634,10 @@ class VacationRepository:
         )
         employee = emp_result.scalar_one_or_none()
         if not employee:
-            return {"error": "Employee not found"}
+            # Раньше возвращался {"error": ...}, но response_model требует
+            # employee_id/employee_name/hire_date/years — валидация падала и
+            # клиент получал 500 вместо 404.
+            raise EmployeeNotFoundError(employee_id)
 
         hire_date = employee.hire_date
         if not hire_date:
