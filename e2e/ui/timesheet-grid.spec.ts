@@ -6,6 +6,13 @@ import { getAdminTokenFromStorage } from '../fixtures/auth'
  * Timesheet grid behaviors (react-datasheet-grid):
  * keyboard navigation, inline editing, Delete reset, persistence.
  *
+ * Сетка ВИРТУАЛИЗИРУЕТ строки: в тестовой БД их десятки (97 сидовых +
+ * остатки прошлых прогонов), а только что созданный сотрудник с максимальным
+ * id уходит вниз сортировки по ФИО и без фильтра не отрисовывается.
+ * Тесты, работающие с ячейками, дают своим сотрудникам уникальный префикс имени
+ * и сужают сетку через ts.showEmployeesByName(...) — после reload поиск, как
+ * состояние компонента, повторяется заново.
+ *
  * Acceptance criteria #21:
  * - Активная ячейка двигается стрелками, Tab, Home/End, PageUp/PageDown
  * - Значение ячейки вводится с клавиатуры; Enter подтверждает, Escape отменяет
@@ -28,14 +35,19 @@ test.describe('Timesheet grid @ui', () => {
     page,
     apiOps,
   }) => {
-    // Создаём сотрудника, чтобы сетка имела хотя бы одну строку
-    const emp = await apiOps.createEmployee({})
+    // Сотрудник с уникальным ФИО — по нему сетка найдёт его строку
+    const u = apiOps.uid()
+    const emp = await apiOps.createEmployee({ name: `e2e-nav-${u}` })
     const ts = new TimesheetPage(page)
     await ts.goto()
     await ts.expectGridVisible()
 
     const date1 = periodDate(1)
     const date2 = periodDate(2)
+
+    // Сужаем сетку до одной строки: без фильтра строка свежего сотрудника
+    // (максимальный id, низ сортировки по ФИО) не виртуализирована в DOM
+    await ts.showEmployeesByName(`e2e-nav-${u}`, date1, 1)
 
     // Клик по ячейке делает её активной
     await ts.clickCell(date1, emp.id)
@@ -73,12 +85,16 @@ test.describe('Timesheet grid @ui', () => {
     page,
     apiOps,
   }) => {
-    const emp = await apiOps.createEmployee({})
+    const u = apiOps.uid()
+    const emp = await apiOps.createEmployee({ name: `e2e-edit-${u}` })
     const ts = new TimesheetPage(page)
     await ts.goto()
     await ts.expectGridVisible()
 
     const date1 = periodDate(1)
+
+    // Строка сотрудника в DOM (см. шапку файла про виртуализацию строк)
+    await ts.showEmployeesByName(`e2e-edit-${u}`, date1, 1)
 
     // Открываем inline-редактор
     await ts.openCellEditor(date1, emp.id)
@@ -101,12 +117,16 @@ test.describe('Timesheet grid @ui', () => {
     page,
     apiOps,
   }) => {
-    const emp = await apiOps.createEmployee({})
+    const u = apiOps.uid()
+    const emp = await apiOps.createEmployee({ name: `e2e-esc-${u}` })
     const ts = new TimesheetPage(page)
     await ts.goto()
     await ts.expectGridVisible()
 
     const date1 = periodDate(1)
+
+    // Строка сотрудника в DOM (см. шапку файла про виртуализацию строк)
+    await ts.showEmployeesByName(`e2e-esc-${u}`, date1, 1)
     const textBefore = await ts.getCellText(date1, emp.id)
 
     // Открываем редактор и нажимаем Escape
@@ -125,7 +145,8 @@ test.describe('Timesheet grid @ui', () => {
     page,
     apiOps,
   }) => {
-    const emp = await apiOps.createEmployee({})
+    const u = apiOps.uid()
+    const emp = await apiOps.createEmployee({ name: `e2e-delcell-${u}` })
 
     // Создаём расписание и ручную запись через API (с авторизацией)
     const now = new Date()
@@ -156,6 +177,9 @@ test.describe('Timesheet grid @ui', () => {
     await ts.goto()
     await ts.expectGridVisible()
 
+    // Строка сотрудника в DOM (см. шапку файла про виртуализацию строк)
+    await ts.showEmployeesByName(`e2e-delcell-${u}`, date1, 1)
+
     // Ячейка показывает ручное значение
     const cellBefore = ts.cell(date1, emp.id)
     await expect(cellBefore).toBeVisible({ timeout: 15_000 })
@@ -178,12 +202,16 @@ test.describe('Timesheet grid @ui', () => {
     page,
     apiOps,
   }) => {
-    const emp = await apiOps.createEmployee({})
+    const u = apiOps.uid()
+    const emp = await apiOps.createEmployee({ name: `e2e-persist-${u}` })
     const ts = new TimesheetPage(page)
     await ts.goto()
     await ts.expectGridVisible()
 
     const date1 = periodDate(1)
+
+    // Строка сотрудника в DOM (см. шапку файла про виртуализацию строк)
+    await ts.showEmployeesByName(`e2e-persist-${u}`, date1, 1)
 
     // Редактируем ячейку
     await ts.openCellEditor(date1, emp.id)
@@ -202,6 +230,9 @@ test.describe('Timesheet grid @ui', () => {
     await expect(ts.heading).toBeVisible({ timeout: 15_000 })
     await ts.expectGridVisible()
 
+    // Поиск — состояние компонента, после reload фильтр пуст: повторяем
+    await ts.showEmployeesByName(`e2e-persist-${u}`, date1, 1)
+
     // Значение сохранилось
     const cellAfter = ts.cell(date1, emp.id)
     await expect(cellAfter).toBeVisible({ timeout: 15_000 })
@@ -213,15 +244,19 @@ test.describe('Timesheet grid @ui', () => {
     page,
     apiOps,
   }) => {
-    // Создаём несколько сотрудников для многострочной сетки
+    // Сотрудники с общим уникальным префиксом: поиск сужает сетку ровно до них,
+    // поэтому вертикальная навигация проверяется на известном числе строк
+    const u = apiOps.uid()
     const emps = await Promise.all(
-      Array.from({ length: 3 }, () => apiOps.createEmployee({}))
+      ['a', 'b', 'c'].map((s) => apiOps.createEmployee({ name: `e2e-pg-${u}-${s}` }))
     )
     const ts = new TimesheetPage(page)
     await ts.goto()
     await ts.expectGridVisible()
 
     const date1 = periodDate(1)
+
+    await ts.showEmployeesByName(`e2e-pg-${u}`, date1, 3)
 
     // Клик по первому сотруднику
     await ts.clickCell(date1, emps[0].id)
@@ -236,9 +271,9 @@ test.describe('Timesheet grid @ui', () => {
     const topAfter = await ts.activeCellOverlay.evaluate(
       (el) => getComputedStyle(el).top
     )
-    // top может быть тем же если мало строк (PageDown clamped to rows.length-1)
-    // Но с 3 сотрудниками и pageRows > 3, он переместит на последнюю строку
-    expect(parseFloat(topAfter)).toBeGreaterThanOrEqual(parseFloat(topBefore))
+    // Сетка сужена до 3 строк, pageRows ≥ 1, поэтому PageDown гарантированно
+    // уводит активную ячейку вниз (clamp — на последнюю строку)
+    expect(parseFloat(topAfter)).toBeGreaterThan(parseFloat(topBefore))
 
     // PageUp возвращает вверх
     await page.keyboard.press('PageUp')
@@ -246,16 +281,19 @@ test.describe('Timesheet grid @ui', () => {
     const topRestored = await ts.activeCellOverlay.evaluate(
       (el) => getComputedStyle(el).top
     )
-    expect(parseFloat(topRestored)).toBeLessThanOrEqual(parseFloat(topAfter))
+    expect(parseFloat(topRestored)).toBeLessThan(parseFloat(topAfter))
   })
 
   test('@ui timesheet grid: manual over vacation gets divergence frame and «только расхождения» filter', async ({
     page,
     apiOps,
   }) => {
-    // Два сотрудника: А с расхождением (ручная смена поверх отпуска), Б без расхождения
-    const empA = await apiOps.createEmployee({})
-    const empB = await apiOps.createEmployee({})
+    // Два сотрудника: А с расхождением (ручная смена поверх отпуска), Б без расхождения.
+    // Общий уникальный префикс имени — по нему сетка сужается ровно до двоих
+    // (иначе строка А, свежая по id, не отрисовывается из-за виртуализации)
+    const u = apiOps.uid()
+    const empA = await apiOps.createEmployee({ name: `e2e-div-${u}-a` })
+    const empB = await apiOps.createEmployee({ name: `e2e-div-${u}-b` })
 
     const now = new Date()
     const year = now.getFullYear()
@@ -291,6 +329,10 @@ test.describe('Timesheet grid @ui', () => {
     const ts = new TimesheetPage(page)
     await ts.goto()
     await ts.expectGridVisible()
+
+    // Обе строки в DOM: проверка «у Б нет расхождения» осмысленна только
+    // когда обе строки реально отрисованы
+    await ts.showEmployeesByName(`e2e-div-${u}`, date1, 2)
 
     // Ячейка с расхождением обведена оранжевой рамкой и помечена data-divergence
     const cellA = ts.cell(date1, empA.id)
@@ -331,8 +373,7 @@ test.describe('Timesheet grid @ui', () => {
     const date2 = periodDate(2)
 
     // Сужаем сетку до двух сотрудников и ждём, пока фильтр применится
-    await ts.searchEmployees(`e2e-sel-${u}`)
-    await expect(ts.grid.locator(`[data-date="${date1}"]`)).toHaveCount(2, { timeout: 10_000 })
+    await ts.showEmployeesByName(`e2e-sel-${u}`, date1, 2)
 
     // Выделяем прямоугольник 2x2: клик по верхней ячейке, затем Shift+стрелки
     await ts.selectRectangle({
@@ -359,8 +400,7 @@ test.describe('Timesheet grid @ui', () => {
     await page.reload()
     await expect(ts.heading).toBeVisible({ timeout: 15_000 })
     await ts.expectGridVisible()
-    await ts.searchEmployees(`e2e-sel-${u}`)
-    await expect(ts.grid.locator(`[data-date="${date1}"]`)).toHaveCount(2, { timeout: 10_000 })
+    await ts.showEmployeesByName(`e2e-sel-${u}`, date1, 2)
     await expect(ts.cell(date1, empA.id)).toHaveText('8', { timeout: 15_000 })
     await expect(ts.cell(date2, empA.id)).toHaveText('8', { timeout: 15_000 })
     await expect(ts.cell(date1, empB.id)).toHaveText('8', { timeout: 15_000 })
@@ -382,8 +422,7 @@ test.describe('Timesheet grid @ui', () => {
     const date1 = periodDate(1)
     const date2 = periodDate(2)
 
-    await ts.searchEmployees(`e2e-del-${u}`)
-    await expect(ts.grid.locator(`[data-date="${date1}"]`)).toHaveCount(2, { timeout: 10_000 })
+    await ts.showEmployeesByName(`e2e-del-${u}`, date1, 2)
 
     // Заполняем прямоугольник 2x2 сменой «День»
     await ts.selectRectangle({
@@ -426,8 +465,7 @@ test.describe('Timesheet grid @ui', () => {
     const date2 = periodDate(2)
 
     // Сужаем сетку до двух сотрудников
-    await ts.searchEmployees(`e2e-undo-${u}`)
-    await expect(ts.grid.locator(`[data-date="${date1}"]`)).toHaveCount(2, { timeout: 10_000 })
+    await ts.showEmployeesByName(`e2e-undo-${u}`, date1, 2)
 
     // Ячейки пусты до заполнения (новый сотрудник, авто-слой пуст)
     await expect(ts.cell(date1, empA.id)).toHaveText('', { timeout: 10_000 })
@@ -461,8 +499,7 @@ test.describe('Timesheet grid @ui', () => {
     await page.reload()
     await expect(ts.heading).toBeVisible({ timeout: 15_000 })
     await ts.expectGridVisible()
-    await ts.searchEmployees(`e2e-undo-${u}`)
-    await expect(ts.grid.locator(`[data-date="${date1}"]`)).toHaveCount(2, { timeout: 10_000 })
+    await ts.showEmployeesByName(`e2e-undo-${u}`, date1, 2)
 
     // Значения по-прежнему пустые (отмена персистентна)
     await expect(ts.cell(date1, empA.id)).toHaveText('', { timeout: 15_000 })
@@ -475,12 +512,16 @@ test.describe('Timesheet grid @ui', () => {
     page,
     apiOps,
   }) => {
-    const emp = await apiOps.createEmployee({})
+    const u = apiOps.uid()
+    const emp = await apiOps.createEmployee({ name: `e2e-und1-${u}` })
     const ts = new TimesheetPage(page)
     await ts.goto()
     await ts.expectGridVisible()
 
     const date1 = periodDate(1)
+
+    // Строка сотрудника в DOM (см. шапку файла про виртуализацию строк)
+    await ts.showEmployeesByName(`e2e-und1-${u}`, date1, 1)
 
     // Ячейка пуста до правки
     await expect(ts.cell(date1, emp.id)).toHaveText('', { timeout: 10_000 })
@@ -504,6 +545,9 @@ test.describe('Timesheet grid @ui', () => {
     await page.reload()
     await expect(ts.heading).toBeVisible({ timeout: 15_000 })
     await ts.expectGridVisible()
+
+    // Поиск — состояние компонента, после reload фильтр пуст: повторяем
+    await ts.showEmployeesByName(`e2e-und1-${u}`, date1, 1)
     await expect(ts.cell(date1, emp.id)).toHaveText('', { timeout: 15_000 })
   })
 
@@ -514,7 +558,8 @@ test.describe('Timesheet grid @ui', () => {
     // Acceptance #27: приказ, созданный ПОСЛЕ ручной правки, помечается
     // order_changed=true (фиолетовая точка); «принять приказ» сбрасывает
     // ручное значение к авто-слою (отпуск) одним partial-bulk запросом.
-    const emp = await apiOps.createEmployee({})
+    const u = apiOps.uid()
+    const emp = await apiOps.createEmployee({ name: `e2e-ord-${u}` })
 
     const now = new Date()
     const year = now.getFullYear()
@@ -554,6 +599,9 @@ test.describe('Timesheet grid @ui', () => {
     await ts.goto()
     await ts.expectGridVisible()
 
+    // Строка сотрудника в DOM (см. шапку файла про виртуализацию строк)
+    await ts.showEmployeesByName(`e2e-ord-${u}`, date1, 1)
+
     // Ячейка помечена data-order-changed и показывает ручное значение (8ч)
     const cell = ts.cell(date1, emp.id)
     await expect(cell).toBeVisible({ timeout: 15_000 })
@@ -575,6 +623,9 @@ test.describe('Timesheet grid @ui', () => {
     await page.reload()
     await expect(ts.heading).toBeVisible({ timeout: 15_000 })
     await ts.expectGridVisible()
+
+    // Поиск — состояние компонента, после reload фильтр пуст: повторяем
+    await ts.showEmployeesByName(`e2e-ord-${u}`, date1, 1)
     await expect(ts.cell(date1, emp.id)).toHaveText('О', { timeout: 15_000 })
   })
 
@@ -625,8 +676,7 @@ test.describe('Timesheet grid @ui', () => {
     await ts.goto()
     await ts.expectGridVisible()
 
-    await ts.searchEmployees(`e2e-cp-${u}`)
-    await expect(ts.grid.locator(`[data-date="${date1}"]`)).toHaveCount(2, { timeout: 10_000 })
+    await ts.showEmployeesByName(`e2e-cp-${u}`, date1, 2)
 
     // Источник на месте
     await expect(ts.cell(date1, empA.id)).toHaveText('8', { timeout: 15_000 })
@@ -660,8 +710,7 @@ test.describe('Timesheet grid @ui', () => {
     await page.reload()
     await expect(ts.heading).toBeVisible({ timeout: 15_000 })
     await ts.expectGridVisible()
-    await ts.searchEmployees(`e2e-cp-${u}`)
-    await expect(ts.grid.locator(`[data-date="${date1}"]`)).toHaveCount(2, { timeout: 10_000 })
+    await ts.showEmployeesByName(`e2e-cp-${u}`, date1, 2)
     await expect(ts.cell(date8, empA.id)).toHaveText('8', { timeout: 15_000 })
     await expect(ts.cell(date9, empA.id)).toHaveText('12', { timeout: 15_000 })
   })
@@ -709,8 +758,7 @@ test.describe('Timesheet grid @ui', () => {
     await ts.goto()
     await ts.expectGridVisible()
 
-    await ts.searchEmployees(`e2e-fill-${u}`)
-    await expect(ts.grid.locator(`[data-date="${date1}"]`)).toHaveCount(3, { timeout: 10_000 })
+    await ts.showEmployeesByName(`e2e-fill-${u}`, date1, 3)
     await expect(ts.cell(date1, empA.id)).toHaveText('8', { timeout: 15_000 })
     await expect(ts.cell(date1, empB.id)).toHaveText('12', { timeout: 15_000 })
 
@@ -745,8 +793,7 @@ test.describe('Timesheet grid @ui', () => {
     await page.reload()
     await expect(ts.heading).toBeVisible({ timeout: 15_000 })
     await ts.expectGridVisible()
-    await ts.searchEmployees(`e2e-fill-${u}`)
-    await expect(ts.grid.locator(`[data-date="${date1}"]`)).toHaveCount(3, { timeout: 10_000 })
+    await ts.showEmployeesByName(`e2e-fill-${u}`, date1, 3)
     await expect(ts.cell(date1, empA.id)).toHaveText('8', { timeout: 15_000 })
     await expect(ts.cell(date1, empB.id)).toHaveText('12', { timeout: 15_000 })
     await expect(ts.cell(date1, empC.id)).toHaveText('8', { timeout: 15_000 })

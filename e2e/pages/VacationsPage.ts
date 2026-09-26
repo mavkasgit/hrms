@@ -172,7 +172,48 @@ export class VacationsPage {
     const numInput = this.page.getByLabel(/Номер приказа/i)
     await expect(numInput).toBeVisible({ timeout: 15_000 })
     await numInput.fill(orderNumber)
-    await numInput.press('Tab').catch(() => {})
+    // Ввод номера оставляет поповер «Последние приказы» открытым (DocumentNumberField
+    // открывает его по фокусу) — закрываем до клика «Создать приказ».
+    await this.closeRecentOrdersPopover()
+  }
+
+  /**
+   * Закрыть поповер «Последние приказы» (DocumentNumberField), если он открыт.
+   *
+   * Поповер открывается по фокусу на поле номера, закрывается по blur с
+   * grace-таймером 200 мс — и НЕ закрывается, пока курсор над ним
+   * (`hoveredRef` в DocumentNumberField). `fill()` курсор не двигает, поэтому он
+   * остаётся там, где его оставил предыдущий клик по полю даты, — то есть над
+   * поповером: blur не планирует закрытие, поповер живёт дальше, накрывает
+   * «Создать приказ» (min-w 760px с доп. секциями) и перехватывает клик
+   * («subtree intercepts pointer events»), из-за чего попап редактора не
+   * открывается. Escape поповер не слушает, поэтому закрываем его как живой
+   * пользователь: уводим курсор с поповера и снимаем фокус, после чего ЖДЁМ
+   * наблюдаемый признак — маркер «Заполнить след. номер» (рендерится только
+   * внутри поповера) исчез из DOM. Слепых пауз нет.
+   */
+  async closeRecentOrdersPopover(): Promise<void> {
+    const popoverMarker = this.page.getByRole('button', { name: 'Заполнить след. номер' })
+    if ((await popoverMarker.count()) === 0) return
+
+    const box = await popoverMarker.first().boundingBox()
+    if (box) {
+      const viewport = this.page.viewportSize()
+      // Над поповером — на самом поле номера: hover там безопасен (поповер
+      // открывается только по фокусу) и снимает hoveredRef через mouseleave.
+      const x = Math.min(Math.max(box.x + box.width / 2, 1), (viewport?.width ?? box.x) - 1)
+      const y = Math.min(Math.max(box.y - 20, 1), (viewport?.height ?? box.y) - 1)
+      await this.page.mouse.move(x, y)
+    }
+    // blur активного поля — приложение само снимет popoverOpen по таймеру.
+    await this.page
+      .locator(':focus')
+      .blur({ timeout: 3_000 })
+      .catch(() => this.page.keyboard.press('Tab'))
+    await expect(
+      popoverMarker,
+      'поповер «Последние приказы» должен скрыться до клика «Создать приказ»',
+    ).toHaveCount(0, { timeout: 10_000 })
   }
 
   /**
@@ -182,6 +223,9 @@ export class VacationsPage {
    * поэтому vacation-эндпоинт вызовет родительская страница — его ждёт spec.
    */
   async createOrderOpenEditor(): Promise<Page> {
+    // Поповер «Последние приказы» мог остаться открытым после ввода номера и
+    // перекрыть кнопку — закрываем заранее (см. closeRecentOrdersPopover).
+    await this.closeRecentOrdersPopover()
     const popupPromise = this.page.waitForEvent('popup', { timeout: 60_000 })
     await this.page.getByRole('button', { name: 'Создать приказ' }).click()
     const popup = await popupPromise

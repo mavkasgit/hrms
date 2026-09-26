@@ -183,6 +183,22 @@ export class TimesheetPage {
   }
 
   /**
+   * Поиск по ФИО + ожидание, что нужные строки реально отрисованы.
+   *
+   * Сетка виртуализирует строки: в БД их десятки (сидовые + остатки прошлых
+   * прогонов), а только что созданный сотрудник с максимальным id уходит вниз
+   * сортировки по ФИО и без фильтра не отрисовывается. Поэтому тесты ищут
+   * своих сотрудников по уникальному префиксу имени и ждут ровно expectedRows
+   * строк с колонкой date.
+   */
+  async showEmployeesByName(query: string, date: string, expectedRows: number) {
+    await this.searchEmployees(query)
+    await expect(this.grid.locator(`[data-date="${date}"]`)).toHaveCount(expectedRows, {
+      timeout: 15_000,
+    })
+  }
+
+  /**
    * Кнопка «принять приказ» конкретного сотрудника (в левой панели).
    */
   acceptOrdersForEmployee(employeeId: number): Locator {
