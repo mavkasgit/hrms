@@ -7,6 +7,10 @@
  *   On Windows kill-port uses TaskKill /F /PID without /T → orphan
  *   uvicorn/multiprocessing workers can keep the socket (WinError 10048).
  *
+ * Diagnostics: one netstat sample yields both PIDs and bind addresses, so the
+ * report shows ":5171 [127.0.0.1]" and warns when a port is loopback-only
+ * (localhost answers, the LAN-IP does not — it looks like a missing page).
+ *
  * Usage:
  *   node scripts/ensure-dev-ports.js           # interactive if TTY; else fail if busy
  *   node scripts/ensure-dev-ports.js --kill    # kill without prompt
@@ -65,13 +69,14 @@ function run(cmd, args, opts = {}) {
   }
 }
 
-/** @returns {Map<number, Set<number>>} port -> set of PIDs */
-function findListeningPids(ports) {
+/** @returns {Map<number, {pid: number, addr: string}[]>} port -> listening sockets */
+function listeningSnapshot(ports) {
+  /** @type {Map<number, {pid: number, addr: string}[]>} */
   const map = new Map();
-  for (const port of ports) map.set(port, new Set());
+  for (const port of ports) map.set(port, []);
 
   if (isWin) {
-    // netstat -ano: TCP  0.0.0.0:8000  0.0.0.0:0  LISTENING  12345
+    // netstat -ano: TCP  0.0.0.0:8011  0.0.0.0:0  LISTENING  12345
     const out = run("cmd.exe", ["/d", "/s", "/c", "netstat -ano"]);
     for (const line of out.split(/\r?\n/)) {
       if (!/LISTENING/i.test(line)) continue;
@@ -81,12 +86,13 @@ function findListeningPids(ports) {
       const state = parts[parts.length - 2] || "";
       const pidStr = parts[parts.length - 1] || "";
       if (!/LISTENING/i.test(state)) continue;
-      const m = local.match(/:(\d+)$/);
-      if (!m) continue;
-      const port = Number(m[1]);
+      // IPv6-адреса вида [::]:8011 — режем по последнему двоеточию
+      const idx = local.lastIndexOf(":");
+      if (idx < 0) continue;
+      const port = Number(local.slice(idx + 1));
       const pid = Number(pidStr);
       if (!map.has(port) || !Number.isFinite(pid)) continue;
-      map.get(port).add(pid);
+      map.get(port).push({ pid, addr: local.slice(0, idx) || "0.0.0.0" });
     }
   } else {
     for (const port of ports) {
@@ -94,12 +100,44 @@ function findListeningPids(ports) {
       const out = run("sh", ["-c", `lsof -tiTCP:${port} -sTCP:LISTEN 2>/dev/null || true`]);
       for (const line of out.split(/\r?\n/)) {
         const pid = Number(line.trim());
-        if (Number.isFinite(pid) && pid > 0) map.get(port).add(pid);
+        if (Number.isFinite(pid) && pid > 0) map.get(port).push({ pid, addr: "" });
       }
     }
   }
 
   return map;
+}
+
+/** @returns {Map<number, Set<number>>} port -> set of PIDs */
+function pidsFromSnapshot(snapshot) {
+  const map = new Map();
+  for (const [port, sockets] of snapshot) {
+    map.set(port, new Set(sockets.map((s) => s.pid)));
+  }
+  return map;
+}
+
+const LOOPBACK_ADDRS = new Set(["127.0.0.1", "::1", "[::1]"]);
+
+/**
+ * Порты, которые слушает только loopback: снаружи (по LAN-IP) они недоступны,
+ * поэтому страница «не найдена», хотя localhost отвечает.
+ * @param {Map<number, {pid: number, addr: string}[]>} snapshot
+ */
+function loopbackOnlyPorts(snapshot) {
+  const result = [];
+  for (const [port, sockets] of snapshot) {
+    if (sockets.length === 0) continue;
+    if (sockets.every((s) => LOOPBACK_ADDRS.has(s.addr))) result.push(port);
+  }
+  return result;
+}
+
+/** @param {Map<number, {pid: number, addr: string}[]>} snapshot */
+function addressesFor(snapshot, port, pid) {
+  return [...new Set(snapshot.get(port)?.filter((s) => s.pid === pid).map((s) => s.addr))].filter(
+    Boolean,
+  );
 }
 
 function processInfo(pid) {
@@ -229,20 +267,28 @@ function sleepMs(ms) {
   }
 }
 
-function printOccupants(rows) {
+function printOccupants(rows, snapshot) {
   console.log("");
   console.log("⚠  Dev ports already in use (LISTENING):");
   console.log("   (old uvicorn/vite orphans cause WinError 10048 / EADDRINUSE and stale API)");
   console.log("");
   for (const row of rows) {
+    const addrs = addressesFor(snapshot, row.port, row.pid);
+    const bind = addrs.length > 0 ? ` [${addrs.join(", ")}]` : "";
     if (row.isDocker) {
-      console.log(`   :${row.port}  PID ${row.pid}  ${row.name} [DOCKER - PROTECTED]`);
+      console.log(`   :${row.port}${bind}  PID ${row.pid}  ${row.name} [DOCKER - PROTECTED]`);
       if (row.cmd) console.log(`           ${row.cmd}`);
       console.log(`           ℹ Docker process detected — skipping kill to protect Docker Desktop.`);
     } else {
-      console.log(`   :${row.port}  PID ${row.pid}  ${row.name}`);
+      console.log(`   :${row.port}${bind}  PID ${row.pid}  ${row.name}`);
       if (row.cmd) console.log(`           ${row.cmd}`);
     }
+  }
+  for (const port of loopbackOnlyPorts(snapshot)) {
+    console.log("");
+    console.log(`⚠ :${port} слушает только loopback (127.0.0.1).`);
+    console.log(`   localhost:${port} отвечает, а http://<LAN-IP>:${port}/ — нет: снаружи это`);
+    console.log(`   выглядит как «страница не найдена». Нужен запуск с --host 0.0.0.0.`);
   }
   console.log("");
 }
@@ -340,11 +386,12 @@ function ensureDockerRunning(maxWaitSeconds = 45) {
 async function main() {
   const { forceKill, checkOnly, ports } = parseArgs(process.argv.slice(2));
 
-  let portMap = findListeningPids(ports);
+  let snapshot = listeningSnapshot(ports);
+  let portMap = pidsFromSnapshot(snapshot);
   let rows = collectOccupants(portMap);
 
   if (rows.length > 0) {
-    printOccupants(rows);
+    printOccupants(rows, snapshot);
 
     const killableRows = rows.filter((r) => !r.isDocker);
     const dockerRows = rows.filter((r) => r.isDocker);
@@ -381,7 +428,8 @@ async function main() {
 
       // Brief settle; re-check (orphans may rebind briefly)
       sleepMs(800);
-      portMap = findListeningPids(ports);
+      snapshot = listeningSnapshot(ports);
+      portMap = pidsFromSnapshot(snapshot);
       rows = collectOccupants(portMap);
       const remainingKillable = rows.filter((r) => !r.isDocker);
 
@@ -391,13 +439,14 @@ async function main() {
           killTree(pid);
         }
         sleepMs(500);
-        portMap = findListeningPids(ports);
+        snapshot = listeningSnapshot(ports);
+        portMap = pidsFromSnapshot(snapshot);
         rows = collectOccupants(portMap);
       }
 
       const finalKillable = rows.filter((r) => !r.isDocker);
       if (finalKillable.length > 0) {
-        printOccupants(finalKillable);
+        printOccupants(finalKillable, snapshot);
         console.error(
           "✗ Could not free all dev ports from non-Docker processes. Close them manually and retry."
         );

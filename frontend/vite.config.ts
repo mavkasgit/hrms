@@ -38,6 +38,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5171,
+    // Порт фиксирован: LAN-ссылки и E2E жёстко завязаны на 5171. Без strictPort
+    // Vite при занятом порту молча уезжает на 5172 — снаружи это выглядит как
+    // «страница не найдена», хотя localhost на старом порту ещё отвечает.
+    strictPort: true,
     // COOP: same-origin-allow-popups keeps popup flows working alongside SSO redirects
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
