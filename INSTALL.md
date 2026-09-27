@@ -27,7 +27,7 @@ npm run dev
 
 Точки доступа:
 - Frontend: `http://localhost:5171`
-- Backend API: `http://localhost:8000`
+- Backend API: `http://localhost:8011`
 - OnlyOffice: `http://localhost:8085`
 
 ## 4. TEST (Docker full stack)

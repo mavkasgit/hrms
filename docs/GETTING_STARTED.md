@@ -35,7 +35,7 @@ pip install -r backend/requirements.txt
 ```bash
 cp .env.example .env.dev
 ```
-Файл `.env.dev` уже преднастроен на локальный запуск бэкенда (порт 8000) и фронтенда (порт 5171), а также обращение к БД и OnlyOffice в Docker (порт 5432 и 8085 соответственно). При необходимости отредактируйте параметры подключения в `.env.dev`.
+Файл `.env.dev` уже преднастроен на локальный запуск бэкенда (порт 8011) и фронтенда (порт 5171), а также обращение к БД и OnlyOffice в Docker (порт 5435 и 8085 соответственно). При необходимости отредактируйте параметры подключения в `.env.dev`.
 
 ### Шаг 3. Запуск dev-окружения
 
@@ -45,7 +45,7 @@ npm run dev
 ```
 
 Эта команда последовательно делает следующее (благодаря хуку `predev`):
-1. Проверяет, свободны ли dev-порты **8000** (backend) и **5171** (frontend).  
+1. Проверяет, свободны ли dev-порты **8011** (backend) и **5171** (frontend).  
    Если заняты (часто зомби uvicorn/vite) — в интерактивном терминале предложит **убить process tree** (`taskkill /T` на Windows).  
    Non-interactive: `npm run dev:kill` или `HRMS_DEV_KILL=1 npm run dev`.
 2. Поднимает контейнеры PostgreSQL и OnlyOffice: `npm run docker:dev:up`.
@@ -53,7 +53,11 @@ npm run dev
 4. Применяет все Alembic-миграции: `npm run dev:migrate`.
 5. Запускает параллельно (через `concurrently`):
    - Логи контейнеров базы данных
-   - Локальный Uvicorn сервер для бэкенда (`npm run dev:backend`)
+   - Локальный Uvicorn сервер для бэкенда (`npm run dev:backend`). Это
+     `backend/scripts/dev_server.py`, а не `uvicorn --reload` напрямую: на Windows
+     uvicorn перезапускает рабочий процесс через `CTRL_C_EVENT`, который бьёт по
+     всей консоли и уносит FRONTEND/DB. Подробности — в
+     [`agents.md`](../agents.md#dev-режим-backend).
    - Локальный Vite dev-сервер для фронтенда (`npm run frontend`)
 
 ### Порты заняты / WinError 10048
@@ -61,7 +65,7 @@ npm run dev
 | Команда | Назначение |
 |---------|------------|
 | `npm run dev:ports` | Только проверка (exit 1, если занято) |
-| `npm run dev:kill` | Освободить 8000/5171 (process **tree**, не один PID) |
+| `npm run dev:kill` | Освободить 8011/5171 (process **tree**, не один PID) |
 | `npm run dev:restart` | kill + полный `dev` |
 | `HRMS_DEV_KILL=1 npm run dev` | auto-kill без вопроса |
 
@@ -78,8 +82,8 @@ npm run dev
 
 ### Адреса сервисов после запуска:
 - **Frontend (React)**: `http://localhost:5171`
-- **Backend API**: `http://localhost:8000`
-- **API Swagger Docs**: `http://localhost:8000/docs`
+- **Backend API**: `http://localhost:8011`
+- **API Swagger Docs**: `http://localhost:8011/docs`
 - **OnlyOffice Document Server**: `http://localhost:8085`
 
 ---
@@ -108,7 +112,7 @@ npm run dev
 ## Другие полезные команды разработки
 
 - **Сброс и очистка портов**:
-  Если порты 8000 или 5171 оказались заняты предыдущими зависшими процессами, очистите их:
+  Если порты 8011 или 5171 оказались заняты предыдущими зависшими процессами, очистите их:
   ```bash
   npm run dev:kill
   ```

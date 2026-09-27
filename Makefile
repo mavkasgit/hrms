@@ -25,7 +25,7 @@ backend-install:
 	cd backend && pip install -r requirements.txt
 
 backend-run:
-	cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	cd backend && python scripts/dev_server.py
 
 # Frontend
 frontend-install:

@@ -177,6 +177,34 @@ npm run dev:migrate                   # Применить миграции
 npm run db:makemigrate -- -m "msg"    # Создать новую миграцию
 ```
 
+### Dev-режим backend
+
+`npm run dev` поднимает backend не через `uvicorn --reload` напрямую, а через
+`backend/scripts/dev_server.py` (`npm run dev:backend` → `scripts/run-backend.ps1`,
+на POSIX — `scripts/run-backend.sh`). **Возвращаться к прямому `uvicorn --reload`
+на Windows нельзя:** uvicorn перезапускает рабочий процесс через
+`os.kill(pid, signal.CTRL_C_EVENT)`, а pid не является группой процессов, поэтому
+`GenerateConsoleCtrlEvent` уходит всей консоли — вместе с backend умирают
+FRONTEND и DB, стенд падает с 3221225786 (0xC000013A). Свой скрипт убивает
+рабочий процесс точечно (`taskkill /F /T /PID`).
+
+Что ещё делает `dev_server.py`:
+
+- слушает только `backend/app` — uvicorn всегда добавляет cwd в watch-files,
+  поэтому без этого рестарт вызывали правки `backend/tests`, `alembic`, `scripts`;
+- **пропускает рестарт, если изменённый файл не компилируется** — backend
+  продолжает отдавать API на последней валидной версии кода (в лоне появляется
+  «Рестарт пропущен: …»);
+- порт берётся из `BACKEND_PORT` (дефолт стенда — `8011`).
+
+Окружение, включая `DATABASE_URL`, приходит из `.env.dev`: на Windows его
+инжектит `scripts/run-backend.ps1` (тот же разбор env-файла с интерполяцией
+`${VAR}`), на POSIX — `scripts/run-backend.sh`. Скрипт `dev_server.py` и
+`alembic/env.py` намеренно ничего не грузят сами: второй загрузчик env-файла
+сделал бы DSN вторым источником правды. Fallback-DSN в `backend/alembic.ini`
+(`localhost:5435`) синхронизирован с `.env.dev` на случай запуска alembic без
+`DATABASE_URL` в окружении.
+
 ---
 
 ## Правила разработки
@@ -224,7 +252,7 @@ npm run db:makemigrate -- -m "msg"    # Создать новую миграци
 
 ## Полезные ссылки
 
-- Backend API Docs: http://localhost:8000/docs (Swagger UI)
+- Backend API Docs: http://localhost:8011/docs (Swagger UI)
 - Frontend Dev: http://localhost:5171
 - Playwright Report: `playwright-report/`
 

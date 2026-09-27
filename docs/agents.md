@@ -11,7 +11,7 @@
 | Порт | Назначение / Окружение | Автономный доступ | Сетевой доступ |
 |---|---|---|---|
 | **5171** | Frontend (Vite dev server) | Локально в dev | — |
-| **8000** | Backend API (FastAPI) | Локально в dev | — |
+| **8011** | Backend API (FastAPI) | Локально в dev | — |
 | **8085** | OnlyOffice Document Server | dev | — |
 | **8080** | Nginx entrypoint (test) | `http://localhost:8080` | — |
 | **8081** | Nginx entrypoint (prod, HRMS) | `http://localhost:8081` | `http://<domain>/` (через порт 80/443) |

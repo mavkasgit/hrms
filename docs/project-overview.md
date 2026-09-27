@@ -116,15 +116,15 @@ OnlyOffice Document Server используется для автоматиче�
 Основные утилиты:
 - `wait-for-postgres` — опрашивает БД, блокируя выполнение следующих команд, пока СУБД не будет готова принимать соединения.
 - `run-migrate` — запускает миграции Alembic (`alembic upgrade head`) только после того, как БД станет доступной.
-- `run-backend` — запускает локальный сервер Uvicorn с автоперезапуском при изменении кода.
+- `run-backend` — запускает локальный сервер Uvicorn с автоперезапуском при изменении кода (через `backend/scripts/dev_server.py`, см. [`agents.md`](../agents.md#dev-режим-backend)).
 
 ## Порты проекта
 
 | Порт | Сервис / Назначение | Доступность |
 |---|---|---|
 | **5171** | Frontend (Vite Dev Server) | Локально, `http://localhost:5171` |
-| **8000** | Backend API (Uvicorn) | Локально, `http://localhost:8000` |
-| **8000/docs** | Swagger UI (FastAPI) | Локально, `http://localhost:8000/docs` |
+| **8011** | Backend API (Uvicorn) | Локально, `http://localhost:8011` |
+| **8011/docs** | Swagger UI (FastAPI) | Локально, `http://localhost:8011/docs` |
 | **8085** | OnlyOffice Document Server (dev) | Внутри контейнера / локально `http://localhost:8085` |
 | **8080** | Nginx Entrypoint (test) | `http://localhost:8080` (полный Docker стек) |
 | **80** / **443** | Nginx Entrypoint (prod) | `http://localhost` (продакшн стек) |
