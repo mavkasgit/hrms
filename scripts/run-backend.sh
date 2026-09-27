@@ -16,6 +16,14 @@ if [[ "${ONLYOFFICE_INTERNAL_URL:-}" == *"onlyoffice"* ]]; then
 fi
 
 cd "${PROJECT_ROOT}/backend"
+
+# POSIX-venv (создана на Linux/WSL). В этом чекауте venv собрана под Windows
+# (Scripts/, без bin/) — тогда .sh остаётся запасным путём и работает прежний
+# прямой вызов uvicorn.
+if [ -x ".venv/bin/python" ]; then
+  exec .venv/bin/python scripts/dev_server.py
+fi
+
 exec uvicorn app.main:app --host 0.0.0.0 --port "${BACKEND_PORT:-8011}"
 
 

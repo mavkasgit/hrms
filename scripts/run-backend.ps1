@@ -29,8 +29,9 @@ if ($env:ONLYOFFICE_INTERNAL_URL -like "*onlyoffice*") {
 }
 
 $backendPort = if ($env:BACKEND_PORT) { $env:BACKEND_PORT } else { "8011" }
+$env:BACKEND_PORT = $backendPort
 Set-Location (Join-Path $projectRoot "backend")
-$uvicornPath = if (Test-Path ".\.venv\Scripts\uvicorn.exe") { ".\.venv\Scripts\uvicorn.exe" } else { "uvicorn" }
-& $uvicornPath app.main:app --host 0.0.0.0 --port $backendPort
+$pythonPath = if (Test-Path ".\.venv\Scripts\python.exe") { ".\.venv\Scripts\python.exe" } else { "python" }
+& $pythonPath scripts/dev_server.py
 
 
