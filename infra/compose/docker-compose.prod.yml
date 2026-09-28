@@ -4,6 +4,11 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: hrms-postgres-prod
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-hrms_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hrms_pass_prod}
@@ -23,6 +28,11 @@ services:
   onlyoffice:
     image: onlyoffice/documentserver:9.4.0
     container_name: hrms-onlyoffice-prod
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     expose:
       - "80"
     volumes:
@@ -44,6 +54,11 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     container_name: hrms-backend-prod
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     expose:
       - "8000"
     volumes:
@@ -84,6 +99,11 @@ services:
       context: ../../frontend
       dockerfile: Dockerfile
     container_name: hrms-frontend-prod
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     expose:
       - "80"
     depends_on:
@@ -94,6 +114,11 @@ services:
   nginx:
     image: nginx:alpine
     container_name: hrms-nginx-prod
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     ports:
       - "8081:80"
     volumes:
@@ -111,6 +136,11 @@ services:
     profiles: ["tunnel"]
     image: node:20-alpine
     container_name: hrms-localtunnel-prod
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     network_mode: "service:nginx"
     depends_on:
       - nginx
@@ -125,6 +155,11 @@ services:
     profiles: ["tunnel"]
     image: cloudflare/cloudflared:latest
     container_name: hrms-cloudflared-prod
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     network_mode: "service:nginx"
     depends_on:
       - nginx
