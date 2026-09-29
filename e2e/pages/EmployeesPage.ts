@@ -32,11 +32,18 @@ export class EmployeesPage {
     await expect(this.pageTitle).toBeVisible({ timeout: 15000 })
   }
 
-  private async waitForEmployeesRefresh(trigger: () => Promise<void>) {
+  private async waitForEmployeesRefresh(query: string, trigger: () => Promise<void>) {
+    // Ждём именно тот GET, который несёт поисковый запрос: без фильтра по q
+    // ловится «хвостовой» ответ загрузки страницы, и следующая проверка строки
+    // упирается в гонку с рендером (исторически — flaky «soft delete hides employee»).
+    const q = encodeURIComponent(query)
     const refreshPromise = this.page
       .waitForResponse(
-        (resp) => resp.url().includes('/api/employees') && resp.request().method() === 'GET',
-        { timeout: 4000 }
+        (resp) =>
+          resp.url().includes('/api/employees') &&
+          resp.request().method() === 'GET' &&
+          resp.url().includes(`q=${q}`),
+        { timeout: 15_000 }
       )
       .catch(() => null)
 
@@ -49,14 +56,14 @@ export class EmployeesPage {
   // ============================================================================
 
   async searchEmployee(query: string) {
-    await this.waitForEmployeesRefresh(async () => {
+    await this.waitForEmployeesRefresh(query, async () => {
       await this.searchInput.fill(query)
     })
   }
 
   async getEmployeeRow(name: string): Promise<Locator> {
     const row = this.rows.filter({ hasText: name })
-    await expect(row.first()).toBeVisible({ timeout: 5000 })
+    await expect(row.first()).toBeVisible({ timeout: 15_000 })
     return row.first()
   }
 
@@ -188,11 +195,11 @@ export class EmployeesPage {
   }
 
   async expectEmployeeInTable(name: string) {
-    await expect(this.rows.filter({ hasText: name }).first()).toBeVisible({ timeout: 5000 })
+    await expect(this.rows.filter({ hasText: name }).first()).toBeVisible({ timeout: 15000 })
   }
 
   async expectEmployeeNotInTable(name: string) {
-    await expect(this.rows.filter({ hasText: name })).not.toBeVisible({ timeout: 3000 })
+    await expect(this.rows.filter({ hasText: name })).not.toBeVisible({ timeout: 10000 })
   }
 
   async openImportModal() {

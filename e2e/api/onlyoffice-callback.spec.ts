@@ -51,6 +51,30 @@ const SAVE_STATUSES = [OO_SAVE_ALT, OO_SAVE]
 test.describe('OnlyOffice callback unified mapping @api', () => {
   test.setTimeout(60_000)
 
+  /**
+   * Диагностика окружения до прогонов: колбэк-токен подписывается секретом из
+   * e2e/.env, и при расхождении с секретом backend'а КАЖДЫЙ колбэк отдаёт
+   * 403 «Невалидный JWT OnlyOffice» — 12 одинаковых падений вместо одной
+   * понятной ошибки. Ловим расхождение здесь.
+   */
+  test.beforeAll(async ({ playwright }) => {
+    const { request, dispose } = await createAuthenticatedRequest(playwright)
+    try {
+      const resp = await request.post('/api/orders/999999/onlyoffice/callback', {
+        data: { status: OO_IGNORE, token: onlyOfficeToken({ status: OO_IGNORE }) },
+      })
+      if (resp.status() === 403) {
+        throw new Error(
+          'Backend отклонил колбэк OnlyOffice (403 «Невалидный JWT»): ONLYOFFICE_JWT_SECRET ' +
+            'в e2e/.env не совпадает с секретом backend-окружения под тестом ' +
+            '(docker:test → .env.test, нативный dev → .env.dev, CI → env workflow).',
+        )
+      }
+    } finally {
+      await dispose()
+    }
+  })
+
   test('@api notification callback download-failure → 500 error:1', async ({
     playwright,
     apiOps,
