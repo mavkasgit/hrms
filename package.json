@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "setup": "npm install && npm install --prefix frontend && echo 'Не забудьте установить зависимости Python!'",
+    "postinstall": "playwright install chromium",
     "verify:sync": "node scripts/verify-sync.mjs --other ../ktm2000",
     "predev": "node scripts/verify-sync.mjs --other ../ktm2000 --if-enabled && node scripts/ensure-dev-ports.js --kill && npm run docker:dev:up && npm run db:wait && npm run dev:migrate",
     "prebuild": "node scripts/verify-sync.mjs --other ../ktm2000 --if-enabled",

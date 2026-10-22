@@ -171,6 +171,48 @@ npx playwright test --project=auth --list
 Окружение: `npm run docker:test:up` (или DEV `npm run dev` — нужны frontend **и** backend для login).  
 Base URL: `E2E_BASE_URL` (default `http://localhost:5171`).
 
+**Браузеры:** ревизия Chromium привязана к версии `@playwright/test`
+(1.59.1 → Chromium 1217). Root `postinstall` (`playwright install chromium`)
+докачивает нужную ревизию при `npm install` / `npm ci`; если она уже есть — no-op.
+В CI остаётся шаг `npx playwright install chromium --with-deps` (системные библиотеки).
+Ревизии от других проектов в общем кэше не конфликтуют.
+
+**OnlyOffice для полного прогона:** задайте `ONLYOFFICE_JWT_SECRET` в `e2e/.env`
+(значение = секрет backend-окружения). Без него `onlyoffice-token` бросает
+исключение уже на этапе сбора тестов, и `--list` показывает 0 тестов.
+
+### Dev-стенд OO: две ловушки, из-за которых падают все UI-тесты
+
+Симптом: страница редактора показывает «Редактор документа не загрузился»
+(или кнопка «Сохранить …» остаётся `disabled` до таймаута), при этом DS и
+backend запущены.
+
+1. **Секрет JWT должен совпадать у трёх участников** — контейнер DS, backend и
+   `e2e/.env`: `docker exec hrms-onlyoffice printenv JWT_SECRET` →
+   `ONLYOFFICE_JWT_SECRET` в `.env.dev` → `ONLYOFFICE_JWT_SECRET` в `e2e/.env`.
+   В dev-контейнере сейчас `dev-onlyoffice-secret`. При расхождении DS отклоняет
+   config-токен (редактор не открывается), а API-тесты колбэков получают 403.
+2. **`BACKEND_INTERNAL_CALLBACK_URL` должен быть виден из контейнера DS** —
+   `http://host.docker.internal:8011` (backend на хосте, DS в Docker). Значение
+   `http://localhost:8011` указывает DS на самого себя: файл (`document.url`) и
+   колбэки не скачиваются.
+
+Проверка перед запуском UI-тестов:
+
+```bash
+curl -s http://localhost:8085/healthcheck                    # true
+curl -s -o /dev/null -w '%{http_code}\n' \
+  http://localhost:8085/web-apps/apps/api/documents/api.js   # 200
+docker exec hrms-onlyoffice curl -s -o /dev/null -w '%{http_code}\n' \
+  http://host.docker.internal:8011/api/health                # 200
+```
+
+Быстрый gate по одному файлу:
+
+```bash
+npx playwright test --project=setup --project=ui e2e/ui/draft-actions.spec.ts
+```
+
 ## 7. Workers / parallel
 
 | Режим | Как | `fullyParallel` | Browser |

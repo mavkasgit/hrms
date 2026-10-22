@@ -118,6 +118,17 @@ API: seed employee
 
 Нужно для прогона: FE `:5171`, BE `:8000`, OnlyOffice DS (dev: `:8085`).
 
+**Dev-чеклист OO** (ловушки, из-за которых редактор не загружается):
+
+| Что | Значение | Почему |
+|-----|----------|--------|
+| `ONLYOFFICE_JWT_SECRET` backend'а = `JWT_SECRET` контейнера | `dev-onlyoffice-secret` (`.env.dev`) | иначе DS отклоняет config-токен |
+| `ONLYOFFICE_JWT_SECRET` в `e2e/.env` | тот же секрет | иначе API-тесты колбэков получают 403 |
+| `BACKEND_INTERNAL_CALLBACK_URL` | `http://host.docker.internal:8011` | DS в контейнере не видит `localhost:8011` — там он сам; файл и колбэки не скачиваются |
+| `ONLYOFFICE_PUBLIC_URL` | `http://localhost:8085` | браузер грузит `api.js` с DS напрямую |
+
+Проверка из контейнера: `docker exec hrms-onlyoffice curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer <token из config>" <document.url>` → 200.
+
 ### Backlog / техдолг
 
 | # | Долг | Статус |
