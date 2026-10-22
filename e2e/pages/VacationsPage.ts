@@ -64,13 +64,19 @@ export class VacationsPage {
     await this.endDateInput.press('Enter')
   }
 
-  private async waitForVacationListRefresh(trigger: () => Promise<void>) {
+  private async waitForVacationListRefresh(query: string, trigger: () => Promise<void>) {
+    // Ждём GET, который несёт сам поисковый запрос: иначе можно поймать
+    // «хвостовой» ответ загрузки страницы и упасть на следующей проверке строки.
+    const q = encodeURIComponent(query)
     const refreshPromise = this.page
       .waitForResponse(
         (resp) =>
-          (resp.url().includes('/api/vacations') || resp.url().includes('/api/vacation-periods')) &&
-          resp.request().method() === 'GET',
-        { timeout: 4000 }
+          (resp.url().includes('/api/vacations') ||
+            resp.url().includes('/api/vacation-periods') ||
+            resp.url().includes('/api/employees/search')) &&
+          resp.request().method() === 'GET' &&
+          resp.url().includes(`q=${q}`),
+        { timeout: 15_000 }
       )
       .catch(() => null)
 
@@ -79,14 +85,14 @@ export class VacationsPage {
   }
 
   async searchEmployee(query: string) {
-    await this.waitForVacationListRefresh(async () => {
+    await this.waitForVacationListRefresh(query, async () => {
       await this.searchInput.fill(query)
     })
   }
 
   async getEmployeeRow(name: string): Promise<Locator> {
     const row = this.rows.filter({ hasText: name })
-    await expect(row.first()).toBeVisible({ timeout: 5000 })
+    await expect(row.first()).toBeVisible({ timeout: 15_000 })
     return row.first()
   }
 

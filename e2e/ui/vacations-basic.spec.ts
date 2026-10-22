@@ -57,6 +57,10 @@ test.describe('Vacations basic @ui', () => {
     page,
     apiOps,
   }) => {
+    // Сценарий тянет два полных цикла UI+OnlyOffice (создание отпуска через
+    // редактор) плюс частичное закрытие/отмену — 60 с меньше суммы шагов,
+    // внутренний waitForResponse сам ждёт до 120 с.
+    test.setTimeout(180_000)
     const u = apiOps.uid()
     const empName = `e2e-emp-vac-close-${u}`
     const emp = await apiOps.createEmployee({
