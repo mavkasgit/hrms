@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     TEMPLATES_PATH: str = str(BASE_DIR / "data" / "templates")
     PERSONAL_FILES_PATH: str = str(BASE_DIR / "data" / "personal")
     BACKUPS_PATH: str = str(BASE_DIR / "data" / "backups")
+    # Внешняя копия бэкапов (#126) — rclone. Пустой RCLONE_PATH = искать в PATH.
+    RCLONE_PATH: str = ""
+    BACKUP_REMOTE_TIMEOUT: int = 3600  # общий таймаут одной операции с внешним диском, сек
     POSTGRES_CONTAINER_NAME: str = "hrms-postgres"
     STAFFING_PATH: str = str(BASE_DIR / "data" / "staffing")
     NOTIFICATIONS_PATH: str = str(BASE_DIR / "data" / "notifications")

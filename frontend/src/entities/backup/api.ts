@@ -1,14 +1,43 @@
 import api from "@/shared/api/client"
 import { downloadFile } from "@/shared/api/download"
-import type { BackupInfo, BackupJob, BackupPreview, BackupRestoreRequest } from "./types"
+import type {
+  BackupConfig,
+  BackupInfo,
+  BackupJob,
+  BackupPreview,
+  BackupRestoreRequest,
+  RemoteConfigUpdate,
+  RemoteStatus,
+  RemoteTestResult,
+} from "./types"
 
-export async function fetchBackupConfig(): Promise<{ db_name: string; auto_enabled: boolean; time_of_day: string }> {
-  const { data } = await api.get<{ db_name: string; auto_enabled: boolean; time_of_day: string }>("/backups/config")
+export async function fetchBackupConfig(): Promise<BackupConfig> {
+  const { data } = await api.get<BackupConfig>("/backups/config")
   return data
 }
 
-export async function updateBackupConfig(payload: { auto_enabled: boolean; time_of_day: string }): Promise<{ auto_enabled: boolean; time_of_day: string }> {
-  const { data } = await api.patch<{ auto_enabled: boolean; time_of_day: string }>("/backups/config", payload)
+export async function updateBackupConfig(payload: {
+  auto_enabled?: boolean
+  time_of_day?: string
+  remote?: RemoteConfigUpdate
+}): Promise<BackupConfig> {
+  const { data } = await api.patch<BackupConfig>("/backups/config", payload)
+  return data
+}
+
+export async function testBackupRemote(payload: RemoteConfigUpdate): Promise<RemoteTestResult> {
+  // rclone отвечает дольше обычного API-таймаута (30 с): ждём столько, сколько нужно.
+  const { data } = await api.post<RemoteTestResult>("/backups/remote/test", payload, { timeout: 0 })
+  return data
+}
+
+export async function uploadBackupRemote(filename: string): Promise<RemoteStatus> {
+  // Копирование архива может идти минуты — отключаем клиентский таймаут.
+  const { data } = await api.post<RemoteStatus>(
+    `/backups/${encodeURIComponent(filename)}/upload-remote`,
+    undefined,
+    { timeout: 0 },
+  )
   return data
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from "react"
-import { Download, RotateCcw, Eye, Database, Upload, AlertTriangle, Loader2, CheckCircle2, Trash2, X, ArrowLeft, Clock, Save } from "lucide-react"
+import { Download, RotateCcw, Eye, Database, Upload, AlertTriangle, Loader2, CheckCircle2, Trash2, X, ArrowLeft, Clock, Save, CloudUpload, Server } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Input } from "@/shared/ui/input"
 import { useToast } from "@/shared/ui/use-toast"
@@ -38,9 +38,12 @@ import {
   useBulkDeleteBackups,
   useDeleteBackupsOlderThan,
   useStartBackupJob,
+  useTestBackupRemote,
+  useUploadBackupRemote,
 } from "@/entities/backup/useBackups"
 import { downloadBackup } from "@/entities/backup/api"
-import type { BackupPreview } from "@/entities/backup/types"
+import type { BackupPreview, RemoteConfigUpdate, RemoteRetention, RemoteStatus } from "@/entities/backup/types"
+import { getErrorMessage } from "@/shared/api/client"
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B"
@@ -76,6 +79,8 @@ function backupStageLabel(stage: string): string {
     adding_files: "Файлы",
     exporting_tables: "CSV-экспорт",
     writing_manifest: "Manifest",
+    uploading_remote: "Внешний диск",
+    remote_failed: "Внешняя копия",
     completed: "Готово",
     failed: "Ошибка",
   }
@@ -228,6 +233,22 @@ export function BackupsPage() {
 
   const [configModalOpen, setConfigModalOpen] = useState(false)
 
+  // Дополнительная копия на внешний диск (#126)
+  const [remoteEnabled, setRemoteEnabled] = useState(false)
+  const [remoteDestination, setRemoteDestination] = useState("")
+  const [remoteAuthMode, setRemoteAuthMode] = useState<"guest" | "credentials">("guest")
+  const [remoteUsername, setRemoteUsername] = useState("")
+  const [remotePassword, setRemotePassword] = useState("")
+  const [remotePasswordDirty, setRemotePasswordDirty] = useState(false)
+  const [remoteHasPassword, setRemoteHasPassword] = useState(false)
+  const [remoteDomain, setRemoteDomain] = useState("")
+  const [remoteBwlimit, setRemoteBwlimit] = useState("")
+  const [remoteRetention, setRemoteRetention] = useState<RemoteRetention>({ daily: 7, weekly: 4, monthly: 0, manual: 0 })
+  const [remoteTestResult, setRemoteTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [remoteUploading, setRemoteUploading] = useState<string | null>(null)
+  const testRemote = useTestBackupRemote()
+  const uploadRemote = useUploadBackupRemote()
+
   const isValidTime = useMemo(() => {
     return /^([01]\d|2[0-3]):[0-5]\d$/.test(timeOfDay)
   }, [timeOfDay])
@@ -243,8 +264,69 @@ export function BackupsPage() {
     if (config) {
       setAutoEnabled(config.auto_enabled)
       setTimeOfDay(config.time_of_day || "23:00")
+      const remote = config.remote
+      if (remote) {
+        setRemoteEnabled(remote.enabled)
+        setRemoteDestination(remote.destination || "")
+        setRemoteAuthMode(remote.auth_mode || "guest")
+        setRemoteUsername(remote.username || "")
+        setRemoteDomain(remote.domain || "")
+        setRemoteBwlimit(remote.bwlimit || "")
+        setRemoteRetention(remote.retention || { daily: 7, weekly: 4, monthly: 0, manual: 0 })
+        setRemoteHasPassword(Boolean(remote.has_password))
+      }
+      setRemotePassword("")
+      setRemotePasswordDirty(false)
+      setRemoteTestResult(null)
     }
   }, [config, configModalOpen])
+
+  const buildRemotePayload = (): RemoteConfigUpdate => {
+    const payload: RemoteConfigUpdate = {
+      enabled: remoteEnabled,
+      destination: remoteDestination.trim(),
+      auth_mode: remoteAuthMode,
+      username: remoteUsername,
+      domain: remoteDomain,
+      bwlimit: remoteBwlimit.trim(),
+      retention: remoteRetention,
+    }
+    if (remotePasswordDirty) payload.password = remotePassword
+    return payload
+  }
+
+  const handleTestRemote = async () => {
+    setRemoteTestResult(null)
+    try {
+      const result = await testRemote.mutateAsync(buildRemotePayload())
+      setRemoteTestResult({ ok: true, message: result.message })
+    } catch (error) {
+      setRemoteTestResult({
+        ok: false,
+        message: getErrorMessage(error) || "Не удалось проверить внешний диск",
+      })
+    }
+  }
+
+  const handleUploadRemote = async (filename: string) => {
+    setRemoteUploading(filename)
+    try {
+      const status = await uploadRemote.mutateAsync(filename)
+      addToast({
+        title: "Скопировано на внешний диск",
+        description: status.remote_path || filename,
+        variant: "success",
+      })
+    } catch (error) {
+      addToast({
+        title: "Внешняя копия не удалась",
+        description: getErrorMessage(error) || "неизвестная ошибка",
+        variant: "destructive",
+      })
+    } finally {
+      setRemoteUploading(null)
+    }
+  }
 
   const handleSaveConfig = async () => {
     if (!isValidTime) return
@@ -254,6 +336,7 @@ export function BackupsPage() {
       await updateConfig.mutateAsync({
         auto_enabled: autoEnabled,
         time_of_day: timeOfDay,
+        remote: buildRemotePayload(),
       })
       setConfigSaveSuccess(true)
       setTimeout(() => setConfigSaveSuccess(false), 3000)
@@ -265,6 +348,11 @@ export function BackupsPage() {
       })
     } catch (e: any) {
       console.error("Ошибка сохранения настроек:", e)
+      addToast({
+        title: "Не удалось сохранить настройки",
+        description: e?.response?.data?.detail || e?.message || "неизвестная ошибка",
+        variant: "destructive",
+      })
     } finally {
       setIsSavingConfig(false)
     }
@@ -307,7 +395,7 @@ export function BackupsPage() {
   const [olderThanDays, setOlderThanDays] = useState("")
   const [olderThanPreview, setOlderThanPreview] = useState<string[]>([])
 
-  const [createToast, setCreateToast] = useState<{ filename: string; size: number; created_at: string } | null>(null)
+  const [createToast, setCreateToast] = useState<{ filename: string; size: number; created_at: string; remote?: RemoteStatus | null } | null>(null)
 
   const commentInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -320,6 +408,7 @@ export function BackupsPage() {
         filename: activeBackupJob.result.filename,
         size: activeBackupJob.result.size,
         created_at: activeBackupJob.result.created_at,
+        remote: activeBackupJob.result.remote,
       })
       refetchBackups()
       setTimeout(() => setCreateToast(null), 5000)
@@ -944,6 +1033,22 @@ export function BackupsPage() {
                       >
                         <Download className="h-4 w-4" />
                       </Button>
+                      {config?.remote?.enabled && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => handleUploadRemote(b.filename)}
+                          disabled={remoteUploading === b.filename}
+                          title="Копировать на внешний диск"
+                        >
+                          {remoteUploading === b.filename ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <CloudUpload className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -1327,6 +1432,13 @@ export function BackupsPage() {
                 <p className="text-sm font-medium">Бэкап создан</p>
                 <p className="text-xs text-muted-foreground break-all">{createToast.filename}</p>
                 <p className="text-xs text-muted-foreground">{formatBytes(createToast.size)} · {formatDate(createToast.created_at)}</p>
+                {createToast.remote && (
+                  <p className={cn("text-xs", createToast.remote.ok ? "text-emerald-600" : "text-amber-600")}>
+                    {createToast.remote.ok
+                      ? "Скопирован на внешний диск"
+                      : `Внешняя копия не удалась: ${createToast.remote.error || "неизвестная ошибка"}`}
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => setCreateToast(null)}
@@ -1341,7 +1453,7 @@ export function BackupsPage() {
 
       {/* Модальное окно настройки автоматического резервного копирования */}
       <Dialog open={configModalOpen} onOpenChange={setConfigModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-sky-600 dark:text-sky-400" />
@@ -1420,6 +1532,191 @@ export function BackupsPage() {
               <p>
                 Система автоматически ротирует резервные копии: сохраняются последние 7 ежедневных и 4 еженедельных бэкапа, ежемесячные копии хранятся бессрочно.
               </p>
+            </div>
+
+            {/* Дополнительная копия на внешний диск (#126) */}
+            <div className="rounded-lg border p-4 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <label htmlFor="modal-remote-enabled" className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      id="modal-remote-enabled"
+                      className="sr-only peer"
+                      checked={remoteEnabled}
+                      onChange={(e) => setRemoteEnabled(e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600"></div>
+                  </label>
+                  <div className="space-y-0.5">
+                    <label htmlFor="modal-remote-enabled" className="text-sm font-medium cursor-pointer flex items-center gap-1.5">
+                      <Server className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                      Дополнительная копия
+                    </label>
+                    <p className="text-xs text-muted-foreground">Сетевой диск, NAS, SFTP, WebDAV</p>
+                  </div>
+                </div>
+              </div>
+
+              {remoteEnabled && (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Путь</label>
+                    <Input
+                      value={remoteDestination}
+                      onChange={(e) => setRemoteDestination(e.target.value)}
+                      placeholder={String.raw`\\nas\backup\hrms`}
+                      className="font-mono text-xs"
+                    />
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Поддерживаются: \\сервер\шара\папка, smb://сервер/шара, sftp://, ftp://, webdav://, nfs://,
+                      локальный D:\Backup\HRMS или /mnt/usb/hrms, готовый remote rclone — myremote:backup/hrms.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground">Режим доступа</label>
+                      <select
+                        value={remoteAuthMode}
+                        onChange={(e) => setRemoteAuthMode(e.target.value as "guest" | "credentials")}
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      >
+                        <option value="guest">Гость (без учётной записи)</option>
+                        <option value="credentials">Учётная запись</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground">Лимит скорости</label>
+                      <Input
+                        value={remoteBwlimit}
+                        onChange={(e) => setRemoteBwlimit(e.target.value)}
+                        placeholder="например 10M"
+                        className="h-9 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {remoteAuthMode === "credentials" && (
+                    <div className="grid gap-2">
+                      <Input
+                        value={remoteUsername}
+                        onChange={(e) => setRemoteUsername(e.target.value)}
+                        placeholder="Логин"
+                        className="h-9"
+                      />
+                      <Input
+                        type="password"
+                        value={remotePassword}
+                        onChange={(e) => {
+                          setRemotePassword(e.target.value)
+                          setRemotePasswordDirty(true)
+                        }}
+                        placeholder={remoteHasPassword && !remotePasswordDirty ? "Пароль сохранён — оставьте пустым, чтобы не менять" : "Пароль"}
+                        className="h-9"
+                      />
+                      {remoteHasPassword && (
+                        <button
+                          type="button"
+                          className="text-[11px] text-left text-red-600 hover:underline"
+                          onClick={() => {
+                            setRemotePassword("")
+                            setRemotePasswordDirty(true)
+                            setRemoteHasPassword(false)
+                          }}
+                        >
+                          Очистить сохранённый пароль
+                        </button>
+                      )}
+                      <Input
+                        value={remoteDomain}
+                        onChange={(e) => setRemoteDomain(e.target.value)}
+                        placeholder="Домен (необязательно)"
+                        className="h-9"
+                      />
+                    </div>
+                  )}
+
+                  {remoteAuthMode === "guest" && (
+                    <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>
+                        Гостевой доступ означает, что любой в сети сможет читать, изменять и удалять резервные копии.
+                        Рекомендуется отдельная учётная запись с правами только на каталог бэкапов.
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground">
+                      Хранение на внешнем диске <span className="font-normal">(0 — бессрочно)</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {([
+                        ["daily", "Ежедн."],
+                        ["weekly", "Еженед."],
+                        ["monthly", "Ежемес."],
+                        ["manual", "Ручные"],
+                      ] as Array<[keyof RemoteRetention, string]>).map(([key, label]) => (
+                        <div key={key} className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">{label}</label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={remoteRetention[key]}
+                            onChange={(e) => {
+                              const value = Math.max(0, parseInt(e.target.value || "0", 10) || 0)
+                              setRemoteRetention((prev) => ({ ...prev, [key]: value }))
+                            }}
+                            className="h-8 text-center text-xs"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleTestRemote}
+                      disabled={testRemote.isPending || !remoteDestination.trim()}
+                    >
+                      {testRemote.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <CloudUpload className="h-4 w-4 mr-1" />
+                      )}
+                      Проверить
+                    </Button>
+                    {remoteTestResult && (
+                      <span className={cn("text-xs", remoteTestResult.ok ? "text-emerald-600" : "text-red-600")}>
+                        {remoteTestResult.message}
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {config?.remote?.last_status && (
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-[11px] space-y-0.5">
+                  <div className="font-medium">Последняя внешняя копия</div>
+                  <div>
+                    {config.remote.last_status.filename || "—"}
+                    {config.remote.last_status.finished_at ? ` · ${formatDate(config.remote.last_status.finished_at)}` : ""}
+                  </div>
+                  <div className={config.remote.last_status.ok ? "text-emerald-600" : "text-amber-700"}>
+                    {config.remote.last_status.ok
+                      ? `Успешно${config.remote.last_status.deleted?.length ? `, удалено старых: ${config.remote.last_status.deleted.length}` : ""}`
+                      : `Не удалась: ${config.remote.last_status.error || "неизвестная ошибка"}`}
+                  </div>
+                  {config.remote.last_status.rotation_error && (
+                    <div className="text-amber-700">
+                      Ротация не выполнена: {config.remote.last_status.rotation_error}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

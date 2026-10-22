@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import * as api from "./api"
+import type { RemoteConfigUpdate } from "./types"
 
 export function useBackupConfig() {
   return useQuery({
@@ -11,8 +12,24 @@ export function useBackupConfig() {
 export function useUpdateBackupConfig() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (payload: { auto_enabled: boolean; time_of_day: string }) =>
+    mutationFn: (payload: { auto_enabled?: boolean; time_of_day?: string; remote?: RemoteConfigUpdate }) =>
       api.updateBackupConfig(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["backup-config"] })
+    },
+  })
+}
+
+export function useTestBackupRemote() {
+  return useMutation({
+    mutationFn: (payload: RemoteConfigUpdate) => api.testBackupRemote(payload),
+  })
+}
+
+export function useUploadBackupRemote() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (filename: string) => api.uploadBackupRemote(filename),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["backup-config"] })
     },

@@ -51,6 +51,22 @@ npm run docker:prod:down
 - `ONLYOFFICE_PUBLIC_URL`: Публичный URL Document Server для браузеров (обычно `http://<domain>/onlyoffice` или `http://localhost:8085`).
 - `ONLYOFFICE_INTERNAL_URL`: Внутренний URL для общения бэкенда с OnlyOffice (`http://nginx/onlyoffice` или `http://localhost:8085`).
 - `BACKEND_INTERNAL_CALLBACK_URL`: URL, используемый OnlyOffice для обратных вызовов на бэкенд (`http://backend:8000`).
+- `RCLONE_PATH`: Путь к бинарнику rclone для внешней копии бэкапов (#126). Пусто — искать в `PATH`; в контейнере rclone уже установлен.
+- `BACKUP_REMOTE_TIMEOUT`: Общий таймаут одной операции с внешним хранилищем, секунды (по умолчанию `3600`).
+
+### Внешняя копия бэкапов (rclone)
+
+Копия на сетевое/съёмное хранилище настраивается в UI: `/settings/backups` →
+«Автоматическое резервное копирование» → блок «Дополнительная копия». Отдельных
+монтирований, букв сетевых дисков и задач ОС не требуется — backend сам открывает
+исходящее соединение через rclone. Поддерживаются `\\сервер\шара`, `smb://`,
+`sftp://`, `ftp(s)://`, `webdav://`, `nfs://`, локальные пути и готовые remote
+rclone (`myremote:path`).
+
+Настройки хранятся в `data/backups/config.json` (пароль — зашифрованным ключом из
+`SECRET_KEY`), статус последней копии — `data/backups/remote-status.json`.
+При смене `SECRET_KEY` пароль нужно ввести заново: API вернёт понятную ошибку.
+Если backend запускается без контейнера, установите rclone и задайте `RCLONE_PATH`.
 
 ### Compose interpolation: источник `${VAR}` при `docker-compose.prod.yml`
 
@@ -77,3 +93,4 @@ npm run docker:prod:up   # docker compose --env-file .env.prod -f infra/compose/
 - [ ] Контейнеры запущены: `docker ps` показывает статус `Up (healthy)`.
 - [ ] OnlyOffice доступен и JWT авторизация работает: `curl http://<IP>:8081/onlyoffice/healthcheck` → `true`; открытие приказа `view-docx` показывает документ, а не пустой экран.
 - [ ] Бэкапы баз данных настроены на регулярный запуск.
+- [ ] Дополнительная копия бэкапов включена, кнопка «Проверить» подтверждает чтение и запись во внешнее хранилище.

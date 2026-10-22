@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 import json
@@ -10,7 +11,7 @@ import uuid
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Literal, Optional
 from urllib.parse import unquote, urlparse
 
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, UploadFile, File, status
@@ -23,6 +24,7 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.core.database import get_db, engine
 from app.core.logging import logger
+from app.services import backup_remote
 
 router = APIRouter(prefix="/backups", tags=["backups"])
 
@@ -659,6 +661,54 @@ def _set_job_progress(job_id: str, progress: int, stage: str, message: str, **ex
         })
 
 
+def _upload_remote_copy(
+    filename: str,
+    local_path: Path,
+    progress: Callable[[int, str], None] | None = None,
+) -> Optional[Dict]:
+    """Копирует готовый архив на внешний диск, не ломая локальный бэкап.
+
+    Любая ошибка (нет rclone, нет доступа, таймаут) превращается в статус
+    ``ok: false`` с понятной причиной: локальная копия уже создана и остаётся
+    основной. Статус всегда сохраняется в ``remote-status.json`` для UI.
+    """
+    raw = _read_config_json()["remote"]
+    if not backup_remote.is_enabled(raw):
+        return None
+
+    started_at = datetime.now().isoformat()
+    if progress:
+        progress(0, "Подготовка к копированию")
+    try:
+        result = backup_remote.upload_backup(local_path, raw, progress)
+    except Exception as exc:  # noqa: BLE001 — внешняя копия не должна ломать бэкап
+        message = str(exc) if isinstance(exc, backup_remote.RemoteBackupError) else f"Непредвиденная ошибка: {exc}"
+        status = {
+            "ok": False,
+            "filename": filename,
+            "started_at": started_at,
+            "finished_at": datetime.now().isoformat(),
+            "error": message,
+        }
+        backup_remote.write_status(status)
+        logger.warning("Копирование бэкапа на внешний диск не удалось", filename=filename, error=message)
+        return status
+
+    status = {
+        "ok": True,
+        "filename": filename,
+        "started_at": started_at,
+        "finished_at": datetime.now().isoformat(),
+        "size": result.get("size"),
+        "remote_path": result.get("remote_path"),
+        "deleted": result.get("deleted", []),
+        "rotation_error": result.get("rotation_error") or "",
+    }
+    backup_remote.write_status(status)
+    logger.info("Бэкап скопирован на внешний диск", filename=filename, remote_path=status["remote_path"])
+    return status
+
+
 def _create_backup_archive(job_id: str | None = None, backup_type: str = "manual") -> Dict:
     def report(progress: int, stage: str, message: str, **extra) -> None:
         if job_id:
@@ -724,14 +774,50 @@ def _create_backup_archive(job_id: str | None = None, backup_type: str = "manual
         "created_at": datetime.now().isoformat(),
         "comment": "",
     }
-    report(100, "completed", "Бэкап готов", result=result)
+
+    # Дополнительная копия — после успешного локального бэкапа. Ошибка копии
+    # не меняет статус задачи: локальный бэкап уже готов.
+    remote_status = None
+    if backup_remote.is_enabled(_read_config_json()["remote"]):
+        report(96, "uploading_remote", "Копирование архива на внешний диск")
+
+        def remote_progress(percent: int, message: str) -> None:
+            report(
+                96 + int(max(0, min(100, percent)) * 3 / 100),
+                "uploading_remote",
+                f"{message}: {percent}%",
+            )
+
+        remote_status = _upload_remote_copy(filename, filepath, remote_progress)
+        result["remote"] = remote_status
+
+    if remote_status and not remote_status.get("ok"):
+        report(100, "remote_failed", "Локальный бэкап готов, внешняя копия не удалась", result=result)
+    else:
+        report(
+            100,
+            "completed",
+            "Бэкап готов и скопирован на внешний диск" if remote_status else "Бэкап готов",
+            result=result,
+        )
     return result
 
 
 def _run_backup_job(job_id: str) -> None:
     try:
         result = _create_backup_archive(job_id)
-        _set_job_progress(job_id, 100, "completed", "Бэкап готов", status="completed", result=result)
+        remote = result.get("remote") or {}
+        if remote.get("ok") is False:
+            _set_job_progress(
+                job_id,
+                100,
+                "remote_failed",
+                "Локальный бэкап готов, внешняя копия не удалась",
+                status="completed",
+                result=result,
+            )
+        else:
+            _set_job_progress(job_id, 100, "completed", "Бэкап готов", status="completed", result=result)
     except Exception as exc:
         logger.exception("Backup job failed: %s", job_id)
         detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
@@ -755,7 +841,8 @@ async def current_preview() -> Dict:
 async def create_backup() -> Dict:
     """Создать архивный бэкап текущей БД и файловых storage."""
     _validate_admin()
-    return _create_backup_archive()
+    # Архивация и копирование на внешний диск не должны блокировать event loop.
+    return await asyncio.to_thread(_create_backup_archive)
 
 
 @router.post("/jobs", status_code=status.HTTP_202_ACCEPTED)
@@ -793,14 +880,19 @@ async def get_backup_job(job_id: str) -> Dict:
 
 def _read_config_json() -> Dict:
     config_path = BACKUPS_DIR / "config.json"
-    default_config = {"auto_enabled": False, "time_of_day": "23:00"}
+    default_config = {
+        "auto_enabled": False,
+        "time_of_day": "23:00",
+        "remote": backup_remote.normalize_config(None),
+    }
     if not config_path.exists():
         return default_config
     try:
         data = json.loads(config_path.read_text(encoding="utf-8"))
         return {
             "auto_enabled": bool(data.get("auto_enabled", False)),
-            "time_of_day": str(data.get("time_of_day", "23:00"))
+            "time_of_day": str(data.get("time_of_day", "23:00")),
+            "remote": backup_remote.normalize_config(data.get("remote")),
         }
     except Exception:
         return default_config
@@ -810,40 +902,119 @@ def _write_config_json(config: Dict) -> None:
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-@router.get("/config")
-async def get_backup_config() -> Dict:
-    """Получить текущие настройки автоматического бэкапа и имя БД."""
-    _validate_admin()
-    config = _read_config_json()
+def _config_response(config: Dict) -> Dict:
+    """Настройки для UI: без пароля, но с признаком его наличия и статусом копии."""
+    remote = backup_remote.public_config(config.get("remote"))
+    remote["last_status"] = backup_remote.read_status()
     return {
         "db_name": _get_db_name(),
         "auto_enabled": config["auto_enabled"],
-        "time_of_day": config["time_of_day"]
+        "time_of_day": config["time_of_day"],
+        "remote": remote,
     }
 
 
+@router.get("/config")
+async def get_backup_config() -> Dict:
+    """Получить настройки автоматического бэкапа, внешней копии и имя БД."""
+    _validate_admin()
+    return _config_response(_read_config_json())
+
+
+class RemoteRetentionUpdate(BaseModel):
+    daily: int | None = None
+    weekly: int | None = None
+    monthly: int | None = None
+    manual: int | None = None
+
+
+class RemoteConfigUpdate(BaseModel):
+    """Блок «Дополнительная копия» в PATCH /config и POST /remote/test."""
+
+    enabled: bool | None = None
+    destination: str | None = None
+    auth_mode: Literal["guest", "credentials"] | None = None
+    username: str | None = None
+    domain: str | None = None
+    bwlimit: str | None = None
+    retention: RemoteRetentionUpdate | None = None
+    # Отсутствует — не менять, пустая строка — очистить.
+    password: str | None = None
+
+
 class BackupConfigUpdate(BaseModel):
-    auto_enabled: bool
-    time_of_day: str  # В формате "HH:MM"
+    auto_enabled: bool | None = None
+    time_of_day: str | None = None  # В формате "HH:MM"
+    remote: RemoteConfigUpdate | None = None
 
 
 @router.patch("/config")
 async def update_backup_config(payload: BackupConfigUpdate) -> Dict:
-    """Обновить настройки автоматического бэкапа."""
+    """Обновить настройки автоматического бэкапа и внешней копии."""
     _validate_admin()
-    parts = payload.time_of_day.split(":")
+    config = _read_config_json()
+
+    time_of_day = payload.time_of_day if payload.time_of_day is not None else config["time_of_day"]
+    parts = time_of_day.split(":")
     if len(parts) != 2 or not all(p.isdigit() for p in parts) or not (0 <= int(parts[0]) <= 23) or not (0 <= int(parts[1]) <= 59):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Время должно быть в формате HH:MM (от 00:00 до 23:59)",
         )
-    
-    config = {
-        "auto_enabled": payload.auto_enabled,
-        "time_of_day": payload.time_of_day
-    }
+
+    config["auto_enabled"] = payload.auto_enabled if payload.auto_enabled is not None else config["auto_enabled"]
+    config["time_of_day"] = time_of_day
+
+    if payload.remote is not None:
+        try:
+            config["remote"] = backup_remote.apply_update(
+                config.get("remote"),
+                payload.remote.model_dump(exclude_unset=True),
+            )
+        except backup_remote.RemoteBackupError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
     _write_config_json(config)
-    return config
+    return _config_response(config)
+
+
+def _resolve_backup_path(filename: str) -> Path:
+    """Путь к файлу бэкапа без выхода за пределы каталога (``../`` и т.п.)."""
+    root = BACKUPS_DIR.resolve()
+    candidate = (BACKUPS_DIR / filename).resolve()
+    if root not in candidate.parents or not candidate.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Бэкап не найден")
+    return candidate
+
+
+@router.post("/remote/test")
+async def test_remote_storage(body: Optional[RemoteConfigUpdate] = Body(default=None)) -> Dict:
+    """Проверить чтение, запись и удаление по адресу внешнего хранилища."""
+    _validate_admin()
+    current = _read_config_json()["remote"]
+    candidate = current
+    if body is not None:
+        try:
+            candidate = backup_remote.apply_update(current, body.model_dump(exclude_unset=True))
+        except backup_remote.RemoteBackupError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
+    if not str(candidate.get("destination") or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Укажите путь для дополнительной копии",
+        )
+
+    try:
+        return await asyncio.to_thread(backup_remote.test_destination, candidate)
+    except backup_remote.RemoteBackupError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 
@@ -897,6 +1068,26 @@ async def update_backup_comment(filename: str, comment: str = Body(..., embed=Tr
     meta["comment"] = comment
     _write_backup_meta(filename, meta)
     return {"filename": filename, "comment": comment}
+
+
+@router.post("/{filename}/upload-remote")
+async def upload_backup_to_remote(filename: str) -> Dict:
+    """Вручную скопировать существующий бэкап на внешний диск."""
+    _validate_admin()
+    filepath = _resolve_backup_path(filename)
+    if not backup_remote.is_enabled(_read_config_json()["remote"]):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Дополнительная копия не включена или не указан путь",
+        )
+
+    status = await asyncio.to_thread(_upload_remote_copy, filename, filepath)
+    if status and not status.get("ok"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=status.get("error") or "Не удалось скопировать бэкап на внешний диск",
+        )
+    return status or {}
 
 
 @router.delete("/{filename}")

@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.core.database import async_session
 from app.core.logging import logger
 from app.api.backups import _create_backup_archive, _iter_backup_files, _delete_backup_file, _read_backup_meta, _read_config_json
+from app.services.backup_retention import plan_rotation_with_limits
 
 import socket
 
@@ -103,49 +104,28 @@ async def run_backup_cycle():
         logger.exception("Ошибка при выполнении автоматического бэкапа")
 
 def rotate_backups():
-    """Выполняет GFS-ротацию резервных копий."""
+    """Выполняет GFS-ротацию резервных копий.
+
+    Политика живёт в общем модуле ``backup_retention`` — том же, что использует
+    внешняя копия, чтобы локальная и внешняя ротация не разъезжались.
+    """
     logger.info("Запуск ротации бэкапов по стратегии GFS")
-    
-    backups_by_type = {
-        "daily": [],
-        "weekly": [],
-        "monthly": [],
-        "manual": []
-    }
-    
+
+    entries: list[tuple[str, str]] = []
     for f in _iter_backup_files():
         meta = _read_backup_meta(f.name)
-        b_type = (meta or {}).get("backup_type", "manual")
-        if b_type in backups_by_type:
-            backups_by_type[b_type].append(f)
-        else:
-            backups_by_type["manual"].append(f)
-            
-    deleted_count = 0
+        entries.append((f.name, (meta or {}).get("backup_type", "manual")))
 
-    # Ротация Daily (храним 7 последних)
-    daily_list = backups_by_type["daily"]
-    if len(daily_list) > 7:
-        for f in daily_list[7:]:
-            logger.info("Ротация: Удаление старого ежедневного бэкапа", filename=f.name)
-            try:
-                _delete_backup_file(f.name)
-                deleted_count += 1
-            except Exception:
-                logger.exception("Ошибка при удалении файла ежедневного бэкапа", filename=f.name)
-            
-    # Ротация Weekly (храним 4 последних)
-    weekly_list = backups_by_type["weekly"]
-    if len(weekly_list) > 4:
-        for f in weekly_list[4:]:
-            logger.info("Ротация: Удаление старого еженедельного бэкапа", filename=f.name)
-            try:
-                _delete_backup_file(f.name)
-                deleted_count += 1
-            except Exception:
-                logger.exception("Ошибка при удалении файла еженедельного бэкапа", filename=f.name)
-            
-    # Monthly и Manual не удаляются никогда
+    to_delete = plan_rotation_with_limits(entries)
+    deleted_count = 0
+    for filename in to_delete:
+        logger.info("Ротация: удаление старого бэкапа", filename=filename)
+        try:
+            _delete_backup_file(filename)
+            deleted_count += 1
+        except Exception:
+            logger.exception("Ошибка при удалении файла бэкапа", filename=filename)
+
     logger.info("Ротация бэкапов завершена", deleted_count=deleted_count)
 
 async def start_backup_scheduler():

@@ -1,3 +1,63 @@
+export type RemoteAuthMode = "guest" | "credentials"
+
+export interface RemoteRetention {
+  daily: number
+  weekly: number
+  monthly: number
+  manual: number
+}
+
+export interface RemoteStatus {
+  ok: boolean
+  filename?: string
+  started_at?: string
+  finished_at?: string
+  size?: number
+  remote_path?: string
+  error?: string
+  deleted?: string[]
+  rotation_error?: string
+}
+
+export interface RemoteBackupConfig {
+  enabled: boolean
+  destination: string
+  auth_mode: RemoteAuthMode
+  username: string
+  domain: string
+  bwlimit: string
+  retention: RemoteRetention
+  has_password: boolean
+  last_status?: RemoteStatus | null
+}
+
+export interface RemoteConfigUpdate {
+  enabled?: boolean
+  destination?: string
+  auth_mode?: RemoteAuthMode
+  username?: string
+  domain?: string
+  bwlimit?: string
+  retention?: RemoteRetention
+  /** Отсутствует — не менять, пустая строка — очистить. */
+  password?: string
+}
+
+export interface RemoteTestResult {
+  ok: boolean
+  backend: string
+  destination: string
+  files: number
+  message: string
+}
+
+export interface BackupConfig {
+  db_name: string
+  auto_enabled: boolean
+  time_of_day: string
+  remote: RemoteBackupConfig
+}
+
 export interface BackupInfo {
   filename: string
   db_name: string
@@ -16,7 +76,7 @@ export interface BackupJob {
   progress: number
   created_at: string
   updated_at: string
-  result?: BackupInfo | null
+  result?: (BackupInfo & { remote?: RemoteStatus | null }) | null
   error?: string | null
   files_done?: number
   files_total?: number
