@@ -1,13 +1,13 @@
 import json
 import subprocess
+from datetime import datetime, timezone
 
 import pytest
 
-from app.api import backups
 from app.core.config import settings
 from app.services import backup_remote as remote
-from app.services.backup_retention import normalize_limits, plan_rotation, plan_rotation_with_limits
-from app.services.backup_remote import RemoteBackupError
+from app.services.backup_retention import normalize_limits, plan_rotation_with_limits
+from app.services.backup_remote import RemoteBackupError, RemoteConfigError
 
 
 # ---------------------------------------------------------------------------
@@ -117,9 +117,39 @@ def test_build_target_keeps_domain_in_guest_mode():
 
 
 def test_sftp_guest_mode_requires_account():
-    cfg = remote.build_runtime({"enabled": True, "destination": "sftp://host/backups", "auth_mode": "guest"})
-    with pytest.raises(RemoteBackupError, match="SFTP"):
-        remote.build_target(cfg)
+    with pytest.raises(RemoteConfigError, match="SFTP"):
+        remote.build_runtime({"enabled": True, "destination": "sftp://host/backups", "auth_mode": "guest"})
+
+
+def test_sftp_guest_mode_accepts_credentials_in_url():
+    cfg = remote.build_runtime(
+        {"enabled": True, "destination": "sftp://backup:s3cr3t@host/backups", "auth_mode": "guest"}
+    )
+    target = remote.build_target(cfg)
+    assert "user='backup'" in target
+    assert "pass='s3cr3t'" in target
+    assert cfg.target.display == "sftp://host/backups"
+
+
+def test_credentials_mode_rejected_for_nfs_and_raw_remote():
+    with pytest.raises(RemoteConfigError, match="NFS"):
+        remote.build_runtime(
+            {
+                "enabled": True,
+                "destination": "nfs://nas/export/hrms",
+                "auth_mode": "credentials",
+                "username": "backup",
+            }
+        )
+    with pytest.raises(RemoteConfigError, match="rclone.conf"):
+        remote.build_runtime(
+            {
+                "enabled": True,
+                "destination": "nas:backup/hrms",
+                "auth_mode": "credentials",
+                "username": "backup",
+            }
+        )
 
 
 def test_build_target_webdav_anonymous_has_no_user():
@@ -243,7 +273,7 @@ def _rotation_entries() -> list[tuple[str, str]]:
 
 
 def test_plan_rotation_keeps_gfs_policy():
-    deleted = plan_rotation(_rotation_entries())
+    deleted = plan_rotation_with_limits(_rotation_entries(), None)
     assert deleted == [f"daily_{i}.zip" for i in range(7, 10)] + [f"weekly_{i}.zip" for i in range(4, 6)]
 
 
@@ -264,44 +294,56 @@ def test_normalize_limits_treats_negative_as_unlimited():
 # ---------------------------------------------------------------------------
 
 
+def _archive(tmp_path) -> "object":
+    path = tmp_path / "backup_db_2026-01-01_00-00-00.zip"
+    path.write_bytes(b"zip")
+    return path
+
+
 def test_remote_failure_is_reported_without_raising(monkeypatch, tmp_path):
     saved_status: dict = {}
-    monkeypatch.setattr(backups, "_read_config_json", lambda: {"remote": {"enabled": True}})
-    monkeypatch.setattr(backups.backup_remote, "is_enabled", lambda raw: True)
     monkeypatch.setattr(
-        backups.backup_remote,
+        remote,
         "upload_backup",
         lambda *args, **kwargs: (_ for _ in ()).throw(RemoteBackupError("Нет доступа к внешнему диску")),
     )
-    monkeypatch.setattr(backups.backup_remote, "write_status", lambda payload: saved_status.update(payload))
+    monkeypatch.setattr(remote, "write_status", lambda payload: saved_status.update(payload))
 
-    archive = tmp_path / "backup_db_2026-01-01_00-00-00.zip"
-    archive.write_bytes(b"zip")
-
-    status = backups._upload_remote_copy(archive.name, archive)
+    status = remote.upload_with_status(_archive(tmp_path), {"destination": str(tmp_path)})
 
     assert status is not None
     assert status["ok"] is False
+    assert status["error_kind"] == "storage"
     assert "Нет доступа" in status["error"]
     assert saved_status["ok"] is False
-    assert saved_status["filename"] == archive.name
+    assert saved_status["filename"] == "backup_db_2026-01-01_00-00-00.zip"
+
+
+def test_remote_config_error_is_typed_for_http_status(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        remote,
+        "upload_backup",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RemoteConfigError("Введите пароль заново")),
+    )
+    monkeypatch.setattr(remote, "write_status", lambda payload: None)
+
+    status = remote.upload_with_status(_archive(tmp_path), {"destination": str(tmp_path)})
+
+    assert status is not None and status["ok"] is False
+    assert status["error_kind"] == "config"
 
 
 def test_remote_success_writes_status(monkeypatch, tmp_path):
     saved_status: dict = {}
-    monkeypatch.setattr(backups, "_read_config_json", lambda: {"remote": {"enabled": True}})
-    monkeypatch.setattr(backups.backup_remote, "is_enabled", lambda raw: True)
     monkeypatch.setattr(
-        backups.backup_remote,
+        remote,
         "upload_backup",
         lambda *args, **kwargs: {"remote_path": "nas:backup/hrms/backup.zip", "size": 3, "deleted": ["old.zip"]},
     )
-    monkeypatch.setattr(backups.backup_remote, "write_status", lambda payload: saved_status.update(payload))
+    monkeypatch.setattr(remote, "write_status", lambda payload: saved_status.update(payload))
 
-    archive = tmp_path / "backup.zip"
-    archive.write_bytes(b"zip")
-
-    status = backups._upload_remote_copy(archive.name, archive)
+    archive = _archive(tmp_path)
+    status = remote.upload_with_status(archive, {"destination": str(tmp_path)})
 
     assert status is not None and status["ok"] is True
     assert status["remote_path"] == "nas:backup/hrms/backup.zip"
@@ -309,9 +351,47 @@ def test_remote_success_writes_status(monkeypatch, tmp_path):
     assert saved_status["ok"] is True
 
 
-def test_remote_disabled_is_noop(monkeypatch, tmp_path):
-    monkeypatch.setattr(backups, "_read_config_json", lambda: {"remote": {"enabled": False}})
-    assert backups._upload_remote_copy("backup.zip", tmp_path / "backup.zip") is None
+def test_remote_not_configured_is_noop(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        remote,
+        "upload_backup",
+        lambda *args, **kwargs: pytest.fail("копирование не должно запускаться"),
+    )
+    assert remote.upload_with_status(tmp_path / "backup.zip", {"enabled": False}) is None
+
+
+def test_manual_upload_works_when_auto_copy_disabled(monkeypatch, tmp_path):
+    """Ручная копия нужна и при выключенной автокопии — достаточно адреса."""
+    monkeypatch.setattr(remote, "_run_with_progress", lambda args, progress: None)
+    monkeypatch.setattr(remote, "_verify_size", lambda remote_file, size: None)
+    monkeypatch.setattr(remote, "rotate", lambda cfg: [])
+
+    result = remote.upload_backup(
+        _archive(tmp_path),
+        {"enabled": False, "destination": str(tmp_path / "remote")},
+    )
+
+    assert result["size"] == 3
+
+
+def test_remote_path_does_not_leak_password(monkeypatch, tmp_path):
+    """Пароль из URL/строки rclone не должен попадать в статус и UI."""
+    monkeypatch.setattr(remote, "_run_with_progress", lambda args, progress: None)
+    monkeypatch.setattr(remote, "_verify_size", lambda remote_file, size: None)
+    monkeypatch.setattr(remote, "rotate", lambda cfg: [])
+
+    result = remote.upload_backup(
+        _archive(tmp_path),
+        {
+            "enabled": True,
+            "destination": "smb://backup:s3cr3t@nas/share/hrms",
+            "auth_mode": "guest",
+        },
+    )
+
+    assert "s3cr3t" not in result["remote_path"]
+    assert result["remote_path"].startswith("smb://nas/share/hrms/")
+    assert remote.parse_destination("webdav://user:s3cr3t@cloud/dav").display == "webdav://cloud/dav"
 
 
 # ---------------------------------------------------------------------------
@@ -353,16 +433,85 @@ def test_test_destination_reports_delete_failure(monkeypatch):
         remote.test_destination({"enabled": True, "destination": "smb://nas/backup/hrms"})
 
 
+def test_test_destination_serialized_under_lock(monkeypatch):
+    """Проба не должна пересекаться с копированием/ротацией."""
+    lock_states: list[bool] = []
+
+    def fake_run(args, timeout=None):
+        lock_states.append(remote._OPERATION_LOCK.locked())
+        return _completed()
+
+    monkeypatch.setattr(remote, "_run", fake_run)
+    remote.test_destination({"enabled": True, "destination": "smb://nas/backup/hrms"})
+
+    assert lock_states and all(lock_states)
+
+
+def test_upload_backup_copies_metadata_sidecar(monkeypatch, tmp_path):
+    archive = tmp_path / "backup_db_2026-01-01_00-00-00.zip"
+    archive.write_bytes(b"zip")
+    archive.with_name(f"{archive.name}.json").write_text('{"backup_type": "manual"}', encoding="utf-8")
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(remote, "_run_with_progress", lambda args, progress: None)
+    monkeypatch.setattr(remote, "_verify_size", lambda remote_file, size: None)
+    monkeypatch.setattr(remote, "rotate", lambda cfg: [])
+    monkeypatch.setattr(remote, "_run", lambda args, timeout=None: calls.append(list(args)) or _completed())
+
+    remote.upload_backup(archive, {"destination": str(tmp_path / "remote")})
+
+    assert [call for call in calls if call[0] == "copyto" and call[2].endswith(".zip.json")]
+
+
+def test_rotate_touches_only_backup_archives_and_handles_mixed_timezones(monkeypatch):
+    """В общей папке могут быть чужие zip: ротация удаляет только backup_*.zip."""
+    deleted: list[str] = []
+
+    def fake_run(args, timeout=None):
+        if args[0] == "lsjson":
+            return _completed(
+                stdout=json.dumps([
+                    {"Name": "backup_old.zip", "ModTime": "2026-01-01T00:00:00Z"},
+                    {"Name": "backup_new.zip", "ModTime": "2026-02-01T00:00:00+03:00"},
+                    {"Name": "other.zip", "ModTime": "2025-01-01T00:00:00Z"},
+                    {"Name": "backup_notes.txt", "ModTime": "2025-01-01T00:00:00Z"},
+                ])
+            )
+        if args[0] == "deletefile":
+            deleted.append(args[1])
+            return _completed()
+        return _completed()
+
+    monkeypatch.setattr(remote, "_run", fake_run)
+    monkeypatch.setattr(remote, "_read_remote_meta", lambda target, name: {"backup_type": "daily"})
+
+    cfg = remote.build_runtime({"destination": "smb://nas/share", "retention": {"daily": 1}})
+    removed = remote.rotate(cfg)
+
+    assert removed == ["backup_old.zip"]
+    assert all("other.zip" not in path and "notes" not in path for path in deleted)
+    assert any(path.endswith("backup_old.zip.json") for path in deleted)
+
+
+def test_parse_mtime_always_timezone_aware():
+    assert remote._parse_mtime("2026-01-01T00:00:00").tzinfo is not None
+    assert remote._parse_mtime("2026-01-01T00:00:00Z").tzinfo is not None
+    assert remote._parse_mtime("мусор").tzinfo is not None
+    assert remote._parse_mtime(None).tzinfo == timezone.utc
+    assert remote._parse_mtime("2026-01-01T00:00:00") < remote._parse_mtime("2026-01-02T00:00:00")
+
+
 def test_upload_backup_rotation_failure_does_not_fail_copy(monkeypatch, tmp_path):
     archive = tmp_path / "backup_db_2026-01-01_00-00-00.zip"
     archive.write_bytes(b"zip")
 
     monkeypatch.setattr(remote, "_run_with_progress", lambda args, progress: None)
     monkeypatch.setattr(remote, "_verify_size", lambda remote_file, size: None)
+    # Ротация может упасть любой ошибкой, не только RemoteBackupError.
     monkeypatch.setattr(
         remote,
         "rotate",
-        lambda cfg: (_ for _ in ()).throw(RemoteBackupError("нет доступа к списку копий")),
+        lambda cfg: (_ for _ in ()).throw(RuntimeError("нет доступа к списку копий")),
     )
 
     result = remote.upload_backup(

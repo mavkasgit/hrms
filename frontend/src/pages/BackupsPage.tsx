@@ -69,6 +69,9 @@ function storageLabel(name: string): string {
   return labels[name] || name
 }
 
+// Политика хранения по умолчанию: один источник для начального состояния и сброса.
+const DEFAULT_REMOTE_RETENTION: RemoteRetention = { daily: 7, weekly: 4, monthly: 0, manual: 0 }
+
 function backupStageLabel(stage: string): string {
   const labels: Record<string, string> = {
     queued: "Очередь",
@@ -243,7 +246,7 @@ export function BackupsPage() {
   const [remoteHasPassword, setRemoteHasPassword] = useState(false)
   const [remoteDomain, setRemoteDomain] = useState("")
   const [remoteBwlimit, setRemoteBwlimit] = useState("")
-  const [remoteRetention, setRemoteRetention] = useState<RemoteRetention>({ daily: 7, weekly: 4, monthly: 0, manual: 0 })
+  const [remoteRetention, setRemoteRetention] = useState<RemoteRetention>(DEFAULT_REMOTE_RETENTION)
   const [remoteTestResult, setRemoteTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [remoteUploading, setRemoteUploading] = useState<string | null>(null)
   const testRemote = useTestBackupRemote()
@@ -272,7 +275,7 @@ export function BackupsPage() {
         setRemoteUsername(remote.username || "")
         setRemoteDomain(remote.domain || "")
         setRemoteBwlimit(remote.bwlimit || "")
-        setRemoteRetention(remote.retention || { daily: 7, weekly: 4, monthly: 0, manual: 0 })
+        setRemoteRetention(remote.retention || DEFAULT_REMOTE_RETENTION)
         setRemoteHasPassword(Boolean(remote.has_password))
       }
       setRemotePassword("")
@@ -346,11 +349,11 @@ export function BackupsPage() {
         description: "Параметры автоматического резервного копирования успешно обновлены.",
         variant: "success",
       })
-    } catch (e: any) {
+    } catch (e) {
       console.error("Ошибка сохранения настроек:", e)
       addToast({
         title: "Не удалось сохранить настройки",
-        description: e?.response?.data?.detail || e?.message || "неизвестная ошибка",
+        description: getErrorMessage(e) || "неизвестная ошибка",
         variant: "destructive",
       })
     } finally {
@@ -1033,7 +1036,7 @@ export function BackupsPage() {
                       >
                         <Download className="h-4 w-4" />
                       </Button>
-                      {config?.remote?.enabled && (
+                      {config?.remote?.destination && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -1558,7 +1561,7 @@ export function BackupsPage() {
                 </div>
               </div>
 
-              {remoteEnabled && (
+              {(remoteEnabled || remoteDestination) && (
                 <>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Путь</label>
@@ -1571,6 +1574,7 @@ export function BackupsPage() {
                     <p className="text-[11px] text-muted-foreground leading-snug">
                       Поддерживаются: \\сервер\шара\папка, smb://сервер/шара, sftp://, ftp://, webdav://, nfs://,
                       локальный D:\Backup\HRMS или /mnt/usb/hrms, готовый remote rclone — myremote:backup/hrms.
+                      Для SFTP нужна учётная запись (или логин в адресе), для NFS и готового remote — настройки на самом хранилище.
                     </p>
                   </div>
 

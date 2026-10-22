@@ -10,8 +10,14 @@ backend не зависит ни от ОС, ни от способа запус�
     * ``guest`` — без учётной записи (анонимный/гостевой доступ);
     * ``credentials`` — логин, пароль и, при необходимости, домен.
 
+Гостевой режим невозможен для SFTP: там всегда нужна учётная запись (можно
+задать её прямо в адресе, ``sftp://user:pass@host/path``). NFS и готовое имя
+remote из ``rclone.conf`` учётные данные не принимают — они задаются на самом
+хранилище или в ``rclone.conf``.
+
 Пароль в ``config.json`` хранится зашифрованным (Fernet, ключ выводится из
-``SECRET_KEY``). Открытым текстом он существует только в момент вызова rclone.
+``SECRET_KEY``). Открытым текстом он существует только в момент вызова rclone
+и никогда не возвращается наружу: ни в UI, ни в статусе, ни в логах.
 """
 
 from __future__ import annotations
@@ -25,38 +31,53 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, urlunparse
 
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import settings
 from app.core.logging import logger
-from app.services.backup_retention import ROTATION_LIMITS, normalize_limits, plan_rotation_with_limits
+from app.services.backup_retention import normalize_limits, plan_rotation_with_limits
 
 STATUS_FILENAME = "remote-status.json"
 AUTH_MODES = ("guest", "credentials")
-DEFAULT_RETENTION = dict(ROTATION_LIMITS)
 
 # Сколько последних строк stderr держим для сообщения об ошибке.
 _ERROR_TAIL_LINES = 20
 _PROGRESS_RE = re.compile(r"(\d{1,3})%")
 # Секреты в строках подключения rclone: pass='...', password=... .
 _SECRET_RE = re.compile(r"(pass(?:word)?)=('(?:[^']|'')*'|\S+)", re.IGNORECASE)
-_WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
+# Локальные пути: POSIX-абсолютные и диски Windows.
 _LOCAL_ABSOLUTE_RE = re.compile(r"^(/|[A-Za-z]:[\\/])")
+# Готовое имя remote из rclone.conf: "nas:backup" (но не "smb://...").
 _REMOTE_SPEC_RE = re.compile(r"^[^\s\\/]+:(?!//)")
+# Ротация трогает только наши архивы, а не любые .zip в общей папке.
+_REMOTE_BACKUP_RE = re.compile(r"^backup_.+\.zip$")
 _RCLONE_MISSING = (
     "rclone не установлен. Установите rclone в образ/систему или задайте RCLONE_PATH."
 )
 
 _OPERATION_LOCK = threading.Lock()
 
+# Текстовые поля конфига: перечислены один раз, чтобы новое поле не требовало
+# правок в четырёх местах (normalize/update/public/UI-контракт).
+_TEXT_FIELDS = ("destination", "username", "domain", "bwlimit")
+_PUBLIC_FIELDS = ("enabled", "auth_mode", *_TEXT_FIELDS, "retention")
+
 
 class RemoteBackupError(Exception):
-    """Ошибка настройки или обмена с внешним хранилищем."""
+    """Ошибка обмена с внешним хранилищем."""
+
+    error_kind = "storage"
+
+
+class RemoteConfigError(RemoteBackupError):
+    """Ошибка настроек внешней копии (адрес, режим доступа, пароль)."""
+
+    error_kind = "config"
 
 
 @dataclass(frozen=True)
@@ -103,7 +124,7 @@ def default_config() -> dict:
         "domain": "",
         "bwlimit": "",
         "password_enc": "",
-        "retention": dict(DEFAULT_RETENTION),
+        "retention": normalize_limits(None),
     }
 
 
@@ -114,35 +135,32 @@ def normalize_config(raw: dict | None) -> dict:
         return result
 
     result["enabled"] = bool(raw.get("enabled", False))
-    result["destination"] = str(raw.get("destination") or "").strip()
+    for field in _TEXT_FIELDS:
+        result[field] = str(raw.get(field) or "").strip()
     auth_mode = str(raw.get("auth_mode") or "guest").strip().lower()
     result["auth_mode"] = auth_mode if auth_mode in AUTH_MODES else "guest"
-    result["username"] = str(raw.get("username") or "")
-    result["domain"] = str(raw.get("domain") or "")
-    result["bwlimit"] = str(raw.get("bwlimit") or "")
     result["password_enc"] = str(raw.get("password_enc") or "")
     result["retention"] = normalize_limits(raw.get("retention"))
     return result
 
 
 def is_enabled(raw: dict | None) -> bool:
+    """Автоматическая копия: включена и адрес задан."""
     cfg = normalize_config(raw)
     return bool(cfg["enabled"] and cfg["destination"])
+
+
+def is_configured(raw: dict | None) -> bool:
+    """Адрес задан — можно копировать вручную, даже если автокопия выключена."""
+    return bool(normalize_config(raw)["destination"])
 
 
 def public_config(raw: dict | None) -> dict:
     """Конфиг для отдачи в UI: без пароля, но с признаком его наличия."""
     cfg = normalize_config(raw)
-    return {
-        "enabled": cfg["enabled"],
-        "destination": cfg["destination"],
-        "auth_mode": cfg["auth_mode"],
-        "username": cfg["username"],
-        "domain": cfg["domain"],
-        "bwlimit": cfg["bwlimit"],
-        "retention": cfg["retention"],
-        "has_password": bool(cfg["password_enc"]),
-    }
+    public = {field: cfg[field] for field in _PUBLIC_FIELDS}
+    public["has_password"] = bool(cfg["password_enc"])
+    return public
 
 
 def apply_update(current: dict | None, update: dict) -> dict:
@@ -155,19 +173,14 @@ def apply_update(current: dict | None, update: dict) -> dict:
 
     if "enabled" in update:
         cfg["enabled"] = bool(update["enabled"])
-    if "destination" in update:
-        cfg["destination"] = str(update.get("destination") or "").strip()
+    for field in _TEXT_FIELDS:
+        if field in update:
+            cfg[field] = str(update.get(field) or "").strip()
     if "auth_mode" in update:
         auth_mode = str(update.get("auth_mode") or "guest").strip().lower()
         if auth_mode not in AUTH_MODES:
-            raise RemoteBackupError("Неизвестный режим доступа к внешнему диску")
+            raise RemoteConfigError("Неизвестный режим доступа к внешнему диску")
         cfg["auth_mode"] = auth_mode
-    if "username" in update:
-        cfg["username"] = str(update.get("username") or "")
-    if "domain" in update:
-        cfg["domain"] = str(update.get("domain") or "")
-    if "bwlimit" in update:
-        cfg["bwlimit"] = str(update.get("bwlimit") or "").strip()
     if "retention" in update:
         cfg["retention"] = normalize_limits(update.get("retention"))
 
@@ -179,14 +192,8 @@ def apply_update(current: dict | None, update: dict) -> dict:
             cfg["password_enc"] = encrypt_secret(str(password))
 
     validate_bwlimit(cfg["bwlimit"])
-
-    if cfg["enabled"]:
-        if not cfg["destination"]:
-            raise RemoteBackupError("Укажите путь для дополнительной копии")
-        parse_destination(cfg["destination"])  # ранняя валидация адреса
-        if cfg["auth_mode"] == "credentials" and not cfg["username"]:
-            raise RemoteBackupError("Для режима с учётной записью нужен логин")
-
+    if cfg["destination"] or cfg["enabled"]:
+        validate_destination(cfg)
     return cfg
 
 
@@ -194,14 +201,46 @@ def validate_bwlimit(value: str) -> None:
     if not value:
         return
     if not re.fullmatch(r"\d+(?:\.\d+)?[BKMGTP]?", value, flags=re.IGNORECASE):
-        raise RemoteBackupError("Лимит скорости указывается как число с суффиксом, например 10M")
+        raise RemoteConfigError("Лимит скорости указывается как число с суффиксом, например 10M")
+
+
+def validate_destination(cfg: dict) -> Destination:
+    """Проверяет адрес и совместимость с выбранным режимом доступа.
+
+    Ошибки здесь — ошибки настроек (422), а не сбои хранилища (502).
+    """
+    if not cfg["destination"]:
+        raise RemoteConfigError("Укажите путь для дополнительной копии")
+
+    dest = parse_destination(cfg["destination"])
+    url_has_credentials = bool(dest.url_user and dest.url_password)
+
+    if cfg["auth_mode"] == "credentials":
+        if dest.backend == "nfs":
+            raise RemoteConfigError(
+                "NFS не использует логин и пароль: выберите гостевой доступ, "
+                "а права задайте на сервере NFS."
+            )
+        if dest.backend == "raw":
+            raise RemoteConfigError(
+                "Для готового remote rclone учётные данные задаются в rclone.conf: "
+                "выберите гостевой доступ или укажите адрес с логином в URL."
+            )
+        if not cfg["username"] and not url_has_credentials:
+            raise RemoteConfigError("Для режима с учётной записью нужен логин")
+
+    if cfg["auth_mode"] == "guest" and dest.backend == "sftp" and not url_has_credentials:
+        raise RemoteConfigError(
+            "SFTP не поддерживает гостевой доступ: выберите режим с учётной записью "
+            "или укажите логин и пароль в адресе (sftp://user:pass@host/path)."
+        )
+
+    return dest
 
 
 def build_runtime(raw: dict | None) -> RuntimeConfig:
     cfg = normalize_config(raw)
-    if not cfg["destination"]:
-        raise RemoteBackupError("Укажите путь для дополнительной копии")
-    destination = parse_destination(cfg["destination"])
+    destination = validate_destination(cfg)
     return RuntimeConfig(
         enabled=cfg["enabled"],
         auth_mode=cfg["auth_mode"],
@@ -236,7 +275,7 @@ def decrypt_secret(token: str) -> str:
     try:
         return _fernet().decrypt(token.encode("ascii")).decode("utf-8")
     except (InvalidToken, ValueError) as exc:
-        raise RemoteBackupError(
+        raise RemoteConfigError(
             "Не удалось расшифровать пароль внешнего диска (изменился SECRET_KEY). "
             "Введите пароль заново."
         ) from exc
@@ -252,46 +291,47 @@ def parse_destination(value: str) -> Destination:
     и локальные пути."""
     text = (value or "").strip().strip('"').strip("'")
     if not text:
-        raise RemoteBackupError("Укажите путь для дополнительной копии")
+        raise RemoteConfigError("Укажите путь для дополнительной копии")
 
     if text.startswith("\\\\") or text.startswith("//"):
         rest = text.lstrip("\\/")
         parts = re.split(r"[\\/]+", rest, maxsplit=1)
         if len(parts) < 2 or not parts[0] or not parts[1]:
-            raise RemoteBackupError(
+            raise RemoteConfigError(
                 "Некорректный путь к сетевому диску: ожидается \\\\сервер\\шара\\папка"
             )
         share_path = parts[1].replace("\\", "/").strip("/")
         return Destination(backend="smb", host=parts[0], share_path=share_path, display=text)
 
-    if _WINDOWS_DRIVE_RE.match(text) and "://" not in text:
+    if _LOCAL_ABSOLUTE_RE.match(text) and "://" not in text:
         return Destination(backend="local", local_path=text, display=text)
 
     parsed = urlparse(text)
     scheme = (parsed.scheme or "").lower()
+    display = _display_url(text, parsed)
 
     if scheme in ("smb", "cifs"):
         if not parsed.hostname:
-            raise RemoteBackupError("В адресе SMB не указан сервер")
+            raise RemoteConfigError("В адресе SMB не указан сервер")
         return Destination(
             backend="smb",
             host=parsed.hostname,
             port=_parse_port(parsed),
             share_path=parsed.path.lstrip("/"),
-            display=text,
+            display=display,
             url_user=unquote(parsed.username or ""),
             url_password=unquote(parsed.password or ""),
         )
 
     if scheme in ("sftp", "ftp", "ftps"):
         if not parsed.hostname:
-            raise RemoteBackupError(f"В адресе {scheme} не указан сервер")
+            raise RemoteConfigError(f"В адресе {scheme} не указан сервер")
         return Destination(
             backend="ftps" if scheme == "ftps" else scheme,
             host=parsed.hostname,
             port=_parse_port(parsed),
             share_path=parsed.path or "/",
-            display=text,
+            display=display,
             url_user=unquote(parsed.username or ""),
             url_password=unquote(parsed.password or ""),
         )
@@ -302,19 +342,19 @@ def parse_destination(value: str) -> Destination:
         return Destination(
             backend="webdav",
             url=url.rstrip("/"),
-            display=text,
+            display=display,
             url_user=unquote(parsed.username or ""),
             url_password=unquote(parsed.password or ""),
         )
 
     if scheme == "nfs":
         if not parsed.hostname:
-            raise RemoteBackupError("В адресе NFS не указан сервер")
+            raise RemoteConfigError("В адресе NFS не указан сервер")
         return Destination(
             backend="nfs",
             host=parsed.hostname,
             share_path=parsed.path or "/",
-            display=text,
+            display=display,
         )
 
     if scheme == "file":
@@ -322,22 +362,32 @@ def parse_destination(value: str) -> Destination:
 
     if _REMOTE_SPEC_RE.match(text):
         # Продвинутый вариант: готовое имя remote из rclone.conf, например "nas:backup".
-        return Destination(backend="raw", raw_spec=text, display=text)
+        return Destination(backend="raw", raw_spec=text, display=scrub_secrets(text))
 
     if _LOCAL_ABSOLUTE_RE.match(text):
         return Destination(backend="local", local_path=text, display=text)
 
-    raise RemoteBackupError(
+    raise RemoteConfigError(
         "Не удалось распознать путь. Поддерживаются: \\\\сервер\\шара\\папка, "
         "smb://сервер/шара/папка, sftp://, ftp://, webdav://, nfs:// и локальные пути."
     )
+
+
+def _display_url(text: str, parsed) -> str:
+    """Адрес без логина и пароля: они не должны попадать в UI и статусы."""
+    if not parsed.username and not parsed.password:
+        return text
+    netloc = parsed.netloc
+    if "@" in netloc:
+        netloc = netloc.rsplit("@", 1)[1]
+    return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
 
 
 def _parse_port(parsed) -> int | None:
     try:
         return parsed.port
     except ValueError as exc:
-        raise RemoteBackupError("Некорректный порт в адресе внешнего хранилища") from exc
+        raise RemoteConfigError("Некорректный порт в адресе внешнего хранилища") from exc
 
 
 def _quote(value: str) -> str:
@@ -382,8 +432,8 @@ def build_target(cfg: RuntimeConfig) -> str:
     if dest.backend in ("sftp", "ftp", "ftps"):
         if dest.backend == "sftp":
             user = user or "root"
-            if not password and not use_credentials:
-                raise RemoteBackupError(
+            if not password:
+                raise RemoteConfigError(
                     "SFTP не поддерживает гостевой доступ. Выберите режим с учётной записью."
                 )
         else:
@@ -409,7 +459,7 @@ def build_target(cfg: RuntimeConfig) -> str:
         pairs = [("host", dest.host)]
         return f":nfs{_join_params(pairs)}:{dest.share_path}"
 
-    raise RemoteBackupError(f"Неподдерживаемый тип хранилища: {dest.backend}")
+    raise RemoteConfigError(f"Неподдерживаемый тип хранилища: {dest.backend}")
 
 
 # ---------------------------------------------------------------------------
@@ -542,20 +592,22 @@ def test_destination(raw: dict | None) -> dict:
     cfg = build_runtime(raw)
     target = build_target(cfg)
 
-    listing = _ensure_success(_run(["lsf", target, "--files-only"]), "Проверка чтения")
+    # Проба пишет и удаляет файл: не пересекаемся с копированием/ротацией.
+    with _OPERATION_LOCK:
+        listing = _ensure_success(_run(["lsf", target, "--files-only"]), "Проверка чтения")
 
-    with tempfile.TemporaryDirectory(prefix="hrms-remote-probe-") as tmp_dir:
-        probe = Path(tmp_dir) / ".__hrms_probe"
-        probe.write_bytes(b"hrms remote probe")
-        remote_probe = f"{target}/.__hrms_probe"
-        _ensure_success(
-            _run(["copyto", str(probe), remote_probe, "--contimeout", "30s", "--timeout", "120s"]),
-            "Проверка записи",
-        )
-        _ensure_success(
-            _run(["deletefile", remote_probe], timeout=120),
-            "Проверка удаления пробного файла",
-        )
+        with tempfile.TemporaryDirectory(prefix="hrms-remote-probe-") as tmp_dir:
+            probe = Path(tmp_dir) / ".__hrms_probe"
+            probe.write_bytes(b"hrms remote probe")
+            remote_probe = f"{target}/.__hrms_probe"
+            _ensure_success(
+                _run(["copyto", str(probe), remote_probe, "--contimeout", "30s", "--timeout", "120s"]),
+                "Проверка записи",
+            )
+            _ensure_success(
+                _run(["deletefile", remote_probe], timeout=120),
+                "Проверка удаления пробного файла",
+            )
 
     files = [line for line in (listing.stdout or "").splitlines() if line.strip()]
     return {
@@ -572,15 +624,19 @@ def upload_backup(
     raw: dict | None,
     progress: Callable[[int, str], None] | None = None,
 ) -> dict:
-    """Копирует архив и его метаданные, затем применяет GFS-ротацию."""
+    """Копирует архив и его метаданные, затем применяет GFS-ротацию.
+
+    Копирование доступно всегда, когда задан адрес: ручная копия нужна и при
+    выключенной автокопии (например, чтобы залить существующие архивы).
+    """
     cfg = build_runtime(raw)
-    if not cfg.enabled:
-        raise RemoteBackupError("Дополнительная копия отключена")
     if not local_path.exists():
         raise RemoteBackupError(f"Файл бэкапа не найден: {local_path.name}")
 
     target = build_target(cfg)
     remote_file = f"{target}/{local_path.name}"
+    # Наружу отдаём только безопасный адрес без учётных данных.
+    display_file = f"{cfg.target.display.rstrip('/')}/{local_path.name}"
     total = local_path.stat().st_size
 
     args = [
@@ -621,16 +677,74 @@ def upload_backup(
         # неудачной. Локальная и внешняя ротация независимы.
         try:
             deleted = rotate(cfg)
-        except RemoteBackupError as exc:
-            rotation_error = str(exc)
+        except Exception as exc:  # noqa: BLE001 — ротация не должна ломать копию
+            rotation_error = scrub_secrets(str(exc)) or exc.__class__.__name__
             logger.warning("Ротация на внешнем диске не удалась", error=rotation_error)
 
     return {
-        "remote_path": remote_file,
+        "remote_path": display_file,
         "size": total,
         "deleted": deleted,
         "rotation_error": rotation_error,
     }
+
+
+def upload_with_status(
+    local_path: Path,
+    raw: dict | None,
+    progress: Callable[[int, str], None] | None = None,
+) -> dict | None:
+    """Копирует архив и всегда фиксирует статус, не пробрасывая сбои.
+
+    Возвращает ``None``, если адрес не настроен: автоматической копии нечего
+    делать. Ошибки настроек помечаются ``error_kind="config"``, сбои
+    хранилища — ``"storage"``, прочие — ``"unexpected"``.
+    """
+    if not is_configured(raw):
+        return None
+
+    started_at = datetime.now().isoformat()
+    if progress:
+        progress(0, "Подготовка к копированию")
+    try:
+        result = upload_backup(local_path, raw, progress)
+    except Exception as exc:  # noqa: BLE001 — внешняя копия не должна ломать бэкап
+        message = str(exc) if isinstance(exc, RemoteBackupError) else f"Непредвиденная ошибка: {exc}"
+        message = scrub_secrets(message)
+        status = {
+            "ok": False,
+            "filename": local_path.name,
+            "started_at": started_at,
+            "finished_at": datetime.now().isoformat(),
+            "error": message,
+            "error_kind": getattr(exc, "error_kind", "unexpected"),
+        }
+        write_status(status)
+        logger.warning(
+            "Копирование бэкапа на внешний диск не удалось",
+            filename=local_path.name,
+            error=message,
+            error_kind=status["error_kind"],
+        )
+        return status
+
+    status = {
+        "ok": True,
+        "filename": local_path.name,
+        "started_at": started_at,
+        "finished_at": datetime.now().isoformat(),
+        "size": result.get("size"),
+        "remote_path": result.get("remote_path"),
+        "deleted": result.get("deleted", []),
+        "rotation_error": result.get("rotation_error") or "",
+    }
+    write_status(status)
+    logger.info(
+        "Бэкап скопирован на внешний диск",
+        filename=local_path.name,
+        remote_path=status["remote_path"],
+    )
+    return status
 
 
 def _verify_size(remote_file: str, expected: int) -> None:
@@ -665,7 +779,8 @@ def rotate(cfg: RuntimeConfig) -> list[str]:
     entries: list[tuple[datetime, str, str]] = []
     for item in items:
         name = str(item.get("Name") or "")
-        if not name.endswith(".zip"):
+        # В общей папке могут лежать чужие zip: удаляем только свои бэкапы.
+        if not _REMOTE_BACKUP_RE.match(name):
             continue
         meta = _read_remote_meta(target, name)
         backup_type = str((meta or {}).get("backup_type") or "manual")
@@ -692,13 +807,20 @@ def rotate(cfg: RuntimeConfig) -> list[str]:
     return deleted
 
 
+_MIN_TIME = datetime.min.replace(tzinfo=timezone.utc)
+
+
 def _parse_mtime(value: object) -> datetime:
+    """Время изменения файла; всегда timezone-aware, чтобы сортировка не падала."""
     if not isinstance(value, str) or not value:
-        return datetime.min
+        return _MIN_TIME
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
-        return datetime.min
+        return _MIN_TIME
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _read_remote_meta(target: str, filename: str) -> dict | None:

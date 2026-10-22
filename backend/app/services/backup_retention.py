@@ -59,8 +59,3 @@ def plan_rotation_with_limits(
         if limit and len(by_type[backup_type]) > limit:
             to_delete.extend(by_type[backup_type][limit:])
     return to_delete
-
-
-def plan_rotation(entries: Sequence[tuple[str, str]]) -> list[str]:
-    """Ротация с политикой по умолчанию (см. ``ROTATION_LIMITS``)."""
-    return plan_rotation_with_limits(entries, ROTATION_LIMITS)
