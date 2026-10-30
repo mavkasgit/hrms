@@ -13,6 +13,7 @@
     "dev:backend": "node scripts/run.js run-backend",
     "dev:migrate": "node scripts/run.js run-migrate",
     "dev:ports": "node scripts/ensure-dev-ports.js --check",
+    "ports:check": "node ../_ports/check-ports.mjs",
     "dev:kill": "node scripts/ensure-dev-ports.js --kill",
     "dev:restart": "npm run dev:kill && npm run dev",
     "docker:dev:up": "docker compose --env-file .env.dev -f infra/compose/docker-compose.dev.yml up -d",

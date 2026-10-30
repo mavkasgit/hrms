@@ -1,0 +1,70 @@
+{
+  "project": "hrms",
+  "title": "HRMS — кадры, ордера, документооборот",
+  "ports": [
+    {
+      "port": 8086,
+      "env": "prod",
+      "service": "nginx",
+      "container": "hrms-nginx-prod",
+      "purpose": "веб-интерфейс прода (канон 8086; 8081 занят службой Windows)",
+      "source": "infra/compose/docker-compose.prod.yml"
+    },
+    {
+      "port": 5171,
+      "env": "dev",
+      "service": "vite",
+      "process": "node",
+      "purpose": "фронтенд dev (strictPort)",
+      "source": "frontend/vite.config.ts"
+    },
+    {
+      "port": 8011,
+      "env": "dev",
+      "service": "backend",
+      "process": "python",
+      "purpose": "API dev",
+      "source": "scripts/run-backend.ps1"
+    },
+    {
+      "port": 5432,
+      "env": "dev",
+      "service": "postgres",
+      "container": "hrms-postgres",
+      "purpose": "БД dev",
+      "source": "infra/compose/docker-compose.dev.yml"
+    },
+    {
+      "port": 8085,
+      "env": "dev",
+      "service": "onlyoffice",
+      "container": "hrms-onlyoffice",
+      "purpose": "OnlyOffice dev",
+      "source": "infra/compose/docker-compose.dev.yml"
+    },
+    {
+      "port": 8011,
+      "env": "test",
+      "service": "backend",
+      "container": "hrms-backend-test",
+      "purpose": "API test — совпадает с dev, стенды одновременно не поднять",
+      "source": "infra/compose/docker-compose.test.yml"
+    },
+    {
+      "port": 8080,
+      "env": "test",
+      "service": "nginx",
+      "container": "hrms-nginx-test",
+      "purpose": "стенд test",
+      "source": "infra/compose/docker-compose.test.yml"
+    },
+    {
+      "port": 5436,
+      "env": "test",
+      "service": "postgres",
+      "container": "hrms-postgres-pytest",
+      "purpose": "БД pytest",
+      "source": "infra/compose/docker-compose.pytest.yml"
+    }
+  ]
+}
