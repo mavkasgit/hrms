@@ -74,26 +74,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      # Node/Python versions come from mise.toml + mise.lock (no setup-node/setup-python).
+      - uses: jdx/mise-action@v5
         with:
-          node-version: "20"
-          cache: npm
+          cache: true
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Cache npm
+        uses: actions/cache@v4
         with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json', 'frontend/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
 
-      - name: Install root + frontend deps
-        run: |
-          npm ci
-          npm ci --prefix frontend
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
 
-      - name: Install backend deps
-        run: pip install -r backend/requirements.txt
+      - name: Install dependencies
+        run: mise run install
 
       - name: Alembic migrate
         working-directory: backend
@@ -101,22 +102,22 @@ jobs:
           PYTHONPATH: .
         run: |
           # Safe on empty DB (no alembic_version yet)
-          python scripts/migrate_production_version.py
-          python -m alembic upgrade head
+          mise exec -- python scripts/migrate_production_version.py
+          mise exec -- python -m alembic upgrade head
 
       - name: Seed admin user
         working-directory: backend
         env:
           PYTHONPATH: .
         # Локального пароля у пользователя нет (#36); e2e входит через break-glass
-        run: python scripts/create_user.py admin "CI Admin"
+        run: mise exec -- python scripts/create_user.py admin "CI Admin"
 
       - name: Start backend (uvicorn)
         working-directory: backend
         env:
           PYTHONPATH: .
         run: |
-          nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 \
+          nohup mise exec -- python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 \
             > /tmp/hrms-backend.log 2>&1 &
           echo $! > /tmp/hrms-backend.pid
           for i in $(seq 1 45); do
@@ -131,11 +132,11 @@ jobs:
           exit 1
 
       - name: Install Playwright Chromium
-        run: npx playwright install chromium --with-deps
+        run: mise exec -- npx playwright install chromium --with-deps
 
       - name: e2e smoke (setup + smoke)
         # Frontend started by playwright.config webServer (npm run frontend :5171)
-        run: npx playwright test --project=setup --project=smoke
+        run: mise exec -- npx playwright test --project=setup --project=smoke
 
       - name: Dump backend log on failure
         if: failure()

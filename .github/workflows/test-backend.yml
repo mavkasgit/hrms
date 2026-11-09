@@ -22,28 +22,43 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      # Node/Python versions come from mise.toml + mise.lock (no setup-node/setup-python).
+      - uses: jdx/mise-action@v5
         with:
-          python-version: "3.11"
+          cache: true
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json', 'frontend/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: mise run install
+
       - name: Verify profile-settings manifest (strict)
-        working-directory: .
-        run: python scripts/verify-profile-settings.py verify --strict
+        run: mise exec -- python scripts/verify-profile-settings.py verify --strict
+
       - name: Create isolated run-DB
-        working-directory: .
         env:
           # Service Postgres on :5432 (fresh container per job → fixed run-id is safe).
           TEST_DB_HOST: localhost
           TEST_DB_PORT: "5432"
           TEST_DB_ADMIN_USER: hrms_user
           TEST_DB_ADMIN_PASSWORD: hrms_pass
-        run: python scripts/test-db.py create hrms_test_0c0ffeec0dec
+        run: mise exec -- python scripts/test-db.py create hrms_test_0c0ffeec0dec
+
       - name: pytest xdist
         env:
           # App Settings load repo .env.dev (DATABASE_URL :5435). Override for GHA
@@ -56,13 +71,13 @@ jobs:
           # Templates live under backend/data/ (gitignored) — docx content tests
           # must tolerate missing template fallback in CI.
           ONLYOFFICE_ENABLED: "false"
-        run: python -m pytest -n auto --dist=loadfile -q
+        run: mise run test-backend-ci
+
       - name: Drop run-DB
         if: always()
-        working-directory: .
         env:
           TEST_DB_HOST: localhost
           TEST_DB_PORT: "5432"
           TEST_DB_ADMIN_USER: hrms_user
           TEST_DB_ADMIN_PASSWORD: hrms_pass
-        run: python scripts/test-db.py drop hrms_test_0c0ffeec0dec
+        run: mise exec -- python scripts/test-db.py drop hrms_test_0c0ffeec0dec

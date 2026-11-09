@@ -260,6 +260,10 @@ $env:HRMS_SYNCGATE = "1"; npm run dev
 ## mise
 
 Toolchain и версии рантаймов закреплены в `mise.toml` (Node 24.20.0, Python 3.12.16).
+Python-интерпретатор проекта — `backend/.venv`: mise создаёт его на чистой
+машине и активирует в задачах, поэтому установка, проверки и dev используют
+один и тот же Python. Нужен активированный mise (`mise activate pwsh`) или
+PATH, где shims идут раньше системных python/node.
 
 ```bash
 mise trust

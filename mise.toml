@@ -7,18 +7,27 @@ min_version = "2026.10.25"
 [tools]
 # Node 24 — фактический рантайм проекта (package-lock v3).
 node = "24.20.0"
-# Backend написан под 3.11+; 3.12.16 — свежий патч ветки 3.12 (локальный .venv на 3.12.10).
+# Backend написан под 3.11+. Это версия для создания backend/.venv на чистой
+# машине; существующий venv не пересоздаётся (см. _.python.venv ниже).
 python = "3.12.16"
 
 [env]
 PYTHONUTF8 = "1"
 PYTHONIOENCODING = "utf-8"
+# Единственный интерпретатор проекта: backend/.venv. mise активирует его в
+# задачах, mise exec и активированном шелле, поэтому dev/install/check
+# используют один и тот же Python. На чистой машине venv создаётся сам.
+_.python.venv = { path = "backend/.venv", create = true }
+
+[settings]
+# Детерминированно создавать venv через `python -m venv` (с pip), даже если
+# глобально установлен uv: uv-venv по умолчанию идёт без pip.
+python.venv_stdlib = true
 
 [tasks.install]
 description = "Установить Node- и Python-зависимости проекта"
 # npm run setup = npm install + frontend install (postinstall ставит Chromium).
-# pip ставит библиотеки в интерпретатор из [tools] (нужен активированный mise
-# или PATH, где shims идут раньше системных python/node).
+# pip ставит библиотеки в backend/.venv из _.python.venv.
 run = [
   "npm run setup",
   "python -m pip install -r backend/requirements.txt",
@@ -34,6 +43,10 @@ run = [
   "npm --prefix frontend run test",
   "npm run test:pytest",
 ]
+
+[tasks.test-backend-ci]
+description = "pytest для CI: service Postgres, без PowerShell-лаунчера"
+run = "cd backend && python -m pytest -n auto --dist=loadfile -q"
 
 [tasks.check]
 description = "Блокирующий полный гейт: контракт profile-settings, сборка, тесты"

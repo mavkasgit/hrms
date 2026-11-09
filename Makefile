@@ -1,8 +1,13 @@
 .PHONY: dev db-up db-down db-logs db-restart db-clean backend-install backend-run frontend-install frontend-run migrate makemigrate install-all test-env-up test-env-down test-env-logs test-env-rebuild
 
-# One-command dev: DB + Backend + Frontend
+# Toolchain/versions live in mise.toml. Install, dev and run targets delegate
+# to mise; DB/test-env targets stay raw docker compose because compose owns
+# those services, and migrate targets stay raw alembic (run them inside
+# `mise exec` or an activated shell when you need the pinned interpreter).
+
+# One-command dev: DB + Backend + Frontend (run `mise run install` first)
 dev:
-	npm install && npm run dev
+	mise run dev
 
 # Database (Docker)
 db-up:
@@ -22,17 +27,17 @@ db-clean: db-down
 
 # Backend
 backend-install:
-	cd backend && pip install -r requirements.txt
+	mise run install
 
 backend-run:
-	cd backend && python scripts/dev_server.py
+	mise exec -- npm run dev:backend
 
 # Frontend
 frontend-install:
-	cd frontend && npm install
+	mise run install
 
 frontend-run:
-	cd frontend && npm run dev
+	mise exec -- npm run frontend
 
 # Database migrations
 migrate:
@@ -42,8 +47,8 @@ makemigrate:
 	cd backend && alembic revision --autogenerate -m "$(MSG)"
 
 # Install all deps
-install-all: backend-install frontend-install
-	npm install
+install-all:
+	mise run install
 
 # Test environment
 test-env-up:
