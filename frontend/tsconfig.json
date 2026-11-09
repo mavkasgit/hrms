@@ -19,7 +19,7 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
 
-    "baseUrl": ".",
+    // TypeScript 7: baseUrl удалён; пути в paths резолвятся относительно tsconfig.
     "paths": {
       "@/*": ["./src/*"]
     }
