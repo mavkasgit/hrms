@@ -73,7 +73,15 @@ try {
     # PostgreSQL is shared infrastructure. Only run up/wait when the container
     # is not healthy yet: under concurrent agents redundant docker compose calls
     # block on the compose lock and make the start look hung.
-    $health = docker inspect -f '{{.State.Health.Status}}' $PostgresContainer 2>$null
+    # docker inspect writes to stderr when the container does not exist; with
+    # $ErrorActionPreference = "Stop" that would abort before test:db:up runs.
+    $health = $null
+    try {
+        $health = (docker inspect -f '{{.State.Health.Status}}' $PostgresContainer 2>$null)
+    }
+    catch {
+        $health = $null
+    }
     if ($LASTEXITCODE -eq 0 -and $health -eq 'healthy') {
         Write-Host "[1/6] PostgreSQL already healthy - skipping up/wait"
     } else {
