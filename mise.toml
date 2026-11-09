@@ -5,11 +5,11 @@
 min_version = "2026.10.25"
 
 [tools]
-# Node 24 — фактический рантайм проекта (package-lock v3).
-node = "24.20.0"
+# Node 26 — фактический рантайм проекта (Node 20 EOL 30.04.2026, 24 — maintenance).
+node = "26.13.0"
 # Backend написан под 3.11+. Это версия для создания backend/.venv на чистой
 # машине; существующий venv не пересоздаётся (см. _.python.venv ниже).
-python = "3.12.16"
+python = "3.14.10"
 
 [env]
 PYTHONUTF8 = "1"

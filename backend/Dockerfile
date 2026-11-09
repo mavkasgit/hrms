@@ -1,4 +1,4 @@
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 # rclone — один статический бинарник для внешней копии бэкапов (#126):
 # SMB/CIFS, SFTP, FTP(S), WebDAV, NFS и локальные диски без монтирований.

@@ -95,7 +95,7 @@ services:
 
   localtunnel:
     profiles: ["tunnel"]
-    image: node:20-alpine
+    image: node:26-alpine
     container_name: hrms-localtunnel-test
     network_mode: "service:nginx"
     depends_on:
