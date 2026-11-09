@@ -1,0 +1,57 @@
+# HRMS toolchain. Единый вход: mise run install / check / dev.
+# Версии рантаймов меняются только здесь; зависимости приложения живут в
+# package.json и backend/requirements.txt. Глобальный ~/.config/mise/config.toml
+# даёт node/gh/uv, но проект пинит то, от чего зависит воспроизводимость.
+min_version = "2026.10.25"
+
+[tools]
+# Node 24 — фактический рантайм проекта (package-lock v3).
+node = "24.20.0"
+# Backend написан под 3.11+; 3.12.16 — свежий патч ветки 3.12 (локальный .venv на 3.12.10).
+python = "3.12.16"
+
+[env]
+PYTHONUTF8 = "1"
+PYTHONIOENCODING = "utf-8"
+
+[tasks.install]
+description = "Установить Node- и Python-зависимости проекта"
+# npm run setup = npm install + frontend install (postinstall ставит Chromium).
+# pip ставит библиотеки в интерпретатор из [tools] (нужен активированный mise
+# или PATH, где shims идут раньше системных python/node).
+run = [
+  "npm run setup",
+  "python -m pip install -r backend/requirements.txt",
+]
+
+[tasks.lint]
+description = "TypeScript strict + production-сборка frontend (ESLint в проекте не настроен)"
+run = "npm --prefix frontend run build"
+
+[tasks.test]
+description = "Frontend unit (vitest) + backend pytest с изолированной БД"
+run = [
+  "npm --prefix frontend run test",
+  "npm run test:pytest",
+]
+
+[tasks.check]
+description = "Блокирующий полный гейт: контракт profile-settings, сборка, тесты"
+# CI повторяет те же шаги; e2e вынесен в отдельную задачу (нужен стенд).
+run = [
+  "python scripts/verify-profile-settings.py verify --strict",
+  "mise run lint",
+  "mise run test",
+]
+
+[tasks.dev]
+description = "Локальный DEV: DB + миграции + backend + frontend"
+run = "npm run dev"
+
+[tasks.e2e]
+description = "Playwright smoke (нужен поднятый TEST- или DEV-стенд)"
+run = "npm run test:e2e:smoke"
+
+[tasks.ports]
+description = "Проверить, что dev-порты 8011/5171 свободны"
+run = "npm run dev:ports"

@@ -254,3 +254,19 @@ $env:HRMS_SYNCGATE = "1"; npm run dev
 | `ONLYOFFICE_INTERNAL_URL`        | Внутренний URL (backend → OnlyOffice)            |
 | `BACKEND_INTERNAL_CALLBACK_URL`  | Callback URL (OnlyOffice → backend)              |
 | `APP_PUBLIC_URL`                 | Legacy fallback для обратной совместимости        |
+
+---
+
+## mise
+
+Toolchain и версии рантаймов закреплены в `mise.toml` (Node 24.20.0, Python 3.12.16).
+
+```bash
+mise trust
+mise install
+mise run check   # полный гейт: profile-settings, сборка frontend, vitest, pytest
+mise run dev     # DEV-стенд: DB + миграции + backend + frontend
+```
+
+Дополнительно: `mise run lint`, `mise run test`, `mise run e2e`, `mise run ports`.
+Зависимости приложения ставятся из `package.json` и `backend/requirements.txt`.
