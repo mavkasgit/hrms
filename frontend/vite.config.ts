@@ -107,5 +107,16 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Node >= 25 объявляет собственные globalThis.localStorage/sessionStorage,
+    // которые без --localstorage-file остаются undefined. vitest-окружение
+    // jsdom не перезаписывает уже существующие глобалы, поэтому тесты получали
+    // нерабочий localStorage вместо jsdom-овского. Выключаем встроенный
+    // webstorage в воркерах, чтобы глобалы ставил jsdom.
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        execArgv: ['--no-experimental-webstorage'],
+      },
+    },
   },
 })
