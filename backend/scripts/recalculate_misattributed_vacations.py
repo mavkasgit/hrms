@@ -1,25 +1,26 @@
 """Версионированный, идемпотентный скрипт пересчёта трудовых периодов.
 
-Находит сотрудников с рассинхронизацией FIFO и пересчитывает их периоды
-существующим механизмом (vacation_period_service.recalculate_periods),
-выводя балансы до и после. Два независимых детектора:
+Находит сотрудников, у которых фактические автосписания отпусков расходятся
+с эталонным FIFO-распределением, и пересчитывает их существующим механизмом
+(vacation_period_service.recalculate_periods), выводя балансы до и после.
 
-1. Мизатрибуция (баг #114) — отпуск имеет автосписания (source_type='vacation'),
-   но ни одно не находится в периоде, содержащем дату начала отпуска. Записана
-   пре-фиксной версией автосписания, когда частично закрытые периоды пропускались
-   и дни уходили в следующий период.
+Эталон повторяет recalculate_periods:
+  — трудовые отпуска с приказом, не удалённые, в порядке даты начала;
+  — дни списываются FIFO: сначала самый старый незакрытый период, затем
+    следующий и так далее;
+  — ручное закрытие (полное/частичное) уменьшает ёмкость периода до
+    зафиксированного остатка — как _reapply_manual_closures, включая
+    снапшот доп. дней на момент закрытия (#123).
 
-2. Освобождение раннего периода — транзакция по отпуску лежит в периоде P, когда
-   есть БОЛЕЕ РАННИЙ период Q с ненулевым остатком. Возникает при удалении
-   приказа: дни возвращались в исходный период, но списания соседних отпусков
-   оставались в поздних (до фикса ребалансировки).
+Мизатрибуция — любое расхождение факта с эталоном: дни отпуска лежат не в
+тех периодах, которые дал бы FIFO-порядок, либо автосписание отсутствует.
+Легитимный перелив «назад» (отпуск стартует в новом периоде, а дни уходят в
+более старые открытые) и перелив «вперёд» (период старта уже закрыт) — это и
+есть штатный FIFO, поэтому такие сотрудники не флагаются.
 
-Ограничение детектора №2: «ранний период с остатком» — недостаточный признак
-сами по себе, потому что легитимный FIFO-перелив в следующий период выглядит
-так же. Поэтому требуется, чтобы отпуск при этом относился к более раннему
-периоду по датам. Ложные срабатывания возможны на данных, где ручное частичное
-закрытие намеренно оставило период открытым под будущие списания, — смотрите
-dry-run перед --apply.
+Прежний критерий («у отпуска нет ни одной транзакции в периоде с датой
+старта») после перехода автосписания на FIFO (#120) вечно флагал легитимный
+перелив назад (#124) — он заменён сверкой с эталонным распределением.
 
 Скрипт безопасен для повторного запуска: пересчёт детерминирован, поэтому
 повторный запуск даёт тот же результат (идемпотентность).
@@ -31,125 +32,168 @@ dry-run перед --apply.
 """
 import argparse
 import asyncio
+from collections import defaultdict
 
-from sqlalchemy import case, func, select
-from sqlalchemy.orm import aliased
+from sqlalchemy import func, select
 
 from app.core.database import get_db
+from app.core.vacation_types import VACATION_TYPE_MAIN
 from app.models.employee import Employee
 from app.models.vacation import Vacation
 from app.models.vacation_period import VacationPeriod
+from app.models.vacation_period_manual_closure import VacationPeriodManualClosure
 from app.models.vacation_period_transaction import VacationPeriodTransaction
+from app.repositories.vacation_period_manual_closure_repository import (
+    vacation_period_manual_closure_repository,
+)
 from app.services.vacation_period_service import vacation_period_service
 
-SCRIPT_VERSION = "2.0.0"
+SCRIPT_VERSION = "3.0.0"
+
+
+def _available_for_auto(period: VacationPeriod, closure: VacationPeriodManualClosure | None) -> int:
+    """Сколько дней периода остаётся доступно автосписанию после ручных закрытий.
+
+    Повторяет логику _reapply_manual_closures: ручное закрытие фиксирует
+    использованные дни на момент закрытия (used_at_closure), поэтому ёмкость
+    для автосписания = total - used_at_closure. Для закрытий со снапшотом
+    доп. дней (#123) рост additional_days переоткрывает период на дельту.
+    """
+    total = (period.main_days or 0) + (period.additional_days or 0)
+    if closure is None:
+        return max(total, 0)
+
+    target_remaining = closure.remaining_days if closure.remaining_days is not None else 0
+    if closure.additional_days_at_closure is not None:
+        total_at_closure = (period.main_days or 0) + closure.additional_days_at_closure
+        used_at_closure = max(total_at_closure - target_remaining, 0)
+    else:
+        used_at_closure = max(total - target_remaining, 0)
+    return max(total - used_at_closure, 0)
+
+
+async def expected_vacation_allocations(db, employee_id: int) -> dict[int, dict[int, int]]:
+    """Эталонное FIFO-распределение: {vacation_id: {period_id: дни}}.
+
+    Считается только в памяти и ничего не пишет в БД: ручные закрытия берутся
+    из журнала, ёмкость периодов — из их текущих main/additional дней.
+    """
+    periods = list(
+        (
+            await db.execute(
+                select(VacationPeriod)
+                .where(VacationPeriod.employee_id == employee_id)
+                .order_by(VacationPeriod.period_start.asc(), VacationPeriod.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not periods:
+        return {}
+
+    closures = await vacation_period_manual_closure_repository.get_by_employee(db, employee_id)
+    closure_by_bounds = {(c.work_year_start, c.work_year_end): c for c in closures}
+    capacity = {
+        period.id: _available_for_auto(period, closure_by_bounds.get((period.period_start, period.period_end)))
+        for period in periods
+    }
+
+    vacations = list(
+        (
+            await db.execute(
+                select(Vacation)
+                .where(
+                    Vacation.employee_id == employee_id,
+                    Vacation.is_deleted.is_(False),
+                    Vacation.order_id.isnot(None),
+                    Vacation.vacation_type == VACATION_TYPE_MAIN,
+                )
+                .order_by(Vacation.start_date.asc(), Vacation.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    planned: dict[int, dict[int, int]] = {}
+    for vacation in vacations:
+        days_to_use = await vacation_period_service.get_effective_vacation_days(db, vacation)
+        if days_to_use <= 0:
+            continue
+        allocation: dict[int, int] = {}
+        for period in periods:
+            if days_to_use <= 0:
+                break
+            if capacity[period.id] <= 0:
+                continue
+            take = min(capacity[period.id], days_to_use)
+            allocation[period.id] = take
+            capacity[period.id] -= take
+            days_to_use -= take
+        planned[vacation.id] = allocation
+    return planned
+
+
+async def actual_vacation_allocations(db, employee_id: int) -> dict[int, dict[int, int]]:
+    """Фактическое распределение автосписаний: {vacation_id: {period_id: дни}}.
+
+    Дни суммируются со знаком: сторно (vacation_restore, is_reversal) вычитается,
+    поэтому для скорректированного отпуска остаётся нетто-распределение — ровно
+    то, что recompute_period_totals учитывает в used_days_auto периода.
+    """
+    result = await db.execute(
+        select(
+            VacationPeriodTransaction.vacation_id,
+            VacationPeriodTransaction.period_id,
+            func.sum(VacationPeriodTransaction.days_count),
+        )
+        .join(VacationPeriod, VacationPeriod.id == VacationPeriodTransaction.period_id)
+        .where(
+            VacationPeriod.employee_id == employee_id,
+            VacationPeriodTransaction.vacation_id.isnot(None),
+        )
+        .group_by(
+            VacationPeriodTransaction.vacation_id,
+            VacationPeriodTransaction.period_id,
+        )
+    )
+    actual: dict[int, dict[int, int]] = defaultdict(dict)
+    for vacation_id, period_id, days in result.all():
+        if days and days > 0:
+            actual[vacation_id][period_id] = int(days)
+    return dict(actual)
 
 
 async def find_misattributed_employee_ids(db, employee_id: int | None = None) -> list[int]:
-    """Сотрудники, у которых есть отпуск с мизатрибуцией автосписания.
+    """Сотрудники, чьи автосписания расходятся с эталонным FIFO-распределением.
 
-    Мизатрибуция — отпуск имеет автосписания (source_type='vacation'),
-    но ни одно из них не находится в периоде, содержащем дату начала отпуска
-    (эффект пре-фиксного бага #114: частично закрытый период пропускался и
-    ВСЕ дни уходили в следующий период). Легитимный перелив остатка в соседний
-    период при этом не считается мизатрибуцией, т.к. часть дней остаётся
-    в корректном периоде.
+    Мизатрибуция — дни отпуска оказались не в тех периодах, которые дал бы
+    FIFO (самый старый незакрытый первым), либо списание отсутствует. Перелив
+    в более старые или более поздние открытые периоды сам по себе не флагается:
+    он входит в эталон.
     """
-    tx_alias = aliased(VacationPeriodTransaction)
-    vp_alias = aliased(VacationPeriod)
-    has_correct_tx = (
-        select(tx_alias.id)
-        .join(vp_alias, vp_alias.id == tx_alias.period_id)
-        .where(
-            tx_alias.vacation_id == Vacation.id,
-            tx_alias.source_type == "vacation",
-            tx_alias.is_reversal.is_(False),
-            tx_alias.days_count > 0,
-            Vacation.start_date >= vp_alias.period_start,
-            Vacation.start_date <= vp_alias.period_end,
-        )
-        .exists()
-    )
     query = (
-        select(VacationPeriod.employee_id)
-        .join(VacationPeriodTransaction, VacationPeriodTransaction.period_id == VacationPeriod.id)
-        .join(Vacation, Vacation.id == VacationPeriodTransaction.vacation_id)
+        select(Vacation.employee_id)
         .where(
-            VacationPeriodTransaction.vacation_id.isnot(None),
-            VacationPeriodTransaction.source_type == "vacation",
-            VacationPeriodTransaction.is_reversal.is_(False),
-            VacationPeriodTransaction.days_count > 0,
-            ~has_correct_tx,
+            Vacation.is_deleted.is_(False),
+            Vacation.order_id.isnot(None),
+            Vacation.vacation_type == VACATION_TYPE_MAIN,
         )
+        .distinct()
+        .order_by(Vacation.employee_id)
     )
     if employee_id is not None:
-        query = query.where(VacationPeriod.employee_id == employee_id)
-    result = await db.execute(query.distinct())
-    return sorted(row[0] for row in result.all())
+        query = query.where(Vacation.employee_id == employee_id)
 
-
-async def find_freed_earlier_period_employee_ids(db, employee_id: int | None = None) -> list[int]:
-    """Сотрудники, у которых списание отпуска осталось в позднем периоде
-    при свободном более раннем периоде (баг удаления приказа).
-
-    Признак: транзакция по отпуску лежит в периоде P, при этом
-      — есть период Q с Q.period_start < P.period_start и ненулевым остатком;
-      — дата начала отпуска попадает в Q, а не в P.
-
-    Второе условие отсекает легитимный FIFO-перелив: если отпуск датирован
-    внутри P, ушедшие в P дни корректны, даже при свободном Q. Без него
-    детектор «лечил» бы данные, где оператор намеренно оставил период
-    частично закрытым с открытым остатком.
-
-    Остаток считается как remaining_days (если задан — источник истины),
-    иначе total - used_days.
-    """
-    tx_alias = aliased(VacationPeriodTransaction)
-    tx_period = aliased(VacationPeriod)
-    early_period = aliased(VacationPeriod)
-
-    def _remaining_expr(alias):
-        return func.coalesce(
-            case(
-                (alias.remaining_days.isnot(None), alias.remaining_days),
-                else_=(alias.main_days + alias.additional_days - alias.used_days),
-            ),
-            0,
-        )
-
-    earlier_free_exists = (
-        select(early_period.id)
-        .where(
-            early_period.employee_id == tx_period.employee_id,
-            early_period.period_start < tx_period.period_start,
-            _remaining_expr(early_period) > 0,
-            # Отпуск по датам относится к более раннему периоду
-            Vacation.start_date >= early_period.period_start,
-            Vacation.start_date <= early_period.period_end,
-        )
-        .exists()
-    )
-
-    query = (
-        select(tx_period.employee_id)
-        .join(tx_alias, tx_alias.period_id == tx_period.id)
-        .join(Vacation, Vacation.id == tx_alias.vacation_id)
-        .where(
-            tx_alias.source_type == "vacation",
-            tx_alias.is_reversal.is_(False),
-            tx_alias.days_count > 0,
-            # Транзакция лежит не в том периоде, к которому относится отпуск
-            ~(
-                (Vacation.start_date >= tx_period.period_start)
-                & (Vacation.start_date <= tx_period.period_end)
-            ),
-            earlier_free_exists,
-        )
-    )
-    if employee_id is not None:
-        query = query.where(tx_period.employee_id == employee_id)
-    result = await db.execute(query.distinct())
-    return sorted(row[0] for row in result.all())
+    candidate_ids = [row[0] for row in (await db.execute(query)).all()]
+    misattributed: list[int] = []
+    for candidate_id in candidate_ids:
+        expected = await expected_vacation_allocations(db, candidate_id)
+        actual = await actual_vacation_allocations(db, candidate_id)
+        if expected != actual:
+            misattributed.append(candidate_id)
+    return misattributed
 
 
 def _format_balance(periods) -> list[str]:
@@ -176,11 +220,8 @@ async def run(apply: bool, employee_id: int | None = None) -> None:
                 print("Режим: отчёт (dry-run). Добавьте --apply для применения.")
             print()
 
-            misattributed = await find_misattributed_employee_ids(db, employee_id)
-            freed = await find_freed_earlier_period_employee_ids(db, employee_id)
-            ids = sorted(set(misattributed) | set(freed))
-            print(f"Сотрудников с мизатрибуцией автосписания: {len(misattributed)}")
-            print(f"Сотрудников с откатом списания в свободный ранний период: {len(freed)}")
+            ids = await find_misattributed_employee_ids(db, employee_id)
+            print(f"Сотрудников с расхождением против эталонного FIFO: {len(ids)}")
             print(f"Всего к пересчёту: {len(ids)}")
             print()
 
