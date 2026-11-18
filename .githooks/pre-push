@@ -1,0 +1,13 @@
+#!/bin/sh
+# Pre-push: синк-гейт между hrms и sibling-проектом ktm2000.
+# Прогон безусловный (без HRMS_SYNCGATE): известный долг перечислен в
+# scripts/sync-baseline.json и печатается как `known`, новое расхождение валит push.
+# Включить один раз на клон: npm run hooks:install (git config core.hooksPath .githooks).
+set -e
+
+if [ ! -d ../ktm2000 ]; then
+  echo "verify:sync: sibling ../ktm2000 не найден — pre-push пропущен (в CI есть оба checkout)."
+  exit 0
+fi
+
+node scripts/verify-sync.mjs --other ../ktm2000 --baseline scripts/sync-baseline.json

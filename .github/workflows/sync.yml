@@ -1,0 +1,35 @@
+name: sync
+
+# Синк-гейт hrms <-> ktm2000. Оба репозитория чекаутятся рядом, скрипт запускается
+# из корня hrms. Известный долг — scripts/sync-baseline.json (печатается как known),
+# новое расхождение валит job.
+#
+# Если ktm2000 приватный и github.token его не видит — добавьте секрет SYNC_TOKEN
+# (fine-grained PAT с доступом на чтение mavkasgit/ktm2000).
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout hrms
+        uses: actions/checkout@v4
+        with:
+          path: hrms
+
+      - name: Checkout ktm2000
+        uses: actions/checkout@v4
+        with:
+          repository: mavkasgit/ktm2000
+          path: ktm2000
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      # Скрипт использует только node:fs/node:path/node:url — зависимости не нужны.
+      - name: Verify sync (baseline)
+        working-directory: hrms
+        run: node scripts/verify-sync.mjs --other ../ktm2000 --baseline scripts/sync-baseline.json

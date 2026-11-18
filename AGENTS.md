@@ -86,8 +86,15 @@ modules/       → Переносимые модули (см. ниже)
 - `modules/notifications/` — переносимый колокольчик уведомлений (бейдж + попап).
   Публичный API — только `index.ts`; хост-импорты — только через `ui.ts`;
   данные — через интерфейс `NotificationsApi`. При обновлении бампай
-  `NOTIFICATIONS_MODULE_VERSION`; сверка копий модулей с KTM — `npm run verify:sync`
-  (манифест `scripts/sync-manifest.json`, файлы модулей — в режимах content/version/presence).
+  `NOTIFICATIONS_MODULE_VERSION`.
+- Сверка общих файлов с KTM — `npm run verify:sync` (манифест
+  `scripts/sync-manifest.json`: модули и auth/backend-файлы в режимах
+  content/version/presence). Расхождения из `scripts/sync-baseline.json` —
+  известный долг: печатаются как `known` и не валят гейт, новое расхождение —
+  fail. `--strict` игнорирует baseline («долг закрыт»). Правку общего файла
+  делай в обоих репозиториях с bump версии модуля. `predev`/`prebuild` —
+  лёгкий `--if-enabled`; безусловный прогон — `.githooks/pre-push`
+  (`npm run hooks:install`) и CI `.github/workflows/sync.yml` (два checkout).
 - HRMS-обвязка user-settings живёт в `features/user-settings/`, обвязка
   notifications — в `features/notifications/` (адаптеры поверх проектного axios).
 - При обновлении модуля бампай `USER_SETTINGS_MODULE_VERSION`.

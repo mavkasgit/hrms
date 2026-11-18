@@ -50,11 +50,20 @@ function createSyncFixture({ siblingContent } = {}) {
     }),
   )
   writeFixtureFile(workspace.root, "shared/sync.txt", "host content\n")
+  writeBaseline(workspace, [])
   if (siblingContent !== undefined) {
     writeFixtureFile(workspace.sibling, "shared/sync.txt", siblingContent)
   }
 
   return workspace
+}
+
+function writeBaseline(workspace, entries) {
+  writeFixtureFile(
+    workspace.root,
+    "scripts/sync-baseline.json",
+    `${JSON.stringify({ entries }, null, 2)}\n`,
+  )
 }
 
 function childEnvironment(syncGateValue) {
@@ -169,6 +178,88 @@ describe("verify-sync CLI", () => {
 
     expectRealMismatch(result)
     expect(result.stderr).not.toContain("Недопустимое значение HRMS_SYNCGATE")
+  })
+})
+
+describe("verify-sync baseline", () => {
+  const knownEntry = {
+    path: "shared/sync.txt",
+    reason: "auth/OIDC debt (retro 2026-11-18)",
+  }
+
+  it("подавляет известное расхождение и печатает его как known", () => {
+    const workspace = createSyncFixture({ siblingContent: "sibling content\n" })
+    writeBaseline(workspace, [knownEntry])
+
+    const result = runVerifier(
+      workspace,
+      ["--baseline", "scripts/sync-baseline.json"],
+      undefined,
+    )
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("known: shared/sync.txt")
+    expect(result.stdout).toContain(knownEntry.reason)
+    expect(result.stderr).not.toContain("Синк-гейт НЕ пройден.")
+  })
+
+  it("краснеет на расхождении, которого нет в baseline", () => {
+    const workspace = createSyncFixture({ siblingContent: "sibling content\n" })
+    writeBaseline(workspace, [
+      { path: "shared/another.txt", reason: "auth/OIDC debt (retro 2026-11-18)" },
+    ])
+
+    const result = runVerifier(
+      workspace,
+      ["--baseline", "scripts/sync-baseline.json"],
+      undefined,
+    )
+
+    expectRealMismatch(result)
+    expect(result.stderr).toContain("shared/sync.txt")
+  })
+
+  it("возвращает exit 2, если baseline не парсится", () => {
+    const workspace = createSyncFixture({ siblingContent: "sibling content\n" })
+    writeFixtureFile(workspace.root, "scripts/sync-baseline.json", "{ not json")
+
+    const result = runVerifier(
+      workspace,
+      ["--baseline", "scripts/sync-baseline.json"],
+      undefined,
+    )
+
+    expect(result.status).toBe(2)
+    expect(result.stderr).toMatch(/baseline/i)
+  })
+
+  it("возвращает exit 2, если файл baseline отсутствует", () => {
+    const workspace = createSyncFixture({ siblingContent: "sibling content\n" })
+    rmSync(path.join(workspace.root, "scripts", "sync-baseline.json"), { force: true })
+
+    const result = runVerifier(
+      workspace,
+      ["--baseline", "scripts/sync-baseline.json"],
+      undefined,
+    )
+
+    expect(result.status).toBe(2)
+    expect(result.stderr).toMatch(/baseline/i)
+  })
+
+  it("--strict игнорирует baseline и краснеет на известном расхождении", () => {
+    const workspace = createSyncFixture({ siblingContent: "sibling content\n" })
+    writeBaseline(workspace, [knownEntry])
+
+    const result = runVerifier(
+      workspace,
+      ["--baseline", "scripts/sync-baseline.json", "--strict"],
+      undefined,
+    )
+
+    expectRealMismatch(result)
+    expect(result.stderr).toContain("shared/sync.txt")
+    expect(result.stdout).not.toContain("known: shared/sync.txt")
   })
 })
 

@@ -5,7 +5,8 @@
   "scripts": {
     "setup": "npm install && npm install --prefix frontend && echo 'Не забудьте установить зависимости Python!'",
     "postinstall": "playwright install chromium",
-    "verify:sync": "node scripts/verify-sync.mjs --other ../ktm2000",
+    "verify:sync": "node scripts/verify-sync.mjs --other ../ktm2000 --baseline scripts/sync-baseline.json",
+    "hooks:install": "git config core.hooksPath .githooks",
     "predev": "node scripts/verify-sync.mjs --other ../ktm2000 --if-enabled && node scripts/ensure-dev-ports.js --kill && npm run docker:dev:up && npm run db:wait && npm run dev:migrate",
     "prebuild": "node scripts/verify-sync.mjs --other ../ktm2000 --if-enabled",
     "dev": "concurrently --names \"DB,BACKEND,FRONTEND\" -c \"blue,green,yellow\" \"npm run docker:dev:logs\" \"npm run dev:backend\" \"npm run frontend\"",

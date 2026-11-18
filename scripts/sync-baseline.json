@@ -1,0 +1,36 @@
+{
+  "entries": [
+    {
+      "path": "backend/app/services/unified_profile_service.py",
+      "reason": "auth/OIDC debt (retro 2026-11-18)"
+    },
+    {
+      "path": "scripts/profile-settings-manifest.json",
+      "reason": "auth/OIDC debt (retro 2026-11-18)"
+    },
+    {
+      "path": "frontend/src/features/auth/api/oidcAuth.ts",
+      "reason": "auth/OIDC debt (retro 2026-11-18)"
+    },
+    {
+      "path": "frontend/src/features/auth/pages/OidcCallbackPage.tsx",
+      "reason": "auth/OIDC debt (retro 2026-11-18)"
+    },
+    {
+      "path": "backend/app/services/session_core.py",
+      "reason": "auth/OIDC debt (retro 2026-11-18)"
+    },
+    {
+      "path": "backend/app/services/oidc_core.py",
+      "reason": "auth/OIDC debt (retro 2026-11-18)"
+    },
+    {
+      "path": "frontend/src/features/auth/pages/LoginPage.tsx",
+      "reason": "auth/OIDC debt (retro 2026-11-18)"
+    },
+    {
+      "path": "frontend/src/features/auth/hooks/useAuth.tsx",
+      "reason": "auth/OIDC debt (retro 2026-11-18)"
+    }
+  ]
+}
