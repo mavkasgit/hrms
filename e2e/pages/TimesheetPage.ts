@@ -21,6 +21,8 @@ export class TimesheetPage {
   readonly fillToolbar: Locator
   /** Select выбора смены на панели массового заполнения */
   readonly fillSelect: Locator
+  /** Inline-редактор ячейки (Radix Select, #107) */
+  readonly cellEditor: Locator
   /** Плавающая панель «принять приказ» (order_changed) */
   readonly acceptOrdersToolbar: Locator
   /** Глобальная кнопка «Принять приказы» */
@@ -48,6 +50,7 @@ export class TimesheetPage {
     this.acceptOrdersGlobal = page.getByTestId('accept-orders-global')
     this.fillHandle = page.getByTestId('timesheet-fill-handle')
     this.autofillButton = page.getByTestId('timesheet-autofill-button')
+    this.cellEditor = page.getByTestId('timesheet-cell-editor')
   }
 
   async goto() {
@@ -144,20 +147,20 @@ export class TimesheetPage {
   }
 
   /**
-   * Inline-редактор (select) виден после двойного клика / Enter на ячейке.
+   * Inline-редактор ячейки (Radix Select) виден после двойного клика / Enter.
    */
   async openCellEditor(date: string, employeeId: number) {
     await this.clickCell(date, employeeId)
     await this.page.keyboard.press('Enter')
-    await expect(this.grid.locator('select')).toBeVisible({ timeout: 5_000 })
+    await expect(this.cellEditor).toBeVisible({ timeout: 5_000 })
   }
 
   /**
-   * Выбор значения в inline-редакторе (select) по видимому тексту.
+   * Выбор значения в inline-редакторе ячейки по видимому тексту.
    */
   async selectShiftInEditor(label: string) {
-    const select = this.grid.locator('select')
-    await select.selectOption({ label })
+    await this.page.getByRole('option', { name: label }).click()
+    await expect(this.cellEditor).not.toBeVisible({ timeout: 5_000 })
   }
 
   /**

@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { DraftFormData } from "@/entities/draft"
 import { mapVacationFillDraft } from "./VacationsPage"
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllEnvs()
+})
 
 function formData(partial: Partial<DraftFormData>): DraftFormData {
   return {
@@ -47,5 +52,25 @@ describe("mapVacationFillDraft", () => {
 
   it("возвращает null для группового черновика", () => {
     expect(mapVacationFillDraft(formData({ is_group: true }))).toBeNull()
+  })
+
+  it("без даты в черновике подставляет локальную дату, а не UTC (#108)", () => {
+    // UTC+3, ночь: по UTC ещё 18 ноября, у пользователя уже 19-е
+    vi.stubEnv("TZ", "Europe/Moscow")
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-11-18T22:30:00Z"))
+
+    const draft = mapVacationFillDraft(
+      formData({
+        order_type_code: "vacation_paid",
+        data: [
+          { key: "employee_id", value: "42" },
+          { key: "vacation_start", value: "2026-11-20" },
+          { key: "vacation_end", value: "2026-11-24" },
+        ],
+      })
+    )
+
+    expect(draft?.order_date).toBe("2026-11-19")
   })
 })

@@ -1,4 +1,5 @@
 import type { Employee } from "@/entities/employee/types"
+import { toIsoLocal } from "@/shared/utils/date"
 
 /**
  * Единый источник правды для плейсхолдеров — backend:
@@ -177,6 +178,6 @@ export function buildEmployeePlaceholders(employee: Employee): Record<string, st
 function isoDate(value: unknown): string {
   if (!value) return ""
   if (typeof value === "string") return value
-  if (value instanceof Date) return value.toISOString().split("T")[0]
+  if (value instanceof Date) return toIsoLocal(value)
   return ""
 }

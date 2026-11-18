@@ -69,7 +69,7 @@ import { GlobalAuditLog } from "@/features/global-audit-log"
 import { useTags } from "@/entities/tag/useTags"
 import { PrintPreviewDialog } from "@/features/print-preview"
 import { OrdersRegistryModal } from "@/features/orders-registry/OrdersRegistryModal"
-import { formatDate, formatDateTime } from "@/shared/utils/date"
+import { formatDate, formatDateTime, todayIsoLocal } from "@/shared/utils/date"
 import type { Employee } from "@/entities/employee/types"
 import type { EmployeeVacationSummary, Vacation } from "@/entities/vacation/types"
 import {
@@ -109,7 +109,7 @@ export function mapVacationFillDraft(data: DraftFormData): VacationFormDraft | n
     employee_id: getFormDataInt(data.data, "employee_id"),
     start_date: getFormDataValue(data.data, "vacation_start") ?? "",
     end_date: getFormDataValue(data.data, "vacation_end") ?? "",
-    order_date: getFormDataValue(data.data, "date") ?? new Date().toISOString().split("T")[0],
+    order_date: getFormDataValue(data.data, "date") ?? todayIsoLocal(),
     order_number: getFormDataValue(data.data, "number") ?? "",
     saved_at: new Date().toISOString(),
   }
@@ -700,7 +700,7 @@ export function VacationsPage() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [orderNumber, setOrderNumber] = useState("")
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
+  const [orderDate, setOrderDate] = useState(todayIsoLocal())
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
@@ -754,7 +754,7 @@ export function VacationsPage() {
     setStartDate("")
     setEndDate("")
     setOrderNumber("")
-    setOrderDate(new Date().toISOString().split("T")[0])
+    setOrderDate(todayIsoLocal())
     setErrors({})
     setDraftId(null)
     // Очищаем сохранённый черновик формы (#28) — форма сброшена

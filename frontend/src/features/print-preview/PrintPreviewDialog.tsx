@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/dialog"
+import { todayIsoLocal } from "@/shared/utils/date"
 
 export interface PrintTag {
   id: number
@@ -250,7 +251,7 @@ export function PrintPreviewDialog<T extends { id: number | string }>({
         },
       }
 
-      const filename = `${title.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().split("T")[0]}.pdf`
+      const filename = `${title.toLowerCase().replace(/\s+/g, "-")}-${todayIsoLocal()}.pdf`
       pdfMake.createPdf(docDefinition).download(filename)
     } catch (error) {
       console.error("Error generating PDF:", error)

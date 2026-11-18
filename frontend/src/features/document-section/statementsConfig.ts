@@ -12,6 +12,7 @@ import type { Statement, StatementCreate, StatementType } from "@/entities/state
 import { getStatementTypeLayout } from "@/entities/statement/statementTypeLayouts"
 import { getFormDataExtraFields, getFormDataInt, getFormDataValue } from "@/entities/draft"
 import type { DraftFormData } from "@/entities/draft"
+import { todayIsoLocal } from "@/shared/utils/date"
 
 interface StatementFormDraft {
   employee_id: number | null
@@ -36,7 +37,7 @@ function mapStatementFillDraft(data: DraftFormData): StatementFormDraft | null {
   return {
     employee_id: getFormDataInt(data.data, "employee_id"),
     statement_type_id: getFormDataInt(data.data, "statement_type_id"),
-    statement_date: getFormDataValue(data.data, "date") || new Date().toISOString().split("T")[0],
+    statement_date: getFormDataValue(data.data, "date") || todayIsoLocal(),
     statement_number: getFormDataValue(data.data, "number") || "",
     extra_fields: getFormDataExtraFields(data.data, ["employee_id", "statement_type_id", "number", "date"]),
     saved_at: new Date().toISOString(),

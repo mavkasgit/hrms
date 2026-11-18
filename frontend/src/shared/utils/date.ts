@@ -78,6 +78,28 @@ export function formatForInput(date: Date | null): string {
 }
 
 /**
+ * Календарная дата в ISO-формате (YYYY-MM-DD) по локальному часовому поясу.
+ *
+ * Для дат документов, фильтров и имён файлов берите эту функцию, а не
+ * `toISOString()`: UTC-дата в поясах впереди/позади UTC отличается на день
+ * (например, в UTC+3 в 01:30 локальная дата уже следующая, а UTC — ещё вчерашняя).
+ */
+export function toIsoLocal(date: Date): string {
+  if (!isValid(date)) return ""
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `${date.getFullYear()}-${m}-${d}`
+}
+
+/**
+ * Сегодняшняя календарная дата пользователя (YYYY-MM-DD), не UTC.
+ * Единая точка для даты документа по умолчанию (#108).
+ */
+export function todayIsoLocal(): string {
+  return toIsoLocal(new Date())
+}
+
+/**
  * Получить текущий год
  */
 export function getCurrentYear(): number {

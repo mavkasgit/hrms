@@ -14,7 +14,7 @@ import { openOrderPrint } from "@/entities/order"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { VacationSelector } from "@/features/VacationSelector"
 import { VacationHistoryAndPeriods } from "@/features/VacationHistoryAndPeriods"
-import { formatDate, parseDate, calculateDaysDifference, nextDay } from "@/shared/utils/date"
+import { formatDate, parseDate, calculateDaysDifference, nextDay, todayIsoLocal } from "@/shared/utils/date"
 import type { OrderCreate } from "@/entities/order"
 import type { Vacation } from "@/entities/vacation/types"
 import {
@@ -35,7 +35,7 @@ export function mapExtensionFillDraft(data: DraftFormData): VacationExtensionFor
     vacation: null,
     period_start: getFormDataValue(data.data, "period_start") ?? "",
     period_end: getFormDataValue(data.data, "period_end") ?? "",
-    order_date: getFormDataValue(data.data, "date") ?? new Date().toISOString().split("T")[0],
+    order_date: getFormDataValue(data.data, "date") ?? todayIsoLocal(),
     order_number: getFormDataValue(data.data, "number") ?? "",
     saved_at: new Date().toISOString(),
   }
@@ -66,7 +66,7 @@ export function VacationExtensionPage() {
   const [selectedVacation, setSelectedVacation] = useState<Vacation | null>(null)
   const [periodStart, setPeriodStart] = useState("")
   const [periodEnd, setPeriodEnd] = useState("")
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
+  const [orderDate, setOrderDate] = useState(todayIsoLocal())
   const [orderNumber, setOrderNumber] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
