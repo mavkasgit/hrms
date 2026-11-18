@@ -47,6 +47,20 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      keyframes: {
+        "mobile-nav-in": {
+          from: { transform: "translateX(-100%)" },
+          to: { transform: "translateX(0)" },
+        },
+        "mobile-nav-out": {
+          from: { transform: "translateX(0)" },
+          to: { transform: "translateX(-100%)" },
+        },
+      },
+      animation: {
+        "mobile-nav-in": "mobile-nav-in 220ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "mobile-nav-out": "mobile-nav-out 180ms ease-in",
+      },
     },
   },
   plugins: [],

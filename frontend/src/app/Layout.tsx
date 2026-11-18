@@ -13,6 +13,8 @@ import { subscribeAllDraftOrderSaves } from "@/entities/order"
 import { invalidateOrderQueries } from "@/entities/order"
 import { getUserAccessLevel } from "@/shared/api/authHost"
 import { clearAuthTokens, getToken, setAuthErrorForLogin } from "@/shared/api/client"
+import { MOBILE_MAIN_PADDING_CLASS } from "@/shared/lib/mobileLayout"
+import { cn } from "@/shared/utils/cn"
 
 /**
  * Единая точка обработки сигналов сохранения из окон OnlyOffice-редакторов:
@@ -78,7 +80,7 @@ export function Layout() {
       <div className="flex flex-col min-h-screen bg-background">
         <div className="flex flex-1 min-h-0">
           <Sidebar afterNav={<DraftOrdersNavItem />} />
-          <main className="flex-1 p-6 overflow-auto">
+          <main className={cn("flex-1 p-6 overflow-auto", MOBILE_MAIN_PADDING_CLASS)}>
             <Outlet />
           </main>
         </div>
