@@ -14,7 +14,7 @@ import { openOrderPrint } from "@/entities/order"
 import { OrderNumberField } from "@/features/OrderNumberField"
 import { VacationSelector } from "@/features/VacationSelector"
 import { VacationHistoryAndPeriods } from "@/features/VacationHistoryAndPeriods"
-import { formatDate, parseDate, formatForInput, calculateDaysDifference } from "@/shared/utils/date"
+import { formatDate, parseDate, formatForInput, calculateDaysDifference, todayIsoLocal } from "@/shared/utils/date"
 import type { OrderCreate } from "@/entities/order"
 import type { Vacation } from "@/entities/vacation/types"
 import {
@@ -34,7 +34,7 @@ export function mapRecallFillDraft(data: DraftFormData): VacationRecallFormDraft
   return {
     vacation: null,
     recall_date: getFormDataValue(data.data, "recall_date") ?? "",
-    order_date: getFormDataValue(data.data, "date") ?? new Date().toISOString().split("T")[0],
+    order_date: getFormDataValue(data.data, "date") ?? todayIsoLocal(),
     order_number: getFormDataValue(data.data, "number") ?? "",
     saved_at: new Date().toISOString(),
   }
@@ -59,7 +59,7 @@ export function VacationRecallPage() {
 
   const [selectedVacation, setSelectedVacation] = useState<Vacation | null>(null)
   const [recallDate, setRecallDate] = useState("")
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
+  const [orderDate, setOrderDate] = useState(todayIsoLocal())
   const [orderNumber, setOrderNumber] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [successMessage, setSuccessMessage] = useState<string | null>(null)

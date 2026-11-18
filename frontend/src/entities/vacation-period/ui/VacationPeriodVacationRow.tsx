@@ -1,5 +1,5 @@
 import { Badge } from "@/shared/ui/badge"
-import { formatDate } from "@/shared/utils/date"
+import { formatDate, toIsoLocal } from "@/shared/utils/date"
 import { Button } from "@/shared/ui/button"
 import { Download, Eye, Trash2 } from "lucide-react"
 import type { VacationPeriodVacation } from "@/entities/vacation-period/types"
@@ -30,7 +30,7 @@ function addDaysSafe(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00`)
   if (Number.isNaN(d.getTime()) || !Number.isFinite(days)) return isoDate
   d.setDate(d.getDate() + days)
-  return d.toISOString().split("T")[0]
+  return toIsoLocal(d)
 }
 
 function parsePostponeComment(comment?: string | null): ParsedPostponeComment | null {

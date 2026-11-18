@@ -12,6 +12,7 @@ import type { Notification, NotificationCreate, NotificationType } from "@/entit
 import { getNotificationTypeLayout } from "@/entities/notification/notificationTypeLayouts"
 import { getFormDataExtraFields, getFormDataInt, getFormDataValue } from "@/entities/draft"
 import type { DraftFormData } from "@/entities/draft"
+import { todayIsoLocal } from "@/shared/utils/date"
 
 interface NotificationFormDraft {
   employee_id: number | null
@@ -36,7 +37,7 @@ function mapNotificationFillDraft(data: DraftFormData): NotificationFormDraft | 
   return {
     employee_id: getFormDataInt(data.data, "employee_id"),
     notification_type_id: getFormDataInt(data.data, "notification_type_id"),
-    notification_date: getFormDataValue(data.data, "date") || new Date().toISOString().split("T")[0],
+    notification_date: getFormDataValue(data.data, "date") || todayIsoLocal(),
     notification_number: getFormDataValue(data.data, "number") || "",
     extra_fields: getFormDataExtraFields(data.data, ["employee_id", "notification_type_id", "number", "date"]),
     saved_at: new Date().toISOString(),

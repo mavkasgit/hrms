@@ -21,6 +21,7 @@ import {
 import { useToast } from "@/shared/ui/use-toast"
 import { usePreviewImport, useConfirmImport } from "@/entities/timesheet"
 import type { TimesheetPreview, TimesheetPreviewDay } from "@/entities/timesheet"
+import { toIsoLocal } from "@/shared/utils/date"
 
 function formatHours(h: number | null | undefined) {
   if (h === null || h === undefined) return ""
@@ -295,7 +296,7 @@ export function TimesheetImportModal({ open, onOpenChange, onImported }: Timeshe
     const dates: string[] = []
     let curr = new Date(start)
     while (curr <= end) {
-      dates.push(curr.toISOString().split("T")[0])
+      dates.push(toIsoLocal(curr))
       curr.setDate(curr.getDate() + 1)
     }
     return dates

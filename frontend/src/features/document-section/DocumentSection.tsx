@@ -9,6 +9,7 @@ import { Badge } from "@/shared/ui/badge"
 import { Alert, AlertDescription } from "@/shared/ui/alert"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { EmptyState } from "@/shared/ui/empty-state"
+import { todayIsoLocal } from "@/shared/utils/date"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -228,7 +229,7 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
   const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null)
   const [typeSearch, setTypeSearch] = useState("")
   const [typeOpen, setTypeOpen] = useState(false)
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0])
+  const [date, setDate] = useState(todayIsoLocal())
   const [number, setNumber] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [extraFields, setExtraFields] = useState<Record<string, string | number>>({})
@@ -332,7 +333,7 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
     setSelectedEmployee(null)
     setSelectedTypeId(null)
     setTypeSearch("")
-    setDate(new Date().toISOString().split("T")[0])
+    setDate(todayIsoLocal())
     setNumber("")
     setErrors({})
     setExtraFields({})

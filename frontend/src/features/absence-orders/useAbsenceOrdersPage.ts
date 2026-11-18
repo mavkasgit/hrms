@@ -21,6 +21,7 @@ import {
 } from "@/entities/order"
 import { openOrderPrint } from "@/entities/order"
 import { failPrintPlaceholder } from "@/shared/utils/print-window"
+import { todayIsoLocal } from "@/shared/utils/date"
 import {
   useTableQueryEngine,
   type SortConfig,
@@ -161,10 +162,6 @@ export interface AbsenceOrdersApi {
   setShowEmployeesTable: (value: boolean) => void
 }
 
-function todayIso(): string {
-  return new Date().toISOString().split("T")[0]
-}
-
 export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersApi {
   const queryClient = useQueryClient()
 
@@ -181,7 +178,7 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
 
   // ==== Одиночная форма ====
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
-  const [orderDate, setOrderDate] = useState(todayIso())
+  const [orderDate, setOrderDate] = useState(todayIsoLocal())
   const [orderNumber, setOrderNumber] = useState("")
   const [mode, setMode] = useState<CallMode>("single")
   const [vacationStart, setVacationStart] = useState("")
@@ -255,7 +252,7 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
       deleteDraftMutation.mutate(draftId)
     }
     setSelectedEmployee(null)
-    setOrderDate(todayIso())
+    setOrderDate(todayIsoLocal())
     setOrderNumber("")
     setMode("single")
     setVacationStart("")
@@ -334,7 +331,7 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
     // Редактор коммитит черновик сам и шлёт сигнал — форма просто сбрасывается (#86).
     return subscribeDraftOrderSave(draftId, () => {
       setSelectedEmployee(null)
-      setOrderDate(todayIso())
+      setOrderDate(todayIsoLocal())
       setOrderNumber("")
       setMode("single")
       setVacationStart("")
@@ -465,7 +462,7 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
     setGroupCallDateStart("")
     setGroupCallDateEnd("")
     setOrderNumber("")
-    setOrderDate(todayIso())
+    setOrderDate(todayIsoLocal())
     if (config.group.resetClearsDraftId) {
       setGroupDraftId(null)
     }

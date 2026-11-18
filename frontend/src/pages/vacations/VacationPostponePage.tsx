@@ -14,7 +14,7 @@ import { useHolidays, usePostponeVacation } from "@/entities/vacation"
 import { VacationSelector } from "@/features/VacationSelector"
 import { VacationHistoryAndPeriods } from "@/features/VacationHistoryAndPeriods"
 import { OrderNumberField } from "@/features/OrderNumberField"
-import { formatDate, parseDate, calculateDaysDifference } from "@/shared/utils/date"
+import { formatDate, parseDate, calculateDaysDifference, todayIsoLocal } from "@/shared/utils/date"
 import type { OrderCreate } from "@/entities/order"
 import type { Holiday, Vacation } from "@/entities/vacation/types"
 import {
@@ -35,7 +35,7 @@ export function mapPostponeFillDraft(data: DraftFormData): VacationPostponeFormD
     vacation: null,
     postpone_start_date: getFormDataValue(data.data, "postpone_range_start") ?? "",
     postpone_end_date: getFormDataValue(data.data, "postpone_range_end") ?? "",
-    order_date: getFormDataValue(data.data, "date") ?? new Date().toISOString().split("T")[0],
+    order_date: getFormDataValue(data.data, "date") ?? todayIsoLocal(),
     order_number: getFormDataValue(data.data, "number") ?? "",
     saved_at: new Date().toISOString(),
   }
@@ -83,7 +83,7 @@ export function VacationPostponePage() {
   const postponeOrderType = orderTypes.find((t) => t.code === POSTPONE_ORDER_CODE) ?? null
 
   const [selectedVacation, setSelectedVacation] = useState<Vacation | null>(null)
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
+  const [orderDate, setOrderDate] = useState(todayIsoLocal())
   const [orderNumber, setOrderNumber] = useState("")
   const [postponeStartDate, setPostponeStartDate] = useState("")
   const [postponeEndDate, setPostponeEndDate] = useState("")

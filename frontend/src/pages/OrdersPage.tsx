@@ -68,7 +68,7 @@ import {
   type FieldSchema,
 } from "@/features/dynamic-form"
 import { getOrderTypeLayout } from "@/entities/order"
-import { formatDate } from "@/shared/utils/date"
+import { formatDate, todayIsoLocal } from "@/shared/utils/date"
 import {
   useDraftRecoveryFor,
   useFillDraftIdRestore,
@@ -94,7 +94,7 @@ function mapOrderFillDraft(data: DraftFormData): OrderFormDraft | null {
   return {
     employee_id: getFormDataInt(data.data, "employee_id"),
     order_type_id: getFormDataInt(data.data, "order_type_id"),
-    order_date: getFormDataValue(data.data, "date") || new Date().toISOString().split("T")[0],
+    order_date: getFormDataValue(data.data, "date") || todayIsoLocal(),
     order_number: getFormDataValue(data.data, "number") || "",
     extra_fields: getFormDataExtraFields(data.data, ["employee_id", "order_type_id", "number", "date"]),
     saved_at: new Date().toISOString(),
@@ -105,14 +105,6 @@ interface GeneralOrderFormDraft {
   general_order_date: string
   general_order_number: string
   saved_at: string
-}
-
-/** Сегодня в локальном часовом поясе (ISO yyyy-mm-dd) — как инициализируется дата формы. */
-function todayIsoLocal(): string {
-  const now = new Date()
-  const m = String(now.getMonth() + 1).padStart(2, "0")
-  const d = String(now.getDate()).padStart(2, "0")
-  return `${now.getFullYear()}-${m}-${d}`
 }
 
 function OrderDeletePreview({ orderId }: { orderId: number | null }) {
@@ -368,7 +360,7 @@ export function OrdersPage() {
   const [selectedOrderTypeId, setSelectedOrderTypeId] = useState<number | null>(null)
   const [orderTypeSearch, setOrderTypeSearch] = useState("")
   const [orderTypeOpen, setOrderTypeOpen] = useState(false)
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().split("T")[0])
+  const [orderDate, setOrderDate] = useState(todayIsoLocal())
   const [orderNumber, setOrderNumber] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [extraFields, setExtraFields] = useState<Record<string, string | number>>({})
@@ -656,7 +648,7 @@ export function OrdersPage() {
     setSelectedEmployee(null)
     setSelectedOrderTypeId(null)
     setOrderTypeSearch("")
-    setOrderDate(new Date().toISOString().split("T")[0])
+    setOrderDate(todayIsoLocal())
     setOrderNumber("")
     setErrors({})
     setExtraFieldErrors({})
