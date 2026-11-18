@@ -49,19 +49,14 @@ export async function pingKtm(): Promise<boolean> {
     ktmBaseURL = `${window.location.protocol}//${window.location.hostname}:8082`
   }
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 2000)
-
   try {
     await fetch(`${ktmBaseURL}/favicon.ico`, {
       method: "HEAD",
       mode: "no-cors",
-      signal: controller.signal,
+      signal: AbortSignal.timeout(2000),
     })
-    clearTimeout(timeoutId)
     return true
   } catch (e) {
-    clearTimeout(timeoutId)
     return false
   }
 }
