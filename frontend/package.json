@@ -7,6 +7,7 @@
     "dev": "vite --mode dev",
     "prebuild": "node ../scripts/verify-sync.mjs --other ../ktm2000 --if-enabled",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
     "preview": "vite preview",
     "test": "vitest run"
   },

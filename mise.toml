@@ -49,15 +49,10 @@ description = "pytest для CI: service Postgres, без PowerShell-лаунч�
 run = "cd backend && python -m pytest -n auto --dist=loadfile -q"
 
 [tasks.check]
-description = "Блокирующий полный гейт: контракт profile-settings, сборка, тесты"
-# CI повторяет те же шаги; e2e вынесен в отдельную задачу (нужен стенд).
-run = [
-  "python scripts/verify-profile-settings.py verify --strict",
-  "mise run lint",
-  "mise run test",
-  "mise run modern-web",
-  "mise run reactuse-diff",
-]
+description = "Быстрый гейт: тот же набор, что npm run gate:fast (без дублирования логики)"
+# Шаги живут в scripts/gate.mjs (STEPS), а не здесь. e2e вынесен в отдельную
+# задачу: нужен живой стенд.
+run = "npm run gate:fast"
 
 [tasks.modern-web]
 description = "Ратчет modern-web-guidance: новые legacy-паттерны веб-платформы сверх базлайна"

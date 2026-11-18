@@ -1,0 +1,42 @@
+[
+  {
+    "step": "docs-sync",
+    "violation": "переименовать шаг modern-web только в карте защит",
+    "apply": [
+      {
+        "replace": {
+          "path": "docs/quality/gates.md",
+          "find": "| `modern-web` | fast |",
+          "replace": "| `modern-web-broken` | fast |"
+        }
+      }
+    ],
+    "reviewed": "2026-11-18"
+  },
+  {
+    "step": "reactuse-diff",
+    "violation": "новый ручной IntersectionObserver в исходнике frontend",
+    "apply": [
+      {
+        "write": {
+          "path": "frontend/src/__prove_reactuse.ts",
+          "content": "export function proveReactuse() {\n  return new IntersectionObserver(() => undefined)\n}\n"
+        }
+      }
+    ],
+    "reviewed": "2026-11-18"
+  },
+  {
+    "step": "modern-web",
+    "violation": "ручной авторазмер textarea через scrollHeight вместо field-sizing",
+    "apply": [
+      {
+        "write": {
+          "path": "frontend/src/__prove_modern_web.tsx",
+          "content": "export function proveModernWeb(textarea: HTMLTextAreaElement) {\n  textarea.style.height = \"auto\"\n  textarea.style.height = `${textarea.scrollHeight}px`\n}\n"
+        }
+      }
+    ],
+    "reviewed": "2026-11-18"
+  }
+]

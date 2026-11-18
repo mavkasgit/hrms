@@ -50,6 +50,9 @@ jobs:
       - name: Verify profile-settings manifest (strict)
         run: mise exec -- python scripts/verify-profile-settings.py verify --strict
 
+      - name: Check gate map (docs-sync)
+        run: npm run check:docs
+
       - name: Create isolated run-DB
         env:
           # Service Postgres on :5432 (fresh container per job → fixed run-id is safe).
