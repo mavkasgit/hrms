@@ -107,6 +107,8 @@ export function ComboboxCreate({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => {
+                  // Enter во время IME-композиции выбирает иероглиф, а не вариант.
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return
                   if (e.key === "Enter") {
                     e.preventDefault()
                     if (filtered.length > 0) {

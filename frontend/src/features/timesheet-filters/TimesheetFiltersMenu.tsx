@@ -117,6 +117,8 @@ export function TimesheetFiltersMenu({
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
                 onKeyDown={(e) => {
+                  // Enter/Escape во время IME-композиции принадлежат вводу, а не диалогу.
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return
                   if (e.key === "Enter") {
                     e.preventDefault()
                     handleSaveConfirm()

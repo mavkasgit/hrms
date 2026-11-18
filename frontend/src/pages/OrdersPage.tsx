@@ -644,6 +644,8 @@ export function OrdersPage() {
   }
 
   const handleOrderTypeKeyDown = (e: React.KeyboardEvent) => {
+    // Enter во время IME-композиции выбирает иероглиф, а не тип приказа.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
     if (e.key === "Enter" && filteredTypes.length > 0 && orderTypeOpen) {
       e.preventDefault()
       selectOrderType(filteredTypes[0])
@@ -1351,6 +1353,7 @@ export function OrdersPage() {
                     value={newPresetName}
                     onChange={(e) => setNewPresetName(e.target.value)}
                     onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing || e.keyCode === 229) return
                       if (e.key === "Enter") handleSavePresetConfirm()
                       if (e.key === "Escape") handleSavePresetCancel()
                     }}

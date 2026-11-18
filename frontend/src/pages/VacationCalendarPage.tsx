@@ -245,6 +245,8 @@ export function VacationCalendarPage() {
   }
 
   const handleCellKeyDown = (e: React.KeyboardEvent) => {
+    // Enter во время IME-композиции не сохраняет значение ячейки.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
     if (e.key === "Enter") handleCellSave()
     if (e.key === "Escape") setEditingCell(null)
     if (e.key === "Delete" || e.key === "Backspace") {

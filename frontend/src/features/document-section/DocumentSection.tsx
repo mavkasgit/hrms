@@ -382,6 +382,8 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
   }
 
   const handleTypeKeyDown = (e: React.KeyboardEvent) => {
+    // Enter во время IME-композиции выбирает иероглиф, а не тип документа.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
     if (e.key === "Enter" && filteredTypes.length > 0 && typeOpen) {
       e.preventDefault()
       selectType(filteredTypes[0])

@@ -117,6 +117,8 @@ export function EmployeeSearch({
               }
             }}
             onKeyDown={(e) => {
+              // Enter во время IME-композиции выбирает иероглиф, а не сотрудника.
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return
               if (e.key === "Enter" && searchResults.length > 0) {
                 e.preventDefault()
                 selectEmployee(searchResults[0])

@@ -352,6 +352,8 @@ export function EntityDialog({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Enter во время IME-композиции не сохраняет форму.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       if (!isSaving) handleSave()

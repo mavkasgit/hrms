@@ -37,7 +37,11 @@ function Variant1() {
               ref={ref}
               value={temp}
               onChange={(e) => setTemp(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false) }}
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return
+                if (e.key === "Enter") save()
+                if (e.key === "Escape") setEditing(false)
+              }}
               onBlur={save}
               className="h-full w-full border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-center"
             />

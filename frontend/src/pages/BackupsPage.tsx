@@ -999,6 +999,8 @@ export function BackupsPage() {
                           value={commentInput}
                           onChange={(e) => setCommentInput(e.target.value)}
                           onKeyDown={(e) => {
+                            // Enter во время IME-композиции не сохраняет комментарий.
+                            if (e.nativeEvent.isComposing || e.keyCode === 229) return
                             if (e.key === "Enter") saveComment(b.filename)
                             if (e.key === "Escape") setEditingComment(null)
                           }}

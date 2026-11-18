@@ -162,7 +162,11 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
           value={inputValue}
           onChange={(e) => handleInputChange(e.target.value)}
           onFocus={(e) => e.target.select()}
-          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur() }}
+          onKeyDown={(e) => {
+            // Enter во время IME-композиции подтверждает иероглиф, а не дату.
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return
+            if (e.key === "Enter") e.currentTarget.blur()
+          }}
           className="flex h-10 w-full rounded-l-md border-0 bg-background px-3 py-2 text-sm ring-offset-0 placeholder:text-muted-foreground focus-visible:outline-none"
           maxLength={10}
           disabled={disabled}
