@@ -56,11 +56,16 @@ run = [
   "mise run lint",
   "mise run test",
   "mise run modern-web",
+  "mise run reactuse-diff",
 ]
 
 [tasks.modern-web]
 description = "Ратчет modern-web-guidance: новые legacy-паттерны веб-платформы сверх базлайна"
 run = "node scripts/modern-web.mjs"
+
+[tasks.reactuse-diff]
+description = "Дифф-ратчет: новые ручные примитивы вместо @siberiacancode/reactuse"
+run = "node scripts/reactuse-diff.mjs"
 
 [tasks.dev]
 description = "Локальный DEV: DB + миграции + backend + frontend"
