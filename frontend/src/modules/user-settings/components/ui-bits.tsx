@@ -1,6 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import type { ReactNode } from "react"
 import { Check, CheckCircle2, Copy, Loader2, type LucideIcon } from "lucide-react"
-import { Button, cn, Tooltip, TooltipContent, TooltipTrigger } from "../ui"
+import {
+  Button,
+  cn,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  useCopyWithReset,
+} from "../ui"
 
 /** Карточка-секция внутри панели. */
 export function Card({
@@ -193,10 +200,12 @@ export function CopyButton({
   label: string
   copiedLabel: string
 }) {
-  const [copied, setCopied] = useState(false)
-  const timer = useRef<number | undefined>(undefined)
-
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+  // Галочка живёт 1600 мс — как и раньше; `useCopyWithReset` (локальная
+  // обёртка над `useCopy`) сначала пробует `navigator.clipboard`, а на HTTP
+  // по LAN-IP (прод KTM) уходит в `execCommand` — прежний
+  // `navigator.clipboard?.writeText` там молчал. В отличие от пакетного
+  // `useCopy`, повторный клик снимает старый таймер и не гасит галочку раньше.
+  const { copied, copy } = useCopyWithReset(1600)
 
   return (
     <Tooltip>
@@ -205,10 +214,9 @@ export function CopyButton({
           type="button"
           aria-label={label}
           onClick={() => {
-            void navigator.clipboard?.writeText(value)
-            setCopied(true)
-            window.clearTimeout(timer.current)
-            timer.current = window.setTimeout(() => setCopied(false), 1600)
+            // Копирование — best-effort: сбой не гасит диалог и не рисует
+            // галочку (`copied` встаёт только после успеха).
+            void copy(value).catch(() => {})
           }}
           className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
         >

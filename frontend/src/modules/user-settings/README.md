@@ -24,6 +24,10 @@
 - React 18+, TailwindCSS, shadcn-примитивы (dialog, alert-dialog, button,
   input, badge, skeleton, tooltip) — импортируются **только** через `ui.ts`.
 - `lucide-react`, `@multiavatar/multiavatar` (изолирован в `components/AvatarArt.tsx`).
+- `@siberiacancode/reactuse` + локальная обёртка `useCopyWithReset`
+  (`shared/lib/useCopyWithReset.ts`, реэкспорт через `ui.ts`) — кнопка
+  копирования: один таймер сброса, повторный клик не гасит галочку раньше
+  (обход siberiacancode/reactuse#515).
 - Без axios, date-fns, react-query — чистый fetch + Intl.
 
 ## Перенос в другое приложение

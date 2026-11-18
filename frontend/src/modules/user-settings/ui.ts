@@ -34,3 +34,10 @@ export {
   TooltipProvider,
   TooltipTrigger,
 } from "@/shared/ui/tooltip"
+
+/**
+ * Копирование с одним таймером сброса: локальная обёртка над `useCopy`
+ * (обход siberiacancode/reactuse#515). Хосту достаточно положить файл
+ * `shared/lib/useCopyWithReset.ts` и оставить эту строку.
+ */
+export { useCopyWithReset } from "@/shared/lib/useCopyWithReset"
