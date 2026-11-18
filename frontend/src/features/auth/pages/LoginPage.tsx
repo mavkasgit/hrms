@@ -59,13 +59,10 @@ export function LoginPage() {
 
         if (oidc.enabled && oidc.authorization_url) {
           try {
-            const controller = new AbortController()
-            const timer = setTimeout(() => controller.abort(), 1200)
             await fetch(oidc.authorization_url, {
               mode: "no-cors",
-              signal: controller.signal,
+              signal: AbortSignal.timeout(1200),
             })
-            clearTimeout(timer)
           } catch {
             if (!cancelled) setOidcUnreachable(true)
           }
