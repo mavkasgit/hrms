@@ -524,7 +524,7 @@ export function DocumentSection<TItem extends DocumentListItem, TType extends Do
               {/* Right column — Детали */}
               <div className="space-y-4 flex-1 min-w-0 max-w-[600px] lg:pl-6">
                 {/* Type selector */}
-                <div ref={typeRef} className="w-[350px]">
+                <div ref={typeRef} className="w-full max-w-[350px]">
                   <label className="text-sm font-medium">{config.labels.typeLabel}</label>
                   <div className="mt-1 relative">
                     {selectedType ? (
