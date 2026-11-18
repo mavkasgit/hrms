@@ -1,3 +1,4 @@
+import { useCopy } from "@siberiacancode/reactuse"
 import { useMemo, useState } from "react"
 import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react"
 import type { TemplateVariable } from "@/entities/order"
@@ -8,33 +9,8 @@ interface TemplateVariablesCatalogProps {
   defaultExpanded?: boolean
 }
 
-async function copyText(text: string) {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text)
-      return
-    } catch {
-      // Try the legacy path below when clipboard permissions are blocked.
-    }
-  }
-
-  const textarea = document.createElement("textarea")
-  textarea.value = text
-  textarea.setAttribute("readonly", "")
-  textarea.style.position = "fixed"
-  textarea.style.left = "-9999px"
-  textarea.style.top = "0"
-  document.body.appendChild(textarea)
-
-  try {
-    textarea.focus()
-    textarea.select()
-    const copied = document.execCommand("copy")
-    if (!copied) throw new Error("Copy command failed")
-  } finally {
-    document.body.removeChild(textarea)
-  }
-}
+/** Сколько висит галочка-подтверждение после копирования. */
+const COPY_FEEDBACK_MS = 1200
 
 export function TemplateVariablesCatalog({
   variables,
@@ -44,8 +20,7 @@ export function TemplateVariablesCatalog({
     const saved = localStorage.getItem("templateVariablesCatalog.expanded")
     return saved !== null ? JSON.parse(saved) : defaultExpanded
   })
-  const [copiedVar, setCopiedVar] = useState<string | null>(null)
-  const [copyError, setCopyError] = useState<string | null>(null)
+  const { copied, value: copiedValue, copy } = useCopy(COPY_FEEDBACK_MS)
 
   const { leftCategories, rightCategories, grouped: groupedVariables } = useMemo(
     () => categorizeVariables(variables),
@@ -58,16 +33,12 @@ export function TemplateVariablesCatalog({
     localStorage.setItem("templateVariablesCatalog.expanded", JSON.stringify(newValue))
   }
 
-  const copyVariable = async (name: string) => {
-    try {
-      await copyText(name)
-      setCopyError(null)
-      setCopiedVar(name)
-      setTimeout(() => setCopiedVar((current) => (current === name ? null : current)), 1200)
-    } catch {
-      setCopyError("Не удалось скопировать переменную")
-      setTimeout(() => setCopyError(null), 3000)
-    }
+  const copyVariable = (name: string) => {
+    // reactuse.copy умеет fallback на execCommand, но при полном отказе промис
+    // отклоняется — гасим его здесь, чтобы не было unhandled rejection.
+    void copy(name).catch((error) => {
+      console.warn("[template-variables-catalog] не удалось скопировать:", error)
+    })
   }
 
   const renderCategory = (category: string) => {
@@ -85,7 +56,7 @@ export function TemplateVariablesCatalog({
                 className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
                 title="Копировать"
               >
-                {copiedVar === item.name ? (
+                {copied && copiedValue === item.name ? (
                   <Check className="h-3 w-3 text-green-600" />
                 ) : (
                   <Copy className="h-3 w-3" />
@@ -123,11 +94,6 @@ export function TemplateVariablesCatalog({
               Уведомление №{"{doc_number}"} от {"{doc_date}"} для {"{short_name}"}
             </code>
           </div>
-          {copyError && (
-            <div className="text-xs text-destructive bg-destructive/10 rounded-md px-3 py-2">
-              {copyError}
-            </div>
-          )}
           <div className="grid grid-cols-2 gap-8">
             <div className="space-y-4">{leftCategories.map(renderCategory)}</div>
             <div className="space-y-4">{rightCategories.map(renderCategory)}</div>
