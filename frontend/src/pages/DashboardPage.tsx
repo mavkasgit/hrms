@@ -65,10 +65,10 @@ export function DashboardPage() {
 
       {/* Дни рождения и контракты */}
       <div className="flex flex-wrap gap-6">
-        <div className="w-[500px]">
+        <div className="w-full max-w-[500px]">
           <BirthdaysList birthdays={birthdays || []} isLoading={birthdaysLoading} />
         </div>
-        <div className="w-[690px]">
+        <div className="w-full max-w-[690px]">
           <ContractsTable
             contracts={contracts || []}
             isLoading={contractsLoading}

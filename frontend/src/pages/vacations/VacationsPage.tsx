@@ -396,9 +396,9 @@ function EmployeeHistoryRow({
               </div>
             )}
             
-            <div className={`flex gap-3 border border-muted/30 rounded ${isClosed ? 'opacity-60' : ''} ${isClosing ? 'border-blue-400 bg-blue-50' : ''}`}>
+            <div className={`flex flex-col lg:flex-row gap-3 border border-muted/30 rounded ${isClosed ? 'opacity-60' : ''} ${isClosing ? 'border-blue-400 bg-blue-50' : ''}`}>
               {/* Левая часть — период */}
-              <div className="basis-[50%] min-w-[320px] bg-card py-1.5 px-2">
+              <div className="basis-auto lg:basis-1/2 min-w-0 bg-card py-1.5 px-2">
                 <div className="flex items-start gap-1">
                   <div className="shrink-0 min-w-[185px]">
                     <div className="flex items-center gap-2 text-xs">
@@ -533,7 +533,7 @@ function EmployeeHistoryRow({
               )}
 
             {/* Правая часть — отпуска за период */}
-            <div className="basis-[50%] min-w-0 bg-muted/30">
+            <div className="basis-auto lg:basis-1/2 min-w-0 bg-muted/30">
               {periodVacations.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-xs text-muted-foreground py-2">Нет отпусков</div>
               ) : (
