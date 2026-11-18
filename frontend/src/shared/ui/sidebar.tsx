@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useMediaQuery } from "@siberiacancode/reactuse"
 import { NavLink, useLocation } from "react-router-dom"
 import { cn } from "@/shared/utils/cn"
 import { redirectToKtmLogin } from "@/shared/api/authHost"
@@ -58,22 +59,6 @@ const absenceItems = [
 
 const getKtmDashboardURL = () => {
   return `${window.location.protocol}//${window.location.hostname}:9000`
-}
-
-function useIsDesktop(): boolean {
-  const [isDesktop, setIsDesktop] = useState(
-    () => window.matchMedia(DESKTOP_MEDIA_QUERY).matches
-  )
-
-  useEffect(() => {
-    const media = window.matchMedia(DESKTOP_MEDIA_QUERY)
-    const handleChange = (event: MediaQueryListEvent) => setIsDesktop(event.matches)
-    setIsDesktop(media.matches)
-    media.addEventListener("change", handleChange)
-    return () => media.removeEventListener("change", handleChange)
-  }, [])
-
-  return isDesktop
 }
 
 function BrandLogo({ compact = false }: { compact?: boolean }) {
@@ -313,7 +298,7 @@ function SidebarContent({
 export function Sidebar({ afterNav }: { afterNav?: ReactNode }) {
   const location = useLocation()
   const { refreshUser } = useAuth()
-  const isDesktop = useIsDesktop()
+  const isDesktop = useMediaQuery(DESKTOP_MEDIA_QUERY)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [pendingProfileOpen, setPendingProfileOpen] = useState(false)
