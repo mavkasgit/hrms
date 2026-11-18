@@ -205,6 +205,27 @@ FRONTEND и DB, стенд падает с 3221225786 (0xC000013A). Свой с�
 (`localhost:5435`) синхронизирован с `.env.dev` на случай запуска alembic без
 `DATABASE_URL` в окружении.
 
+### Dev-стенд в соседнем терминале (Orca)
+
+Перед финальным ответом (пользователь проверяет сразу после него) агент
+убеждается, что dev-стенд жив. Работать **только с уже открытым соседним
+терминалом через Orca**: новых терминалов не создавать и стек из своей оболочки
+не запускать.
+
+1. `orca terminal list` — найти обычный shell-терминал этого worktree (не
+   Qoder-терминал агента); состояние — `orca terminal read --terminal <handle> --screen`.
+2. Проверить оба чека: backend `http://127.0.0.1:8011/api/health` и frontend
+   через прокси `http://127.0.0.1:5171/api/health`.
+3. Если в ответе менялись файлы backend/frontend или чек не зелёный —
+   отправить в тот же терминал `npm run dev:restart`
+   (`orca terminal send --terminal <handle> --text "npm run dev:restart" --enter`)
+   и дождаться обоих health-чеков. `dev:restart` освобождает порты, поднимает
+   Postgres/OnlyOffice, применяет миграции и запускает backend + frontend.
+4. Если открытого терминала нет — не поднимать стек самому: попросить
+   пользователя открыть терминал в Orca одной строкой.
+5. Отвечать только после зелёных чеков. Если код не менялся и стенд жив — не
+   трогать.
+
 ---
 
 ## Правила разработки
@@ -304,3 +325,24 @@ Default five-role vocabulary (needs-triage, needs-info, ready-for-agent, ready-f
 ### Domain docs
 
 Single-context layout — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+---
+
+## mise
+
+Toolchain проекта — `mise.toml` в корне (Node 24.20.0, Python 3.12.16).
+Python-интерпретатор проекта — `backend/.venv`: mise создаёт его на чистой
+машине и активирует в задачах, поэтому `install`, `check` и `dev` используют
+один и тот же Python. Нужен активированный mise (`mise activate pwsh`) или
+PATH, где shims идут раньше системных python/node.
+
+```bash
+mise trust
+mise install
+mise run check   # блокирующий гейт: profile-settings, сборка frontend, vitest, pytest
+mise run dev     # DB + миграции + backend + frontend
+```
+
+Отдельные задачи: `mise run lint`, `mise run test`, `mise run e2e`, `mise run ports`.
+Версии рантаймов меняются только в `mise.toml`; зависимости приложения — в
+`package.json` и `backend/requirements.txt`.
