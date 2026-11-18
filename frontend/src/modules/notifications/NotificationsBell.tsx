@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useDocumentVisibility } from "@siberiacancode/reactuse"
 import { Bell, X } from "lucide-react"
 import type { NotificationsApi } from "./api/adapter"
 import type { Notification } from "./types"
@@ -32,6 +33,12 @@ export function NotificationsBell({
   // Поллинг не должен пересекаться с длинным запросом.
   const inFlightRef = useRef(false)
 
+  // Свёрнутая вкладка не должна ходить на сервер: оператор всё равно не видит
+  // бейдж, а 30-секундный тик на каждую открытую вкладку — это трафик впустую.
+  // Состояние отдаёт `useDocumentVisibility`: он читает его синхронно на
+  // первом рендере и подписывается на `visibilitychange`.
+  const isHidden = useDocumentVisibility() === "hidden"
+
   const load = useCallback(async () => {
     if (inFlightRef.current) return
     inFlightRef.current = true
@@ -47,11 +54,15 @@ export function NotificationsBell({
     }
   }, [api])
 
+  // Возврат на вкладку перезапускает эффект, а тот сначала дозагружает список
+  // и только потом ставит тикер — бейдж на месте сразу после возврата, без
+  // ожидания следующего интервала.
   useEffect(() => {
-    load()
+    if (isHidden) return
+    void load()
     const timer = setInterval(load, pollIntervalMs)
     return () => clearInterval(timer)
-  }, [load, pollIntervalMs])
+  }, [load, pollIntervalMs, isHidden])
 
   // Непрочитанные помечаем прочитанными при открытии попапа. Набор
   // попыток в ref'е не даёт зациклиться: дозагрузка новых items после

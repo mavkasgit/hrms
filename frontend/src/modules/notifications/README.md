@@ -20,6 +20,8 @@
 - React 18+, TailwindCSS, shadcn-примитивы (button, popover) — импортируются
   **только** через `ui.ts`.
 - `lucide-react`.
+- `@siberiacancode/reactuse` (`useDocumentVisibility` — поллинг только на
+  видимой вкладке). Локальных обёрток над хуками пакета модуль не требует.
 - Без axios, date-fns, react-query — чистый fetch + собственный поллинг.
 
 ## Перенос в другое приложение
