@@ -20,7 +20,7 @@ export default defineConfig({
               !req.url.startsWith('/node_modules/') &&
               !req.url.startsWith('/src/') &&
               !req.url.startsWith('/@fs/') &&
-              !fs.existsSync(path.join(__dirname, req.url.split('?')[0]))
+              !fs.existsSync(path.join(import.meta.dirname, req.url.split('?')[0]))
             ) {
               req.url = '/'
             }
@@ -32,7 +32,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   server: {

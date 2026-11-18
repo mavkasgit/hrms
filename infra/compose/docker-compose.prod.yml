@@ -136,7 +136,7 @@ services:
 
   localtunnel:
     profiles: ["tunnel"]
-    image: node:20-alpine
+    image: node:26-alpine
     container_name: hrms-localtunnel-prod
     logging:
       driver: json-file
