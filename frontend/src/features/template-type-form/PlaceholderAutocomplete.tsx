@@ -50,12 +50,7 @@ export function PlaceholderAutocomplete({
   })
 
   // Группировка по категориям
-  const grouped = filtered.reduce<Record<string, typeof filtered>>((acc, opt) => {
-    const cat = opt.category || "Другое"
-    if (!acc[cat]) acc[cat] = []
-    acc[cat].push(opt)
-    return acc
-  }, {})
+  const grouped = Object.groupBy(filtered, (opt) => opt.category || "Другое")
 
   // При открытии фокусируемся на input
   useEffect(() => {
@@ -118,7 +113,7 @@ export function PlaceholderAutocomplete({
               <div className="text-xs font-semibold text-muted-foreground px-2 py-1">
                 {category}
               </div>
-              {items.map((opt) => {
+              {(items ?? []).map((opt) => {
                 const optKey = opt.key || opt.name.replace(/^\{|\}$/g, "")
                 return (
                   <button

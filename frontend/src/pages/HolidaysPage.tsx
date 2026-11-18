@@ -47,7 +47,7 @@ export function HolidaysPage() {
   }
 
   // Sort holidays by date
-  const sortedHolidays = [...(holidays || [])].sort((a, b) => {
+  const sortedHolidays = (holidays || []).toSorted((a, b) => {
     const da = parseDate(a.date)
     const db = parseDate(b.date)
     if (!da || !db) return 0

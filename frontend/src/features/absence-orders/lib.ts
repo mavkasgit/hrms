@@ -420,7 +420,7 @@ export function displayGroupEmployees(
 
   const nameSort = sortConfigs.find((s) => s.field === "employee_name")
   if (nameSort) {
-    const sorted = [...filtered].sort((a, b) => {
+    const sorted = filtered.toSorted((a, b) => {
       const nameA = a.employee_full_name ?? ""
       const nameB = b.employee_full_name ?? ""
       return nameA.localeCompare(nameB, "ru")
@@ -432,7 +432,7 @@ export function displayGroupEmployees(
   if (kind === "vacation") {
     const periodSort = sortConfigs.find((s) => s.field === "period")
     if (periodSort) {
-      const sorted = [...filtered].sort((a, b) => {
+      const sorted = filtered.toSorted((a, b) => {
         const pA = a.vacation_start ?? ""
         const pB = b.vacation_start ?? ""
         return pA.localeCompare(pB, "ru")
@@ -442,14 +442,14 @@ export function displayGroupEmployees(
     }
     const daysSort = sortConfigs.find((s) => s.field === "days")
     if (daysSort) {
-      const sorted = [...filtered].sort((a, b) => a.vacation_days - b.vacation_days)
+      const sorted = filtered.toSorted((a, b) => a.vacation_days - b.vacation_days)
       if (daysSort.order === "desc") sorted.reverse()
       return sorted
     }
   } else {
     const callSort = sortConfigs.find((s) => s.field === "call_date")
     if (callSort) {
-      const sorted = [...filtered].sort((a, b) => {
+      const sorted = filtered.toSorted((a, b) => {
         const pA = a.vacation_start ?? ""
         const pB = b.vacation_start ?? ""
         return pA.localeCompare(pB, "ru")

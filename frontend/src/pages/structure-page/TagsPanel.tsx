@@ -35,14 +35,8 @@ const API_URL = import.meta.env.VITE_API_URL || "/api"
 
 /* ───────── Группировка ───────── */
 
-function groupByCategory(tags: Tag[]): Record<string, Tag[]> {
-  const groups: Record<string, Tag[]> = {}
-  tags.forEach((tag) => {
-    const cat = tag.category || "Без категории"
-    if (!groups[cat]) groups[cat] = []
-    groups[cat].push(tag)
-  })
-  return groups
+function groupByCategory(tags: Tag[]): Partial<Record<string, Tag[]>> {
+  return Object.groupBy(tags, (tag) => tag.category || "Без категории")
 }
 
 /* ───────── Карточка тега ───────── */
@@ -229,7 +223,7 @@ export function TagsPanel() {
                 </h4>
               )}
               <div className="flex flex-wrap gap-1.5">
-                {catTags.map((tag) => (
+                {(catTags ?? []).map((tag) => (
                   <TagChip
                     key={tag.id}
                     tag={tag}

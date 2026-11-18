@@ -336,7 +336,7 @@ function EmployeeHistoryRow({
   
   // Разделяем периоды на открытые и закрытые
   // Сортируем от новых к старым по period_start (корректно для N серий)
-  const sortedPeriods = [...periods].sort((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime())
+  const sortedPeriods = periods.toSorted((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime())
   const openPeriods = sortedPeriods.filter(p => !p.is_closed)
   const closedPeriods = sortedPeriods.filter(p => p.is_closed)
 
@@ -425,8 +425,8 @@ function EmployeeHistoryRow({
                   <div className="flex-1 min-w-0 border-l border-muted/40 pl-2">
                   {p.transactions && p.transactions.length > 0 ? (
                     <div className="space-y-1">
-                      {[...p.transactions]
-                        .sort((a, b) => {
+                      {p.transactions
+                        .toSorted((a, b) => {
                           const ta = a.created_at ? new Date(a.created_at).getTime() : 0
                           const tb = b.created_at ? new Date(b.created_at).getTime() : 0
                           if (ta !== tb) return ta - tb

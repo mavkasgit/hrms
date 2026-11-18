@@ -498,7 +498,7 @@ export function OrdersPage() {
     // 2. Sort by employee_name if active
     const empSort = sortConfigs.find(s => s.field === "employee_name")
     if (empSort) {
-      const sorted = [...filtered].sort((a, b) => {
+      const sorted = filtered.toSorted((a, b) => {
         const nameA = a.employee_full_name ?? ""
         const nameB = b.employee_full_name ?? ""
         return nameA.localeCompare(nameB, "ru")

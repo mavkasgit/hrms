@@ -113,7 +113,7 @@ export function DocumentNumberField({
 
   const renderList = (items: RecentItem[]) => (
     <div className="flex flex-col gap-1">
-      {[...items].sort((a, b) => (b.id ?? 0) - (a.id ?? 0)).slice(0, 8).map((item) => (
+      {items.toSorted((a, b) => (b.id ?? 0) - (a.id ?? 0)).slice(0, 8).map((item) => (
         <div
           key={item.id}
           onMouseDown={() => {
@@ -148,7 +148,7 @@ export function DocumentNumberField({
       onFillNextNumber()
       return
     }
-    const row = [...recentItems].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0]
+    const row = recentItems.toSorted((a, b) => (b.id ?? 0) - (a.id ?? 0))[0]
     if (!row?.number) return
     const m = row.number.match(/^(\d+)(.*)$/)
     if (!m) return

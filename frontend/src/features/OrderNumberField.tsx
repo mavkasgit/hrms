@@ -84,7 +84,7 @@ export function OrderNumberField({
   }
 
   const fillNextFromRow = (items: { id?: number; number?: string | null }[]): string | null => {
-    const row = [...items].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0]
+    const row = items.toSorted((a, b) => (b.id ?? 0) - (a.id ?? 0))[0]
     if (!row?.number) return null
     const m = row.number.match(/^(\d+)(.*)$/)
     if (!m) return null

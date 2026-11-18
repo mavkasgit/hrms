@@ -150,7 +150,7 @@ export function TimesheetPage() {
     }
 
     // Сортировка
-    const sorted = [...rows].sort((a, b) => {
+    const sorted = rows.toSorted((a, b) => {
       for (const sc of sortConfigs) {
         let cmp = 0
         if (sc.field === "department") {

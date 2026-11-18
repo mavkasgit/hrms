@@ -193,7 +193,7 @@ export function VacationCalendarPage() {
     }
 
     // Сортировка по sortConfigs
-    const sortedRows = [...rows].sort((a, b) => {
+    const sortedRows = rows.toSorted((a, b) => {
       for (const sc of sortConfigs) {
         let cmp = 0
         if (sc.field === "department") {

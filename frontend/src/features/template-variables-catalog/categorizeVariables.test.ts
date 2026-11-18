@@ -79,8 +79,8 @@ describe("categorizeVariables", () => {
 
     const result = categorizeVariables(variables)
 
-    expect(result.grouped["Даты"].map((v) => v.name)).toEqual(["{a}", "{b}"])
-    expect(result.grouped["Работа"].map((v) => v.name)).toEqual(["{c}"])
+    expect(result.grouped["Даты"]?.map((v) => v.name)).toEqual(["{a}", "{b}"])
+    expect(result.grouped["Работа"]?.map((v) => v.name)).toEqual(["{c}"])
   })
 
   it("handles empty variables list", () => {

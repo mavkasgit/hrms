@@ -638,7 +638,7 @@ export function useAbsenceOrdersPage(config: AbsencePageConfig): AbsenceOrdersAp
     if (summaryColumnFilters.second.size > 0) rows = rows.filter((e) => summaryColumnFilters.second.has(String(e.second)))
     if (summaryColumnFilters.third.size > 0) rows = rows.filter((e) => summaryColumnFilters.third.has(String(e.third)))
     if (summarySortConfigs.length > 0) {
-      rows = [...rows].sort((a, b) => {
+      rows = rows.toSorted((a, b) => {
         for (const sc of summarySortConfigs) {
           let cmp = 0
           if (sc.field === "name") cmp = a.name.localeCompare(b.name, "ru")

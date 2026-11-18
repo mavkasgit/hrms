@@ -54,7 +54,7 @@ export function AdditionalDaysAdjustModal({
 
   const periods = useMemo<VacationPeriod[]>(() => {
     if (!Array.isArray(periodsRaw)) return []
-    return [...periodsRaw].sort(
+    return periodsRaw.toSorted(
       (a, b) => new Date(a.period_start).getTime() - new Date(b.period_start).getTime(),
     )
   }, [periodsRaw])
@@ -135,7 +135,7 @@ export function AdditionalDaysAdjustModal({
   }, [reopened, newValueNum])
 
   // Периоды, отсортированные новые → старые, для списка ручной корректировки
-  const periodsDesc = useMemo(() => [...periods].reverse(), [periods])
+  const periodsDesc = useMemo(() => periods.toReversed(), [periods])
 
   const dirtyItems = useMemo<VacationPeriodBulkAdjustItem[]>(() => {
     const items: VacationPeriodBulkAdjustItem[] = []

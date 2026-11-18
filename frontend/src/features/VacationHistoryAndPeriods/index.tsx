@@ -110,7 +110,7 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
   if (isLoading) return <div className="px-4 py-3"><Skeleton className="h-20 w-full" /></div>
   if (!history || !periods?.length) return <div className="px-4 py-3 text-sm text-muted-foreground">Нет данных о периодах и истории отпусков</div>
 
-  const sortedPeriods = [...periods].sort((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime())
+  const sortedPeriods = periods.toSorted((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime())
   const openPeriods = sortedPeriods.filter(p => !p.is_closed)
   const closedPeriods = sortedPeriods.filter(p => p.is_closed)
   const displayedPeriods = showClosedPeriods ? sortedPeriods : openPeriods
@@ -179,8 +179,8 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
                   <div className="flex-1 min-w-0 border-l border-muted/40 pl-2">
                   {p.transactions && p.transactions.length > 0 ? (
                     <div className="space-y-1">
-                      {[...p.transactions]
-                        .sort((a, b) => {
+                      {p.transactions
+                        .toSorted((a, b) => {
                           const ta = a.created_at ? new Date(a.created_at).getTime() : 0
                           const tb = b.created_at ? new Date(b.created_at).getTime() : 0
                           if (ta !== tb) return ta - tb

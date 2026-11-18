@@ -5,11 +5,7 @@ const RIGHT_BASE_CATEGORIES = ["Заявление", "Работа", "Даты",
 const KNOWN_CATEGORIES = [...LEFT_CATEGORIES, ...RIGHT_BASE_CATEGORIES]
 
 export function categorizeVariables(variables: TemplateVariable[]) {
-  const grouped: Record<string, TemplateVariable[]> = {}
-  for (const variable of variables) {
-    if (!grouped[variable.category]) grouped[variable.category] = []
-    grouped[variable.category].push(variable)
-  }
+  const grouped = Object.groupBy(variables, (variable) => variable.category)
 
   const otherCategories = Object.keys(grouped).filter(
     (c) => !KNOWN_CATEGORIES.includes(c)

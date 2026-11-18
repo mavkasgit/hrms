@@ -14,7 +14,7 @@ export function YearFilter({ value, onChange, years }: YearFilterProps) {
   const [search, setSearch] = useState("")
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  const sortedYears = [...(years ?? [])].sort((a, b) => b - a)
+  const sortedYears = (years ?? []).toSorted((a, b) => b - a)
   const visibleYears = sortedYears.slice(0, 3)
   const extraYears = sortedYears.slice(3)
 

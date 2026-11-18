@@ -126,7 +126,7 @@ export function processTableRows<T, Field extends string>(opts: {
 
   // Step 3: Sort (stable, multi-key by priority order)
   if (sortConfigs.length > 0) {
-    result = [...result].sort((a, b) => {
+    result = result.toSorted((a, b) => {
       for (const config of sortConfigs) {
         const def = sortDefs.get(config.field);
         if (!def) continue;

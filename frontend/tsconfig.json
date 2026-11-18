@@ -2,7 +2,9 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    // ES2024 в lib: используем toSorted/toReversed (ES2023) и Object.groupBy (ES2024).
+    // Сборку транспилирует Vite/esbuild, tsc только типизирует.
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
 

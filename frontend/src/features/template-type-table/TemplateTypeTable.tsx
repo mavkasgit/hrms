@@ -146,13 +146,8 @@ export function TemplateTypeTable({
   }
 
   if (grouped && hasLetters) {
-    const groupedMap: Record<string, TemplateTypeItem[]> = {}
     const order = ["л", "к", ""]
-    for (const t of types) {
-      const key = t.letter || ""
-      if (!groupedMap[key]) groupedMap[key] = []
-      groupedMap[key].push(t)
-    }
+    const groupedMap = Object.groupBy(types, (t) => t.letter || "")
 
     return (
       <div className="space-y-6">
