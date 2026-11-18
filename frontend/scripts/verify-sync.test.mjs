@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs"
@@ -10,6 +12,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
+import { PRESENCE_HASH } from "../../scripts/verify-sync.mjs"
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url))
 const frontendRoot = path.resolve(scriptsDir, "..")
@@ -18,6 +21,8 @@ const verifierPath = path.join(repositoryRoot, "scripts", "verify-sync.mjs")
 const rootPackagePath = path.join(repositoryRoot, "package.json")
 const frontendPackagePath = path.join(frontendRoot, "package.json")
 const temporaryDirectories = []
+
+const HOST_CONTENT = "host content\n"
 
 function createWorkspace() {
   const temporaryDirectory = mkdtempSync(path.join(tmpdir(), "hrms-syncgate-"))
@@ -37,6 +42,10 @@ function writeFixtureFile(root, relativePath, content) {
   writeFileSync(filePath, content, "utf8")
 }
 
+function hashOf(content) {
+  return `sha256:${createHash("sha256").update(content.replace(/\r\n/g, "\n")).digest("hex")}`
+}
+
 function createSyncFixture({ siblingContent } = {}) {
   const workspace = createWorkspace()
   copyFileSync(rootPackagePath, path.join(workspace.root, "package.json"))
@@ -49,7 +58,7 @@ function createSyncFixture({ siblingContent } = {}) {
       files: [{ path: "shared/sync.txt", mode: "content" }],
     }),
   )
-  writeFixtureFile(workspace.root, "shared/sync.txt", "host content\n")
+  writeFixtureFile(workspace.root, "shared/sync.txt", HOST_CONTENT)
   writeBaseline(workspace, [])
   if (siblingContent !== undefined) {
     writeFixtureFile(workspace.sibling, "shared/sync.txt", siblingContent)
@@ -184,7 +193,11 @@ describe("verify-sync CLI", () => {
 describe("verify-sync baseline", () => {
   const knownEntry = {
     path: "shared/sync.txt",
+    kind: "content",
+    hash: hashOf(HOST_CONTENT),
     reason: "auth/OIDC debt (retro 2026-11-18)",
+    reviewed: "2026-11-18",
+    expires: "2027-06-30",
   }
 
   it("подавляет известное расхождение и печатает его как known", () => {
@@ -200,13 +213,73 @@ describe("verify-sync baseline", () => {
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("known: shared/sync.txt")
     expect(result.stdout).toContain(knownEntry.reason)
+    expect(result.stdout).toContain(knownEntry.hash)
     expect(result.stderr).not.toContain("Синк-гейт НЕ пройден.")
+  })
+
+  it("фейлит новое ухудшение на известном пути: локальный файл изменился после снимка", () => {
+    const workspace = createSyncFixture({ siblingContent: "sibling content\n" })
+    writeBaseline(workspace, [knownEntry])
+    writeFixtureFile(workspace.root, "shared/sync.txt", "host content v2\n")
+
+    const result = runVerifier(
+      workspace,
+      ["--baseline", "scripts/sync-baseline.json"],
+      undefined,
+    )
+
+    expectRealMismatch(result)
+    expect(result.stderr).toContain("shared/sync.txt")
+    expect(result.stderr).toContain("новое ухудшение на известном пути")
+    expect(result.stdout).not.toContain("known: shared/sync.txt")
+  })
+
+  it("фейлит расхождение того же пути, но другого kind", () => {
+    const workspace = createSyncFixture({ siblingContent: "sibling content\n" })
+    writeBaseline(workspace, [{ ...knownEntry, kind: "presence", hash: PRESENCE_HASH }])
+
+    const result = runVerifier(
+      workspace,
+      ["--baseline", "scripts/sync-baseline.json"],
+      undefined,
+    )
+
+    expectRealMismatch(result)
+    expect(result.stderr).toContain("новое ухудшение на известном пути")
+  })
+
+  it("требует reviewed и expires в каждой записи", () => {
+    const workspace = createSyncFixture({ siblingContent: "sibling content\n" })
+    writeBaseline(workspace, [
+      {
+        path: knownEntry.path,
+        kind: knownEntry.kind,
+        hash: knownEntry.hash,
+        reason: knownEntry.reason,
+      },
+    ])
+
+    const result = runVerifier(
+      workspace,
+      ["--baseline", "scripts/sync-baseline.json"],
+      undefined,
+    )
+
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain("reviewed должен быть YYYY-MM-DD")
   })
 
   it("краснеет на расхождении, которого нет в baseline", () => {
     const workspace = createSyncFixture({ siblingContent: "sibling content\n" })
     writeBaseline(workspace, [
-      { path: "shared/another.txt", reason: "auth/OIDC debt (retro 2026-11-18)" },
+      {
+        path: "shared/another.txt",
+        kind: "content",
+        hash: hashOf("another\n"),
+        reason: "auth/OIDC debt (retro 2026-11-18)",
+        reviewed: "2026-11-18",
+        expires: "2027-06-30",
+      },
     ])
 
     const result = runVerifier(
@@ -245,6 +318,31 @@ describe("verify-sync baseline", () => {
 
     expect(result.status).toBe(2)
     expect(result.stderr).toMatch(/baseline/i)
+  })
+
+  it("--write-baseline пересобирает записи с kind/hash и сохраняет reason", () => {
+    const workspace = createSyncFixture({ siblingContent: "sibling content\n" })
+    writeBaseline(workspace, [{ path: "shared/sync.txt", reason: knownEntry.reason }])
+
+    const result = runVerifier(
+      workspace,
+      ["--baseline", "scripts/sync-baseline.json", "--write-baseline"],
+      undefined,
+    )
+
+    expect(result.status).toBe(0)
+    const written = JSON.parse(
+      readFileSync(path.join(workspace.root, "scripts", "sync-baseline.json"), "utf8"),
+    )
+    expect(written.entries).toHaveLength(1)
+    expect(written.entries[0]).toMatchObject({
+      path: "shared/sync.txt",
+      kind: "content",
+      hash: hashOf(HOST_CONTENT),
+      reason: knownEntry.reason,
+      expires: "2027-06-30",
+    })
+    expect(written.entries[0].reviewed).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
   it("--strict игнорирует baseline и краснеет на известном расхождении", () => {

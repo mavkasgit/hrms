@@ -1,13 +1,22 @@
 #!/bin/sh
-# Pre-push: синк-гейт между hrms и sibling-проектом ktm2000.
-# Прогон безусловный (без HRMS_SYNCGATE): известный долг перечислен в
-# scripts/sync-baseline.json и печатается как `known`, новое расхождение валит push.
-# Включить один раз на клон: npm run hooks:install (git config core.hooksPath .githooks).
+# Pre-push: тот же быстрый гейт, что в CI (npm run gate:fast, бюджет ≤ 60 с),
+# затем синк-гейт hrms ↔ sibling ktm2000 — если sibling есть рядом.
+#
+# Синк-гейт безусловный (не --if-enabled): известный долг живёт в
+# scripts/sync-baseline.json (path + kind + hash) и печатается как `known`,
+# новое расхождение — отказ push. Без sibling проверка не выполняется, но это
+# говорится вслух: в CI её делает .github/workflows/sync.yml (два checkout).
+#
+# Хук включается из `npm run setup` (или вручную: npm run hooks:install).
 set -e
 
-if [ ! -d ../ktm2000 ]; then
-  echo "verify:sync: sibling ../ktm2000 не найден — pre-push пропущен (в CI есть оба checkout)."
-  exit 0
-fi
+echo "pre-push: npm run gate:fast (тот же набор, что CI, бюджет ≤ 60 с)"
+npm run gate:fast
 
-node scripts/verify-sync.mjs --other ../ktm2000 --baseline scripts/sync-baseline.json
+if [ -d ../ktm2000 ]; then
+  echo "pre-push: синк-гейт hrms ↔ ktm2000"
+  node scripts/verify-sync.mjs --other ../ktm2000 --baseline scripts/sync-baseline.json
+else
+  echo "pre-push: sibling ../ktm2000 не найден — синк-гейт пропущен ЛОКАЛЬНО (не молча:" \
+    "в CI он выполняется в .github/workflows/sync.yml)."
+fi

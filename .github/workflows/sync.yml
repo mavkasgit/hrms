@@ -1,11 +1,13 @@
 name: sync
 
 # Синк-гейт hrms <-> ktm2000. Оба репозитория чекаутятся рядом, скрипт запускается
-# из корня hrms. Известный долг — scripts/sync-baseline.json (печатается как known),
-# новое расхождение валит job.
+# из корня hrms. Известный долг — scripts/sync-baseline.json (path + kind + hash;
+# печатается как known), новое расхождение или изменившийся файл валит job.
 #
-# Если ktm2000 приватный и github.token его не видит — добавьте секрет SYNC_TOKEN
-# (fine-grained PAT с доступом на чтение mavkasgit/ktm2000).
+# Токен: ktm2000 — приватный репозиторий, github.token его не видит. Без секрета
+# SYNC_TOKEN checkout ниже вернёт 404 «Not Found», и это НЕ значит «репозитория
+# нет»: так выглядит отсутствие прав. Добавьте fine-grained PAT (Contents: Read
+# на mavkasgit/ktm2000) в Settings → Secrets and variables → Actions → SYNC_TOKEN.
 
 on:
   push:
@@ -17,6 +19,16 @@ jobs:
   verify-sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Preflight — токен доступа к ktm2000
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::warning::SYNC_TOKEN не задан. Для приватного mavkasgit/ktm2000 следующий checkout вернёт 404 «Not Found» — это отсутствие прав, а не отсутствие репозитория. Добавьте fine-grained PAT (Contents: Read) в Settings → Secrets and variables → Actions."
+          else
+            echo "SYNC_TOKEN задан — checkout ktm2000 пойдёт от имени PAT."
+          fi
+
       - name: Checkout hrms
         uses: actions/checkout@v4
         with:
@@ -28,6 +40,11 @@ jobs:
           repository: mavkasgit/ktm2000
           path: ktm2000
           token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Diagnose checkout failure
+        if: failure()
+        run: |
+          echo "::error::Checkout ktm2000 не удался. Если в логе «Not Found» — почти наверняка не задан SYNC_TOKEN (приватный репозиторий) или у PAT нет Contents: Read на mavkasgit/ktm2000. Проверьте Settings → Secrets and variables → Actions → SYNC_TOKEN."
 
       # Скрипт использует только node:fs/node:path/node:url — зависимости не нужны.
       - name: Verify sync (baseline)

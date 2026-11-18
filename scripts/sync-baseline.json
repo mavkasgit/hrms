@@ -1,36 +1,68 @@
 {
   "entries": [
     {
-      "path": "backend/app/services/unified_profile_service.py",
-      "reason": "auth/OIDC debt (retro 2026-11-18)"
-    },
-    {
-      "path": "scripts/profile-settings-manifest.json",
-      "reason": "auth/OIDC debt (retro 2026-11-18)"
-    },
-    {
-      "path": "frontend/src/features/auth/api/oidcAuth.ts",
-      "reason": "auth/OIDC debt (retro 2026-11-18)"
-    },
-    {
-      "path": "frontend/src/features/auth/pages/OidcCallbackPage.tsx",
-      "reason": "auth/OIDC debt (retro 2026-11-18)"
+      "path": "backend/app/services/oidc_core.py",
+      "kind": "content",
+      "hash": "sha256:06c5f95ff9ff36f846c1eadf0cfa4391c9f488c372d2bd944077049c2b58b956",
+      "reason": "auth/OIDC debt (retro 2026-11-18)",
+      "reviewed": "2026-11-18",
+      "expires": "2027-06-30"
     },
     {
       "path": "backend/app/services/session_core.py",
-      "reason": "auth/OIDC debt (retro 2026-11-18)"
+      "kind": "content",
+      "hash": "sha256:1e24bb0a297bc5e896480c6effe496f2dfea790c76a7b757425a2e37e98efb65",
+      "reason": "auth/OIDC debt (retro 2026-11-18)",
+      "reviewed": "2026-11-18",
+      "expires": "2027-06-30"
     },
     {
-      "path": "backend/app/services/oidc_core.py",
-      "reason": "auth/OIDC debt (retro 2026-11-18)"
+      "path": "backend/app/services/unified_profile_service.py",
+      "kind": "content",
+      "hash": "sha256:cbe5f12d515abb5ccc6015e58b4ccfa997b8d1723a5de8e58e3275a80d461d4e",
+      "reason": "auth/OIDC debt (retro 2026-11-18)",
+      "reviewed": "2026-11-18",
+      "expires": "2027-06-30"
     },
     {
-      "path": "frontend/src/features/auth/pages/LoginPage.tsx",
-      "reason": "auth/OIDC debt (retro 2026-11-18)"
+      "path": "frontend/src/features/auth/api/oidcAuth.ts",
+      "kind": "content",
+      "hash": "sha256:9943248818a239928fa2dda1fc0c99a3596669a915ea7cb8d597d7ff49679d0a",
+      "reason": "auth/OIDC debt (retro 2026-11-18)",
+      "reviewed": "2026-11-18",
+      "expires": "2027-06-30"
     },
     {
       "path": "frontend/src/features/auth/hooks/useAuth.tsx",
-      "reason": "auth/OIDC debt (retro 2026-11-18)"
+      "kind": "content",
+      "hash": "sha256:67b55890b1388f9b0870d5c55af7ad5f9fb704dbeaa3e3e1d66f0dc61e0fd00d",
+      "reason": "auth/OIDC debt (retro 2026-11-18)",
+      "reviewed": "2026-11-18",
+      "expires": "2027-06-30"
+    },
+    {
+      "path": "frontend/src/features/auth/pages/LoginPage.tsx",
+      "kind": "content",
+      "hash": "sha256:9fe10e465be82125534fc364d285097bb48fa1933bdfdcf7369ab43a747c0c8f",
+      "reason": "auth/OIDC debt (retro 2026-11-18)",
+      "reviewed": "2026-11-18",
+      "expires": "2027-06-30"
+    },
+    {
+      "path": "frontend/src/features/auth/pages/OidcCallbackPage.tsx",
+      "kind": "content",
+      "hash": "sha256:3fe243ced985a925fa23708f7b707cf9df8695f407d5f6ff8e37f6eac12a44f4",
+      "reason": "auth/OIDC debt (retro 2026-11-18)",
+      "reviewed": "2026-11-18",
+      "expires": "2027-06-30"
+    },
+    {
+      "path": "scripts/profile-settings-manifest.json",
+      "kind": "content",
+      "hash": "sha256:75164c965f5c2493a94e955631295a7ddbdf0bb3f5e0259d9d93a48353adea12",
+      "reason": "auth/OIDC debt (retro 2026-11-18)",
+      "reviewed": "2026-11-18",
+      "expires": "2027-06-30"
     }
   ]
 }

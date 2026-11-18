@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "setup": "npm install && npm install --prefix frontend && echo 'Не забудьте установить зависимости Python!'",
+    "setup": "npm install && npm install --prefix frontend && npm run hooks:install && echo 'Зависимости установлены, git-хуки активны. Не забудьте установить зависимости Python!'",
     "postinstall": "playwright install chromium",
     "verify:sync": "node scripts/verify-sync.mjs --other ../ktm2000 --baseline scripts/sync-baseline.json",
     "hooks:install": "git config core.hooksPath .githooks",
