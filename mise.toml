@@ -55,7 +55,12 @@ run = [
   "python scripts/verify-profile-settings.py verify --strict",
   "mise run lint",
   "mise run test",
+  "mise run modern-web",
 ]
+
+[tasks.modern-web]
+description = "Ратчет modern-web-guidance: новые legacy-паттерны веб-платформы сверх базлайна"
+run = "node scripts/modern-web.mjs"
 
 [tasks.dev]
 description = "Локальный DEV: DB + миграции + backend + frontend"
