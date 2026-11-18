@@ -1,42 +1,111 @@
-[
-  {
-    "step": "docs-sync",
-    "violation": "переименовать шаг modern-web только в карте защит",
-    "apply": [
-      {
-        "replace": {
-          "path": "docs/quality/gates.md",
-          "find": "| `modern-web` | fast |",
-          "replace": "| `modern-web-broken` | fast |"
+{
+  "steps": [
+    {
+      "step": "docs-sync",
+      "violation": "переименовать шаг modern-web только в карте защит",
+      "apply": [
+        {
+          "replace": {
+            "path": "docs/quality/gates.md",
+            "find": "| `modern-web` | fast |",
+            "replace": "| `modern-web-broken` | fast |"
+          }
         }
-      }
-    ],
-    "reviewed": "2026-11-18"
-  },
-  {
-    "step": "reactuse-diff",
-    "violation": "новый ручной IntersectionObserver в исходнике frontend",
-    "apply": [
-      {
-        "write": {
-          "path": "frontend/src/__prove_reactuse.ts",
-          "content": "export function proveReactuse() {\n  return new IntersectionObserver(() => undefined)\n}\n"
+      ],
+      "reviewed": "2026-11-18"
+    },
+    {
+      "step": "verify-profile-settings",
+      "violation": "новый файл ядра профиля вне манифеста",
+      "apply": [
+        {
+          "write": {
+            "path": "frontend/src/modules/user-settings/lib/__prove_profile.ts",
+            "content": "export const proveProfile = true\n"
+          }
         }
-      }
-    ],
-    "reviewed": "2026-11-18"
-  },
-  {
-    "step": "modern-web",
-    "violation": "ручной авторазмер textarea через scrollHeight вместо field-sizing",
-    "apply": [
-      {
-        "write": {
-          "path": "frontend/src/__prove_modern_web.tsx",
-          "content": "export function proveModernWeb(textarea: HTMLTextAreaElement) {\n  textarea.style.height = \"auto\"\n  textarea.style.height = `${textarea.scrollHeight}px`\n}\n"
+      ],
+      "reviewed": "2026-11-18"
+    },
+    {
+      "step": "reactuse-diff",
+      "violation": "новый ручной IntersectionObserver в исходнике frontend",
+      "apply": [
+        {
+          "write": {
+            "path": "frontend/src/__prove_reactuse.ts",
+            "content": "export function proveReactuse() {\n  return new IntersectionObserver(() => undefined)\n}\n"
+          }
         }
-      }
-    ],
-    "reviewed": "2026-11-18"
-  }
-]
+      ],
+      "reviewed": "2026-11-18"
+    },
+    {
+      "step": "modern-web",
+      "violation": "ручной авторазмер textarea через scrollHeight вместо field-sizing",
+      "apply": [
+        {
+          "write": {
+            "path": "frontend/src/__prove_modern_web.tsx",
+            "content": "export function proveModernWeb(textarea: HTMLTextAreaElement) {\n  textarea.style.height = \"auto\"\n  textarea.style.height = `${textarea.scrollHeight}px`\n}\n"
+          }
+        }
+      ],
+      "reviewed": "2026-11-18"
+    },
+    {
+      "step": "frontend-types",
+      "violation": "файл с ошибкой типа в src (tsc -b обязан упасть)",
+      "apply": [
+        {
+          "write": {
+            "path": "frontend/src/__prove_types.ts",
+            "content": "export const proveTypes: number = \"not a number\"\n"
+          }
+        }
+      ],
+      "reviewed": "2026-11-18"
+    },
+    {
+      "step": "frontend-build",
+      "violation": "точка входа index.html ссылается на несуществующий модуль",
+      "apply": [
+        {
+          "replace": {
+            "path": "frontend/index.html",
+            "find": "<script type=\"module\" src=\"/src/app/main.tsx\"></script>",
+            "replace": "<script type=\"module\" src=\"/src/__prove_missing.tsx\"></script>"
+          }
+        }
+      ],
+      "reviewed": "2026-11-18"
+    },
+    {
+      "step": "frontend-unit",
+      "violation": "заведомо красный vitest-тест в src",
+      "apply": [
+        {
+          "write": {
+            "path": "frontend/src/__prove_unit.test.ts",
+            "content": "import { expect, it } from \"vitest\"\n\nit(\"prove-checks: этот тест обязан упасть\", () => {\n  expect(1).toBe(2)\n})\n"
+          }
+        }
+      ],
+      "reviewed": "2026-11-18"
+    }
+  ],
+  "exempt": [
+    {
+      "step": "backend-tests",
+      "reason": "нужен контейнер Postgres и весь pytest-набор: красный ход проверяется в CI test-backend.yml, а не одним локальным шагом",
+      "reviewed": "2026-11-18",
+      "expires": "2027-06-30"
+    },
+    {
+      "step": "e2e-smoke",
+      "reason": "нужен поднятый стенд (backend :8011, frontend :5171) и браузер: доказательство — прогон Playwright на отдельном стенде",
+      "reviewed": "2026-11-18",
+      "expires": "2027-06-30"
+    }
+  ]
+}

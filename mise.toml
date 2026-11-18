@@ -49,9 +49,13 @@ description = "pytest для CI: service Postgres, без PowerShell-лаунч�
 run = "cd backend && python -m pytest -n auto --dist=loadfile -q"
 
 [tasks.check]
-description = "Быстрый гейт: тот же набор, что npm run gate:fast (без дублирования логики)"
-# Шаги живут в scripts/gate.mjs (STEPS), а не здесь. e2e вынесен в отдельную
-# задачу: нужен живой стенд.
+description = "Полный гейт: npm run gate (fast + vitest + pytest, изолированная БД)"
+# Шаги живут в scripts/gate.mjs (STEPS), а не здесь. Быстрый ярус —
+# `mise run gate:fast`; e2e вынесен в отдельную задачу: нужен живой стенд.
+run = "npm run gate"
+
+[tasks."gate:fast"]
+description = "Быстрый ярус гейта: статика офлайн, бюджет ≤ 60 с (он же pre-push)"
 run = "npm run gate:fast"
 
 [tasks.modern-web]

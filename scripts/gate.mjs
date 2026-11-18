@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 // Один вход в качество. `npm run gate` — CI, `npm run gate:fast` — pre-push и
-// `mise run check`, `npm run gate:e2e` — отдельный стенд.
+// `mise run gate:fast`, `npm run gate:e2e` — отдельный стенд.
 //
 // Ярусы накопительные:
 //   fast — статика по всему репозиторию, офлайн          бюджет: 60 с
 //   gate — fast + vitest + pytest (изолированная БД)
 //   e2e  — gate + Playwright smoke, нужен живой стенд
 //
-// Шаг — это данные, а не проза: `name` — ключ для docs/quality/gates.md
-// (сверяется scripts/check-docs.mjs), `what` — что сломается без него.
+// Шаг — это данные, а не проза. Контракт полей (harness/rules/quality-gates.md):
+//   name — ключ для docs/quality/gates.md и proven-checks.json;
+//   tier — fast|gate|e2e;
+//   command — точная команда, одна и та же локально и в CI;
+//   ci — где шаг живёт в CI: workflow или `npm run gate`, если отдельного нет;
+//   what — что ломается без шага, одной фразой.
 //
 // Гейт ничего не правит: никаких --fix/--write/stage_fixed здесь нет и не будет.
 
@@ -24,11 +28,10 @@ const FAST_BUDGET_MS = 60_000;
  * @typedef {object} Step
  * @property {string} name        stable id; обязан совпадать со строкой карты защит
  * @property {"fast"|"gate"|"e2e"} tier
+ * @property {string} command     команда целиком; локально и в CI одна и та же
+ * @property {string} ci          workflow или `npm run gate`, если шаг только в гейте
  * @property {string} what        что ломается, если шаг убрать
- * @property {string[]} [also]    другие точки, где живёт та же защита (колонка карты)
- * @property {string} cmd
- * @property {string[]} args
- * @property {string} [bin]       исполняемый файл, наличие которого проверяем
+ * @property {string} [tool]      исполняемый файл в начале command, наличие проверяем
  * @property {string} [cwd]       относительно корня репозитория
  * @property {Record<string,string>} [env]
  * @property {string[]} [requires] URL, которые должны отвечать до запуска
@@ -42,35 +45,31 @@ export const STEPS = [
   {
     name: "docs-sync",
     tier: "fast",
+    command: "node scripts/check-docs.mjs",
+    ci: "test-backend.yml",
     what: "шаг в STEPS без строки в docs/quality/gates.md или строка без шага",
-    also: ["CI test-backend: npm run check:docs"],
-    cmd: "node",
-    args: ["scripts/check-docs.mjs"],
   },
   {
     name: "verify-profile-settings",
     tier: "fast",
+    command: "python scripts/verify-profile-settings.py verify --strict",
+    tool: "python",
+    ci: "test-backend.yml",
     what: "манифест версии ядра профиля разошёлся с кодом (strict)",
-    also: ["CI test-backend (strict)"],
-    cmd: "python",
-    args: ["scripts/verify-profile-settings.py", "verify", "--strict"],
-    bin: "python",
   },
   {
     name: "reactuse-diff",
     tier: "fast",
+    command: "node scripts/reactuse-diff.mjs",
+    ci: "npm run gate",
     what: "новый ручной примитив (matchMedia, observers, clipboard) вместо @siberiacancode/reactuse",
-    also: ["mise run reactuse-diff"],
-    cmd: "node",
-    args: ["scripts/reactuse-diff.mjs"],
   },
   {
     name: "modern-web",
     tier: "fast",
+    command: "node scripts/modern-web.mjs",
+    ci: "npm run gate",
     what: "новый legacy-паттерн веб-платформы сверх docs/quality/modern-web-baseline.json",
-    also: ["mise run modern-web"],
-    cmd: "node",
-    args: ["scripts/modern-web.mjs"],
     // 2 = сканер недоступен (сеть/пакет): это missing, а не регресс кода.
     missingExitCodes: [2],
     timeout: 180_000,
@@ -80,17 +79,19 @@ export const STEPS = [
   {
     name: "frontend-types",
     tier: "fast",
+    command: "npm --prefix frontend run typecheck",
+    ci: "npm run gate",
     what: "ошибка типов TypeScript (tsc -b)",
-    cmd: "npm",
-    args: ["--prefix", "frontend", "run", "typecheck"],
     timeout: 300_000,
   },
   {
     name: "frontend-build",
     tier: "fast",
+    // build:vite — только vite build: tsc уже прогнан шагом frontend-types,
+    // повторный `tsc -b` в build дублировал бы работу и бюджет.
+    command: "npm --prefix frontend run build:vite",
+    ci: "npm run gate",
     what: "production-сборка frontend (vite build) падает",
-    cmd: "npm",
-    args: ["--prefix", "frontend", "run", "build"],
     timeout: 600_000,
   },
 
@@ -98,19 +99,17 @@ export const STEPS = [
   {
     name: "frontend-unit",
     tier: "gate",
+    command: "npm --prefix frontend run test",
+    ci: "npm run gate",
     what: "регрессия frontend (vitest)",
-    also: ["mise run test"],
-    cmd: "npm",
-    args: ["--prefix", "frontend", "run", "test"],
     timeout: 600_000,
   },
   {
     name: "backend-tests",
     tier: "gate",
+    command: "npm run test:pytest",
+    ci: "test-backend.yml",
     what: "регрессия backend (pytest, своя изолированная БД)",
-    also: ["CI test-backend.yml"],
-    cmd: "npm",
-    args: ["run", "test:pytest"],
     timeout: 900_000,
   },
 
@@ -118,10 +117,9 @@ export const STEPS = [
   {
     name: "e2e-smoke",
     tier: "e2e",
+    command: "npm run test:e2e:smoke",
+    ci: "e2e-smoke.yml",
     what: "сломан пользовательский путь (Playwright smoke)",
-    also: ["CI e2e-smoke.yml"],
-    cmd: "npm",
-    args: ["run", "test:e2e:smoke"],
     requires: ["http://127.0.0.1:8011/api/health", "http://localhost:5171/"],
     timeout: 900_000,
   },
@@ -187,20 +185,32 @@ function which(bin) {
   return result.status === 0;
 }
 
-/** Команда запуска: node — текущий процесс, npm — через cmd.exe на Windows. */
+/**
+ * Python на Linux часто только `python3`, на Windows — только `python`.
+ * Явный PYTHON выигрывает; иначе берём привычный для платформы бинарь, а если
+ * его нет — второй вариант. Шаг не должен молча уходить в missing из-за имени.
+ */
+function resolvePython() {
+  if (process.env.PYTHON) return process.env.PYTHON;
+  const preferred = IS_WIN ? "python" : "python3";
+  if (which(preferred)) return preferred;
+  const fallback = IS_WIN ? "python3" : "python";
+  return which(fallback) ? fallback : preferred;
+}
+
+const PYTHON = resolvePython();
+
+function toolBinary(tool) {
+  return tool === "python" ? PYTHON : tool;
+}
+
+/** Команда шага с подставленным фактическим бинарём инструмента. */
 export function commandFor(step) {
-  if (step.cmd === "node") return { cmd: process.execPath, args: step.args };
-  if (step.cmd === "npm") {
-    if (IS_WIN) {
-      return {
-        cmd: process.env.ComSpec ?? "cmd.exe",
-        args: ["/d", "/s", "/c", "npm", ...step.args],
-      };
-    }
-    return { cmd: "npm", args: step.args };
-  }
-  if (step.bin && !which(step.bin)) return null;
-  return { cmd: step.cmd, args: step.args };
+  if (!step.tool) return step.command;
+  const prefix = `${step.tool} `;
+  return step.command.startsWith(prefix)
+    ? `${toolBinary(step.tool)}${step.command.slice(step.tool.length)}`
+    : step.command;
 }
 
 async function reachable(url, timeoutMs = 1500) {
@@ -238,19 +248,19 @@ async function runStep(step) {
       }
     }
   }
-  const command = commandFor(step);
-  if (!command) {
+  if (step.tool && !which(toolBinary(step.tool))) {
     return {
       status: "missing",
       ms: 0,
-      output: `${step.bin ?? step.cmd} не найден в PATH`,
+      output: `${toolBinary(step.tool)} не найден в PATH (можно задать PYTHON=/путь)`,
     };
   }
   const startedAt = Date.now();
-  const result = spawnSync(command.cmd, command.args, {
+  const result = spawnSync(commandFor(step), {
     cwd: step.cwd ? path.join(ROOT, step.cwd) : ROOT,
     env: { ...process.env, ...step.env },
     encoding: "utf8",
+    shell: true,
     windowsHide: true,
     timeout: step.timeout ?? 600_000,
     maxBuffer: 64 * 1024 * 1024,
@@ -272,7 +282,7 @@ async function main() {
 
   if (opts.list) {
     for (const step of STEPS) {
-      console.log(`${step.tier.padEnd(4)} ${step.name.padEnd(24)} ${step.what}`);
+      console.log(`${step.tier.padEnd(4)} ${step.name.padEnd(24)} ${step.what} [${step.ci}]`);
     }
     return;
   }
@@ -296,7 +306,7 @@ async function main() {
   const results = [];
   for (const step of steps) {
     const outcome = await runStep(step);
-    results.push({ name: step.name, tier: step.tier, ...outcome });
+    results.push({ name: step.name, tier: step.tier, ci: step.ci, ...outcome });
     if (opts.json) continue;
     const label = `${String(results.length).padStart(2)}/${String(steps.length).padEnd(2)} ${step.name}`;
     if (outcome.status === "ok") {
@@ -354,13 +364,14 @@ async function main() {
 
 function runDoctor() {
   console.log(c.bold("doctor"));
-  const bins = ["node", "npm", "python", "docker", "git"];
+  const bins = ["node", "npm", "docker", "git"];
   for (const bin of bins) {
     console.log(`  ${which(bin) ? c.green("✔") : c.red("✖")} ${bin}`);
   }
+  console.log(`  ${which(PYTHON) ? c.green("✔") : c.red("✖")} python (${PYTHON})`);
   const runtimes = [
     ["node", process.versions.node],
-    ["python", runVersion("python", ["--version"])],
+    ["python", runVersion(PYTHON, ["--version"])],
   ];
   for (const [name, version] of runtimes) {
     console.log(`  ${c.dim("·")} ${name} ${version || "?"}`);
@@ -372,6 +383,10 @@ function runDoctor() {
   });
   console.log(`  ${docs.status === 0 ? c.green("✔") : c.red("✖")} docs-sync`);
   if (docs.status !== 0) process.exitCode = 1;
+  // guard-tree в hrms не автоматизирован: см. docs/quality/gates.md §4.
+  console.log(
+    c.yellow("  ! guard-tree — не шаг гейта: явное исключение до 2027-06-30 (docs/quality/gates.md §4)"),
+  );
   const dirty = spawnSync("git", ["status", "--porcelain"], {
     cwd: ROOT,
     encoding: "utf8",

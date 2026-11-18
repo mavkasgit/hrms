@@ -166,15 +166,18 @@ function main() {
     process.exit(2);
   }
 
-  let proofs;
+  let parsed;
   try {
-    proofs = JSON.parse(fs.readFileSync(RECORD, "utf8"));
+    parsed = JSON.parse(fs.readFileSync(RECORD, "utf8"));
   } catch (error) {
     reportFail(`proven-checks.json не парсится: ${error.message}`);
     process.exit(2);
   }
+  // Контракт — { steps, exempt }; старый массив записей тоже читаем.
+  const proofs = Array.isArray(parsed) ? parsed : parsed?.steps;
+  const exempt = Array.isArray(parsed?.exempt) ? parsed.exempt : [];
   if (!Array.isArray(proofs)) {
-    reportFail("proven-checks.json должен быть массивом записей");
+    reportFail("proven-checks.json должен содержать steps (массив) или быть массивом записей");
     process.exit(2);
   }
 
@@ -182,6 +185,20 @@ function main() {
   const baseline = porcelain();
   const failures = [];
   const results = [];
+
+  for (const entry of exempt) {
+    const label = entry?.step ?? "<без step>";
+    if (!stepNames.has(entry?.step)) {
+      failures.push(`exempt ${label}: шага нет в STEPS`);
+      continue;
+    }
+    if (typeof entry.reason !== "string" || entry.reason.trim() === "") {
+      failures.push(`exempt ${label}: без reason — исключение без причины не считается`);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.expires ?? "")) {
+      failures.push(`exempt ${label}: expires должен быть YYYY-MM-DD`);
+    }
+  }
 
   for (const proof of proofs) {
     if (opts.only && !opts.only.includes(proof.step)) continue;
@@ -241,7 +258,9 @@ function main() {
     for (const failure of failures) reportFail(failure);
     process.exit(1);
   }
-  reportOk(`${results.length} шагов падают на реальном нарушении`);
+  reportOk(
+    `${results.length} шагов падают на реальном нарушении; ${exempt.length} exempt с причиной и датой`,
+  );
 }
 
 main();
