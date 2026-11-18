@@ -171,6 +171,19 @@ export class TimesheetPage {
   }
 
   /**
+   * Ctrl+C по активной ячейке/выделению (#106). Сетка держит значения в
+   * внутреннем буфере, системный буфер получает тот же TSV для Excel.
+   */
+  async copySelection() {
+    await this.page.keyboard.press('Control+c')
+  }
+
+  /** Ctrl+V — вставка в выделение (или в активную ячейку) из внутреннего буфера. */
+  async pasteSelection() {
+    await this.page.keyboard.press('Control+v')
+  }
+
+  /**
    * Текст ячейки (содержимое data-date элемента).
    */
   async getCellText(date: string, employeeId: number): Promise<string> {

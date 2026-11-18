@@ -684,7 +684,7 @@ test.describe('Timesheet grid @ui', () => {
       shiftRight: 1,
       shiftDown: 0,
     })
-    await page.keyboard.press('Control+c')
+    await ts.copySelection()
     await page.waitForTimeout(300)
 
     // Снимаем выделение (Escape) — плавающая панель массового заполнения
@@ -694,7 +694,7 @@ test.describe('Timesheet grid @ui', () => {
 
     // Вставляем в date8..date9 у того же сотрудника (Ctrl+V с активной ячейки)
     await ts.clickCell(date8, empA.id)
-    await page.keyboard.press('Control+v')
+    await ts.pasteSelection()
     await page.waitForTimeout(500)
 
     // Скопированные значения на месте
@@ -708,6 +708,77 @@ test.describe('Timesheet grid @ui', () => {
     await ts.showEmployeesByName(`e2e-cp-${u}`, date1, 2)
     await expect(ts.cell(date8, empA.id)).toHaveText('8', { timeout: 15_000 })
     await expect(ts.cell(date9, empA.id)).toHaveText('12', { timeout: 15_000 })
+  })
+
+  test('@ui timesheet grid: copy one cell and paste into 2x5 selection persists across reload', async ({
+    page,
+    apiOps,
+  }) => {
+    // Acceptance #106: скопировать одну ячейку и заполнить выделение
+    // (2 сотрудника × 5 дней). Вставка — одна операция, переживает reload.
+    const u = apiOps.uid()
+    const empA = await apiOps.createEmployee({ name: `e2e-mp-${u}-a` })
+    const empB = await apiOps.createEmployee({ name: `e2e-mp-${u}-b` })
+
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth() + 1
+    const date1 = periodDate(1)
+    const targetDates = [3, 4, 5, 6, 7].map((day) => periodDate(day))
+    const token = getAdminTokenFromStorage()
+    const authHeaders = { Authorization: `Bearer ${token}` }
+
+    // Источник: date1 = День (8 часов)
+    const createResp = await page.request.post(`${API_BASE}/api/work-schedules`, {
+      data: { employee_id: empA.id, year, month },
+      headers: authHeaders,
+    })
+    expect([200, 201]).toContain(createResp.status())
+    const schedule = await createResp.json()
+    const entryResp = await page.request.post(
+      `${API_BASE}/api/work-schedules/${schedule.id}/entries`,
+      {
+        data: { work_date: date1, shift_type_code: 'day', planned_hours_override: null, note: null },
+        headers: authHeaders,
+      }
+    )
+    expect([200, 201]).toContain(entryResp.status())
+
+    const ts = new TimesheetPage(page)
+    await ts.goto()
+    await ts.expectGridVisible()
+    await ts.showEmployeesByName(`e2e-mp-${u}`, date1, 2)
+
+    await expect(ts.cell(date1, empA.id)).toHaveText('8', { timeout: 15_000 })
+
+    // Копируем одну ячейку и выделяем 2×5 ячеек под вставку
+    await ts.clickCell(date1, empA.id)
+    await ts.copySelection()
+    await ts.selectRectangle({
+      anchorDate: targetDates[0],
+      anchorEmployeeId: empA.id,
+      shiftRight: targetDates.length - 1,
+      shiftDown: 1,
+    })
+    await expect(ts.fillToolbar).toContainText('Выделено: 10', { timeout: 5_000 })
+
+    await ts.pasteSelection()
+
+    // Все 10 ячеек получили значение источника — у обоих сотрудников
+    for (const date of targetDates) {
+      await expect(ts.cell(date, empA.id)).toHaveText('8', { timeout: 15_000 })
+      await expect(ts.cell(date, empB.id)).toHaveText('8', { timeout: 15_000 })
+    }
+
+    // Перезагрузка — вставка сохранилась на сервере
+    await page.reload()
+    await expect(ts.heading).toBeVisible({ timeout: 15_000 })
+    await ts.expectGridVisible()
+    await ts.showEmployeesByName(`e2e-mp-${u}`, date1, 2)
+    for (const date of targetDates) {
+      await expect(ts.cell(date, empA.id)).toHaveText('8', { timeout: 15_000 })
+      await expect(ts.cell(date, empB.id)).toHaveText('8', { timeout: 15_000 })
+    }
   })
 
   test('@ui timesheet grid: fill handle drags pattern cyclically across employees', async ({

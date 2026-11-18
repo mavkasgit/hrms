@@ -10,6 +10,8 @@ import { getShiftTypeMeta, SHIFT_TYPE_CATALOG } from "@/shared/config/shiftTypes
 import { useToast } from "@/shared/ui/use-toast"
 import { TimesheetDayCell } from "./TimesheetDayCell"
 import { cellToClipboardValue, parseClipboardValue } from "./clipboard"
+import { buildClipboardPayload, buildPastePlan, parseClipboardText, resolvePasteTarget } from "./paste"
+import type { ClipboardPayload, RestoreCell } from "./paste"
 import type { DayColumnData, ShiftTypeMap, TimesheetViewMode, TimesheetSortField } from "./types"
 
 const ROW_HEIGHT = 32
@@ -23,12 +25,7 @@ const UNDO_STACK_MAX = 50
 
 /** Запись стека отмены: предыдущие значения ячеек для восстановления */
 interface UndoEntry {
-  cells: Array<{
-    employee_id: number
-    work_date: string
-    shift_type_code: string | null
-    planned_hours_override: number | null
-  }>
+  cells: RestoreCell[]
 }
 
 /** Тип активной ячейки (не экспортируется из react-datasheet-grid) */
@@ -66,6 +63,47 @@ function buildPeriodDays(periodStart: string, periodEnd: string): string[] {
   return days
 }
 
+/**
+ * Цель ввода: input/textarea/select, contenteditable и порталы inline-редактора
+ * (Radix Select живёт в портале вне ячейки). В таких местах Ctrl+C/Ctrl+V
+ * должны оставаться браузерными — сетка их не перехватывает.
+ */
+function isEditableClipboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true
+  if (target.isContentEditable) return true
+  return Boolean(
+    target.closest("[data-timesheet-cell-editor], [role='dialog'], [role='listbox'], [role='menu']")
+  )
+}
+
+/**
+ * Буфер обмена принадлежит сетке, если есть активная ячейка и событие пришло
+ * из неё. Клик по ячейке не переносит DOM-фокус (ячейки tabIndex=-1), поэтому
+ * «фокус в сетке» — это либо элемент внутри контейнера, либо body/document,
+ * когда фокус никуда не перешёл.
+ */
+function isGridClipboardTarget(
+  target: EventTarget | null,
+  activeCell: ActiveCell | null,
+  container: HTMLElement | null
+): boolean {
+  if (!activeCell || !container) return false
+  if (isEditableClipboardTarget(target)) return false
+  if (target === document || target === document.body || target === document.documentElement) {
+    return true
+  }
+  return target instanceof Node && container.contains(target)
+}
+
+/** Текст из системного буфера в событии paste (без прав и navigator.clipboard). */
+function readClipboardEventText(event: ClipboardEvent): string {
+  const data = event.clipboardData
+  if (!data) return ""
+  return data.getData("text/plain") || data.getData("text") || ""
+}
+
 export interface TimesheetGridProps {
   employees: TimesheetEmployeeRow[]
   gridData: TimesheetGridData | undefined
@@ -77,6 +115,13 @@ export interface TimesheetGridProps {
   sortField?: TimesheetSortField
   sortDirection?: "asc" | "desc" | null
   onToggleSort?: (field: TimesheetSortField) => void
+  /**
+   * Ячейка заблокирована для правки (например, границы работы сотрудника или
+   * правило периода). Сейчас таких ячеек в табеле нет — решение #13 сняло
+   * блокировку по утверждению; шов оставлен, чтобы массовые операции не
+   * обходили будущие read-only правила.
+   */
+  isCellReadOnly?: (employeeId: number, date: string) => boolean
 }
 
 /**
@@ -93,6 +138,7 @@ export function TimesheetGrid({
   sortField = "employee",
   sortDirection = null,
   onToggleSort,
+  isCellReadOnly,
 }: TimesheetGridProps) {
   const [rows, setRows] = useState<TimesheetEmployeeRow[]>(employees)
   const prevRowsRef = useRef<TimesheetEmployeeRow[]>(employees)
@@ -106,6 +152,10 @@ export function TimesheetGrid({
 
   // Число нераспознанных ячеек при последней вставке (сбрасывается в handleChange)
   const rejectedPasteRef = useRef(0)
+
+  // Внутренний буфер (#106): видимые значения последнего Ctrl+C. Не читаем
+  // navigator.clipboard на вставке — источником правды остаётся сетка.
+  const clipboardRef = useRef<ClipboardPayload | null>(null)
 
   // Массовое заполнение выделения одним запросом (инвалидация — в хуке)
   const { mutateAsync: partialBulkMutate } = usePartialBulkSet()
@@ -294,6 +344,7 @@ export function TimesheetGrid({
           if (rowInSource && colInSource) continue
           const date = dayDates[c]
           if (!date) continue
+          if (isCellReadOnly?.(row.id, date)) continue
           // Циклический индекс источника
           const srcR = source.min.row + ((((r - source.min.row) % srcRows) + srcRows) % srcRows)
           const srcC = source.min.col + ((((c - source.min.col) % srcCols) + srcCols) % srcCols)
@@ -335,7 +386,7 @@ export function TimesheetGrid({
       setRows(newRows)
       void persistCells(changes)
     },
-    [rows, dayDates, persistCells]
+    [rows, dayDates, persistCells, isCellReadOnly]
   )
 
   // Начало протяжки: запоминаем источник и точку старта мыши
@@ -487,6 +538,7 @@ export function TimesheetGrid({
         for (let c = selection.min.col; c <= selection.max.col; c++) {
           const date = dayDates[c]
           if (!date) continue
+          if (isCellReadOnly?.(row.id, date)) continue
           const cellDay = row.cells?.[date]
           // Запоминаем предыдущее значение для отмены
           undoCells.push({
@@ -524,8 +576,111 @@ export function TimesheetGrid({
       setRows(newRows)
       void persistCells(changes)
     },
-    [selection, rows, dayDates, persistCells]
+    [selection, rows, dayDates, persistCells, isCellReadOnly]
   )
+
+  /**
+   * Вставка из внутреннего буфера (#106): одна операция — одна запись в
+   * истории, все ячейки уходят одним partial-bulk. Цель — выделение; при
+   * одной активной ячейке буфер растекается по своему размеру (как в Excel).
+   */
+  const applyPaste = useCallback(
+    (payload: ClipboardPayload) => {
+      const target = resolvePasteTarget({
+        activeCell,
+        selection,
+        buffer: payload,
+        rowCount: rows.length,
+        colCount: dayDates.length,
+      })
+      if (!target) return
+
+      const plan = buildPastePlan({
+        rows,
+        dayDates,
+        target,
+        clipboard: payload,
+        shiftTypeMap,
+        isReadOnly: (rowIndex, colIndex) => {
+          const row = rows[rowIndex]
+          const date = dayDates[colIndex]
+          if (!row || !date) return true
+          return isCellReadOnly?.(row.id, date) ?? false
+        },
+      })
+
+      if (plan.changes.length > 0) {
+        undoStackRef.current.push({ cells: plan.restore })
+        if (undoStackRef.current.length > UNDO_STACK_MAX) {
+          undoStackRef.current.shift()
+        }
+        prevRowsRef.current = plan.rows
+        setRows(plan.rows)
+        void persistCells(plan.changes)
+      }
+
+      if (plan.rejected > 0) {
+        addToast({
+          title: `Не распознано ячеек: ${plan.rejected}`,
+          description: "Нераспознанные значения не записаны. Проверьте содержимое буфера обмена.",
+          variant: "default",
+        })
+      }
+    },
+    [activeCell, selection, rows, dayDates, shiftTypeMap, isCellReadOnly, persistCells, addToast]
+  )
+
+  /**
+   * Ctrl+C / Ctrl+V (#106). Слушаем copy/paste на document в capture-фазе:
+   * так обработчик библиотеки не получает событие вторым и не перезаписывает
+   * буфер. События вне сетки (поля ввода, портал редактора, кнопки) только
+   * отсекаются — браузерное поведение остаётся нетронутым.
+   */
+  useEffect(() => {
+    const onCopy = (event: ClipboardEvent) => {
+      const active = activeCellRef.current
+      if (!isGridClipboardTarget(event.target, active, containerRef.current) || !active) {
+        // Чужое событие: не даём сетке перехватить его своим document-обработчиком
+        event.stopImmediatePropagation()
+        return
+      }
+      const range = selection ?? { min: active, max: active }
+      const payload = buildClipboardPayload(rows, dayDates, range, shiftTypeMap)
+      if (payload.values.length === 0) return
+      clipboardRef.current = payload
+      // Системный буфер — для обмена с Excel; вставка читает внутренний буфер
+      event.clipboardData?.setData("text/plain", payload.text)
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+
+    const onPaste = (event: ClipboardEvent) => {
+      const active = activeCellRef.current
+      if (!isGridClipboardTarget(event.target, active, containerRef.current)) {
+        event.stopImmediatePropagation()
+        return
+      }
+      const internal = clipboardRef.current
+      const externalText = readClipboardEventText(event)
+      // Буфер не менялся с нашего Ctrl+C — вставляем матрицу как скопировали,
+      // иначе доверяем тому, что человек скопировал в другом приложении.
+      const payload =
+        internal && (externalText === "" || externalText === internal.text)
+          ? internal
+          : parseClipboardText(externalText) ?? internal
+      if (!payload) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      applyPaste(payload)
+    }
+
+    document.addEventListener("copy", onCopy, true)
+    document.addEventListener("paste", onPaste, true)
+    return () => {
+      document.removeEventListener("copy", onCopy, true)
+      document.removeEventListener("paste", onPaste, true)
+    }
+  }, [rows, dayDates, selection, shiftTypeMap, applyPaste])
 
   /**
    * «Принять приказ» (#27): сбросить ручные значения во всех ячейках с
