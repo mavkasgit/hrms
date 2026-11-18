@@ -89,12 +89,19 @@ modules/       → Переносимые модули (см. ниже)
   `NOTIFICATIONS_MODULE_VERSION`.
 - Сверка общих файлов с KTM — `npm run verify:sync` (манифест
   `scripts/sync-manifest.json`: модули и auth/backend-файлы в режимах
-  content/version/presence). Расхождения из `scripts/sync-baseline.json` —
-  известный долг: печатаются как `known` и не валят гейт, новое расхождение —
-  fail. `--strict` игнорирует baseline («долг закрыт»). Правку общего файла
-  делай в обоих репозиториях с bump версии модуля. `predev`/`prebuild` —
-  лёгкий `--if-enabled`; безусловный прогон — `.githooks/pre-push`
-  (`npm run hooks:install`) и CI `.github/workflows/sync.yml` (два checkout).
+  content/version/presence). Известный долг — `scripts/sync-baseline.json`:
+  запись хранит `path` + `kind` + `hash` (sha256 локального файла на момент
+  снимка, у presence — sentinel) и даты `reviewed`/`expires`. Baseline
+  подавляет ровно записанный долг: изменившийся файл — новое ухудшение на
+  известном пути, fail. Записи печатаются как `known`, устаревшие и
+  просроченные видны в выводе; `--strict` игнорирует baseline («долг закрыт»).
+  Пересборка по текущим расхождениям — `npm run verify:sync -- --write-baseline`
+  (reason для нового долга добавляется руками). Правку общего файла делай в
+  обоих репозиториях с bump версии модуля. `predev`/`prebuild` — лёгкий
+  `--if-enabled`; безусловный прогон — `.githooks/pre-push` (сначала
+  `npm run gate:fast`, затем синк, если `../ktm2000` рядом; хук активируется
+  `npm run setup` или `npm run hooks:install`) и CI
+  `.github/workflows/sync.yml` (два checkout).
 - HRMS-обвязка user-settings живёт в `features/user-settings/`, обвязка
   notifications — в `features/notifications/` (адаптеры поверх проектного axios).
 - При обновлении модуля бампай `USER_SETTINGS_MODULE_VERSION`.
@@ -134,7 +141,7 @@ npx @colbymchenry/codegraph init -i
 ### Быстрый старт
 
 ```bash
-npm run setup     # Установка зависимостей
+npm run setup     # Установка зависимостей + активация git-хуков (.githooks)
 npm run dev       # Запуск DEV (DB + backend + frontend)
 ```
 
@@ -346,7 +353,8 @@ PATH, где shims идут раньше системных python/node.
 ```bash
 mise trust
 mise install
-mise run check   # блокирующий гейт: profile-settings, сборка frontend, vitest, pytest
+mise run check   # полный гейт: npm run gate (fast + vitest + pytest, изолированная БД)
+mise run gate:fast # быстрый ярус: статика офлайн, бюджет ≤ 60 с (он же pre-push)
 mise run dev     # DB + миграции + backend + frontend
 ```
 
