@@ -12,6 +12,8 @@ export interface DayColumnData {
   viewMode: TimesheetViewMode
   /** Палитра типов смен для раскраски ячеек */
   shiftTypeMap: ShiftTypeMap
+  /** Открыт ли inline-редактор ячейки (скрывает уголок-протяжку в сетке) */
+  onEditingChange?: (editing: boolean) => void
 }
 
 /** Обогащённый тип смены (API + локальная палитра из shared/config/shiftTypes) */

@@ -81,7 +81,7 @@ test.describe('Timesheet grid @ui', () => {
     expect(parseFloat(endLeft)).toBeGreaterThan(parseFloat(homeLeft))
   })
 
-  test('@ui timesheet grid: inline edit select opens and sets value', async ({
+  test('@ui timesheet grid: inline editor opens and sets value', async ({
     page,
     apiOps,
   }) => {
@@ -99,15 +99,14 @@ test.describe('Timesheet grid @ui', () => {
     // Открываем inline-редактор
     await ts.openCellEditor(date1, emp.id)
 
-    // Select виден, выбираем рабочую смену
-    const select = ts.grid.locator('select')
-    await expect(select).toBeVisible()
+    // Редактор открыт, выбираем рабочую смену
+    await expect(ts.cellEditor).toBeVisible()
 
     // Выбираем "День (08:00-16:30)"
-    await select.selectOption({ label: 'День (08:00-16:30)' })
+    await ts.selectShiftInEditor('День (08:00-16:30)')
 
     // После выбора редактор закрывается
-    await expect(select).not.toBeVisible({ timeout: 5_000 })
+    await expect(ts.cellEditor).not.toBeVisible({ timeout: 5_000 })
 
     // Ждём рефетч данных сетки после персиста (ячейка покажет часы)
     await expect(ts.cell(date1, emp.id)).not.toHaveText('', { timeout: 10_000 })
@@ -133,7 +132,7 @@ test.describe('Timesheet grid @ui', () => {
     await ts.openCellEditor(date1, emp.id)
     await page.keyboard.press('Escape')
 
-    const select = ts.grid.locator('select')
+    const select = ts.cellEditor
     await expect(select).not.toBeVisible({ timeout: 5_000 })
 
     // Значение не изменилось
@@ -215,9 +214,7 @@ test.describe('Timesheet grid @ui', () => {
 
     // Редактируем ячейку
     await ts.openCellEditor(date1, emp.id)
-    const select = ts.grid.locator('select')
-    await select.selectOption({ label: 'День (08:00-16:30)' })
-    await expect(select).not.toBeVisible({ timeout: 5_000 })
+    await ts.selectShiftInEditor('День (08:00-16:30)')
 
     // Ждём, чтобы API-вызов завершился
     await page.waitForTimeout(1_000)
@@ -528,9 +525,7 @@ test.describe('Timesheet grid @ui', () => {
 
     // Редактируем одну ячейку через inline-редактор
     await ts.openCellEditor(date1, emp.id)
-    const select = ts.grid.locator('select')
-    await select.selectOption({ label: 'День (08:00-16:30)' })
-    await expect(select).not.toBeVisible({ timeout: 5_000 })
+    await ts.selectShiftInEditor('День (08:00-16:30)')
 
     // Ячейка показывает 8 часов
     await expect(ts.cell(date1, emp.id)).toHaveText('8', { timeout: 15_000 })

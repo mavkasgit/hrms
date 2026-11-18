@@ -220,23 +220,8 @@ export function TimesheetGrid({
     endCol?: number
   } | null>(null)
 
-  // Скрываем уголок, пока открыт inline-редактор (select)
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    const onFocusIn = (e: FocusEvent) => {
-      if ((e.target as HTMLElement)?.tagName === "SELECT") setCellEditing(true)
-    }
-    const onFocusOut = (e: FocusEvent) => {
-      if ((e.target as HTMLElement)?.tagName === "SELECT") setCellEditing(false)
-    }
-    container.addEventListener("focusin", onFocusIn)
-    container.addEventListener("focusout", onFocusOut)
-    return () => {
-      container.removeEventListener("focusin", onFocusIn)
-      container.removeEventListener("focusout", onFocusOut)
-    }
-  }, [])
+  // Уголок-протяжка скрывается сам: ячейка сообщает об открытом редакторе
+  // через columnData.onEditingChange (см. TimesheetDayCell).
 
   // Источник протяжки: выделение, иначе активная ячейка (одна ячейка тоже можно)
   const fillSource = useMemo<GridSelection | null>(() => {
@@ -430,9 +415,11 @@ export function TimesheetGrid({
   useEffect(() => {
     const onUndo = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return
-      // Не перехватываем, если открыт select (inline-редактор)
-      const tag = (e.target as HTMLElement)?.tagName
-      if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return
+      // Не перехватываем, если открыт inline-редактор или поле ввода
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+      if (target?.closest("[data-timesheet-cell-editor]")) return
       const stack = undoStackRef.current
       if (stack.length === 0) return
       e.preventDefault()
@@ -682,6 +669,7 @@ export function TimesheetGrid({
           holidayName: holiday?.name ?? null,
           viewMode,
           shiftTypeMap,
+          onEditingChange: setCellEditing,
         }
 
         return {

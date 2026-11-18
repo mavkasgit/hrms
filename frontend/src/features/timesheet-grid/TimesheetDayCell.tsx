@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { CellProps } from "react-datasheet-grid"
 import type {
   TimesheetEmployeeRow,
@@ -6,8 +7,19 @@ import type {
   TimesheetCellDay,
   TimesheetAbsence,
 } from "@/entities/timesheet"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+} from "@/shared/ui/select"
 import { SHIFT_TYPE_CATALOG } from "@/shared/config/shiftTypes"
 import type { DayColumnData, ShiftTypeMap } from "./types"
+
+/** Значение пункта «авто»: Radix Select не допускает пустую строку в SelectItem. */
+const AUTO_VALUE = "__auto__"
 
 /** Буквенные обозначения нерабочих типов смен */
 export const NON_WORKING_LABELS: Record<string, string> = {
@@ -255,59 +267,74 @@ export function TimesheetDayCell({
   const fact = rowData.fact[date]
   const cellDay = rowData.cells?.[date] ?? null
 
-  // Inline-редактор: select со списком смен
-  if (active && focus) {
-    const currentCode = cellDay?.manual?.shift_type_code ?? ""
-    const working = SHIFT_TYPE_CATALOG.filter((s) => s.isWorking)
-    const nonWorking = SHIFT_TYPE_CATALOG.filter((s) => !s.isWorking && s.code !== "off")
-    return (
-      <select
-        autoFocus
-        className="w-full h-full text-[10px] border-primary bg-background px-0.5 outline-none cursor-pointer"
-        value={currentCode}
-        onChange={(e) => {
-          const code = e.target.value
-          setRowData({
-            ...rowData,
-            cells: {
-              ...rowData.cells,
-              [date]: {
-                auto: cellDay?.auto ?? null,
-                manual: code
-                  ? { shift_type_code: code, planned_hours_override: null, note: null }
-                  : null,
-                result: code || cellDay?.auto?.shift_type_code || null,
-                conflict: cellDay?.conflict ?? false,
-                // Ручная правка «подтверждает» приказ — флаг снимается
-                order_changed: false,
-              },
-            },
-          })
-          stopEditing()
-        }}
-        onBlur={() => stopEditing()}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") stopEditing()
-        }}
-      >
-        <option value="">— авто —</option>
-        <optgroup label="Смены">
-          {working.map((s) => (
-            <option key={s.code} value={s.code}>
-              {s.name}
-            </option>
-          ))}
-        </optgroup>
-        <optgroup label="Статусы">
-          {nonWorking.map((s) => (
-            <option key={s.code} value={s.code}>
-              {s.letter ?? s.code} · {s.name}
-            </option>
-          ))}
-        </optgroup>
-      </select>
-    )
+  const editing = active && focus
+  const currentCode = cellDay?.manual?.shift_type_code ?? ""
+  const cellRef = useRef<HTMLDivElement>(null)
+  const [editorOpen, setEditorOpen] = useState(editing)
+  // Закрытие идемпотентно: Radix зовёт onOpenChange(false) и после выбора,
+  // а второй stopEditing() перескочил бы строку (nextRow по умолчанию).
+  const closedRef = useRef(false)
+  const wasOpenRef = useRef(editing)
+
+  useEffect(() => {
+    closedRef.current = false
+    setEditorOpen(editing)
+  }, [editing])
+
+  // Возврат фокуса — после размонтирования портала Radix, иначе фокус уйдёт в body.
+  useEffect(() => {
+    if (editorOpen) {
+      wasOpenRef.current = true
+    } else if (wasOpenRef.current) {
+      wasOpenRef.current = false
+      cellRef.current?.focus()
+    }
+  }, [editorOpen])
+
+  const closeEditor = useCallback(
+    (opts?: { nextRow?: boolean }) => {
+      if (closedRef.current) return
+      closedRef.current = true
+      setEditorOpen(false)
+      stopEditing(opts)
+    },
+    [stopEditing]
+  )
+
+  // Скрываем уголок, пока открыт inline-редактор ячейки (Radix Select)
+  const onEditingChange = columnData.onEditingChange
+  useEffect(() => {
+    onEditingChange?.(editing && editorOpen)
+    return () => onEditingChange?.(false)
+  }, [onEditingChange, editing, editorOpen])
+
+  const applyShift = (value: string) => {
+    const code = value === AUTO_VALUE ? "" : value
+    setRowData({
+      ...rowData,
+      cells: {
+        ...rowData.cells,
+        [date]: {
+          auto: cellDay?.auto ?? null,
+          manual: code
+            ? { shift_type_code: code, planned_hours_override: null, note: null }
+            : null,
+          result: code || cellDay?.auto?.shift_type_code || null,
+          conflict: cellDay?.conflict ?? false,
+          // Ручная правка «подтверждает» приказ — флаг снимается
+          order_changed: false,
+        },
+      },
+    })
+    closeEditor()
   }
+
+  const working = SHIFT_TYPE_CATALOG.filter((s) => s.isWorking)
+  const nonWorking = SHIFT_TYPE_CATALOG.filter((s) => !s.isWorking && s.code !== "off")
+  const currentMeta = SHIFT_TYPE_CATALOG.find((s) => s.code === currentCode) ?? null
+  const triggerLabel = currentMeta
+    ? currentMeta.letter ?? (formatHours(currentMeta.plannedHours) || currentMeta.code)
+    : "—"
 
   // Режим просмотра
   const viewMode = columnData.viewMode
@@ -395,11 +422,13 @@ export function TimesheetDayCell({
 
   return (
     <div
+      ref={cellRef}
+      tabIndex={-1}
       data-date={date}
       data-employee-id={rowData.id}
       data-divergence={hasDivergence ? "true" : undefined}
       data-order-changed={hasOrderChanged ? "true" : undefined}
-      className={`relative w-full h-full flex items-center justify-center text-[11px] leading-none select-none ${color} ${
+      className={`relative w-full h-full flex items-center justify-center text-[11px] leading-none select-none outline-none ${color} ${
         columnData.isHoliday
           ? "text-red-900 dark:text-red-100"
           : columnData.isWeekend
@@ -409,7 +438,69 @@ export function TimesheetDayCell({
       style={stColor ? { backgroundColor: `${stColor}30` } : undefined}
       title={tooltip}
     >
-      {label}
+      {!editorOpen && label}
+      {editing && editorOpen && (
+        <div
+          data-timesheet-cell-editor=""
+          data-testid="timesheet-cell-editor"
+          className="absolute inset-0 z-20"
+        >
+          <Select
+            open
+            value={currentCode || AUTO_VALUE}
+            onValueChange={applyShift}
+            onOpenChange={(open) => {
+              if (!open) closeEditor({ nextRow: false })
+            }}
+          >
+            <SelectTrigger
+              aria-label={`Смена или статус на ${date}`}
+              className="h-full w-full min-w-0 rounded-none border-0 bg-background px-0 text-[10px] leading-none focus:ring-1 focus:ring-inset focus:ring-primary [&>svg]:h-3 [&>svg]:w-3 [&>span]:line-clamp-1"
+            >
+              <span className="truncate">{triggerLabel}</span>
+            </SelectTrigger>
+            <SelectContent
+              className="max-h-72 min-w-[12rem]"
+              onKeyDown={(e) => e.stopPropagation()}
+              onCloseAutoFocus={(e) => e.preventDefault()}
+            >
+              <SelectItem value={AUTO_VALUE}>— авто —</SelectItem>
+              <SelectGroup>
+                <SelectLabel>Смены</SelectLabel>
+                {working.map((s) => (
+                  <SelectItem key={s.code} value={s.code}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: s.color }}
+                      />
+                      <span>{s.name}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+              <SelectGroup>
+                <SelectLabel>Статусы</SelectLabel>
+                {nonWorking.map((s) => (
+                  <SelectItem key={s.code} value={s.code}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: s.color }}
+                      />
+                      <span>
+                        {s.letter ?? s.code} · {s.name}
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       {showAutoBadge && (
         <span
           className="absolute top-0 right-0 px-0.5 text-[7px] leading-none font-bold opacity-80"
