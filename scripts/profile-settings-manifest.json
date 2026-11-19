@@ -1,12 +1,12 @@
 {
-  "version": "2.1.1",
+  "version": "2.1.3",
   "core": {
-    "frontend/src/modules/user-settings/UserSettingsDialog.tsx": "5d0fead26fbc42cd1425d48a3b92d0eb86be216318c1190fb92da01745548874",
-    "frontend/src/modules/user-settings/components/ProfilePanel.tsx": "b38a6346dc78df2325d0dbee05410a69d2739bd6200a9c88875ac808d5b90589",
-    "frontend/src/modules/user-settings/components/AppearancePanel.tsx": "382ae0bba5bd9c9a7981e065572e095395ce96af898d076462d1242a43103351",
+    "frontend/src/modules/user-settings/UserSettingsDialog.tsx": "af52838f9c865c2a279662fbc7cdab512a602f61aa0285f650ae65e8d6687abf",
+    "frontend/src/modules/user-settings/components/ProfilePanel.tsx": "53c760b755689d11c3d935891c809dd84798f0b7b4be6f5d6a27de1c356fdf0f",
+    "frontend/src/modules/user-settings/components/AppearancePanel.tsx": "9186c606c4ac6ff071e16a0400d236518a15bae77bdac807b410f5df0195c593",
     "frontend/src/modules/user-settings/components/SecurityPanel.tsx": "14be1d2384b1c7419b7d3fce038692c9b3cce4938ced4eb580d989a1189dcd33",
-    "frontend/src/modules/user-settings/components/SessionsPanel.tsx": "85915ed737d4cba3f29146da0843472c422e9c3ec77e83c71878c7a8f5e65580",
-    "frontend/src/modules/user-settings/components/AvatarPickerDialog.tsx": "8fbd6c31f986c076093e52020d23df4dd392c1a77bcd5622baecce48d971dc75",
+    "frontend/src/modules/user-settings/components/SessionsPanel.tsx": "7a32dc387e8dac592073c990ce695af6800bcaf1d6267e846547734f489919fe",
+    "frontend/src/modules/user-settings/components/AvatarPickerDialog.tsx": "a6e8d9c529719b83f40033861e6075a641c3c97bf9e66be25d85f3da0ab87957",
     "frontend/src/modules/user-settings/components/AvatarArt.tsx": "129f556fa14a5578d8232766568f4413b51b2f68e7c90d1c54c9a3f5c65a8a89",
     "frontend/src/modules/user-settings/types.ts": "a65d1b90b677ac3c06ca71ad8135a19d1fbac01ff71bd36ec51c05f0555ca65c",
     "frontend/src/modules/user-settings/context.tsx": "1995688e6a9287c8111e0becb77ecc412b9b4fa3716cb3bb4458700d12b35d80",
