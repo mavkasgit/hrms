@@ -47,7 +47,7 @@ hrms/
 │   │   └── shared/         # Общие компоненты, утилиты, UI
 │   ├── public/
 │   ├── vite.config.ts
-│   ├── tailwind.config.js
+│   ├── src/app/index.css   # Tailwind CSS: CSS-first конфиг
 │   └── Dockerfile
 ├── e2e/
 │   ├── api/                # API-тесты
