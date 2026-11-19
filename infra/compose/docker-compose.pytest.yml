@@ -6,6 +6,10 @@ services:
   postgres-pytest:
     image: postgres:15-alpine
     container_name: hrms-postgres-pytest
+    # Параллельные pytest-прогоны соседних worktree делят этот сервер: при
+    # дефолтном max_locks_per_transaction=64 они падают с `out of shared memory`.
+    # 256 держит 3–4 одновременных набора; при нехватке — `PYTEST_NUM_WORKERS=2`.
+    command: ["postgres", "-c", "max_locks_per_transaction=256"]
     # Оба loopback-биндинга обязательны: asyncpg резолвит 'localhost' на ::1
     # первым и виснет ~2с на [::1], если порт опубликован только на IPv4
     # (Docker Desktop, Windows). С [::1] и 127.0.0.1 коннект мгновенный.
