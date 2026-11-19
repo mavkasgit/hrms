@@ -93,9 +93,9 @@ export function ComboboxCreate({
               error ? "border-red-500" : ""
             } ${!selected ? "text-muted-foreground" : ""}`}
           >
-            {icon && <span className="mr-2 flex-shrink-0">{icon}</span>}
+            {icon && <span className="mr-2 shrink-0">{icon}</span>}
             <span className="truncate">{selected?.name ?? placeholder}</span>
-            <ChevronDown className="ml-2 h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <ChevronDown className="ml-2 h-4 w-4 text-muted-foreground shrink-0" />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
@@ -140,7 +140,7 @@ export function ComboboxCreate({
                   onClick={() => handleSelect(item)}
                 >
                   <Check
-                    className={`h-4 w-4 flex-shrink-0 ${
+                    className={`h-4 w-4 shrink-0 ${
                       value === item.id ? "opacity-100" : "opacity-0"
                     }`}
                   />
@@ -156,7 +156,7 @@ export function ComboboxCreate({
                     className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-primary hover:bg-accent transition-colors"
                     onClick={handleCreate}
                   >
-                    <Plus className="h-4 w-4 flex-shrink-0" />
+                    <Plus className="h-4 w-4 shrink-0" />
                     <span className="truncate">
                       {creating ? "Создание..." : `Создать «${search.trim()}»`}
                     </span>

@@ -51,7 +51,7 @@ function defaultRenderItem(item: RecentItem) {
   const lastName = nameParts[0] || ""
   const initials = nameParts.slice(1, 3).map((p) => `${p[0]}.`).join("")
   return (
-    <div className="flex items-center gap-2 text-xs py-1 cursor-pointer hover:bg-muted rounded px-1 whitespace-nowrap">
+    <div className="flex items-center gap-2 text-xs py-1 cursor-pointer hover:bg-muted rounded-sm px-1 whitespace-nowrap">
       <span className="font-mono font-semibold shrink-0">№{item.number}</span>
       <span className="text-muted-foreground shrink-0">{defaultFormatDate(item.date)}</span>
       <span className="font-semibold shrink-0">{lastName} {initials}</span>

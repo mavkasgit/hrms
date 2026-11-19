@@ -45,7 +45,7 @@ export function StructurePage() {
         </div>
 
         {/* Правая колонка — теги */}
-        <div className="w-[280px] flex-shrink-0">
+        <div className="w-[280px] shrink-0">
           <div className="border rounded-lg bg-card p-3 sticky top-4" style={{ maxHeight: "calc(100vh - 120px)", overflowY: "auto" }}>
             <TagsPanel />
           </div>

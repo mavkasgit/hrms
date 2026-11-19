@@ -145,7 +145,7 @@ export function VacationCalendarModal({ open, onOpenChange, year, onImportComple
   }
 
   const renderPreviewTable = (data: VacationPlanImportResult) => (
-    <div className="border rounded-lg overflow-hidden flex-shrink-0">
+    <div className="border rounded-lg overflow-hidden shrink-0">
       <div className="max-h-[260px] overflow-y-auto">
         <table className="w-full text-xs">
           <thead className="bg-muted/50 sticky top-0">
@@ -169,7 +169,7 @@ export function VacationCalendarModal({ open, onOpenChange, year, onImportComple
                       {monthEntries.map(([month, value]) => (
                         <span
                           key={month}
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 text-[10px] font-medium"
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-sky-100 text-sky-700 text-[10px] font-medium"
                         >
                           {month}: {value}
                         </span>
@@ -178,11 +178,11 @@ export function VacationCalendarModal({ open, onOpenChange, year, onImportComple
                   </td>
                   <td className="px-3 py-1.5 text-center">
                     {emp.is_update ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-medium">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-amber-50 text-amber-700 text-[10px] font-medium">
                         Замена
                       </span>
                     ) : (
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-50 text-green-700 text-[10px] font-medium">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm bg-green-50 text-green-700 text-[10px] font-medium">
                         Новый
                       </span>
                     )}
@@ -213,7 +213,7 @@ export function VacationCalendarModal({ open, onOpenChange, year, onImportComple
           {step === "upload" && (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
-                <Download className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <Download className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-900">
                     Скачайте шаблон для заполнения
@@ -265,7 +265,7 @@ export function VacationCalendarModal({ open, onOpenChange, year, onImportComple
 
           {step === "preview" && preview && (
             <div className="flex flex-col gap-4 overflow-hidden">
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
                   Создано: {preview.created}
                 </span>
@@ -276,7 +276,7 @@ export function VacationCalendarModal({ open, onOpenChange, year, onImportComple
 
               {renderPreviewTable(preview)}
 
-              <div className="flex justify-end gap-2 flex-shrink-0">
+              <div className="flex justify-end gap-2 shrink-0">
                 <Button variant="outline" onClick={handleClose}>
                   Отмена
                 </Button>

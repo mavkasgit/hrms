@@ -43,7 +43,7 @@
     {
       "path": "frontend/src/features/auth/pages/LoginPage.tsx",
       "kind": "content",
-      "hash": "sha256:9fe10e465be82125534fc364d285097bb48fa1933bdfdcf7369ab43a747c0c8f",
+      "hash": "sha256:a94b267efae42de496399c0ab44c6a909c6dea552c5ca94a2c4efe085e6b05d0",
       "reason": "auth/OIDC debt (retro 2026-11-18)",
       "reviewed": "2026-11-18",
       "expires": "2027-06-30"
@@ -51,7 +51,7 @@
     {
       "path": "frontend/src/features/auth/pages/OidcCallbackPage.tsx",
       "kind": "content",
-      "hash": "sha256:3fe243ced985a925fa23708f7b707cf9df8695f407d5f6ff8e37f6eac12a44f4",
+      "hash": "sha256:6808656fd2ca9392e8eeea55093a252068a8b0f782c14351b30b71438ef06d5e",
       "reason": "auth/OIDC debt (retro 2026-11-18)",
       "reviewed": "2026-11-18",
       "expires": "2027-06-30"
@@ -59,7 +59,7 @@
     {
       "path": "scripts/profile-settings-manifest.json",
       "kind": "content",
-      "hash": "sha256:75164c965f5c2493a94e955631295a7ddbdf0bb3f5e0259d9d93a48353adea12",
+      "hash": "sha256:af63fdce7cdeb6f256827b93a29b2954d22fea68cf1156a5c33fc5269baa76c3",
       "reason": "auth/OIDC debt (retro 2026-11-18)",
       "reviewed": "2026-11-18",
       "expires": "2027-06-30"

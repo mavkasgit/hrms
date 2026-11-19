@@ -226,8 +226,8 @@ function SidebarContent({
           <div className="flex items-center gap-3 px-3 py-2" role="status" aria-label="Загрузка профиля">
             <div className="h-8 w-8 shrink-0 rounded-xl bg-muted animate-pulse" />
             <div className="flex-1 space-y-1.5">
-              <div className="h-3 w-24 bg-muted animate-pulse rounded" />
-              <div className="h-2 w-16 bg-muted animate-pulse rounded" />
+              <div className="h-3 w-24 bg-muted animate-pulse rounded-sm" />
+              <div className="h-2 w-16 bg-muted animate-pulse rounded-sm" />
             </div>
           </div>
         ) : user ? (

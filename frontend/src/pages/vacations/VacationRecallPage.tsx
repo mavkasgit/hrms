@@ -263,7 +263,7 @@ export function VacationRecallPage() {
                         )}
                       </div>
                       {(createDraftMutation.isError || recallMutation.isError) && (
-                        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-4 py-3">Ошибка при создании приказа</div>
+                        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-sm px-4 py-3">Ошибка при создании приказа</div>
                       )}
                     </div>
 

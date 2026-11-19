@@ -119,7 +119,7 @@ export function PlaceholderAutocomplete({
                   <button
                     key={optKey}
                     className={cn(
-                      "w-full text-left px-2 py-1.5 text-sm rounded hover:bg-accent flex items-center gap-2",
+                      "w-full text-left px-2 py-1.5 text-sm rounded-sm hover:bg-accent flex items-center gap-2",
                       value === optKey && "bg-accent"
                     )}
                     onClick={() => handleSelect(optKey)}
@@ -130,7 +130,7 @@ export function PlaceholderAutocomplete({
                       value === optKey ? "opacity-100" : "opacity-0"
                     )}
                   />
-                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded shrink-0 font-medium">
+                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded-sm shrink-0 font-medium">
                     {opt.displayName || ("{" + optKey + "}")}
                   </code>
                   <span className="text-muted-foreground text-xs truncate">

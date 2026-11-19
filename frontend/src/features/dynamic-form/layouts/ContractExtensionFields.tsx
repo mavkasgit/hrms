@@ -122,7 +122,7 @@ export function ContractExtensionFields({ extraFields, extraFieldErrors, onField
           <button
             key={years}
             type="button"
-            className="text-xs px-2 py-0.5 rounded border border-input bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            className="text-xs px-2 py-0.5 rounded-sm border border-input bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
             onClick={() => {
               const startDate = extraFields["new_contract_start"] as string | undefined
               if (startDate) {
@@ -153,7 +153,7 @@ export function ContractExtensionFields({ extraFields, extraFieldErrors, onField
               }
             }
           }}
-          className="w-12 h-7 text-xs rounded border border-input bg-background px-1 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="w-12 h-7 text-xs rounded-sm border border-input bg-background px-1 text-center focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
         />
       </div>
     </div>

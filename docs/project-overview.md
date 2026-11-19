@@ -43,8 +43,8 @@ hrms/
 │   │   ├── entities/       # Бизнес-сущности (модели, UI-компоненты, API-клиенты)
 │   │   └── shared/         # Общие компоненты, UI-кит, утилиты, хуки, API-клиенты
 │   ├── public/             # Статические ресурсы
-│   ├── vite.config.ts      # Конфигурация Vite
-│   ├── tailwind.config.js  # Стилизация Tailwind CSS
+│   ├── vite.config.ts      # Конфигурация Vite (вкл. @tailwindcss/vite)
+│   ├── src/app/index.css   # Tailwind CSS: CSS-first конфиг (@theme, @source)
 │   └── Dockerfile          # Сборка контейнера фронтенда
 ├── e2e/
 │   ├── api/                # API-тесты

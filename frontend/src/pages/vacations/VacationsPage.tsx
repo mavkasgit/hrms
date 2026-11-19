@@ -389,14 +389,14 @@ function EmployeeHistoryRow({
             {dividerDate && (
               <div className="flex items-center gap-3 my-2">
                 <div className="flex-1 h-px bg-amber-300" />
-                <span className="text-[10px] font-medium text-amber-600 whitespace-nowrap bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                <span className="text-[10px] font-medium text-amber-600 whitespace-nowrap bg-amber-50 px-2 py-0.5 rounded-sm border border-amber-200">
                   Периоды до корректировки от {formatDate(dividerDate)}
                 </span>
                 <div className="flex-1 h-px bg-amber-300" />
               </div>
             )}
             
-            <div className={`flex flex-col lg:flex-row gap-3 border border-muted/30 rounded ${isClosed ? 'opacity-60' : ''} ${isClosing ? 'border-blue-400 bg-blue-50' : ''}`}>
+            <div className={`flex flex-col lg:flex-row gap-3 border border-muted/30 rounded-sm ${isClosed ? 'opacity-60' : ''} ${isClosing ? 'border-blue-400 bg-blue-50' : ''}`}>
               {/* Левая часть — период */}
               <div className="basis-auto lg:basis-1/2 min-w-0 bg-card py-1.5 px-2">
                 <div className="flex items-start gap-1">
@@ -404,7 +404,7 @@ function EmployeeHistoryRow({
                     <div className="flex items-center gap-2 text-xs">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-1.5 whitespace-nowrap">
-                          <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
+                          <span className="font-semibold bg-muted px-1.5 py-0.5 rounded-sm text-[10px]">{p.year_number}-й г.</span>
                           <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
                           {isClosed && <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>}
                         </div>
@@ -1257,7 +1257,7 @@ export function VacationsPage() {
                 )}
               </div>
               {createMutation.isError && (
-                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-sm px-3 py-2">
                   Ошибка: {(createMutation.error as any)?.response?.data?.detail || (createMutation.error as any)?.message || "Неизвестная ошибка"}
                 </div>
               )}
@@ -1441,9 +1441,9 @@ export function VacationsPage() {
                       <TableCell className="px-4 py-2">
                         <div className="flex items-center gap-1.5">
                           {emp.department_icon
-                            ? renderIcon(emp.department_icon, "h-4 w-4 flex-shrink-0", { color: emp.department_color || undefined })
+                            ? renderIcon(emp.department_icon, "h-4 w-4 shrink-0", { color: emp.department_color || undefined })
                             : emp.department_color && (
-                              <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: emp.department_color }} />
+                              <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: emp.department_color }} />
                             )}
                           <span className="truncate">{emp.department}</span>
                         </div>

@@ -44,7 +44,7 @@ export function DynamicField({ field, value, error, onChange }: DynamicFieldProp
           {field.required && <span className="text-red-500 ml-0.5">*</span>}
         </label>
         <textarea
-          className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-0 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 mt-1"
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-0 placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 mt-1"
           placeholder={displayLabel}
           value={displayValue}
           onChange={(e) => onChange(field.key, e.target.value)}

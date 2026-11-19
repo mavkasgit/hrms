@@ -182,7 +182,7 @@ export function TransferHistoryModal({ open, onOpenChange, transfers, onSave, em
               {localTransfers.map((t, i) => {
                 const itemKey = t._orderId ? `auto-${t._orderId}` : `manual-${i}-${t.date || 'new'}`
                 return (
-                <div key={itemKey} className={`grid grid-cols-[130px_100px_minmax(180px,1fr)_minmax(180px,1fr)_160px_40px] gap-3 items-center px-2 h-10 rounded ${t._auto ? "bg-blue-50 dark:bg-blue-950/30" : "hover:bg-muted/50"}`}>
+                <div key={itemKey} className={`grid grid-cols-[130px_100px_minmax(180px,1fr)_minmax(180px,1fr)_160px_40px] gap-3 items-center px-2 h-10 rounded-sm ${t._auto ? "bg-blue-50 dark:bg-blue-950/30" : "hover:bg-muted/50"}`}>
                   {editingIndex === i ? (
                     <>
                       <DatePicker

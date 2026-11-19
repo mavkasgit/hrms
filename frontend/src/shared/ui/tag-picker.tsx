@@ -28,7 +28,7 @@ interface TagPickerProps {
 function TagDot({ color }: { color?: string }) {
   return (
     <span
-      className="inline-block h-2 w-2 rounded-full flex-shrink-0"
+      className="inline-block h-2 w-2 rounded-full shrink-0"
       style={{ backgroundColor: color || "#94a3b8" }}
     />
   )
@@ -145,7 +145,7 @@ export function TagPicker({
                 available.map((t) => (
                   <button
                     key={t.id}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-accent/80 transition-colors group/item cursor-pointer"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent/80 transition-colors group/item cursor-pointer"
                     onClick={() => handleAssign(t.id)}
                   >
                     <TagDot color={t.color} />
@@ -154,7 +154,7 @@ export function TagPicker({
                       emp={t.employee_count}
                       dept={t.department_count}
                     />
-                    <Plus className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/item:opacity-100 transition-opacity flex-shrink-0" />
+                    <Plus className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/item:opacity-100 transition-opacity shrink-0" />
                   </button>
                 ))
               )}

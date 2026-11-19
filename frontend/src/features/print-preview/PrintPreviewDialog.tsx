@@ -380,7 +380,7 @@ export function PrintPreviewDialog<T extends { id: number | string }>({
                               : [...prev, id]
                           )
                         }}
-                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] transition-colors border ${
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] transition-colors border ${
                           isSelected
                             ? "bg-primary text-primary-foreground border-primary"
                             : "bg-muted text-muted-foreground border-border hover:bg-accent"
@@ -393,7 +393,7 @@ export function PrintPreviewDialog<T extends { id: number | string }>({
                   {selectedDeptIds.length > 0 && (
                     <button
                       onClick={() => setSelectedDeptIds([])}
-                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border border-dashed border-gray-400 text-muted-foreground hover:bg-accent transition-colors"
+                      className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] border border-dashed border-gray-400 text-muted-foreground hover:bg-accent transition-colors"
                     >
                       Сбросить
                     </button>
@@ -418,7 +418,7 @@ export function PrintPreviewDialog<T extends { id: number | string }>({
                                 : [...prev, tag.id]
                             )
                           }}
-                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] transition-colors border ${
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] transition-colors border ${
                           isSelected
                             ? "bg-primary text-primary-foreground border-primary"
                             : "bg-muted text-muted-foreground border-border hover:bg-accent"
@@ -431,7 +431,7 @@ export function PrintPreviewDialog<T extends { id: number | string }>({
                   {selectedTagIds.length > 0 && (
                     <button
                       onClick={() => setSelectedTagIds([])}
-                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] border border-dashed border-gray-400 text-muted-foreground hover:bg-accent transition-colors"
+                      className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] border border-dashed border-gray-400 text-muted-foreground hover:bg-accent transition-colors"
                     >
                       Сбросить
                     </button>

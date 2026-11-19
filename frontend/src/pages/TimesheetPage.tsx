@@ -435,43 +435,43 @@ export function TimesheetPage() {
         <div className="text-xs text-muted-foreground space-y-2">
           <div className="flex flex-wrap gap-x-4 gap-y-2">
             <span className="flex items-center gap-1.5">
-              <span className="inline-block w-3.5 h-3.5 bg-amber-100 border border-amber-300 rounded" /> Расхождение плана и факта
+              <span className="inline-block w-3.5 h-3.5 bg-amber-100 border border-amber-300 rounded-sm" /> Расхождение плана и факта
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block w-3.5 h-3.5 border-2 border-orange-500 rounded" /> Расхождение ручного и авто
+              <span className="inline-block w-3.5 h-3.5 border-2 border-orange-500 rounded-sm" /> Расхождение ручного и авто
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-3.5 h-3.5 rounded-full bg-violet-500 animate-pulse" /> Приказ изменился
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block w-3.5 h-3.5 bg-slate-100 border border-slate-300 rounded" /> Выходной (Сб/Вс)
+              <span className="inline-block w-3.5 h-3.5 bg-slate-100 border border-slate-300 rounded-sm" /> Выходной (Сб/Вс)
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block w-3.5 h-3.5 bg-red-100/80 border border-red-300 rounded" /> Праздничный день
+              <span className="inline-block w-3.5 h-3.5 bg-red-100/80 border border-red-300 rounded-sm" /> Праздничный день
             </span>
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-1.5 pt-2 border-t">
             <span className="text-muted-foreground font-medium mr-1">Нерабочие статусы:</span>
             <span className="flex items-center gap-1">
-              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">О</span> Отпуск
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded-sm bg-muted text-foreground">О</span> Отпуск
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">Б</span> Больничный
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded-sm bg-muted text-foreground">Б</span> Больничный
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">А</span> За свой счет
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded-sm bg-muted text-foreground">А</span> За свой счет
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">П</span> Прогул
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded-sm bg-muted text-foreground">П</span> Прогул
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">Д</span> Донорские
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded-sm bg-muted text-foreground">Д</span> Донорские
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">ВК</span> Военкомат
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded-sm bg-muted text-foreground">ВК</span> Военкомат
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded bg-muted text-foreground">ВС</span> Военные сборы
+              <span className="inline-block px-1 min-w-[18px] text-center text-[10px] font-bold border rounded-sm bg-muted text-foreground">ВС</span> Военные сборы
             </span>
           </div>
         </div>

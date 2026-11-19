@@ -321,7 +321,7 @@ export function SickLeavesPage() {
                 </Button>
               </div>
               {createMutation.isError && (
-                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-sm px-3 py-2">
                   Ошибка: {(createMutation.error as any)?.response?.data?.detail || (createMutation.error as any)?.message || "Неизвестная ошибка"}
                 </div>
               )}

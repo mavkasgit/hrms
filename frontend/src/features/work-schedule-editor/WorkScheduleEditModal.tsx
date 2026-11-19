@@ -224,7 +224,7 @@ export function WorkScheduleEditModal({
                             handleCellChange(date, "shift_type_code", e.target.value || null)
                           }
                           disabled={isApproved}
-                          className="w-full px-1 py-0.5 text-xs border rounded h-7 bg-background"
+                          className="w-full px-1 py-0.5 text-xs border rounded-sm h-7 bg-background"
                         >
                           <option value="">— не задано —</option>
                           {shiftTypes.map((st) => (
@@ -249,7 +249,7 @@ export function WorkScheduleEditModal({
                             )
                           }
                           disabled={isApproved}
-                          className="w-16 px-1 py-0.5 text-xs border rounded"
+                          className="w-16 px-1 py-0.5 text-xs border rounded-sm"
                           placeholder="—"
                         />
                       </td>
@@ -259,7 +259,7 @@ export function WorkScheduleEditModal({
                           value={cell.note || ""}
                           onChange={(e) => handleCellChange(date, "note", e.target.value || null)}
                           disabled={isApproved}
-                          className="w-full px-1 py-0.5 text-xs border rounded"
+                          className="w-full px-1 py-0.5 text-xs border rounded-sm"
                           placeholder=""
                         />
                       </td>

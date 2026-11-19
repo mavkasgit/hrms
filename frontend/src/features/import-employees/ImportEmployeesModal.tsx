@@ -223,7 +223,7 @@ export function ImportEmployeesModal({ open, onOpenChange, onImportComplete }: I
             {/* Кнопка скачивания шаблона */}
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
-                <Download className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <Download className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-900">
                     Скачайте шаблон для заполнения
@@ -357,7 +357,7 @@ export function ImportEmployeesModal({ open, onOpenChange, onImportComplete }: I
                 <span className="text-muted-foreground italic">ничего не выбрано</span>
               )}
               {Object.entries(mapping).filter(([, v]) => v).map(([field]) => (
-                <span key={field} className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-medium">
+                <span key={field} className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-sm font-medium">
                   {AVAILABLE_FIELDS.find(f => f.value === field)?.label}
                 </span>
               ))}

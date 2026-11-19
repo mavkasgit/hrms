@@ -87,7 +87,7 @@ export function AvatarPickerDialog({ open, onOpenChange }: AvatarPickerDialogPro
                 onBlur={() => setHoveredSeed(null)}
                 className={cn(
                   "group relative aspect-square overflow-hidden bg-muted transition-all",
-                  "hover:ring-2 hover:ring-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                  "hover:ring-2 hover:ring-primary focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-hidden",
                   "disabled:cursor-not-allowed disabled:opacity-50",
                   isHovered ? "rounded-2xl" : "rounded-full",
                 )}

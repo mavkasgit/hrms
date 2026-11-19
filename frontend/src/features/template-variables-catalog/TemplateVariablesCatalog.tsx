@@ -50,10 +50,10 @@ export function TemplateVariablesCatalog({
         <div className="space-y-2 text-sm">
           {items.map((item) => (
             <div key={item.name} className="flex items-center gap-1.5">
-              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{item.name}</code>
+              <code className="rounded-sm bg-muted px-1.5 py-0.5 text-xs">{item.name}</code>
               <button
                 onClick={() => copyVariable(item.name)}
-                className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                className="inline-flex items-center justify-center rounded-sm p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
                 title="Копировать"
               >
                 {copied && copiedValue === item.name ? (

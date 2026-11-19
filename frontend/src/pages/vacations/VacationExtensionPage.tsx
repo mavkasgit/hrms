@@ -261,7 +261,7 @@ export function VacationExtensionPage() {
                         <Button variant="outline" onClick={() => { setSelectedVacation(null); setPeriodStart(""); setPeriodEnd(""); setOrderNumber(""); setDraftId(null); setErrors({}); recoveryClear() }} disabled={isPending}>Очистить</Button>
                         {!draftId ? (<Button onClick={handleEditBeforeCreate} disabled={isPending || !selectedVacation}><FilePen className="mr-2 h-4 w-4" />{createDraftMutation.isPending ? "Подготовка..." : "Создать приказ"}</Button>) : (<Button onClick={() => void handleCreate()} disabled={isPending || !selectedVacation}>{extendMutation.isPending ? "Оформление..." : "Оформить продление"}</Button>)}
                       </div>
-                      {(createDraftMutation.isError || extendMutation.isError) && (<div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-4 py-3">Ошибка при создании приказа</div>)}
+                      {(createDraftMutation.isError || extendMutation.isError) && (<div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-sm px-4 py-3">Ошибка при создании приказа</div>)}
                     </div>
                     <div className="bg-muted/30 border rounded-md p-4 space-y-2 text-sm">
                       {selectedVacation ? (<>

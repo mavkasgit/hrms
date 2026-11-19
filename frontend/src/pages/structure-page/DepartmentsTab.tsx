@@ -90,7 +90,7 @@ function EmployeeRow({
     <div className={`flex items-center gap-2 py-1 px-2 text-sm rounded-md transition-colors ${
       highlight ? "bg-yellow-500/10" : "hover:bg-accent/30"
     } group/emp`}>
-      <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 flex-shrink-0" />
+      <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
       <span className="truncate flex-1">{emp.name}</span>
       <TagPicker
         tags={allTags}
@@ -101,7 +101,7 @@ function EmployeeRow({
         disabled={disabled}
       />
       {emp.position_name && (
-        <Badge variant="secondary" className="text-[10px] flex-shrink-0">
+        <Badge variant="secondary" className="text-[10px] shrink-0">
           {emp.position_name}
         </Badge>
       )}
@@ -183,7 +183,7 @@ function DepartmentTreeNode({
             if (hasChildren) toggleExpand()
             else if (node.employees.length > 0) toggleExpand()
           }}
-          className={`h-5 w-5 flex items-center justify-center text-muted-foreground rounded-sm transition-transform flex-shrink-0 ${
+          className={`h-5 w-5 flex items-center justify-center text-muted-foreground rounded-xs transition-transform shrink-0 ${
             hasChildren || node.employees.length > 0 ? "hover:bg-accent" : ""
           }`}
         >
@@ -199,7 +199,7 @@ function DepartmentTreeNode({
         </button>
  
         <span
-          className="h-4 w-4 flex-shrink-0 text-muted-foreground"
+          className="h-4 w-4 shrink-0 text-muted-foreground"
           style={{ color: node.color ?? undefined }}
         >
           {node.icon
@@ -213,7 +213,7 @@ function DepartmentTreeNode({
               e.stopPropagation()
               toggleExpand()
             }}
-            className={`flex items-center gap-0.5 text-xs rounded px-1 py-0.5 transition-colors flex-shrink-0 mr-1 ${
+            className={`flex items-center gap-0.5 text-xs rounded-sm px-1 py-0.5 transition-colors shrink-0 mr-1 ${
               showEmployees
                 ? "bg-primary/10 text-primary font-medium"
                 : "text-muted-foreground hover:bg-accent"
@@ -238,20 +238,20 @@ function DepartmentTreeNode({
         </span>
  
         {!hasEmployees && node.employees.length === 0 && (
-          <span className="text-[10px] text-muted-foreground/50 w-10 text-right flex-shrink-0">
+          <span className="text-[10px] text-muted-foreground/50 w-10 text-right shrink-0">
             пусто
           </span>
         )}
  
         {/* Подсказка при поиске */}
         {searchQuery && filteredEmployees.length === 0 && node.employees.length > 0 && (
-          <span className="text-[10px] text-muted-foreground/40 w-10 text-right flex-shrink-0">
+          <span className="text-[10px] text-muted-foreground/40 w-10 text-right shrink-0">
             0 совп.
           </span>
         )}
  
         {!isViewer && (
-          <div className="flex gap-0.5 flex-shrink-0 mr-2">
+          <div className="flex gap-0.5 shrink-0 mr-2">
             <Button
               variant="outline"
               size="sm"
@@ -516,14 +516,14 @@ export function DepartmentsTab() {
             <SearchInput value={searchQuery} onChange={setSearchQuery} />
           </div>
           {searchQuery && totalMatches > 0 && (
-            <span className="text-xs text-muted-foreground flex-shrink-0">
+            <span className="text-xs text-muted-foreground shrink-0">
               {totalMatches} совп.
             </span>
           )}
           <Button
             variant="outline"
             size="sm"
-            className="h-9 text-xs flex-shrink-0 min-w-[100px]"
+            className="h-9 text-xs shrink-0 min-w-[100px]"
             onClick={toggleAll}
           >
             {allExpanded ? (

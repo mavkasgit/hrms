@@ -97,7 +97,7 @@ export function HolidaysPage() {
               placeholder="Название"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              className="w-[180px] h-10 px-2 text-sm border rounded"
+              className="w-[180px] h-10 px-2 text-sm border rounded-sm"
               autoFocus
             />
             <DatePicker

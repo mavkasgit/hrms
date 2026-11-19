@@ -350,7 +350,7 @@ export function EmployeesPage() {
                   <p className="text-xs font-medium text-muted-foreground mb-2">Статус</p>
                   <div className="flex flex-col gap-1">
                     <button
-                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                      className={`text-left px-2 py-1.5 text-sm rounded-sm hover:bg-muted ${
                         selectedStatuses.has("active") ? "bg-green-100 font-medium text-green-700" : ""
                       }`}
                       onClick={() => toggleStatus("active")}
@@ -358,7 +358,7 @@ export function EmployeesPage() {
                       Активные
                     </button>
                     <button
-                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                      className={`text-left px-2 py-1.5 text-sm rounded-sm hover:bg-muted ${
                         selectedStatuses.has("dismissed") ? "bg-red-100 font-medium text-red-700" : ""
                       }`}
                       onClick={() => toggleStatus("dismissed")}
@@ -373,7 +373,7 @@ export function EmployeesPage() {
                   <p className="text-xs font-medium text-muted-foreground mb-2">Ставка</p>
                   <div className="flex flex-col gap-1">
                     <button
-                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                      className={`text-left px-2 py-1.5 text-sm rounded-sm hover:bg-muted ${
                         selectedRateTypes.has("full") ? "bg-emerald-100 font-medium text-emerald-700" : ""
                       }`}
                       onClick={() => toggleRateType("full")}
@@ -381,7 +381,7 @@ export function EmployeesPage() {
                       Полная ставка
                     </button>
                     <button
-                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                      className={`text-left px-2 py-1.5 text-sm rounded-sm hover:bg-muted ${
                         selectedRateTypes.has("partial") ? "bg-amber-100 font-medium text-amber-700" : ""
                       }`}
                       onClick={() => toggleRateType("partial")}
@@ -396,7 +396,7 @@ export function EmployeesPage() {
                   <p className="text-xs font-medium text-muted-foreground mb-2">Совмещение</p>
                   <div className="flex flex-col gap-1">
                     <button
-                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                      className={`text-left px-2 py-1.5 text-sm rounded-sm hover:bg-muted ${
                         selectedEmploymentTypes.has("internal") ? "bg-blue-100 font-medium text-blue-700" : ""
                       }`}
                       onClick={() => toggleEmploymentType("internal")}
@@ -404,7 +404,7 @@ export function EmployeesPage() {
                       Внутреннее
                     </button>
                     <button
-                      className={`text-left px-2 py-1.5 text-sm rounded hover:bg-muted ${
+                      className={`text-left px-2 py-1.5 text-sm rounded-sm hover:bg-muted ${
                         selectedEmploymentTypes.has("external") ? "bg-purple-100 font-medium text-purple-700" : ""
                       }`}
                       onClick={() => toggleEmploymentType("external")}
@@ -541,10 +541,10 @@ export function EmployeesPage() {
                   <TableCell className="px-2 py-0.5">
                     <div className="flex items-center gap-1.5">
                       {emp.department?.icon
-                        ? renderIcon(emp.department.icon, "h-4 w-4 flex-shrink-0", { color: emp.department.color })
+                        ? renderIcon(emp.department.icon, "h-4 w-4 shrink-0", { color: emp.department.color })
                         : emp.department?.color && (
                             <span
-                              className="inline-block h-3 w-3 rounded-full flex-shrink-0"
+                              className="inline-block h-3 w-3 rounded-full shrink-0"
                               style={{ backgroundColor: emp.department.color }}
                             />
                           )}
@@ -556,7 +556,7 @@ export function EmployeesPage() {
                       {(emp.tags || []).map((t) => (
                         <span
                           key={t.id}
-                          className="inline-block h-3 w-3 rounded-full flex-shrink-0"
+                          className="inline-block h-3 w-3 rounded-full shrink-0"
                           style={{ backgroundColor: t.color || "#94a3b8" }}
                           title={t.name}
                         />

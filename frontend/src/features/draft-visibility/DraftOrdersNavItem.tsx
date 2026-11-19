@@ -427,7 +427,7 @@ export function DraftOrdersNavItem() {
           <div className="border-t p-2">
             <NavLink
               to={DRAFTS_ROUTE}
-              className="block rounded px-2 py-1.5 text-sm text-primary hover:bg-accent"
+              className="block rounded-sm px-2 py-1.5 text-sm text-primary hover:bg-accent"
               onClick={() => setOpen(false)}
             >
               Все черновики →

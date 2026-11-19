@@ -347,7 +347,7 @@ export function SessionsPanel() {
                           : dict.sessions.failedLogin}
                       </span>
                       {event.login_method && (
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                           {methodLabel(event.login_method)}
                         </span>
                       )}
