@@ -48,11 +48,11 @@ export function ProfilePanel() {
               <button
                 type="button"
                 onClick={() => setAvatarOpen(true)}
-                className="absolute inset-0 z-10 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+                className="absolute inset-0 z-10 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-hidden"
                 title={dict.profile.avatarChange}
                 aria-label={dict.profile.avatarChange}
               >
-                <Pencil className="h-6 w-6 text-white drop-shadow-sm" />
+                <Pencil className="h-6 w-6 text-white drop-shadow-xs" />
               </button>
             )}
           </div>

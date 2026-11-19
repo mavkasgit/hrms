@@ -60,13 +60,13 @@ export function PdfPrintPage({ pdfUrl, title, invalidIdMessage }: PdfPrintPagePr
   return (
     <div className="h-screen bg-background">
       {isLoading && (
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded bg-background/90 px-2 py-1 text-sm text-muted-foreground">
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-2 rounded-sm bg-background/90 px-2 py-1 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Подготавливаем PDF...
         </div>
       )}
 
-      {error && <div className="absolute top-3 left-3 z-10 rounded bg-background/90 px-2 py-1 text-sm text-red-600">{error}</div>}
+      {error && <div className="absolute top-3 left-3 z-10 rounded-sm bg-background/90 px-2 py-1 text-sm text-red-600">{error}</div>}
 
       {!error && pdfUrl && (
         <iframe

@@ -992,7 +992,7 @@ export function TimesheetGrid({
                     data-testid="accept-orders-employee"
                     data-employee-id={emp.id}
                     onClick={() => acceptOrders(emp.id)}
-                    className="flex-none inline-flex items-center justify-center w-6 h-6 rounded text-violet-600 hover:bg-violet-100 hover:text-violet-800 transition-colors cursor-pointer"
+                    className="flex-none inline-flex items-center justify-center w-6 h-6 rounded-sm text-violet-600 hover:bg-violet-100 hover:text-violet-800 transition-colors cursor-pointer"
                     title={`Приказ изменился (${changedDays} дн.) — принять приказ`}
                   >
                     <FileCheck2 className="h-4 w-4" />
@@ -1043,7 +1043,7 @@ export function TimesheetGrid({
         {handlePos && fillSource && !cellEditing && (
           <div
             data-testid="timesheet-fill-handle"
-            className="absolute z-30 h-2.5 w-2.5 cursor-crosshair rounded-[2px] border-2 border-background bg-primary shadow"
+            className="absolute z-30 h-2.5 w-2.5 cursor-crosshair rounded-[2px] border-2 border-background bg-primary shadow-sm"
             style={{
               left: handlePos.left - 5,
               top: handlePos.top - 5,
@@ -1068,7 +1068,7 @@ export function TimesheetGrid({
             </span>
             <select
               data-testid="timesheet-fill-select"
-              className="h-7 max-w-[190px] text-xs rounded-md border border-input bg-background px-2 outline-none cursor-pointer"
+              className="h-7 max-w-[190px] text-xs rounded-md border border-input bg-background px-2 outline-hidden cursor-pointer"
               value=""
               onChange={(e) => {
                 const v = e.target.value

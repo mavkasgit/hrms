@@ -146,21 +146,21 @@ export function VacationHistoryAndPeriods({ employeeId }: VacationHistoryAndPeri
             {dividerDate && (
               <div className="flex items-center gap-3 my-2">
                 <div className="flex-1 h-px bg-amber-300" />
-                <span className="text-[10px] font-medium text-amber-600 whitespace-nowrap bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                <span className="text-[10px] font-medium text-amber-600 whitespace-nowrap bg-amber-50 px-2 py-0.5 rounded-sm border border-amber-200">
                   Периоды до корректировки от {formatDate(dividerDate)}
                 </span>
                 <div className="flex-1 h-px bg-amber-300" />
               </div>
             )}
 
-            <div className={`flex gap-3 border border-muted/30 rounded ${isClosed ? 'opacity-60' : ''}`}>
+            <div className={`flex gap-3 border border-muted/30 rounded-sm ${isClosed ? 'opacity-60' : ''}`}>
               <div className="basis-[50%] min-w-[320px] bg-card py-1.5 px-2">
                 <div className="flex items-start gap-1">
                   <div className="shrink-0 min-w-[185px]">
                     <div className="flex items-center gap-2 text-xs">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-1.5 whitespace-nowrap">
-                          <span className="font-semibold bg-muted px-1.5 py-0.5 rounded text-[10px]">{p.year_number}-й г.</span>
+                          <span className="font-semibold bg-muted px-1.5 py-0.5 rounded-sm text-[10px]">{p.year_number}-й г.</span>
                           <span className="text-muted-foreground">{formatDate(p.period_start)} — {formatDate(p.period_end)}</span>
                           {isClosed && <Badge variant="secondary" className="text-[10px] px-1 py-0">Закрыт</Badge>}
                         </div>

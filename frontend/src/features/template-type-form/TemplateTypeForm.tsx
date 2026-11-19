@@ -232,7 +232,7 @@ export function TemplateTypeForm({
 
           <div className="space-y-4" title={isStandard ? "Стандартный тип — поля заблокированы" : undefined}>
             {isStandard && (
-              <div className="text-xs text-muted-foreground bg-muted/50 border rounded px-3 py-2">
+              <div className="text-xs text-muted-foreground bg-muted/50 border rounded-sm px-3 py-2">
                 Стандартный тип — все поля заблокированы. Можно только загрузить/заменить шаблон.
               </div>
             )}
@@ -351,7 +351,7 @@ export function TemplateTypeForm({
             </AlertDialogDescription>
           </AlertDialogHeader>
           {deleteError && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-sm px-3 py-2">
               {deleteError}
             </div>
           )}

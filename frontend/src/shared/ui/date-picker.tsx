@@ -167,7 +167,7 @@ export function DatePicker({ value, onChange, label, placeholder, required = fal
             if (e.nativeEvent.isComposing || e.keyCode === 229) return
             if (e.key === "Enter") e.currentTarget.blur()
           }}
-          className="flex h-10 w-full rounded-l-md border-0 bg-background px-3 py-2 text-sm ring-offset-0 placeholder:text-muted-foreground focus-visible:outline-none"
+          className="flex h-10 w-full rounded-l-md border-0 bg-background px-3 py-2 text-sm ring-offset-0 placeholder:text-muted-foreground focus-visible:outline-hidden"
           maxLength={10}
           disabled={disabled}
           autoFocus={autoFocus}

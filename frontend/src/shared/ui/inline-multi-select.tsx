@@ -146,7 +146,7 @@ export function InlineMultiSelect({
         )}
       </div>
 
-      <div className="max-h-44 overflow-y-auto rounded border">
+      <div className="max-h-44 overflow-y-auto rounded-sm border">
         {filtered.length === 0 ? (
           <p className="text-xs text-muted-foreground px-2 py-2">{emptyMessage}</p>
         ) : (

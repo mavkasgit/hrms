@@ -118,7 +118,7 @@ export function SortableFilterHeader<Field extends string>({
                 Выбрать все
               </button>
             </div>
-            <div className="max-h-52 overflow-y-auto rounded border">
+            <div className="max-h-52 overflow-y-auto rounded-sm border">
               {filteredValues.length === 0 && (
                 <p className="text-xs text-muted-foreground px-2 py-2">Нет значений</p>
               )}

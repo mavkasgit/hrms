@@ -94,7 +94,7 @@ function EmployeeDayGrid({
         </Button>
       </div>
       <div className="overflow-x-auto whitespace-nowrap scrollbar-thin py-1">
-        <div className="inline-flex gap-0.5 border border-muted rounded p-0.5 bg-muted/20">
+        <div className="inline-flex gap-0.5 border border-muted rounded-sm p-0.5 bg-muted/20">
           {datesInRange.map((dateStr) => {
             const dayNum = new Date(dateStr).getDate()
             const dayData = days?.[dateStr]
@@ -113,7 +113,7 @@ function EmployeeDayGrid({
             return (
               <div
                 key={dateStr}
-                className={`w-10 h-12 flex flex-col items-center justify-between border rounded p-0.5 select-none ${
+                className={`w-10 h-12 flex flex-col items-center justify-between border rounded-sm p-0.5 select-none ${
                   isNight
                     ? "bg-[#1e3a8a25] border-[#1e3a8a40] text-primary font-medium"
                     : hours > 0

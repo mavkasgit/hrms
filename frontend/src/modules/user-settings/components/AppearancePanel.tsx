@@ -97,9 +97,9 @@ export function AppearancePanel() {
                 onClick={() => void selectTheme(value)}
                 className={cn(
                   "flex flex-col items-center gap-2 rounded-2xl border px-3 py-4 transition-all",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+                  "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40",
                   active
-                    ? "border-primary bg-primary/5 text-foreground shadow-sm shadow-primary/10"
+                    ? "border-primary bg-primary/5 text-foreground shadow-xs shadow-primary/10"
                     : "border-border/80 bg-background text-muted-foreground hover:border-border hover:bg-accent/50",
                   pending !== null && "opacity-60",
                 )}
@@ -141,9 +141,9 @@ export function AppearancePanel() {
                 onClick={() => void selectLocale(value)}
                 className={cn(
                   "flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-sm font-medium transition-all",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+                  "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40",
                   active
-                    ? "border-primary bg-primary/5 text-foreground shadow-sm shadow-primary/10"
+                    ? "border-primary bg-primary/5 text-foreground shadow-xs shadow-primary/10"
                     : "border-border/80 bg-background text-muted-foreground hover:border-border hover:bg-accent/50",
                   pending !== null && "opacity-60",
                 )}

@@ -67,7 +67,7 @@ export function EmployeeDismissalDialog({ open, onOpenChange, employeeId, name }
               type="checkbox"
               checked={confirmed}
               onChange={(e) => setConfirmed(e.target.checked)}
-              className="rounded border-gray-300"
+              className="rounded-sm border-gray-300"
             />
             Подтверждаю увольнение
           </label>

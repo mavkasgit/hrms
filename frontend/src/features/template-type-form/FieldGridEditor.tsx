@@ -93,7 +93,7 @@ export function FieldGridEditor({ fields, onChange, templateVariables, readOnly 
             key={idx}
             className={`flex items-start gap-2 rounded-lg border-2 p-2 transition-all ${
               isEditing
-                ? "border-primary bg-primary/5 shadow-sm"
+                ? "border-primary bg-primary/5 shadow-xs"
                 : field.enabled === false
                   ? "border-dashed border-muted/40 bg-muted/10 opacity-50"
                   : "border-border bg-background"
@@ -114,7 +114,7 @@ export function FieldGridEditor({ fields, onChange, templateVariables, readOnly 
                       options={templateVariables}
                       placeholder="—"
                     />
-                    <div className="h-7 text-xs px-2 border rounded bg-muted/30 flex items-center font-mono text-muted-foreground">
+                    <div className="h-7 text-xs px-2 border rounded-sm bg-muted/30 flex items-center font-mono text-muted-foreground">
                       {field.key ? "{" + field.key + "}" : "—"}
                     </div>
                   </div>
@@ -172,7 +172,7 @@ export function FieldGridEditor({ fields, onChange, templateVariables, readOnly 
                     </span>
                   )}
                   <div className="flex items-center gap-1 mt-0.5">
-                    <span className={`text-[10px] px-1 rounded font-mono ${typeColors[field.type] || "bg-gray-100 text-gray-700"}`}>
+                    <span className={`text-[10px] px-1 rounded-sm font-mono ${typeColors[field.type] || "bg-gray-100 text-gray-700"}`}>
                       {field.type}
                     </span>
                     {field.key && (
@@ -204,7 +204,7 @@ export function FieldGridEditor({ fields, onChange, templateVariables, readOnly 
                     </button>
                     {/* Enabled toggle */}
                     <button
-                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10px] font-medium transition-colors ${
                         field.enabled === false
                           ? "bg-muted text-muted-foreground hover:bg-muted/80"
                           : "bg-green-100 text-green-700 hover:bg-green-200"

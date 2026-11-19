@@ -428,7 +428,7 @@ export function TimesheetDayCell({
       data-employee-id={rowData.id}
       data-divergence={hasDivergence ? "true" : undefined}
       data-order-changed={hasOrderChanged ? "true" : undefined}
-      className={`relative w-full h-full flex items-center justify-center text-[11px] leading-none select-none outline-none ${color} ${
+      className={`relative w-full h-full flex items-center justify-center text-[11px] leading-none select-none outline-hidden ${color} ${
         columnData.isHoliday
           ? "text-red-900 dark:text-red-100"
           : columnData.isWeekend

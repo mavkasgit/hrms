@@ -255,7 +255,7 @@ export function LoginPage() {
                 onChange={(e) => setBreakGlassPassword(e.target.value)}
                 placeholder="Пароль аварийного доступа"
                 autoComplete="current-password"
-                className="block w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition-all duration-200 hover:border-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 placeholder:text-slate-400"
+                className="block w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-xs outline-hidden transition-all duration-200 hover:border-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 placeholder:text-slate-400"
               />
             </div>
 

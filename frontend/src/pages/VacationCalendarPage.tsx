@@ -450,10 +450,10 @@ export function VacationCalendarPage() {
                         >
                           <div className="flex items-center gap-1.5">
                             {row.department_icon
-                              ? renderIcon(row.department_icon, "h-3.5 w-3.5 flex-shrink-0", { color: row.department_color || "#64748b" })
+                              ? renderIcon(row.department_icon, "h-3.5 w-3.5 shrink-0", { color: row.department_color || "#64748b" })
                               : row.department_color && (
                                   <span
-                                    className="inline-block h-2.5 w-2.5 rounded-full flex-shrink-0"
+                                    className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
                                     style={{ backgroundColor: row.department_color }}
                                   />
                                 )}
@@ -465,7 +465,7 @@ export function VacationCalendarPage() {
                             {row.tags.map((t) => (
                               <span
                                 key={t.id}
-                                className="inline-block h-5 w-5 rounded-full flex-shrink-0"
+                                className="inline-block h-5 w-5 rounded-full shrink-0"
                                 style={{
                                   backgroundColor: t.color || "#94a3b8",
                                 }}

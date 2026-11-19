@@ -117,7 +117,7 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
               <button
                 key={opt.label}
                 type="button"
-                className="text-xs px-2 py-0.5 rounded border border-input bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                className="text-xs px-2 py-0.5 rounded-sm border border-input bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
                 onClick={() => {
                   if (baseDate) {
                     const result = opt.years
@@ -160,7 +160,7 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
                     if (result) onChange(field.key, result)
                   }
                 }}
-                className="w-12 h-7 text-xs rounded border border-input bg-background px-1 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="w-12 h-7 text-xs rounded-sm border border-input bg-background px-1 text-center focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
               />
             </div>
           </div>
@@ -182,7 +182,7 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
           {field.required && <span className="text-red-500 ml-0.5">*</span>}
         </label>
         <textarea
-          className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-0 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 mt-1"
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-0 placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 mt-1"
           placeholder={field.label}
           value={displayValue}
           onChange={(e) => onChange(field.key, e.target.value)}
@@ -222,7 +222,7 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
             <button
               key={opt.label}
               type="button"
-              className="text-xs px-2 py-0.5 rounded border border-input bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              className="text-xs px-2 py-0.5 rounded-sm border border-input bg-background hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
               onClick={() => handleSetYears(opt.years ?? opt.months ?? 0)}
             >
               {opt.label}
@@ -246,7 +246,7 @@ export function FieldRenderer({ field, value, error, onChange, extraFields, base
                 }
               }
             }}
-            className="w-12 h-7 text-xs rounded border border-input bg-background px-1 text-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="w-12 h-7 text-xs rounded-sm border border-input bg-background px-1 text-center focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
           />
         </div>
         {error && <p className="text-xs text-red-500 mt-1">{error}</p>}

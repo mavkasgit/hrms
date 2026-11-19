@@ -66,7 +66,7 @@ function EmployeeRowInline({
     <div className={`flex items-center gap-2 py-1 px-2 text-sm rounded-md transition-colors ${
       highlight ? "bg-yellow-500/10" : "hover:bg-accent/30"
     } group/emp`}>
-      <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 flex-shrink-0" />
+      <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
       <span className="truncate flex-1">{emp.name}</span>
       <TagPicker
         tags={allTags}
@@ -77,7 +77,7 @@ function EmployeeRowInline({
         disabled={disabled}
       />
       {emp.department && (
-        <Badge variant="secondary" className="text-[10px] flex-shrink-0">
+        <Badge variant="secondary" className="text-[10px] shrink-0">
           {emp.department}
         </Badge>
       )}
@@ -146,7 +146,7 @@ function PositionTreeNode({
             e.stopPropagation()
             if (employees.length > 0) toggleExpand()
           }}
-          className={`h-5 w-5 flex items-center justify-center text-muted-foreground rounded-sm transition-transform flex-shrink-0 ${
+          className={`h-5 w-5 flex items-center justify-center text-muted-foreground rounded-xs transition-transform shrink-0 ${
             employees.length > 0 ? "hover:bg-accent" : ""
           }`}
         >
@@ -162,7 +162,7 @@ function PositionTreeNode({
         </button>
 
         <span
-          className="h-4 w-4 flex-shrink-0 text-muted-foreground"
+          className="h-4 w-4 shrink-0 text-muted-foreground"
           style={{ color: position.color ?? undefined }}
         >
           {position.icon
@@ -176,7 +176,7 @@ function PositionTreeNode({
               e.stopPropagation()
               toggleExpand()
             }}
-            className={`flex items-center gap-0.5 text-xs rounded px-1 py-0.5 transition-colors flex-shrink-0 mr-1 ${
+            className={`flex items-center gap-0.5 text-xs rounded-sm px-1 py-0.5 transition-colors shrink-0 mr-1 ${
               showEmployees
                 ? "bg-primary/10 text-primary font-medium"
                 : "text-muted-foreground hover:bg-accent"
@@ -189,20 +189,20 @@ function PositionTreeNode({
 
         <span
           className={`font-medium text-sm truncate flex-1 min-w-0 ${
-            positionNameMatch ? "bg-yellow-500/20 rounded px-1" : ""
+            positionNameMatch ? "bg-yellow-500/20 rounded-sm px-1" : ""
           }`}
         >
           {position.name}
         </span>
 
         {employees.length === 0 && (
-          <span className="text-[10px] text-muted-foreground/50 w-10 text-right flex-shrink-0">
+          <span className="text-[10px] text-muted-foreground/50 w-10 text-right shrink-0">
             пусто
           </span>
         )}
 
         {searchQuery && filteredEmployees.length === 0 && employees.length > 0 && (
-          <span className="text-[10px] text-muted-foreground/40 w-10 text-right flex-shrink-0">
+          <span className="text-[10px] text-muted-foreground/40 w-10 text-right shrink-0">
             0 совп.
           </span>
         )}
@@ -447,14 +447,14 @@ export function PositionsTab() {
             />
           </div>
           {searchQuery && totalMatches > 0 && (
-            <span className="text-xs text-muted-foreground flex-shrink-0">
+            <span className="text-xs text-muted-foreground shrink-0">
               {totalMatches} совп.
             </span>
           )}
           <Button
             variant="outline"
             size="sm"
-            className="h-9 text-xs flex-shrink-0 min-w-[100px]"
+            className="h-9 text-xs shrink-0 min-w-[100px]"
             onClick={toggleAll}
           >
             {allExpanded ? (

@@ -61,7 +61,7 @@ function TagChip({
       onClick={() => !isViewer && onEdit(tag)}
     >
       <div
-        className="h-2 w-2 rounded-full flex-shrink-0"
+        className="h-2 w-2 rounded-full shrink-0"
         style={{ backgroundColor: color }}
       />
       <span className="text-sm truncate flex-1 min-w-0">{tag.name}</span>

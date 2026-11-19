@@ -50,7 +50,7 @@ function ColorPicker({
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="size-10 shrink-0 rounded-md border shadow-sm cursor-pointer transition-transform hover:scale-105 active:scale-95"
+              className="size-10 shrink-0 rounded-md border shadow-xs cursor-pointer transition-transform hover:scale-105 active:scale-95"
               style={{ backgroundColor: value }}
             />
           </PopoverTrigger>
@@ -100,7 +100,7 @@ function ColorPicker({
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="size-8 shrink-0 rounded-md border shadow-sm cursor-pointer transition-transform hover:scale-105 active:scale-95"
+              className="size-8 shrink-0 rounded-md border shadow-xs cursor-pointer transition-transform hover:scale-105 active:scale-95"
               style={{ backgroundColor: value }}
             />
           </PopoverTrigger>

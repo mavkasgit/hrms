@@ -107,7 +107,7 @@ export function ImportVacationPlansModal({
   }
 
   const renderPreviewTable = (data: VacationPlanImportResult) => (
-    <div className="border rounded-lg overflow-hidden flex-shrink-0">
+    <div className="border rounded-lg overflow-hidden shrink-0">
       <div className="max-h-[260px] overflow-y-auto">
         <table className="w-full text-xs">
           <thead className="bg-muted/50 sticky top-0">
@@ -131,7 +131,7 @@ export function ImportVacationPlansModal({
                       {monthEntries.map(([month, value]) => (
                         <span
                           key={month}
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 text-[10px] font-medium"
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-sky-100 text-sky-700 text-[10px] font-medium"
                         >
                           {month}: {value}
                         </span>
@@ -140,12 +140,12 @@ export function ImportVacationPlansModal({
                   </td>
                   <td className="px-3 py-1.5 text-center">
                     {emp.is_update ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-medium" title="Все предыдущие записи за год будут удалены">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-amber-50 text-amber-700 text-[10px] font-medium" title="Все предыдущие записи за год будут удалены">
                         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                         Замена
                       </span>
                     ) : (
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-50 text-green-700 text-[10px] font-medium">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm bg-green-50 text-green-700 text-[10px] font-medium">
                         Новый
                       </span>
                     )}
@@ -174,7 +174,7 @@ export function ImportVacationPlansModal({
             {/* Блок скачивания шаблона */}
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
-                <Download className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <Download className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-gray-900">
                     Скачайте шаблон для заполнения
@@ -253,7 +253,7 @@ export function ImportVacationPlansModal({
         {step === "preview" && preview && (
           <div className="flex flex-col gap-4 overflow-hidden">
             {/* Статистика — компактные бейджи */}
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                 Будет создано: {preview.created}
@@ -272,7 +272,7 @@ export function ImportVacationPlansModal({
 
             {/* Предупреждение о замене */}
             {preview.processed?.some((e) => e.is_update) && (
-              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 flex-shrink-0">
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 shrink-0">
                 <svg className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                 <p className="text-xs text-amber-800">
                   <span className="font-semibold">Внимание:</span> для сотрудников со статусом «Замена» все предыдущие записи графика отпусков за {year} год будут удалены и заменены данными из файла.
@@ -284,7 +284,7 @@ export function ImportVacationPlansModal({
 
             {/* Не найденные в базе (с данными по месяцам) */}
             {preview.not_found && preview.not_found.length > 0 && (
-              <div className="border border-red-200 rounded-lg p-3 bg-red-50/50 flex-shrink-0">
+              <div className="border border-red-200 rounded-lg p-3 bg-red-50/50 shrink-0">
                 <p className="text-xs font-medium text-red-700 mb-2">
                   Не найдены в базе и будут пропущены:
                 </p>
@@ -309,7 +309,7 @@ export function ImportVacationPlansModal({
 
             {/* Пропущенные (пустые строки) */}
             {preview.skipped_empty && preview.skipped_empty.length > 0 && (
-              <div className="border border-amber-200 rounded-lg p-3 bg-amber-50/50 flex-shrink-0">
+              <div className="border border-amber-200 rounded-lg p-3 bg-amber-50/50 shrink-0">
                 <p className="text-xs font-medium text-amber-700 mb-2">
                   Пропущены (не заполнены месяцы отпуска):
                 </p>
@@ -324,7 +324,7 @@ export function ImportVacationPlansModal({
               </div>
             )}
 
-            <div className="flex justify-end gap-2 flex-shrink-0">
+            <div className="flex justify-end gap-2 shrink-0">
               <Button variant="outline" onClick={handleClose}>
                 Отмена
               </Button>

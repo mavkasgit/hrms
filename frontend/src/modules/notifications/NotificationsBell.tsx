@@ -152,7 +152,7 @@ export function NotificationsBell({
                       /* закрытие — best-effort; ошибка не роняет список */
                     })
                   }}
-                  className="flex-none rounded p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground transition-opacity"
+                  className="flex-none rounded-sm p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-foreground transition-opacity"
                   title="Закрыть уведомление"
                 >
                   <X className="h-3.5 w-3.5" />

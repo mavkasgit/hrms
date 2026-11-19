@@ -702,7 +702,7 @@ export function BackupsPage() {
       </div>
 
       {activeBackupJob && (
-        <div className="max-w-[760px] overflow-hidden rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-emerald-50 p-4 text-slate-900 shadow-sm">
+        <div className="max-w-[760px] overflow-hidden rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-emerald-50 p-4 text-slate-900 shadow-xs">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-sm font-medium">
@@ -752,7 +752,7 @@ export function BackupsPage() {
             className={cn(
               "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
               activeTypeFilter === "all"
-                ? "bg-background text-foreground shadow-sm"
+                ? "bg-background text-foreground shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -764,7 +764,7 @@ export function BackupsPage() {
             className={cn(
               "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
               activeTypeFilter === "monthly"
-                ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400 shadow-sm"
+                ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400 shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -776,7 +776,7 @@ export function BackupsPage() {
             className={cn(
               "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
               activeTypeFilter === "weekly"
-                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm"
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -788,7 +788,7 @@ export function BackupsPage() {
             className={cn(
               "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
               activeTypeFilter === "daily"
-                ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 shadow-sm"
+                ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -800,7 +800,7 @@ export function BackupsPage() {
             className={cn(
               "px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer",
               activeTypeFilter === "manual"
-                ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 shadow-sm"
+                ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 shadow-xs"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -1140,7 +1140,7 @@ export function BackupsPage() {
                             </div>
                           </div>
                           {storage.files > 0 ? (
-                            <div className="max-h-28 overflow-y-auto rounded border bg-background text-xs">
+                            <div className="max-h-28 overflow-y-auto rounded-sm border bg-background text-xs">
                               {(storage.folders || []).filter((folder) => folder.files > 0).map((folder) => (
                                 <div key={folder.path} className="grid grid-cols-[1fr_auto_auto] gap-2 border-b last:border-b-0 px-2 py-1">
                                   <span className="font-mono truncate" title={folder.path}>{folder.path}</span>
@@ -1150,7 +1150,7 @@ export function BackupsPage() {
                               ))}
                             </div>
                           ) : (
-                            <div className="rounded border bg-background px-2 py-1 text-xs text-muted-foreground">
+                            <div className="rounded-sm border bg-background px-2 py-1 text-xs text-muted-foreground">
                               Файлов нет
                             </div>
                           )}
@@ -1342,7 +1342,7 @@ export function BackupsPage() {
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <p>Будет удалено <strong>{selectedFilenames.size}</strong> бэкапов:</p>
-              <div className="max-h-[200px] overflow-y-auto border rounded p-2 text-xs font-mono space-y-1">
+              <div className="max-h-[200px] overflow-y-auto border rounded-sm p-2 text-xs font-mono space-y-1">
                 {Array.from(selectedFilenames).map((f) => (
                   <div key={f}>{f}</div>
                 ))}
@@ -1395,7 +1395,7 @@ export function BackupsPage() {
                 <p className="text-sm text-muted-foreground">
                   Будет удалено <strong>{olderThanPreview.length}</strong> файлов:
                 </p>
-                <div className="max-h-[200px] overflow-y-auto border rounded p-2 text-xs font-mono space-y-1">
+                <div className="max-h-[200px] overflow-y-auto border rounded-sm p-2 text-xs font-mono space-y-1">
                   {olderThanPreview.map((f) => (
                     <div key={f}>{f}</div>
                   ))}
@@ -1481,7 +1481,7 @@ export function BackupsPage() {
                     checked={autoEnabled}
                     onChange={(e) => setAutoEnabled(e.target.checked)}
                   />
-                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600"></div>
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600"></div>
                 </label>
                 <div className="space-y-0.5">
                   <label htmlFor="modal-auto-enabled" className="text-sm font-medium cursor-pointer">Автозапуск</label>
@@ -1551,7 +1551,7 @@ export function BackupsPage() {
                       checked={remoteEnabled}
                       onChange={(e) => setRemoteEnabled(e.target.checked)}
                     />
-                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600"></div>
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600"></div>
                   </label>
                   <div className="space-y-0.5">
                     <label htmlFor="modal-remote-enabled" className="text-sm font-medium cursor-pointer flex items-center gap-1.5">
@@ -1586,7 +1586,7 @@ export function BackupsPage() {
                       <select
                         value={remoteAuthMode}
                         onChange={(e) => setRemoteAuthMode(e.target.value as "guest" | "credentials")}
-                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs focus:outline-hidden focus:ring-1 focus:ring-ring"
                       >
                         <option value="guest">Гость (без учётной записи)</option>
                         <option value="credentials">Учётная запись</option>
