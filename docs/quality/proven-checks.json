@@ -28,6 +28,20 @@
       "reviewed": "2026-11-20"
     },
     {
+      "step": "registry-check",
+      "violation": "в tools.json версия rumdl 0.0.0 расходится с пином в mise.toml",
+      "apply": [
+        {
+          "replace": {
+            "path": "docs/quality/tools.json",
+            "find": "\"version\": \"0.3.5\"",
+            "replace": "\"version\": \"0.0.0\""
+          }
+        }
+      ],
+      "reviewed": "2026-11-20"
+    },
+    {
       "step": "verify-profile-settings",
       "violation": "новый файл ядра профиля вне манифеста",
       "apply": [

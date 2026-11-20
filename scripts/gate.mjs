@@ -60,6 +60,13 @@ export const STEPS = [
     timeout: 120_000,
   },
   {
+    name: "registry-check",
+    tier: "fast",
+    command: "node scripts/check-registry.mjs",
+    ci: "npm run gate",
+    what: "версия в tools.json ≠ пин, инструмент без места запуска, шаг с инструментом без записи в реестре",
+  },
+  {
     name: "verify-profile-settings",
     tier: "fast",
     command: "python scripts/verify-profile-settings.py verify --strict",
