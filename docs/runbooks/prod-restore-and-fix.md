@@ -34,8 +34,8 @@
 ### Окружение (проверь, не верь вслепую)
 
 - Прод: `docker compose -f infra/compose/docker-compose.prod.yml --env-file .env.prod`,
-  контейнеры `hrms-{postgres,backend,frontend,nginx,onlyoffice}-prod`; web = http://localhost:8081,
-  health = http://localhost:8081/api/health. Креды БД в `.env.prod`; внутрь контейнера postgres ходят
+  контейнеры `hrms-{postgres,backend,frontend,nginx,onlyoffice}-prod`; web = <http://localhost:8081>,
+  health = <http://localhost:8081/api/health>. Креды БД в `.env.prod`; внутрь контейнера postgres ходят
   через unix socket без пароля (`docker exec hrms-postgres-prod psql -U hrms_user -d hrms_prod ...`).
 - Файловое хранилище приложения: bind-mounts `data/{orders,staffing,templates}` → backend `/app/data/*`.
 - Схема — alembic, числовые ревизии (`backend/alembic/versions/NNN_*.py`);
@@ -47,35 +47,44 @@
 ### Шаги
 
 1. **Pre-flight.**
+
    ```powershell
    git fetch; git status -sb        # рабочее дерево должно содержать нужный для деплоя код
    docker ps --filter name=hrms-*-prod   # стек поднят
    Invoke-WebRequest http://localhost:8081/api/health -UseBasicParsing   # ok до начала работ
    ```
+
    Зафиксируй текущий `alembic_version` (это точка сравнения «до»).
 
 2. **Страховочный снапшот БД** (бинарный вывод только через cmd-редирект):
+
    ```powershell
    $ts = Get-Date -Format 'yyyyMMdd_HHmmss'
    $out = "data\backups\pre_deploy_snapshot_$ts.dump"
    cmd /c "docker exec hrms-postgres-prod pg_dump -U hrms_user -d hrms_prod -F c > ""$out"""
    ```
+
    Проверь магию `PGDMP` и размер > 0. Если деплой затрагивает файловое хранилище —
    дополнительно скопируй в сторону соответствующие подкаталоги `data/`.
 
 3. **Деплой кода (образы + рестарт сервисов, БД не трогаем руками).**
+
    ```powershell
    docker compose -f infra/compose/docker-compose.prod.yml --env-file .env.prod build backend frontend
    docker compose -f infra/compose/docker-compose.prod.yml --env-file .env.prod up -d backend frontend
    ```
+
    Рестарт подхватывает новый entrypoint → alembic сам накатит недостающие ревизии.
    Следи за логами: `docker logs hrms-backend-prod --since 5m` — миграции прошли без ошибок,
    uvicorn поднялся. Это штатный путь «подъёма» схемы на живой БД: только вперёд.
 
 4. **Верификация после деплоя.**
    - `/api/health` = ok; корень :8081 = HTTP 200;
+
    - `SELECT version_num FROM alembic_version` == локальному head миграций;
+
    - дымовые счётчики целостности:
+
      ```sql
      SELECT COUNT(*) FROM vacation_periods WHERE remaining_days < 0;                    -- ожидается 0
      SELECT COUNT(*) FROM vacation_period_transactions t WHERE NOT EXISTS
@@ -83,17 +92,20 @@
      SELECT COUNT(*) FROM vacation_period_transactions t WHERE t.reversed_transaction_id IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM vacation_period_transactions r WHERE r.id=t.reversed_transaction_id); -- 0
      ```
+
    Расхождение критичное (ошибка миграции, падение сервиса) → откат: пересобрать образы
    из предыдущего коммита (`git checkout <prev> && build`) и рестарт; схему alembic downgrade
    руками НЕ дёргать без необходимости — сначала оценить фактические ошибки в логах.
 
 5. **Дата-фиксы (если задание их требует; сейчас известен #120).**
+
    ```powershell
    # сухой прогон: кого затронет, балансы ДО
    docker exec -e PYTHONPATH=/app hrms-backend-prod python scripts/recalculate_misattributed_vacations.py *> logs\<script>_dryrun_<ts>.log
    # применение
    docker exec -e PYTHONPATH=/app hrms-backend-prod python scripts/recalculate_misattributed_vacations.py --apply *> logs\<script>_apply_<ts>.log
    ```
+
    Контроль после apply:
    - повтори проверки из шага 4 (минусов нет, FK-сироты нулевые);
    - идемпотентность: полный снимок балансов (`employee|period|used|remaining` во временный файл)
@@ -105,6 +117,7 @@
      отпуска» или «в следующем периоде, если стартовый год закрыт» в отчёт НЕ попадают.
      Флаг означает реальное расхождение с этим правилом (или отсутствие списания);
      данные под него не подгоняй.
+
 6. **Отчёт в `logs/`.**
    Мастер-файл `<target>_report_<ts>.md`: что деплоилось (коммиты), какая схема была/стала,
    статистика дата-фиксов, сверка «до/после», пути к логам; плюс человекочитаемый diff

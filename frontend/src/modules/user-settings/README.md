@@ -102,7 +102,7 @@ const api = createHttpAdapter({
 
 ## Структура
 
-```
+```text
 user-settings/
 ├── index.ts                  — публичный API (импортируйте только отсюда)
 ├── UserSettingsDialog.tsx    — корневой диалог (композиция + dirty-guard)

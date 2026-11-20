@@ -3,8 +3,8 @@
 ## Workspace harness
 
 Этот репозиторий — часть multi-project workspace **VibeCoding**.
-Общая карта, порты и cross-project правила: [`../_harness/AGENTS.md`](../_harness/AGENTS.md)
-и [`../_harness/memory/structure.md`](../_harness/memory/structure.md).
+Общая карта, порты и cross-project правила: [`../harness/AGENTS.md`](../harness/AGENTS.md)
+и [`../harness/memory/structure.md`](../harness/memory/structure.md).
 Локальные правила **этого** файла главнее harness при конфликте.
 
 ---
@@ -51,6 +51,7 @@ utils/         → Утилиты
 ```
 
 **Правила:**
+
 - Роутеры вызывают сервисы, сервисы вызывают репозитории. Никогда не наоборот.
 - Используй async/await для всех операций с БД.
 - Все изменения схемы БД — через Alembic-миграции (`npm run db:makemigrate`).
@@ -69,6 +70,7 @@ modules/       → Переносимые модули (см. ниже)
 ```
 
 **Правила:**
+
 - Слои могут импортировать только из нижестоящих слоёв (shared → entities → features → pages).
 - Стилизация через TailwindCSS.
 - TypeScript strict mode.
@@ -130,6 +132,7 @@ modules/       → Переносимые модули (см. ниже)
 ### Переиндексация
 
 При значительных изменениях структуры проекта выполни:
+
 ```bash
 npx @colbymchenry/codegraph init -i
 ```
@@ -156,6 +159,7 @@ npm run test:e2e:regression  # Полная регрессия (smoke+ui+api+aut
 ```
 
 **Перед запуском e2e-тестов** убедись, что:
+
 1. TEST-окружение поднято (`npm run docker:test:up`).
 2. Или DEV-окружение работает (`npm run dev`).
 
@@ -293,13 +297,14 @@ FRONTEND и DB, стенд падает с 3221225786 (0xC000013A). Свой с�
 
 ## Полезные ссылки
 
-- Backend API Docs: http://localhost:8011/docs (Swagger UI)
-- Frontend Dev: http://localhost:5171
+- Backend API Docs: <http://localhost:8011/docs> (Swagger UI)
+- Frontend Dev: <http://localhost:5171>
 - Playwright Report: `playwright-report/`
 
 ## Ручное тестирование через Chrome DevTools (CDP, порт 9222)
 
-Авторизация в dev-окружении (Authentik UI: http://192.168.100.200:9000 или http://localhost:9000):
+Авторизация в dev-окружении (Authentik UI: <http://192.168.100.200:9000> или <http://localhost:9000>):
+
 - **Логин:** `akadmin`
 - **Пароль:** `akadmin-dev-local`
 

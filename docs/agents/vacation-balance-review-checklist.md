@@ -112,8 +112,8 @@
 
 ## Связанные документы
 
-- [ADR-0011: «Закрытый период»](adr/0011-is-closed-full-balance.md) —
+- [ADR-0011: «Закрытый период»](../adr/0011-is-closed-full-balance.md) —
   классификация периодов по полному остатку.
-- [ADR-0012: auto_use_days только для «Трудовой»](adr/0012-vacation-use-policy.md) —
+- [ADR-0012: auto_use_days только для «Трудовой»](../adr/0012-vacation-use-policy.md) —
   инвариант политики списания.
 - [CONTEXT.md](../../CONTEXT.md) — глоссарий (если есть).

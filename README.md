@@ -106,9 +106,9 @@ npm run dev
 
 | Сервис    | URL                       |
 | --------- | ------------------------- |
-| Frontend  | http://localhost:5171      |
-| Backend   | http://localhost:8011      |
-| API Docs  | http://localhost:8011/docs |
+| Frontend  | <http://localhost:5171>      |
+| Backend   | <http://localhost:8011>      |
+| API Docs  | <http://localhost:8011/docs> |
 
 ### TEST-режим
 
@@ -124,7 +124,7 @@ npm run test:tunnel:up
 
 | Сервис    | URL                  |
 | --------- | -------------------- |
-| Entry     | http://localhost:8080 |
+| Entry     | <http://localhost:8080> |
 
 ### PROD-режим
 
@@ -138,7 +138,7 @@ npm run prod:tunnel:up
 
 | Сервис    | URL                |
 | --------- | ------------------ |
-| Entry     | http://localhost    |
+| Entry     | <http://localhost>    |
 
 ---
 

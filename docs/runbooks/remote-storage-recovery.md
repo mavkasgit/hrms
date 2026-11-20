@@ -52,6 +52,7 @@ HRMS на диске (подсказка: рядом со стеком конт�
 ### Шаги
 
 1. **Pre-flight.**
+
    ```powershell
    git pull                                     # забрать фиксы: маунты compose, BACKUP_STORAGE_DIRS, scripts/rescue_regen_docx.py
    git log --oneline -3                         # убедиться, что фиксы приехали
@@ -59,14 +60,17 @@ HRMS на диске (подсказка: рядом со стеком конт�
    Invoke-WebRequest http://localhost:8081/api/health -UseBasicParsing
    docker exec hrms-postgres-prod psql -U hrms_user -d hrms_prod -c "select count(*) total, count(file_path) with_file from notifications; select count(*) total, count(file_path) with_file from statements;"
    ```
+
    Ожидание: `total = with_file > 0`. Если строк 0 — инцидент другой, стоп и
    разбирайся отдельно.
 
 2. **Подтверди диагноз.**
+
    ```powershell
    docker inspect hrms-backend-prod --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
    docker logs --tail 300 hrms-backend-prod 2>&1 | Select-String 'onlyoffice/config|file_missing|file_not_found'
    ```
+
    Диагноз подтверждён, если маунтов `/app/data/notifications` и
    `/app/data/statements` нет (или они добавлены только что), при этом в логах
    404 на `GET /api/{notifications|statements}/{id}/onlyoffice/config` и
@@ -75,28 +79,37 @@ HRMS на диске (подсказка: рядом со стеком конт�
 3. **Сальвидж (ДО пересоздания контейнеров!).**
    - **Эфемерный слой.** Если backend-контейнер ещё СТАРЫЙ (не пересоздавался
      после инцидента), в его слое могут лежать живые файлы:
+
      ```powershell
      docker exec hrms-backend-prod ls -la /app/data/notifications /app/data/statements
      ```
+
      Файлы, имена которых совпадают с `file_path` из БД, вытащи на хост:
+
      ```powershell
      docker cp hrms-backend-prod:/app/data/notifications/. ./data/notifications/
      docker cp hrms-backend-prod:/app/data/statements/. ./data/statements/
      ```
+
      (Если контейнер уже пересоздавался — там только мусор, впечённый в образ
      из `backend/data/`; такое НЕ копируй: имена могут коллидировать с БД.
      Проверь совпадение с `file_path` по БД перед копированием.)
+
    - **Печатные PDF.** `data/orders/.print_cache/{notification,statement}-*.pdf`
      — PDF-копии напечатанных документов (orders примонтирован и не гибнет).
      Скопируй в `data/rescue_print_cache_<ts>/` + `README.md`-манифест
      (`id;number;title;date` по каждой строке из БД).
+
 4. **Страховочный снапшот БД.**
+
    ```powershell
    $ts = Get-Date -Format 'yyyyMMdd_HHmmss'
    $out = "data\backups\pre_rebuild_snapshot_$ts.dump"
    cmd /c "docker exec hrms-postgres-prod pg_dump -U hrms_user -d hrms_prod -F c > ""$out"""
    ```
+
    Проверь: размер > 0, магия первых 5 байт = `PGDMP`.
+
 5. **Фикс окружения.** После `git pull` в `infra/compose/docker-compose.prod.yml`
    у backend должны быть volumes `../../data/notifications:/app/data/notifications`
    и `../../data/statements:/app/data/statements` (фикс в репо). Если на сервере
@@ -105,32 +118,42 @@ HRMS на диске (подсказка: рядом со стеком конт�
    Если бэкенд-код ещё без фикса `BACKUP_STORAGE_DIRS` в
    `backend/app/api/backups.py` (orders, notifications, statements, staffing,
    templates, personal) — значит pull не приехал, разберись прежде чем продолжать.
+
 6. **Пересоздай backend (и frontend при свежем коде).**
+
    ```powershell
    docker compose -f infra/compose/docker-compose.prod.yml --env-file .env.prod build backend frontend
    docker compose -f infra/compose/docker-compose.prod.yml --env-file .env.prod up -d backend frontend
    ```
+
    Дождись `/api/health` = 200 и чистого старта в `docker logs hrms-backend-prod`
    (alembic может накатывать ревизии — это норма, только вперёд).
+
 7. **Регенерация docx из шаблонов + БД** (идемпотентно, файлы по `file_path`
    из БД, существующие не трогает):
+
    ```powershell
    docker cp scripts/rescue_regen_docx.py hrms-backend-prod:/tmp/rescue_regen.py
    docker exec -e PYTHONPATH=/app hrms-backend-prod python /tmp/rescue_regen.py
    ```
+
    Первый прогон — `REGEN` для отсутствующих файлов; второй (контроль) — все
    `EXISTS`. Скрипт воспроизводит пайплайн `create_draft` (тип/сотрудник →
    замены → шаблон типа `template__notification__*` / `template__statement__*`
    → `render_docx_placeholders` → docx). Оговорка: регенерированный файл —
    «шаблонное» состояние документа; ручные правки, внесённые в OnlyOffice
    поверх шаблона, восстановить нельзя (их нет ни в БД, ни в бэкапах).
+
 8. **Верификация.**
+
    ```powershell
    # все id из БД: каждый /api/notifications/{id}/download и /api/statements/{id}/download => 200
    # /api/health => 200
    docker logs --tail 100 hrms-backend-prod 2>&1 | Select-String 'onlyoffice/(config|file)'   # 200 после кликов в UI
    ```
+
    В UI: «Просмотр» (OnlyOffice), «Скачать», «Печать» на произвольных строках.
+
 9. **Отчёт** в `logs/storage_recovery_report_<ts>.md`: подтверждённый диагноз,
    спасённое (эфемерка/print_cache — списки файлов), регенерированное
    (id → файл → шаблон), размер дампа, результат верификации, оговорка про

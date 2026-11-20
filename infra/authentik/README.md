@@ -17,12 +17,12 @@ cd C:\Users\user\VibeCoding\authentik
 docker compose up -d
 ```
 
-UI: **http://localhost:9000** (HTTPS: `9443`).
+UI: **<http://localhost:9000>** (HTTPS: `9443`).
 
 ## Документация (в sibling-папке)
 
-- [`README.md`](../../../authentik/README.md) — compose, ports, secrets
-- [`BLUEPRINT.md`](../../../authentik/BLUEPRINT.md) — OIDC apps `hrms` / `ktm2000`
+- `../../../authentik/README.md` — compose, ports, secrets
+- `../../../authentik/BLUEPRINT.md` — OIDC apps `hrms` / `ktm2000`
 
 Приложения настраивают issuer:
 
