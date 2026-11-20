@@ -1,0 +1,15 @@
+#!/bin/sh
+# Commit-msg: Conventional Commits из commitlint.config.mjs.
+# Это ускоритель обратной связи, а не источник правды: правила — AGENTS.md,
+# гейт — npm run gate. Обход осознанно: git commit --no-verify.
+#
+# Merge-коммиты не проверяются: локальный `git merge` пишет «Merge branch …»,
+# а авто-мерж не должен упираться в формат сообщения. Хук включается
+# `npm run setup` / `npm run hooks:install` (core.hooksPath = .githooks).
+set -e
+
+if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+  exit 0
+fi
+
+exec mise exec -- commitlint --edit "$1"

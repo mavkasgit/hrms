@@ -97,6 +97,7 @@ Hardcoded JWT / `extraHTTPHeaders` Authorization — **удалены** (E4).
 **POM login:** `e2e/pages/LoginPage.ts` — break-glass форма + SSO CTA; используется в `setup/auth.setup.ts`, `auth/login.spec.ts`, `auth/oidc-login.spec.ts`.
 
 **P0 smoke/api:**
+
 - smoke: `e2e/smoke/*.spec.ts` (titles contain `@smoke`)
 - api: `e2e/api/*.spec.ts` (titles contain `@api`)
 - UI dismiss «Уволить» → flow приказа, не soft-dismiss; soft cycle — `apiOps.dismiss/restore`

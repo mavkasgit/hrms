@@ -43,6 +43,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+# mise: кэш и установленные тулчейны не в git, но sidecar lock'и npm-бэкенда — в git.
+# Без них CI падает: `dependency sidecar .mise/locks/npm-<pkg>/<ver>: No such file`.
+.mise/*
+!.mise/locks/
 dist/
 dist-ssr/
 *.local

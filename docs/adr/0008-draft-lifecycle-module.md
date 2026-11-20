@@ -23,7 +23,7 @@ commit БД-вида — флип `is_draft`), а `finalize` у БД-видов 
 Один deep-модуль черновика с **общим seam на уровне application protocol,
 а не на уровне domain state machine**:
 
-```
+```text
 DraftAdapter                    # общий protocol
     list(actor) → DraftSummary[]
     commit(actor, ref)

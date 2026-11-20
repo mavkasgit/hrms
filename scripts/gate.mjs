@@ -17,6 +17,7 @@
 // Гейт ничего не правит: никаких --fix/--write/stage_fixed здесь нет и не будет.
 
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -48,6 +49,22 @@ export const STEPS = [
     command: "node scripts/check-docs.mjs",
     ci: "test-backend.yml",
     what: "шаг в STEPS без строки в docs/quality/gates.md или строка без шага",
+  },
+  {
+    name: "docs-lint",
+    tier: "fast",
+    command: "rumdl check .",
+    tool: "rumdl",
+    ci: "npm run gate",
+    what: "структурные дефекты Markdown (fences, списки, заголовки) и битые относительные ссылки",
+    timeout: 120_000,
+  },
+  {
+    name: "registry-check",
+    tier: "fast",
+    command: "node scripts/check-registry.mjs",
+    ci: "npm run gate",
+    what: "версия в tools.json ≠ пин, инструмент без места запуска, шаг с инструментом без записи в реестре",
   },
   {
     name: "verify-profile-settings",
@@ -200,6 +217,22 @@ function resolvePython() {
 
 const PYTHON = resolvePython();
 
+/**
+ * AGENTS.md: единственный интерпретатор проекта — `backend/.venv`. Без этого
+ * шаги берут первый `python` из PATH, а им может оказаться venv соседнего
+ * проекта: `npm run gate` краснел на `No module named 'asyncpg'`, хотя в
+ * проектном venv пакет есть. Префикс PATH действует только на дочерние шаги.
+ */
+const VENV_BIN = path.join(ROOT, "backend", ".venv", IS_WIN ? "Scripts" : "bin");
+
+function stepEnv(step) {
+  const env = { ...process.env, ...step.env };
+  if (fs.existsSync(VENV_BIN)) {
+    env.PATH = `${VENV_BIN}${path.delimiter}${env.PATH ?? env.Path ?? ""}`;
+  }
+  return env;
+}
+
 function toolBinary(tool) {
   return tool === "python" ? PYTHON : tool;
 }
@@ -258,7 +291,7 @@ async function runStep(step) {
   const startedAt = Date.now();
   const result = spawnSync(commandFor(step), {
     cwd: step.cwd ? path.join(ROOT, step.cwd) : ROOT,
-    env: { ...process.env, ...step.env },
+    env: stepEnv(step),
     encoding: "utf8",
     shell: true,
     windowsHide: true,

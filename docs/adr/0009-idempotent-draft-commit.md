@@ -35,7 +35,7 @@ commit, но не durable: если процесс умер между INSERT Or
 
 Порядок commit:
 
-```
+```text
 SELECT Order(source_draft_id)         # durable proof первичен
    ├─ found → idempotent cleanup → return existing Order
    └─ absent → claim (оптимизация)
@@ -93,7 +93,8 @@ policy может эволюционировать без миграции ст�
 
 `.commit.lock` давал только concurrency-координацию, но не durable-связь
 между успешным domain operation и потреблением черновика. `source_draft_id UNIQUE`
-+ транзакция + idempotent cleanup дают восстановимость из любого краха по
+
+- транзакция + idempotent cleanup дают восстановимость из любого краха по
 одному только durable DB-состоянию.
 
 ## Последствия

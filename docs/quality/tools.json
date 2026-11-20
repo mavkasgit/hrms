@@ -1,0 +1,50 @@
+{
+  "reviewed": "2026-11-20",
+  "tools": [
+    {
+      "name": "rumdl",
+      "version": "0.3.5",
+      "pinned_in": "mise.toml",
+      "runs_in": ["docs-lint"],
+      "blocking": true,
+      "reviewed": "2026-11-20",
+      "source": "https://rumdl.dev/",
+      "why": "markdown-линтер шага docs-lint: fences без языка, списки, заголовки и битые относительные ссылки в docs/, README и AGENTS.md",
+      "limitations": "Внешние ссылки не проверяются: в fast нет сети. MD013 (длина строки) выключен — перенос строк это работа форматтера, а не гейта. Планы и спеки docs/superpowers/ исключены как исторические артефакты; шаблон PR — узкое исключение MD041; README переносимых модулей — MD040 до парного изменения с ktm2000."
+    },
+    {
+      "name": "commitlint",
+      "version": "21.2.4",
+      "pinned_in": "mise.toml",
+      "pinned_as": "npm:@commitlint/cli",
+      "runs_in": ["commit-msg"],
+      "blocking": true,
+      "reviewed": "2026-11-20",
+      "source": "https://commitlint.js.org/",
+      "why": "Conventional Commits в хуке commit-msg: формат сообщения проверяется до появления коммита, а не на review",
+      "limitations": "Хук обходится git commit --no-verify и не работает для авто-мержей GitHub: источник правды — review, хук только ускоряет обратную связь. Merge-коммиты пропускаются по MERGE_HEAD."
+    },
+    {
+      "name": "python",
+      "version": "3.14.10",
+      "pinned_in": "mise.toml",
+      "runs_in": ["verify-profile-settings", "backend-tests"],
+      "blocking": true,
+      "reviewed": "2026-11-20",
+      "source": "https://www.python.org/",
+      "why": "интерпретатор backend и его проверок: verify-profile-settings и pytest; шаги берут Python из backend/.venv, а не первый из PATH",
+      "limitations": "Версия пинуется для создания backend/.venv на чистой машине; существующий venv не пересоздаётся, поэтому фактическая версия в нём может отличаться."
+    },
+    {
+      "name": "node",
+      "version": "26.13.0",
+      "pinned_in": "mise.toml",
+      "runs_in": ["docs-sync", "registry-check", "frontend-types", "frontend-build", "frontend-unit"],
+      "blocking": true,
+      "reviewed": "2026-11-20",
+      "source": "https://nodejs.org/",
+      "why": "рантайм гейта и внутренних проверок: gate.mjs, check-docs.mjs, check-registry.mjs, prove-checks.mjs",
+      "limitations": "npm наследует версию от node и отдельно не пинуется; зависимости приложения живут в package.json."
+    }
+  ]
+}

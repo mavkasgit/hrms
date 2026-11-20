@@ -31,6 +31,8 @@
 | Шаг | Ярус | Что ловит | CI | Блокирует | Доказано падает |
 |-----|------|-----------|----|-----------|------------------|
 | `docs-sync` | fast | шаг в коде без строки в этой карте и наоборот, шаг без доказательства | test-backend.yml | да | `proven-checks.json#docs-sync` |
+| `docs-lint` | fast | структурные дефекты Markdown (fences, списки, заголовки) и битые относительные ссылки | npm run gate | да | `proven-checks.json#docs-lint` |
+| `registry-check` | fast | версия в `tools.json` ≠ пин, инструмент без места запуска, шаг с инструментом без записи в реестре | npm run gate | да | `proven-checks.json#registry-check` |
 | `verify-profile-settings` | fast | манифест версии ядра профиля разошёлся с кодом | test-backend.yml | да | `proven-checks.json#verify-profile-settings` |
 | `reactuse-diff` | fast | новые ручные `matchMedia`/clipboard/observers вместо ReactUse | npm run gate | да | `proven-checks.json#reactuse-diff` |
 | `modern-web` | fast | новые legacy-паттерны веб-платформы сверх `docs/quality/modern-web-baseline.json` | npm run gate | да; `missing` (сканер недоступен) — только с `--strict` | `proven-checks.json#modern-web` |

@@ -15,6 +15,12 @@ url = "https://nodejs.org/dist/v26.13.0/node-v26.13.0-linux-x64.tar.gz"
 checksum = "sha256:dcc60d59a0746999f99064a01c020445d54d84228c691cdbf25b49ac3b59150a"
 url = "https://nodejs.org/dist/v26.13.0/node-v26.13.0-win-x64.zip"
 
+[[tools."npm:@commitlint/cli"]]
+version = "21.2.4"
+aube = { path = ".mise/locks/npm-commitlint-cli/21.2.4", digest = "sha256:ddf2b1c71b28573a48264663b6c1a50b2d5885c6500158b0220c697cbeb8e4f4" }
+backend = "npm:@commitlint/cli"
+specifiers = ["21.2.4"]
+
 [[tools.python]]
 version = "3.14.10"
 backend = "core:python"
@@ -28,4 +34,21 @@ provenance = "github-attestations"
 [tools.python."platforms.windows-x64"]
 checksum = "sha256:c1876a9795d3a94ee49a1499a69cd91e26ca3e2829593f93fa6e4db90d05402b"
 url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.14.10+20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
+provenance = "github-attestations"
+
+[[tools.rumdl]]
+version = "0.3.5"
+backend = "aqua:rvben/rumdl"
+specifiers = ["0.3.5"]
+
+[tools.rumdl."platforms.linux-x64"]
+checksum = "sha256:1f7f569ce1978ec1ed21528234d01c9bd2041ed7265d2677f4d845177114f452"
+url = "https://github.com/rvben/rumdl/releases/download/v0.3.5/rumdl-v0.3.5-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/764100348"
+provenance = "github-attestations"
+
+[tools.rumdl."platforms.windows-x64"]
+checksum = "sha256:ff40c7b64f8c67e5a39d5734837d2fc9984c0da436e4cc79bb72a08cea413b2d"
+url = "https://github.com/rvben/rumdl/releases/download/v0.3.5/rumdl-v0.3.5-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/764100352"
 provenance = "github-attestations"

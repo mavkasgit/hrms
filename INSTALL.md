@@ -26,6 +26,7 @@ npm run dev
 ```
 
 Точки доступа:
+
 - Frontend: `http://localhost:5171`
 - Backend API: `http://localhost:8011`
 - OnlyOffice: `http://localhost:8085`
@@ -43,6 +44,7 @@ npm run test:tunnel:up
 ```
 
 Точка доступа:
+
 - Nginx entrypoint: `http://localhost:8080`
 
 ## 5. PROD (Docker full stack)
@@ -58,6 +60,7 @@ npm run prod:tunnel:up
 ```
 
 Точка доступа:
+
 - Nginx entrypoint: `http://localhost` (и `https://localhost`, если настроен TLS)
 
 ## 6. Остановка
@@ -75,6 +78,6 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 
 Ожидаемо:
+
 - `hrms-*-test` и `hrms-*-prod` существуют одновременно без пересечения портов
 - test слушает `8080`, prod слушает `80/443`
-

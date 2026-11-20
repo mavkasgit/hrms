@@ -20,6 +20,7 @@
 ## Окружения
 
 Проект поддерживает три основных окружения:
+
 1. **dev**: База данных PostgreSQL и OnlyOffice работают в Docker, бэкенд и фронтенд запускаются локально.
 2. **test**: Полный стек запускается в контейнерах. Порт входа (через Nginx): `8080`.
 3. **prod**: Полный стек запускается в контейнерах. Порт входа (через Nginx): `8081` (в автономном режиме) или `80/443` (через `shared_gateway`).
@@ -27,6 +28,7 @@
 ## Сборка и деплой
 
 ### Сборка и запуск Production окружения
+
 ```bash
 # 1. Загрузите файлы проекта на сервер
 # 2. Перейдите в корень проекта
@@ -40,6 +42,7 @@ npm run docker:prod:up
 ```
 
 ### Остановка стека
+
 ```bash
 npm run docker:prod:down
 ```
@@ -47,6 +50,7 @@ npm run docker:prod:down
 ## Контракт переменных окружения
 
 Специфические переменные для HRMS (настраиваются в `.env.prod` / `.env.dev`):
+
 - `DATABASE_URL`: Строка подключения к PostgreSQL (например, `postgresql+asyncpg://user:pass@localhost:5432/db`).
 - `ONLYOFFICE_PUBLIC_URL`: Публичный URL Document Server для браузеров (обычно `http://<domain>/onlyoffice` или `http://localhost:8085`).
 - `ONLYOFFICE_INTERNAL_URL`: Внутренний URL для общения бэкенда с OnlyOffice (`http://nginx/onlyoffice` или `http://localhost:8085`).

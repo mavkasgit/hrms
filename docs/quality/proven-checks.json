@@ -12,7 +12,34 @@
           }
         }
       ],
-      "reviewed": "2026-11-18"
+      "reviewed": "2026-11-20"
+    },
+    {
+      "step": "docs-lint",
+      "violation": "новый Markdown-файл с fence без языка: rumdl отдаёт MD040 и exit 1",
+      "apply": [
+        {
+          "write": {
+            "path": "PROOF-docs-lint.md",
+            "content": "# proof\n\nТекст.\n\n```\nбез языка\n```\n"
+          }
+        }
+      ],
+      "reviewed": "2026-11-20"
+    },
+    {
+      "step": "registry-check",
+      "violation": "в tools.json версия rumdl 0.0.0 расходится с пином в mise.toml",
+      "apply": [
+        {
+          "replace": {
+            "path": "docs/quality/tools.json",
+            "find": "\"version\": \"0.3.5\"",
+            "replace": "\"version\": \"0.0.0\""
+          }
+        }
+      ],
+      "reviewed": "2026-11-20"
     },
     {
       "step": "verify-profile-settings",
@@ -25,7 +52,7 @@
           }
         }
       ],
-      "reviewed": "2026-11-18"
+      "reviewed": "2026-11-20"
     },
     {
       "step": "reactuse-diff",
@@ -38,7 +65,7 @@
           }
         }
       ],
-      "reviewed": "2026-11-18"
+      "reviewed": "2026-11-20"
     },
     {
       "step": "modern-web",
@@ -51,7 +78,7 @@
           }
         }
       ],
-      "reviewed": "2026-11-18"
+      "reviewed": "2026-11-20"
     },
     {
       "step": "frontend-types",
@@ -64,7 +91,7 @@
           }
         }
       ],
-      "reviewed": "2026-11-18"
+      "reviewed": "2026-11-20"
     },
     {
       "step": "frontend-build",
@@ -78,7 +105,7 @@
           }
         }
       ],
-      "reviewed": "2026-11-18"
+      "reviewed": "2026-11-20"
     },
     {
       "step": "frontend-unit",
@@ -91,20 +118,20 @@
           }
         }
       ],
-      "reviewed": "2026-11-18"
+      "reviewed": "2026-11-20"
     }
   ],
   "exempt": [
     {
       "step": "backend-tests",
       "reason": "нужен контейнер Postgres и весь pytest-набор: красный ход проверяется в CI test-backend.yml, а не одним локальным шагом",
-      "reviewed": "2026-11-18",
+      "reviewed": "2026-11-20",
       "expires": "2027-06-30"
     },
     {
       "step": "e2e-smoke",
       "reason": "нужен поднятый стенд (backend :8011, frontend :5171) и браузер: доказательство — прогон Playwright на отдельном стенде",
-      "reviewed": "2026-11-18",
+      "reviewed": "2026-11-20",
       "expires": "2027-06-30"
     }
   ]

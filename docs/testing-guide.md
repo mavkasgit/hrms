@@ -171,14 +171,18 @@ npm run test:db:cleanup-legacy  # одноразовая уборка стары
 
 `backend/tests/conftest.py` run-DB **не создаёт и не удаляет** — только
 подключается и изолирует схемы `t_<uuid8>` на модуль:
+
 - schema `t_<uuid8>` на **модуль** внутри одной run-DB; в launcher-режиме
   схемы не дропаются (run-DB падает целиком в `finally` launcher'а), в ручном
   режиме на статичной `hrms_test` — `DROP SCHEMA` в teardown;
+
 - per-test cleanup через **`HRMS_TEST_ISOLATION`**:
+
   | Значение | Поведение | Когда |
   |----------|-----------|--------|
   | `savepoint` (**default**) | outer transaction + nested savepoints; rollback после теста | обычный прогон (быстрее TRUNCATE) |
   | `truncate` | `TRUNCATE ... CASCADE` после теста | debug / сравнение / тесты с реальной видимостью commit |
+
 - маркер `@pytest.mark.requires_truncate` — форс TRUNCATE для одного теста, если savepoint недостаточен.
 
 Параллель: launcher запускает `pytest-xdist` + `--dist=loadfile`
@@ -210,6 +214,7 @@ $env:HRMS_TEST_ISOLATION='truncate'; python -m pytest tests/test_db_isolation.py
 #### Backend pytest
 
 Workflow [`.github/workflows/test-backend.yml`](../.github/workflows/test-backend.yml):
+
 - service `postgres:15` на `:5432`;
 - создание isolated run-DB через `python scripts/test-db.py create hrms_test_0c0ffeec0dec`
   (свежий контейнер на job → фиксированный run-id безопасен);
