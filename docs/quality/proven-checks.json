@@ -15,6 +15,19 @@
       "reviewed": "2026-11-18"
     },
     {
+      "step": "docs-lint",
+      "violation": "новый Markdown-файл с fence без языка: rumdl отдаёт MD040 и exit 1",
+      "apply": [
+        {
+          "write": {
+            "path": "PROOF-docs-lint.md",
+            "content": "# proof\n\nТекст.\n\n```\nбез языка\n```\n"
+          }
+        }
+      ],
+      "reviewed": "2026-11-20"
+    },
+    {
       "step": "verify-profile-settings",
       "violation": "новый файл ядра профиля вне манифеста",
       "apply": [

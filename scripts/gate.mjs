@@ -51,6 +51,15 @@ export const STEPS = [
     what: "шаг в STEPS без строки в docs/quality/gates.md или строка без шага",
   },
   {
+    name: "docs-lint",
+    tier: "fast",
+    command: "rumdl check .",
+    tool: "rumdl",
+    ci: "npm run gate",
+    what: "структурные дефекты Markdown (fences, списки, заголовки) и битые относительные ссылки",
+    timeout: 120_000,
+  },
+  {
     name: "verify-profile-settings",
     tier: "fast",
     command: "python scripts/verify-profile-settings.py verify --strict",

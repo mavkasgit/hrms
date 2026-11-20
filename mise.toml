@@ -10,6 +10,9 @@ node = "26.13.0"
 # Backend написан под 3.11+. Это версия для создания backend/.venv на чистой
 # машине; существующий venv не пересоздаётся (см. _.python.venv ниже).
 python = "3.14.10"
+# Markdown-линтер гейта (шаг docs-lint): Rust-бинарь, правила markdownlint.
+# Пин — здесь, правила и исключения — .rumdl.toml, реестр — docs/quality/tools.json.
+rumdl = "0.3.5"
 
 [env]
 PYTHONUTF8 = "1"
