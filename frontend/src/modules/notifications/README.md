@@ -60,7 +60,7 @@ const api = createHttpAdapter({
 
 ## Структура
 
-```text
+```
 notifications/
 ├── index.ts                  — публичный API (импортируйте только отсюда)
 ├── NotificationsBell.tsx     — колокольчик (бейдж + попап)

@@ -31,3 +31,8 @@ exclude = [
 # Шаблон PR: заголовок задаёт GitHub, тело начинается с разделов. H1 в теле
 # pull request не нужен, а MD041 требует его в каждом файле.
 ".github/pull_request_template.md" = ["MD041"]
+# README переносимых модулей сверяются с ktm2000 побайтово по hash
+# (scripts/sync-manifest.json): правка fence требует парного изменения и bump
+# версии модуля. Это отдельный тикет по ktm2000, а не работа docs-lint.
+"frontend/src/modules/notifications/README.md" = ["MD040"]
+"frontend/src/modules/user-settings/README.md" = ["MD040"]
