@@ -13,6 +13,10 @@ python = "3.14.10"
 # Markdown-линтер гейта (шаг docs-lint): Rust-бинарь, правила markdownlint.
 # Пин — здесь, правила и исключения — .rumdl.toml, реестр — docs/quality/tools.json.
 rumdl = "0.3.5"
+# Conventional Commits в хуке commit-msg. Ставится изолированно через mise;
+# конфиг — commitlint.config.mjs в корне (без extends: общий конфиг лежит
+# вне node_modules и стал бы лишней точкой отказа).
+"npm:@commitlint/cli" = "21.2.4"
 
 [env]
 PYTHONUTF8 = "1"

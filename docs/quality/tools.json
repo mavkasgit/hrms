@@ -13,6 +13,18 @@
       "limitations": "Внешние ссылки не проверяются: в fast нет сети. MD013 (длина строки) выключен — перенос строк это работа форматтера, а не гейта. Планы и спеки docs/superpowers/ исключены как исторические артефакты; шаблон PR — узкое исключение MD041."
     },
     {
+      "name": "commitlint",
+      "version": "21.2.4",
+      "pinned_in": "mise.toml",
+      "pinned_as": "npm:@commitlint/cli",
+      "runs_in": ["commit-msg"],
+      "blocking": true,
+      "reviewed": "2026-11-20",
+      "source": "https://commitlint.js.org/",
+      "why": "Conventional Commits в хуке commit-msg: формат сообщения проверяется до появления коммита, а не на review",
+      "limitations": "Хук обходится git commit --no-verify и не работает для авто-мержей GitHub: источник правды — review, хук только ускоряет обратную связь. Merge-коммиты пропускаются по MERGE_HEAD."
+    },
+    {
       "name": "python",
       "version": "3.14.10",
       "pinned_in": "mise.toml",
